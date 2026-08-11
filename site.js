@@ -177,15 +177,11 @@ window.addEventListener("message", (event) => {
   }
 });
 
-document.querySelector("#above-converter-ads").append(
-  createBanner("mobile", "above converter 1"),
-  createBanner("medium", "above converter 2"),
-);
-
 renderRail(document.querySelector("#left-rail"), "left");
 renderRail(document.querySelector("#right-rail"), "right");
 
 const center = document.querySelector("#center-column");
+center.prepend(renderWall(["mobile", "medium"], "above converter"));
 center.append(
   renderWall(centerPlacements.slice(0, 6), "top"),
   createNative(1),

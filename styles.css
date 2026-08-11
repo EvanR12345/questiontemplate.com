@@ -102,10 +102,12 @@ body {
 }
 
 .converter-shell {
+  align-self: center;
   background: #fff;
   display: flex;
   justify-content: center;
   line-height: 0;
+  max-width: 728px;
   width: 100%;
 }
 
