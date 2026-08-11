@@ -162,6 +162,26 @@ function renderRail(element, side) {
   });
 }
 
+const converterFrame = document.querySelector(".converter-frame");
+window.addEventListener("message", (event) => {
+  if (
+    event.source !== converterFrame.contentWindow ||
+    event.data?.type !== "questiontemplate:converter-height"
+  ) {
+    return;
+  }
+
+  const height = Math.ceil(Number(event.data.height));
+  if (Number.isFinite(height) && height >= 200 && height <= 520) {
+    converterFrame.style.height = `${height}px`;
+  }
+});
+
+document.querySelector("#above-converter-ads").append(
+  createBanner("mobile", "above converter 1"),
+  createBanner("medium", "above converter 2"),
+);
+
 renderRail(document.querySelector("#left-rail"), "left");
 renderRail(document.querySelector("#right-rail"), "right");
 

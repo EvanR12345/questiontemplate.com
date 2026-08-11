@@ -3,27 +3,23 @@
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html,
 body {
   margin: 0;
-  min-height: 100%;
 }
 
 body {
-  background: #111827;
-  color: #f9fafb;
+  background: #fff;
+  color: #111827;
   font-family: Arial, Helvetica, sans-serif;
 }
 
 .converter-card {
-  background: #111827;
-  border: 1px solid #374151;
-  border-radius: 8px;
-  min-height: 378px;
-  padding: 16px;
+  background: #fff;
+  padding: 12px 14px;
 }
 
 h1 {
@@ -33,7 +29,7 @@ h1 {
 }
 
 p {
-  color: #d1d5db;
+  color: #4b5563;
   font-size: 14px;
   line-height: 1.4;
   margin: 0 0 14px;
@@ -105,7 +101,7 @@ p {
 }
 
 .converter-status {
-  color: #d1d5db;
+  color: #4b5563;
   font-size: 13px;
   grid-column: 1 / -1;
   line-height: 1.4;
@@ -123,9 +119,7 @@ p {
 
 @media (max-width: 520px) {
   .converter-card {
-    border-radius: 4px;
-    min-height: 420px;
-    padding: 14px 10px;
+    padding: 10px 8px;
   }
 
   .converter-form {

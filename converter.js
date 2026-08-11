@@ -9,8 +9,23 @@ const convertButton = document.querySelector("#convert-button");
 const progress = document.querySelector("#progress");
 const status = document.querySelector("#status");
 const download = document.querySelector("#download");
+const converterCard = document.querySelector(".converter-card");
 
 let downloadUrl = "";
+
+function reportHeight() {
+  const height = Math.ceil(converterCard.getBoundingClientRect().height);
+  window.parent.postMessage(
+    { type: "questiontemplate:converter-height", height },
+    "*",
+  );
+}
+
+if ("ResizeObserver" in window) {
+  new ResizeObserver(reportHeight).observe(converterCard);
+}
+window.addEventListener("load", reportHeight);
+setTimeout(reportHeight, 250);
 
 function clearDownload() {
   if (downloadUrl) {
