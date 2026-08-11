@@ -139,7 +139,18 @@ function createSmartlink() {
   return link;
 }
 
-function renderWall(placements, sectionName) {
+function createSmartlinkTile(label) {
+  const link = document.createElement("a");
+  link.className = "smartlink-tile";
+  link.href = SMARTLINK;
+  link.target = "_blank";
+  link.rel = "sponsored noopener noreferrer";
+  link.setAttribute("aria-label", `Sponsored offer ${label}`);
+  link.textContent = "Sponsored offer";
+  return link;
+}
+
+function renderWall(placements, sectionName, fillGaps = true) {
   const wall = document.createElement("div");
   wall.className = "ad-wall";
 
@@ -151,6 +162,10 @@ function renderWall(placements, sectionName) {
         placement === "wide",
       ),
     );
+
+    if (fillGaps) {
+      wall.append(createSmartlinkTile(`${sectionName} ${index + 1}`));
+    }
   });
 
   return wall;
@@ -158,7 +173,10 @@ function renderWall(placements, sectionName) {
 
 function renderRail(element, side) {
   railPlacements.forEach((placement, index) => {
-    element.append(createBanner(placement, `${side} ${index + 1}`));
+    element.append(
+      createBanner(placement, `${side} ${index + 1}`),
+      createSmartlinkTile(`${side} rail ${index + 1}`),
+    );
   });
 }
 
