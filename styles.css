@@ -1,0 +1,140 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.ad-page {
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 100vh;
+  overflow-x: hidden;
+  padding: 2px;
+  width: 100%;
+}
+
+.ad-stage {
+  display: grid;
+  gap: 2px;
+  grid-template-columns: 160px minmax(0, 1fr) 160px;
+  width: 100%;
+}
+
+.ad-rail,
+.center-column {
+  align-content: start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ad-wall {
+  align-items: start;
+  display: grid;
+  gap: 1px;
+  grid-auto-flow: dense;
+  grid-auto-rows: 10px;
+  grid-template-columns: repeat(auto-fill, 160px);
+  justify-content: center;
+  width: 100%;
+}
+
+.ad-cell,
+.native-ad {
+  background: #fff;
+  line-height: 0;
+  max-width: 100%;
+  overflow: auto hidden;
+}
+
+.wide-ad {
+  text-align: center;
+}
+
+.ad-wall > .ad-cell {
+  justify-self: stretch;
+  text-align: center;
+}
+
+.ad-frame {
+  border: 0;
+  display: inline-block;
+  max-width: none;
+}
+
+.native-ad {
+  min-height: 180px;
+  width: 100%;
+}
+
+.native-frame {
+  border: 0;
+  display: block;
+  height: 260px;
+  width: 100%;
+}
+
+.smartlink-ad {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #ddd;
+  color: #111;
+  display: flex;
+  font-size: 14px;
+  font-weight: 700;
+  justify-content: center;
+  min-height: 42px;
+  padding: 6px 12px;
+  text-align: center;
+  text-decoration: none;
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .ad-page {
+    gap: 1px;
+    padding: 1px;
+  }
+
+  .ad-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .center-column {
+    order: 1;
+  }
+
+  .ad-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-evenly;
+    order: 2;
+  }
+
+  .ad-wall,
+  .center-column,
+  .ad-rail {
+    gap: 1px;
+  }
+
+  .ad-wall {
+    grid-template-columns: repeat(2, minmax(0, 160px));
+  }
+
+  .ad-wall > .oversize-ad {
+    grid-column: 1 / -1 !important;
+  }
+}
