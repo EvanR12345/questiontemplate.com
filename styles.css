@@ -101,6 +101,23 @@ body {
   width: 100%;
 }
 
+.converter-shell {
+  background: #111827;
+  display: flex;
+  justify-content: center;
+  line-height: 0;
+  width: 100%;
+}
+
+.converter-frame {
+  background: #111827;
+  border: 0;
+  display: block;
+  height: 380px;
+  max-width: 728px;
+  width: 100%;
+}
+
 @media (max-width: 760px) {
   .ad-page {
     gap: 1px;
@@ -132,6 +149,10 @@ body {
 
   .ad-wall {
     grid-template-columns: repeat(2, minmax(0, 160px));
+  }
+
+  .converter-frame {
+    height: 422px;
   }
 
   .ad-wall > .oversize-ad {

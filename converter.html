@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'none'; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Local MP3 converter</title>
+    <link rel="stylesheet" href="./converter.css" />
+    <script defer src="./lame.min.js"></script>
+    <script defer src="./converter.js"></script>
+  </head>
+  <body>
+    <main class="converter-card" aria-labelledby="converter-title">
+      <h1 id="converter-title">Convert your file to MP3</h1>
+      <p>
+        Choose an audio or video file you own. Conversion stays in this
+        sandboxed browser tool; the file is not uploaded. Maximum: 100 MB and
+        15 minutes.
+      </p>
+
+      <form class="converter-form" id="converter-form">
+        <label class="converter-field converter-file-field">
+          Audio or video file
+          <input
+            id="source-file"
+            type="file"
+            accept="audio/*,video/*"
+            required
+          />
+        </label>
+
+        <label class="converter-field">
+          MP3 quality
+          <select id="bitrate">
+            <option value="128">128 kbps - standard</option>
+            <option value="192" selected>192 kbps - high</option>
+            <option value="256">256 kbps - higher</option>
+            <option value="320">320 kbps - maximum</option>
+          </select>
+        </label>
+
+        <button class="converter-button" id="convert-button" type="submit" disabled>
+          Convert to MP3
+        </button>
+
+        <progress
+          class="converter-progress"
+          id="progress"
+          max="100"
+          value="0"
+          hidden
+        ></progress>
+        <div
+          class="converter-status"
+          id="status"
+          role="status"
+          aria-live="polite"
+        >Select a file to begin.</div>
+        <a class="converter-download" id="download" hidden>Download MP3</a>
+      </form>
+    </main>
+  </body>
+</html>

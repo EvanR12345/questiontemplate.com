@@ -139,6 +139,22 @@ function createSmartlink() {
   return link;
 }
 
+function createConverter() {
+  const section = document.createElement("section");
+  section.className = "converter-shell";
+  section.setAttribute("aria-label", "Local MP3 converter");
+
+  const frame = document.createElement("iframe");
+  frame.className = "converter-frame";
+  frame.title = "Convert a local audio or video file to MP3";
+  frame.src = "./converter.html";
+  frame.referrerPolicy = "no-referrer";
+  frame.setAttribute("sandbox", "allow-scripts allow-downloads");
+
+  section.append(frame);
+  return section;
+}
+
 function renderWall(placements, sectionName) {
   const wall = document.createElement("div");
   wall.className = "ad-wall";
@@ -171,6 +187,7 @@ center.append(
   createNative(1),
   createSmartlink(),
   renderWall(centerPlacements.slice(6, 12), "middle"),
+  createConverter(),
   createNative(2),
   createSmartlink(),
   renderWall(centerPlacements.slice(12), "bottom"),

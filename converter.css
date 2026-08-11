@@ -1,0 +1,141 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: #111827;
+  color: #f9fafb;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.converter-card {
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  min-height: 378px;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 22px;
+  line-height: 1.2;
+  margin: 0 0 6px;
+}
+
+p {
+  color: #d1d5db;
+  font-size: 14px;
+  line-height: 1.4;
+  margin: 0 0 14px;
+}
+
+.converter-form {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 180px;
+}
+
+.converter-field {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 5px;
+}
+
+.converter-file-field {
+  grid-column: 1 / -1;
+}
+
+.converter-field input,
+.converter-field select,
+.converter-button,
+.converter-download {
+  border: 1px solid #6b7280;
+  border-radius: 5px;
+  font: inherit;
+  min-height: 42px;
+}
+
+.converter-field input,
+.converter-field select {
+  background: #fff;
+  color: #111827;
+  padding: 8px;
+  width: 100%;
+}
+
+.converter-button,
+.converter-download {
+  align-items: center;
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #052e16;
+  cursor: pointer;
+  display: flex;
+  font-weight: 800;
+  justify-content: center;
+  padding: 8px 14px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.converter-button:disabled {
+  background: #6b7280;
+  border-color: #6b7280;
+  color: #e5e7eb;
+  cursor: not-allowed;
+}
+
+.converter-progress {
+  accent-color: #22c55e;
+  grid-column: 1 / -1;
+  height: 12px;
+  width: 100%;
+}
+
+.converter-status {
+  color: #d1d5db;
+  font-size: 13px;
+  grid-column: 1 / -1;
+  line-height: 1.4;
+  min-height: 19px;
+}
+
+.converter-download {
+  grid-column: 1 / -1;
+}
+
+.converter-download[hidden],
+.converter-progress[hidden] {
+  display: none;
+}
+
+@media (max-width: 520px) {
+  .converter-card {
+    border-radius: 4px;
+    min-height: 420px;
+    padding: 14px 10px;
+  }
+
+  .converter-form {
+    grid-template-columns: 1fr;
+  }
+
+  .converter-file-field,
+  .converter-progress,
+  .converter-status,
+  .converter-download {
+    grid-column: 1;
+  }
+}
