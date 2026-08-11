@@ -1,6 +1,6 @@
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 const MAX_DURATION_SECONDS = 15 * 60;
-const MP3_SAMPLE_BLOCK_SIZE = 1152;
+const MP3_SAMPLE_BLOCK_SIZE = 1152 * 20;
 
 const form = document.querySelector("#converter-form");
 const fileInput = document.querySelector("#source-file");
@@ -106,6 +106,7 @@ form.addEventListener("submit", async (event) => {
       Number(bitrateSelect.value),
     );
     const mp3Chunks = [];
+    let lastYieldAt = performance.now();
 
     for (let start = 0; start < audioBuffer.length; start += MP3_SAMPLE_BLOCK_SIZE) {
       const length = Math.min(
@@ -124,11 +125,12 @@ form.addEventListener("submit", async (event) => {
         mp3Chunks.push(new Int8Array(encoded));
       }
 
-      const blockNumber = Math.floor(start / MP3_SAMPLE_BLOCK_SIZE);
-      if (blockNumber % 40 === 0) {
+      const now = performance.now();
+      if (now - lastYieldAt >= 100 || start + length === audioBuffer.length) {
         const percent = 10 + Math.round((start / audioBuffer.length) * 85);
         setProgress(percent, `Encoding MP3... ${percent}%`);
-        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        lastYieldAt = performance.now();
       }
     }
 
