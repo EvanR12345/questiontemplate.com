@@ -34,7 +34,7 @@ export function scanCanvas(canvas:HTMLCanvasElement):PictureScan{
 }
 // Map a square to the selected quadrilateral using a projective homography.
 // This removes perspective without moving, inventing, or independently rotating tiles.
-function cropFace(image:HTMLImageElement,points:Point[]){
+export function cropFace(image:HTMLImageElement,points:Point[]){
  const source=document.createElement("canvas");const scale=Math.min(1,1600/Math.max(image.width,image.height));
  source.width=Math.round(image.width*scale);source.height=Math.round(image.height*scale);
  const ctx=source.getContext("2d",{willReadFrequently:true})!;ctx.drawImage(image,0,0,source.width,source.height);
@@ -126,7 +126,7 @@ export function PhotoScanner({face,faceName,scan,onScan,onFaceToneChange}:{
    {scan&&!camera&&<div className="scan-calibration">
     <Button variant="outline" onClick={()=>void rotatePreview()}><RotateCcw/> Rotate whole photo</Button>
     <button type="button" className="tone-picker-button" onClick={()=>setPicking(!picking)}><i style={{background:rgbToHex(scan.faceTone)}}/>{picking?"Tap the main background on the center tile":"Fix background sample"}</button>
-    <p>Photo rotation must match the holding guide, even if the sheep looks sideways. You will fix the middle tile separately after the picture pieces are assembled.</p>
+    <p>Photo rotation must match the holding guide, even if the sheep looks sideways. Next, check the middles in the virtually assembled pictures before making any real turns.</p>
    </div>}
   </>}
   {error&&<p className="camera-error" role="alert">{error}</p>}

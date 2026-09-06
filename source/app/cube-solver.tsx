@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CubeCanvas, type CubeFaces, type FaceImages } from "./cube-canvas";
 import { PictureFace, FACE_HEX } from "./picture-face";
+import { loadSheepArt, renderSheepScans } from "./sheep-art";
 import { PhotoScanner, rgbToHex, type PictureScan, type RGB } from "./photo-scanner";
 import { FACE_KEYS, applyPictureMoves, centerDelta, findCenterCorrection, initialPictures, inverseMoves, mod4, movePictures, validateCubies, type FaceKey, type PictureState } from "./supercube";
 
@@ -34,7 +35,7 @@ function classify(scans:Partial<Record<FaceKey,PictureScan>>):CubeFaces{
  });
  return result;
 }
-type Plan={kind:"pieces"|"centers";moves:string[];snapshots:PictureState[];original:CubeFaces;images:FaceImages};
+type Plan={kind:"pieces"|"centers"|"joint";optimal?:boolean;moves:string[];snapshots:PictureState[];original:CubeFaces;images:FaceImages};
 function makePlan(kind:Plan["kind"],moves:string[],base:PictureState,original:CubeFaces,images:FaceImages):Plan{
  const snapshots=[base];for(const m of moves)snapshots.push(movePictures(snapshots.at(-1)!,m));
  return {kind,moves,snapshots,original,images};
@@ -45,6 +46,9 @@ export function CubeSolver(){
  const [entryMode,setEntryMode]=useState("photo"),[active,setActive]=useState<FaceKey>("F");
  const [faces,setFaces]=useState<CubeFaces>(()=>blankFaces(true));
  const [scans,setScans]=useState<Partial<Record<FaceKey,PictureScan>>>({});
+ const [sheepArt,setSheepArt]=useState<FaceImages>({});
+ const [seedPlan,setSeedPlan]=useState<Plan|null>(null);
+ useEffect(()=>{let active=true;void loadSheepArt().then(art=>{if(active)setSheepArt(art);}).catch(()=>{if(active)setMessage("Sheep artwork could not load. You can still use your own photos.");});return()=>{active=false;};},[]);
  const [paint,setPaint]=useState<FaceKey>("F"),[reviewed,setReviewed]=useState(FLAGS);
  const [message,setMessage]=useState(""),[solving,setSolving]=useState(false);
  const [plan,setPlan]=useState<Plan|null>(null),[index,setIndex]=useState(0),[playing,setPlaying]=useState(false);
@@ -63,7 +67,7 @@ export function CubeSolver(){
  const pictureState=stage==="entry"?initial:stage==="play"&&plan?plan.snapshots[index]:base;
  const original=stage==="entry"?faces:stage==="play"&&plan?plan.original:baseFaces;
  const displayFaces=useMemo(()=>colorsAt(pictureState,original),[pictureState,original]);
- const displayImages=stage==="entry"?images:stage==="play"&&plan?plan.images:baseImages;
+ const displayImages=stage==="entry"?(photoCount?images:sheepArt):stage==="play"&&plan?plan.images:baseImages;
  const reviewCount=FACE_KEYS.filter(f=>reviewed[f]).length;
  const checkedCount=FACE_KEYS.filter(f=>checked[f]).length;
  function goTo(next:number){
@@ -78,7 +82,7 @@ export function CubeSolver(){
  useEffect(()=>()=>{worker.current?.terminate();if(timeout.current)clearTimeout(timeout.current);},[]);
  function cancelSolve(){solverRun.current++;worker.current?.terminate();worker.current=null;if(timeout.current)clearTimeout(timeout.current);setSolving(false);setMessage("Cancelled. Your photos and corrections are still here.");}
  function changeMode(next:"centers"|"scrambled"){
-  setMode(next);setReviewed(FLAGS());setMessage("");setFaces(next==="centers"?blankFaces(true):classify(scans));
+  setSeedPlan(null);setMode(next);setReviewed(FLAGS());setMessage("");setFaces(next==="centers"?blankFaces(true):classify(scans));
  }
  function acceptScan(face:FaceKey,scan:PictureScan){
   const next={...scans,[face]:scan};setScans(next);setReviewed(FLAGS());setMessage("");
@@ -91,7 +95,7 @@ export function CubeSolver(){
   setBase(pictures);setBaseFaces(originalFaces);setBaseImages(sourceImages);setCorrections(ZERO());setChecked(FLAGS());setActive("F");setPlaying(false);setTransition(null);setStage("align");setMessage("");
  }
  async function solvePieces(){
-  setMessage("");
+  setMessage("");setSeedPlan(null);
   if(filled!==54){setEntryMode("manual");setMessage("Some tiles are blank or uncertain. Choose their picture in Review tiles.");return;}
   if(counts.some(n=>n!==9)){setEntryMode("manual");setMessage("Each picture must have exactly 9 tiles. Check the counts and correct the matches.");return;}
   if(reviewCount!==6){setEntryMode("manual");setMessage("Confirm all six faces in Review tiles before solving. A matching background is only a suggestion.");return;}
@@ -117,13 +121,14 @@ export function CubeSolver(){
     const proposed=makePlan("pieces",moves,initial,faces,images);
     const final=colorsAt(proposed.snapshots.at(-1)!,faces);
     if(!FACE_KEYS.every(f=>final[f].every(c=>c===IDS[f]))){setMessage("The move check failed. No solution was shown.");return;}
-    setPlan(proposed);setIndex(0);setTransition(null);setStage("play");setMessage("");
+    setSeedPlan(proposed);beginAlignment(proposed.snapshots.at(-1)!,faces,images);
    };w.postMessage(facelets);
   }catch(error){setSolving(false);setMessage(error instanceof Error?error.message:"Could not read this cube.");}
  }
  async function solveCenters(){
   setMessage("");
   if(checkedCount!==6){setMessage("Check all six middle tiles, including the ones that already match.");return;}
+  if(seedPlan){await solveTogether();return;}
   const target=FACE_KEYS.map(f=>corrections[f]),moves=findCenterCorrection(target);
   if(moves===null){setMessage("These rotations cannot all be corrected with legal turns. Recheck the six previews. For example, one lone 90° center turn is impossible, but one 180° turn is possible. If a center cap was physically twisted, that may explain it.");return;}
   const Cube=(await import("cubejs")).default;
@@ -132,12 +137,34 @@ export function CubeSolver(){
   if(!moves.length){setStage("done");return;}
   setPlan(result);setIndex(0);setTransition(null);setStage("play");
  }
+ async function solveTogether(){
+  if(!seedPlan)return;
+  const toFace=Object.fromEntries(FACE_KEYS.map(f=>[IDS[f],f]));
+  const facelets=FACE_KEYS.flatMap(f=>seedPlan.original[f]).map(v=>toFace[v!]).join("");
+  const delta=centerDelta(seedPlan.moves),target=FACE_KEYS.map((f,i)=>mod4(delta[i]+corrections[f]));
+  const desired=Object.fromEntries(FACE_KEYS.map(f=>[f,base[f].map((t,i)=>i===4?{...t,turns:mod4(t.turns+corrections[f])}:t)]));
+  setSolving(true);setMessage("Searching for one solution for every picture piece and middle…");
+  const w=new Worker(new URL("./solver.worker.ts",import.meta.url),{type:"module"});worker.current=w;
+  const run=++solverRun.current;
+  const finish=()=>{if(timeout.current)clearTimeout(timeout.current);w.terminate();worker.current=null;setSolving(false);};
+  timeout.current=setTimeout(()=>{finish();setMessage("Search timed out. Your photos and middle choices are saved here. Please retry.");},120000);
+  w.onerror=()=>{finish();setMessage("The combined solver could not start. Please retry.");};
+  w.onmessage=(event:MessageEvent<{moves?:string[];error?:string;progress?:string;optimal?:boolean}>)=>{
+   if(run!==solverRun.current)return;
+   if(event.data.progress){setMessage(event.data.progress);return;}
+   finish();if(event.data.error){setMessage(event.data.error);return;}
+   const result=makePlan("joint",event.data.moves!,initial,seedPlan.original,seedPlan.images);
+   if(JSON.stringify(result.snapshots.at(-1))!==JSON.stringify(desired)){setMessage("The full picture verification failed. No moves were shown.");return;}
+   result.optimal=event.data.optimal;setPlan(result);setIndex(0);setTransition(null);setStage("play");setMessage("");
+  };
+  w.postMessage({facelets,target,seed:seedPlan.moves});
+ }
  async function demo(){
-  const Cube=(await import("cubejs")).default;
-  const moves="R U R' U' F2 D L2 B U2 R2".split(" ");
+  const moves="R U F2 L'".split(" ");
   const scramble=applyPictureMoves(initialPictures(),moves);
   const solved=blankFaces(true);
-  setMode("scrambled");setFaces(colorsAt(scramble,solved));setScans({});setReviewed(Object.fromEntries(FACE_KEYS.map(f=>[f,true])) as Record<FaceKey,boolean>);setEntryMode("manual");setMessage("Demo has no sheep photos. It demonstrates piece solving; use your photos for picture-center alignment.");
+  const art=await loadSheepArt();const demoScans=await renderSheepScans(scramble,art);
+  setSeedPlan(null);setMode("scrambled");setFaces(colorsAt(scramble,solved));setScans(demoScans);setReviewed(Object.fromEntries(FACE_KEYS.map(f=>[f,true])) as Record<FaceKey,boolean>);setEntryMode("manual");setMessage("Sheep demo loaded. This is an example arrangement, not a scan of your real cube. Preview the assembled pictures, check all middles, then solve everything together.");
  }
  function completePhase(){
   if(!plan)return;
@@ -155,6 +182,7 @@ export function CubeSolver(){
   <section className="workspace">
    <aside className="visual-panel">
     <CubeCanvas faces={displayFaces} pictures={pictureState} faceImages={displayImages} transition={transition} focus={stage==="align"?active:null}/>
+    {stage==="entry"&&photoCount===0&&<p className="minor-note">Real sheep artwork preview · Photograph your cube to enter its current state. The preview arrangement is illustrative.</p>}
     <div className="orientation-card"><div><p className="eyebrow">Keep one starting hold</p><h2>Same top. Same front.</h2></div><p>Drag the 3D view to look around. This does not change your cube’s starting hold. Every face turn is clockwise as seen looking directly at that face.</p></div>
     <div className="cube-reference"><a href="https://us.carrollsirishgifts.com/products/wacky-woolies-puzzle-cube" target="_blank" rel="noreferrer">Made for your Wacky Woollies sheep cube ↗</a><p>Including the green “Lucky” sheep with stars and horseshoes. A matching background is not enough: the sheep’s body, head and middle square must join correctly.</p><p>Use photos of your cube as it is now. No old solved photos needed. Your uploaded sheep pictures appear on the 3D cube.</p></div>
    </aside>
@@ -178,14 +206,14 @@ export function CubeSolver(){
       {mode==="scrambled"&&<div className="tile-counts">{FACE_KEYS.map((f,i)=><span key={f} className={counts[i]===9?"complete":"incomplete"}>{f} {counts[i]}/9</span>)}</div>}
       <div className="face-navigation"><Button variant="outline" disabled={SCAN_ORDER.indexOf(active)===0} onClick={()=>setActive(SCAN_ORDER[SCAN_ORDER.indexOf(active)-1])}><ArrowLeft/> Back</Button><Button variant="outline" disabled={SCAN_ORDER.indexOf(active)===5} onClick={()=>setActive(SCAN_ORDER[SCAN_ORDER.indexOf(active)+1])}>Next face <ArrowRight/></Button></div>
      </div>
-     {mode==="centers"?<><Button className="solve-button full" onClick={()=>beginAlignment(initial,blankFaces(true),images)}>Align middle picture tiles <ArrowRight/></Button>{photoCount<6&&<p className="minor-note">Missing photos use arrows. Upload all six for full picture previews, or enter the required rotations manually.</p>}</>:<Button disabled={solving} className="solve-button full" onClick={()=>void solvePieces()}><Sparkles/>{solving?"Finding moves…":"Solve picture pieces"}</Button>}
-     <button className="text-button" onClick={()=>void demo()}>Try a piece-solving demo</button>
+     {mode==="centers"?<><Button className="solve-button full" onClick={()=>beginAlignment(initial,blankFaces(true),images)}>Align middle picture tiles <ArrowRight/></Button>{photoCount<6&&<p className="minor-note">Missing photos use arrows. Upload all six for full picture previews, or enter the required rotations manually.</p>}</>:<Button disabled={solving} className="solve-button full" onClick={()=>void solvePieces()}><Sparkles/>{solving?"Assembling preview…":"Preview pictures & check middles"}</Button>}
+     <button className="text-button" onClick={()=>void demo()}>Try the sheep cube demo</button>
      </fieldset>{solving&&<Button variant="outline" onClick={cancelSolve}>Cancel solving</Button>}
     </div>}
-    {stage==="align"&&<div className="entry-view">
+    {stage==="align"&&<div className="entry-view"><fieldset className="entry-fields" disabled={solving}>
      <div className="panel-heading"><div><p className="eyebrow">Supercube · middle rotations</p><h1>Make the picture join up</h1></div></div>
      <p className="setup-hold">Rotate only the middle square in each preview until it joins the eight outside tiles. Sideways is fine if the surrounding picture is sideways. Do not turn your real cube yet.</p>
-     <p className="minor-note">The left 3D cube is the current state. This preview is your target.</p>
+     <p className="minor-note">{seedPlan?"This is a virtual assembly of your photos. Keep your real cube exactly as photographed. The final solution will start from that scramble.":"The left 3D cube is the current state. This preview is your target."}</p>
      {faceTabs(checked)}
      <h2 className="center-face-title">{NAMES[active]} picture</h2>
      <PictureFace label={NAMES[active]+" target preview"} tiles={base[active]} images={baseImages} colors={matchedColors[active]} centerTurn={corrections[active]}/>
@@ -194,18 +222,18 @@ export function CubeSolver(){
      <p className="center-choice">{["No rotation needed","Clockwise 90° needed","180° needed","Counterclockwise 90° needed"][corrections[active]]}</p>
      <Button className="solve-button full" onClick={()=>{setChecked(c=>({...c,[active]:true}));setMessage("");const other=SCAN_ORDER.find(f=>f!==active&&!checked[f]);if(other)setActive(other);}}><Check/>{checked[active]?"Picture checked":"This middle matches the picture"}</Button>
      <p className="minor-note">{checkedCount} of 6 middle tiles checked</p>
-     <Button variant="outline" className="solve-button full" onClick={()=>void solveCenters()}>Get center-fixing moves <ArrowRight/></Button>
+     <Button variant="outline" className="solve-button full" onClick={()=>void solveCenters()}>{solving?"Searching…":seedPlan?"Solve pieces + middles together":"Get center-fixing moves"} <ArrowRight/></Button>
      <button className="text-button" onClick={()=>{setStage("entry");setMessage("");}}>Back to photos</button>
-    </div>}
+    </fieldset>{solving&&<Button variant="outline" onClick={cancelSolve}>Cancel solving</Button>}</div>}
     {stage==="play"&&plan&&<div className="solution-view">
-     <div className="panel-heading"><div><p className="eyebrow">{plan.kind==="pieces"?"Part 1 · picture pieces":"Part 2 · middle rotations"}</p><h1>{plan.moves.length} moves</h1></div></div>
+     <div className="panel-heading"><div><p className="eyebrow">{plan.kind==="joint"?"One solution · pieces + middles":"Middle rotations"}</p><h1>{plan.moves.length} moves</h1></div></div>
      <div className="progress-copy"><span>{index} of {plan.moves.length} completed</span><span>{Math.round(index/plan.moves.length*100)}%</span></div><Progress value={index/plan.moves.length*100}/>
-     {currentMove?<div className="move-card"><span className="move-token">{currentMove}</span><div><p className="move-label">Next turn</p><h2>Turn the {NAMES[currentMove[0] as FaceKey].toLowerCase()} face {currentMove.endsWith("2")?"180°":currentMove.endsWith("'")?"counterclockwise":"clockwise"}.</h2><p>Look directly at that face. Turn the whole face, not just its center cap.</p></div></div>:<div className="complete-card"><Check/><h2>{plan.kind==="pieces"?"Outside pieces assembled. Now check the middles.":"All center-fixing moves completed."}</h2></div>}
+     {currentMove?<div className="move-card"><span className="move-token">{currentMove}</span><div><p className="move-label">Next turn</p><h2>Turn the {NAMES[currentMove[0] as FaceKey].toLowerCase()} face {currentMove.endsWith("2")?"180°":currentMove.endsWith("'")?"counterclockwise":"clockwise"}.</h2><p>Look directly at that face. Turn the whole face, not just its center cap.</p></div></div>:<div className="complete-card"><Check/><h2>{plan.kind==="joint"?"All picture pieces and middles aligned.":"All center-fixing moves completed."}</h2></div>}
      {plan.kind==="centers"&&<p className="setup-hold">These moves temporarily mix up the picture pieces. Finish the full sequence to restore them with the middles aligned. Never twist a center cap by hand.</p>}
      <div className="playback-controls"><Button variant="outline" aria-label="Previous move" disabled={index===0} onClick={()=>{setPlaying(false);goTo(index-1);}}><ChevronLeft/></Button><Button variant="outline" disabled={index>=plan.moves.length} onClick={()=>setPlaying(v=>!v)}>{playing?<Pause/>:<Play/>}{playing?"Pause":"Auto play"}</Button><Button aria-label="Next move" disabled={index>=plan.moves.length} onClick={()=>{setPlaying(false);goTo(index+1);}}>I did it <ChevronRight/></Button></div>
      <p className="minor-note">If you go back in the guide, undo that turn on your real cube too.</p>
-     {index===plan.moves.length&&<Button className="solve-button full" onClick={completePhase}>{plan.kind==="pieces"?"Check middle rotations":"Finish"} <ArrowRight/></Button>}
-     <details className="algorithm-details"><summary>See the full move sequence</summary><p>{plan.moves.join(" ")}</p><p>One 180° turn counts as one move. Center corrections use a move-weighted search across rotated algorithms, with redundant turns removed. Piece solving uses a two-phase solver. These are verified solutions, not a guarantee of the globally fewest moves.</p></details>
+     {index===plan.moves.length&&<Button className="solve-button full" onClick={completePhase}>Finish <ArrowRight/></Button>}
+     <details className="algorithm-details"><summary>See the full move sequence</summary><p>{plan.moves.join(" ")}</p><p>One 180° turn counts as one move. {plan.optimal?"The full-state search proved this solution is shortest.":"This verified solution is not proven globally shortest. The combined solver searches individual turns with both pieces and middles in its goal, then compares complete solutions within a time limit."}</p></details>
      <button className="text-button" onClick={()=>{setPlaying(false);setStage("entry");setPlan(null);setMessage("If you already turned your real cube, take new photos of its current state before solving again.");}}>Start over / rescan current cube</button>
     </div>}
     {stage==="done"&&<div className="complete-card finished"><Check/><h1>Pictures aligned</h1><p>Check all six faces on your real cube. Every middle square should join its surrounding picture.</p><Button onClick={()=>{setScans({});setFaces(blankFaces(true));setMode("centers");setReviewed(FLAGS());setStage("entry");setPlan(null);setMessage("");}}>Solve another cube</Button></div>}

@@ -11,7 +11,7 @@
     "name": "rolldown-runtime"
   },
   "app/cube-solver.tsx": {
-    "file": "assets/cube-solver-DAVRMNJ2.js",
+    "file": "assets/cube-solver-B0UmucVf.js",
     "name": "cube-solver",
     "src": "app/cube-solver.tsx",
     "isDynamicEntry": true,
@@ -34,7 +34,7 @@
     ]
   },
   "node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-BsT6NSJL.js",
+    "file": "assets/layout-segment-context-Tpl7XkaF.js",
     "name": "layout-segment-context",
     "src": "node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
@@ -45,7 +45,7 @@
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-C83BHfB7.js",
+    "file": "assets/index-CEEr6htv.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,

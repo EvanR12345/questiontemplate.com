@@ -1,8 +1,14 @@
 import Cube from "cubejs";
 import { validateCubies } from "./supercube";
+import {solveJoint} from './joint-solver';
 let ready = false;
-self.onmessage = (event: MessageEvent<string>) => {
+self.onmessage = (event: MessageEvent<string|{facelets:string;target:number[];seed:string[]}>) => {
   try {
+    if(typeof event.data!=='string'){
+      const {facelets,target,seed}=event.data;
+      const result=solveJoint(facelets,target,seed,{onProgress:progress=>self.postMessage({progress})});
+      self.postMessage(result);return;
+    }
     const cube = Cube.fromString(event.data);
     if (cube.asString() !== event.data) throw new Error("Some tiles do not form real cube pieces. Recheck the matches.");
     const error = validateCubies(cube.toJSON());

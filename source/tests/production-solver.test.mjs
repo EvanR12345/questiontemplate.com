@@ -25,5 +25,11 @@ test("compiled production worker solves a real scramble",async()=>{
     assert.deepEqual(result.moves,[]);
     self.onmessage({data:"F".repeat(54)});
     assert.ok(result.error);
+    const scramble="R U F2 L'";
+    const jointCube=new Cube().move(scramble);
+    self.onmessage({data:{facelets:jointCube.asString(),target:[3,3,2,0,1,0],seed:['L','F2',"U'","R'"]}});
+    assert.ok(!result.error,result.error);
+    assert.equal(jointCube.move(result.moves.join(' ')).isSolved(),true);
+    assert.equal(result.optimal,true);
   } finally {delete globalThis.self;}
 });

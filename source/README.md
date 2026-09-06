@@ -9,15 +9,17 @@ The GitHub repository root contains the static website. `source/` contains the e
 1. Choose **Only my centers are wrong** if every outside picture tile is already correct. Otherwise choose **My cube is scrambled**.
 2. Capture all six current faces using the holding guides. Drag the crop handles around the face. Return to the same starting hold before every capture. Do not rotate each photo just to make the sheep upright.
 3. For a scrambled cube, review every proposed tile match. Background matching is a heuristic, not automatic picture recognition. Correct uncertain matches and confirm all six faces.
-4. Follow the verified piece-solving moves. The photos travel with the pieces in 3D.
+4. Preview the pictures assembled virtually. Keep your real cube exactly as photographed.
 5. Rotate each middle square in the complete-picture preview until it joins the surrounding image. The desired rotation is relative to the picture, not to the screen's top edge. Confirm all six faces, including unchanged centers.
-6. Follow the center-fixing moves. They temporarily scramble the outside pieces but restore them at the end. Do not twist removable center caps by hand.
+6. Choose **Solve pieces + middles together**. Follow the single verified sequence from your original scramble to the complete pictures. Do not twist removable center caps by hand.
 
 Six solved reference photos are not required. In center-only mode, missing photos can be replaced by explicitly entering how far each real center needs to turn. A lone 90-degree center correction is not reachable through legal face turns; a lone 180-degree correction is.
 
-The Wacky Woollies sheep cube was identified using the Carrolls Irish Gifts product listing. Retail images are linked as reference only and are not bundled. The solver does not assume a specific factory face arrangement or substitute invented sheep artwork.
+The 3D preview uses six real sheep designs projected from three bundled retailer photographs. Sources: https://us.carrollsirishgifts.com/products/wacky-woolies-puzzle-cube and https://www.sheepandwoolcentre.com/products/wacky-woollies-rubiks-cube . Artwork belongs to its respective owners. The preview arrangement is illustrative, not a factory face-orientation reference. The sheep demo uses those pictures; user scans replace them during real solving. No artwork is generated or invented.
 
 ## Implementation
+
+`app/joint-solver.ts` searches individual moves with both cubie state and center rotations in its goal. Iterative deepening uses admissible cubejs phase-one pruning bounds, misplaced-piece bounds and required-center-turn bounds. Default limits are 800,000 nodes, 4.5 seconds and depth 12; interrupted search never claims optimality. If necessary, the solver compares alternate piece-solving routes by their complete supercube cost, with center corrections and cancellation included. The app independently replays the result and compares all 54 photo tiles and rotations against the user's confirmed target. It gives one physical sequence without a center-only restart.
 
 Center correction now searches all proper cube rotations of the verified algorithms using weighted shortest paths (half-turn metric), then removes redundant turns. Across all 2,048 reachable center states, average length fell from 104.68 to 37.14 moves, with 2,002 cases improved and none longer. Each single 180-degree center correction takes at most 12 moves. This optimizes within the algorithm library, not over every possible cube solution. The piece solver remains two-phase; neither phase claims global optimality.
 
@@ -37,7 +39,7 @@ From `source/` in the GitHub checkout, install the locked dependencies, then run
 npm ci
 npm run build
 npx tsc --project tsconfig.solver.json
-node --test tests/supercube.test.mjs tests/production-solver.test.mjs tests/optimization.test.mjs
+node --test tests/supercube.test.mjs tests/production-solver.test.mjs tests/optimization.test.mjs tests/joint.test.mjs
 ```
 
 The static export is in `dist/client/`. Publish its contents at the repository root while keeping the existing `CNAME` and `.nojekyll`. Keep prior content-addressed assets available for clients with cached HTML.
