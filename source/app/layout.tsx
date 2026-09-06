@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Picture Supercube Solver | Question Template",
+  title: "Sheep Cube Solver | Wacky Woollies Supercube",
   description:
-    "Solve picture pieces and rotated center tiles with guided photo capture and an interactive 3D supercube. Includes a center-only mode for sheep picture cubes.",
+    "Solve your Wacky Woollies sheep Rubik’s picture cube, including rotated middles. Guided photo scanning, interactive 3D moves and shorter center corrections.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

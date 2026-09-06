@@ -1,4 +1,4 @@
-# Picture Supercube Solver
+# Sheep Cube Solver: Wacky Woollies Supercube
 
 Live website: https://questiontemplate.com
 
@@ -19,6 +19,8 @@ The Wacky Woollies sheep cube was identified using the Carrolls Irish Gifts prod
 
 ## Implementation
 
+Center correction now searches all proper cube rotations of the verified algorithms using weighted shortest paths (half-turn metric), then removes redundant turns. Across all 2,048 reachable center states, average length fell from 104.68 to 37.14 moves, with 2,002 cases improved and none longer. Each single 180-degree center correction takes at most 12 moves. This optimizes within the algorithm library, not over every possible cube solution. The piece solver remains two-phase; neither phase claims global optimality.
+
 - `app/supercube.ts`: exact sticker positions and picture orientations; center correction generators spanning 2,048 reachable states.
 - `app/solver.worker.ts`: background two-phase cubie solver with validation and solution replay.
 - `app/cube-canvas.tsx`: Three.js view with 54 independent photo textures and animated layer turns.
@@ -35,7 +37,7 @@ From `source/` in the GitHub checkout, install the locked dependencies, then run
 npm ci
 npm run build
 npx tsc --project tsconfig.solver.json
-node --test tests/supercube.test.mjs tests/production-solver.test.mjs
+node --test tests/supercube.test.mjs tests/production-solver.test.mjs tests/optimization.test.mjs
 ```
 
 The static export is in `dist/client/`. Publish its contents at the repository root while keeping the existing `CNAME` and `.nojekyll`. Keep prior content-addressed assets available for clients with cached HTML.

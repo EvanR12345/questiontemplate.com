@@ -151,16 +151,16 @@ export function CubeSolver(){
   return <div className="face-tabs" aria-label="Choose a face">{SCAN_ORDER.map(f=><button type="button" key={f} className={active===f?"active":""} onClick={()=>setActive(f)} aria-pressed={active===f}><span className="face-letter">{f}</span><span>{NAMES[f]}</span>{flags[f]&&<Check className="face-check"/>}</button>)}</div>;
  }
  return <main className="app-shell">
-  <header className="site-header"><a className="brand" href="/">Picture Cube Solver</a><span className="orientation-pill">Supercube · centers included</span></header>
+  <header className="site-header"><a className="brand" href="/">🐑 Sheep Cube Solver</a><span className="orientation-pill">Wacky Woollies · supercube</span></header>
   <section className="workspace">
    <aside className="visual-panel">
     <CubeCanvas faces={displayFaces} pictures={pictureState} faceImages={displayImages} transition={transition} focus={stage==="align"?active:null}/>
     <div className="orientation-card"><div><p className="eyebrow">Keep one starting hold</p><h2>Same top. Same front.</h2></div><p>Drag the 3D view to look around. This does not change your cube’s starting hold. Every face turn is clockwise as seen looking directly at that face.</p></div>
-    <div className="cube-reference"><a href="https://us.carrollsirishgifts.com/products/wacky-woolies-puzzle-cube" target="_blank" rel="noreferrer">Your sheep cube: Wacky Woollies ↗</a><p>Use photos of your cube as it is now. You do not need photos from before it was scrambled.</p></div>
+    <div className="cube-reference"><a href="https://us.carrollsirishgifts.com/products/wacky-woolies-puzzle-cube" target="_blank" rel="noreferrer">Made for your Wacky Woollies sheep cube ↗</a><p>Including the green “Lucky” sheep with stars and horseshoes. A matching background is not enough: the sheep’s body, head and middle square must join correctly.</p><p>Use photos of your cube as it is now. No old solved photos needed. Your uploaded sheep pictures appear on the 3D cube.</p></div>
    </aside>
    <section className="control-panel">
     {stage==="entry"&&<div className="entry-view"><fieldset className="entry-fields" disabled={solving}>
-     <div className="panel-heading"><div><p className="eyebrow">Picture cube setup</p><h1>{mode==="centers"?"Fix rotated middles":"Assemble your pictures"}</h1></div></div>
+     <div className="panel-heading"><div><p className="eyebrow">Wacky Woollies sheep solver</p><h1>{mode==="centers"?"Put your sheep’s middle right":"Put your sheep back together"}</h1></div></div>
      <div className="mode-cards"><button aria-pressed={mode==="centers"} className={mode==="centers"?"selected":""} onClick={()=>changeMode("centers")}><strong>Only my centers are wrong</strong><span>The eight outside tiles on every face are already correct.</span></button><button aria-pressed={mode==="scrambled"} className={mode==="scrambled"?"selected":""} onClick={()=>changeMode("scrambled")}><strong>My cube is scrambled</strong><span>Picture pieces are on the wrong faces or in the wrong places.</span></button></div>
      <div className="face-entry">
       <div className="entry-mode-row"><div className="section-title"><span>1</span><div><h2>{entryMode==="photo"?"Photograph all six faces":"Review every tile match"}</h2><p>{photoCount}/6 photos{mode==="scrambled"?" · "+reviewCount+"/6 faces reviewed":""}</p></div></div>
@@ -205,7 +205,7 @@ export function CubeSolver(){
      <div className="playback-controls"><Button variant="outline" aria-label="Previous move" disabled={index===0} onClick={()=>{setPlaying(false);goTo(index-1);}}><ChevronLeft/></Button><Button variant="outline" disabled={index>=plan.moves.length} onClick={()=>setPlaying(v=>!v)}>{playing?<Pause/>:<Play/>}{playing?"Pause":"Auto play"}</Button><Button aria-label="Next move" disabled={index>=plan.moves.length} onClick={()=>{setPlaying(false);goTo(index+1);}}>I did it <ChevronRight/></Button></div>
      <p className="minor-note">If you go back in the guide, undo that turn on your real cube too.</p>
      {index===plan.moves.length&&<Button className="solve-button full" onClick={completePhase}>{plan.kind==="pieces"?"Check middle rotations":"Finish"} <ArrowRight/></Button>}
-     <details className="algorithm-details"><summary>See the full move sequence</summary><p>{plan.moves.join(" ")}</p></details>
+     <details className="algorithm-details"><summary>See the full move sequence</summary><p>{plan.moves.join(" ")}</p><p>One 180° turn counts as one move. Center corrections use a move-weighted search across rotated algorithms, with redundant turns removed. Piece solving uses a two-phase solver. These are verified solutions, not a guarantee of the globally fewest moves.</p></details>
      <button className="text-button" onClick={()=>{setPlaying(false);setStage("entry");setPlan(null);setMessage("If you already turned your real cube, take new photos of its current state before solving again.");}}>Start over / rescan current cube</button>
     </div>}
     {stage==="done"&&<div className="complete-card finished"><Check/><h1>Pictures aligned</h1><p>Check all six faces on your real cube. Every middle square should join its surrounding picture.</p><Button onClick={()=>{setScans({});setFaces(blankFaces(true));setMode("centers");setReviewed(FLAGS());setStage("entry");setPlan(null);setMessage("");}}>Solve another cube</Button></div>}

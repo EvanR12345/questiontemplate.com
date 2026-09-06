@@ -70,7 +70,7 @@ export const CENTER_GENERATORS = [
   "B D R2 B D R2 B D R2 B D R2 B D R2 B D R2 B D R2 B D R2 B D R2",
   "L R F2 R' L' F' L R F2 R' L' F'",
 ];
-export function findCenterCorrection(target: number[]): string[] | null {
+export function legacyCenterCorrection(target: number[]): string[] | null {
   if(target.length!==6 || target.some(n=> !Number.isInteger(n)||n<0||n>3)) return null;
   const generators=CENTER_GENERATORS.flatMap(a=>[a.split(" "),inverseMoves(a.split(" "))]);
   const vectors=generators.map(centerDelta);
@@ -101,6 +101,75 @@ export function findCenterCorrection(target: number[]): string[] | null {
     if(n) result.push(move[0]+(n===2?"2":n===3?"'":""));
   }
   return result;
+}
+// Proper cube rotations relabel algorithms without changing turn handedness.
+export function centerAlgorithms(): string[][] {
+  const best = new Map<string,string[]>();
+  for (const front of FACE_KEYS) for (const top of FACE_KEYS) {
+    const z=BASIS[front].normal,y=BASIS[top].normal;
+    if(dot(z,y)) continue;
+    const x:Vec=[y[1]*z[2]-y[2]*z[1],y[2]*z[0]-y[0]*z[2],y[0]*z[1]-y[1]*z[0]];
+    const mapping=Object.fromEntries(FACE_KEYS.map(f=>{
+      const v=BASIS[f].normal;
+      const rotated=x.map((n,i)=>n*v[0]+y[i]*v[1]+z[i]*v[2]) as Vec;
+      return [f,FACE_KEYS.find(k=>dot(BASIS[k].normal,rotated)===1)!];
+    }));
+    for(const algorithm of CENTER_GENERATORS) {
+      const moves=algorithm.split(" ").map(m=>mapping[m[0]]+m.slice(1));
+      for(const candidate of [moves,inverseMoves(moves)]) {
+        const key=centerDelta(candidate).join("");
+        if(!best.has(key)||best.get(key)!.length>candidate.length) best.set(key,candidate);
+      }
+    }
+  }
+  return [...best.values()];
+}
+export function simplifyMoves(moves:string[]):string[] {
+  const result:string[]=[];
+  const opposite:Record<string,string>={U:"D",D:"U",R:"L",L:"R",F:"B",B:"F"};
+  const turns=(m:string)=>m.endsWith("2")?2:m.endsWith("'")?3:1;
+  for(const move of moves) {
+    let i=result.length-1;
+    while(i>=0&&result[i][0]===opposite[move[0]]) i--;
+    if(i>=0&&result[i][0]===move[0]) {
+      const n=mod4(turns(result[i])+turns(move));
+      if(n) result[i]=move[0]+(n===2?"2":n===3?"'":"");
+      else result.splice(i,1);
+    } else result.push(move);
+  }
+  return result;
+}
+let centerTable:{algorithms:string[][];previous:Int16Array;via:Int16Array}|undefined;
+export function findCenterCorrection(target:number[]):string[]|null {
+  if(target.length!==6||target.some(n=>!Number.isInteger(n)||n<0||n>3)) return null;
+  const encode=(v:number[])=>v.reduce((s,n,i)=>s+n*4**i,0);
+  if(!centerTable) {
+    const algorithms=centerAlgorithms(),vectors=algorithms.map(centerDelta);
+    const previous=new Int16Array(4096).fill(-1),via=new Int16Array(4096).fill(-1);
+    const distance=new Float64Array(4096).fill(Infinity),visited=new Uint8Array(4096);
+    distance[0]=0;previous[0]=0;
+    // Weighted shortest paths: a half turn counts as one move (HTM).
+    for(let step=0;step<2048;step++) {
+      let key=-1,best=Infinity;
+      for(let i=0;i<4096;i++)if(!visited[i]&&distance[i]<best){key=i;best=distance[i];}
+      if(key<0) break;
+      visited[key]=1;
+      const state=FACE_KEYS.map((_,i)=>(key>>(2*i))&3);
+      for(let g=0;g<algorithms.length;g++) {
+        const next=encode(state.map((n,i)=>mod4(n+vectors[g][i]))),cost=best+algorithms[g].length;
+        if(cost<distance[next]){distance[next]=cost;previous[next]=key;via[next]=g;}
+      }
+    }
+    centerTable={algorithms,previous,via};
+  }
+  const {algorithms,previous,via}=centerTable,end=encode(target);
+  if(previous[end]===-1)return null;
+  const path:number[]=[];
+  for(let key=end;key!==0;key=previous[key])path.push(via[key]);
+  const candidate=simplifyMoves(path.reverse().flatMap(g=>algorithms[g]));
+  // Retain the old candidate when its boundary cancellations happen to win.
+  const fallback=simplifyMoves(legacyCenterCorrection(target)!);
+  return candidate.length<=fallback.length?candidate:fallback;
 }
 export function permutationParity(values: number[]) {
   let inversions=0;
