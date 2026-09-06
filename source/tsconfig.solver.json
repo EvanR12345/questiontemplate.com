@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": ["app/page.tsx", "app/layout.tsx", "app/cube-solver.tsx", "app/cube-canvas.tsx", "app/photo-scanner.tsx", "app/picture-face.tsx", "app/supercube.ts", "app/solver.worker.ts", "build/cubejs-compat.ts", "types/cubejs.d.ts"],
+  "exclude": ["node_modules", "dist", "db", "worker", "examples"]
+}
