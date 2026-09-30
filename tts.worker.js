@@ -2,11 +2,16 @@ import { splitText, pcm16, SAMPLE_RATE } from './audio-core.mjs';
 let engine;
 async function loadEngine() {
   if (!engine) {
-    const { KokoroTTS } = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js');
+    const { KokoroTTS, TextSplitterStream } = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js');
     engine = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
       dtype: 'q8', device: 'wasm',
       progress_callback: progress => postMessage({ type: 'loading', progress }),
     });
+    engine.createInput = text => {
+      const input = new TextSplitterStream();
+      input.push(text); input.close();
+      return input;
+    };
   }
   return engine;
 }
@@ -15,7 +20,10 @@ async function loadEngine() {
 export async function* generateChecked(tts, text, options) {
   if (!text.trim()) { yield { text, audio: null }; return; }
   let offset = 0;
-  for await (const item of tts.stream(text, options)) {
+  // Explicitly close the splitter: the library's string streaming overload
+  // leaves its final sentence buffered and waits for additional input.
+  const input = tts.createInput ? tts.createInput(text) : text;
+  for await (const item of tts.stream(input, options)) {
     const start = text.indexOf(item.text, offset);
     if (start < 0) throw new Error('Could not align a speech section with the original script.');
     const end = start + item.text.length;

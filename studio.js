@@ -139,7 +139,7 @@ function generate(sample = false) {
   $('#progress').hidden = false; $('#progress').value = 0;
   controls(true); updateRecording(); remember(full); status('Loading the local voice engine… First use needs a model download.');
   try {
-    if (!worker) { worker = new Worker('./tts.worker.js?v=long-audio-1', { type: 'module' }); worker.onmessage = receive; worker.onerror = event => { event.preventDefault(); fail(event.message || 'The voice engine could not load. Check your connection.'); }; }
+    if (!worker) { worker = new Worker('./tts.worker.js?v=long-audio-2', { type: 'module' }); worker.onmessage = receive; worker.onerror = event => { event.preventDefault(); fail(event.message || 'The voice engine could not load. Check your connection.'); }; }
     worker.postMessage({ type: 'generate', text: value, voice: run.voice, speed: run.speed, volume: Number($('#volume').value) });
   } catch (error) { fail(error.message); }
 }
