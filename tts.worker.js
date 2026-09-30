@@ -1,0 +1,46 @@
+import { splitText, pcm16, SAMPLE_RATE } from './audio-core.mjs';
+let engine;
+async function loadEngine() {
+  if (!engine) {
+    const { KokoroTTS } = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js');
+    engine = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+      dtype: 'q8', device: 'wasm',
+      progress_callback: progress => postMessage({ type: 'loading', progress }),
+    });
+  }
+  return engine;
+}
+// Kokoro's public API truncates long token sequences. Check the exact phoneme
+// sequence and recursively split/retry rather than ever exporting truncated audio.
+async function* generateChecked(tts, text, options) {
+  if (!text.trim()) { yield { text, audio: null }; return; }
+  for await (const item of tts.stream(text, options)) {
+    const tokens = tts.tokenizer(item.phonemes, { truncation: false }).input_ids.dims.at(-1);
+    if (tokens > 510) {
+      if (text.length < 2) throw new Error('This text cannot be pronounced safely. Please spell out unusual symbols.');
+      for (const smaller of splitText(text, Math.max(2, Math.floor(text.length / 2)))) {
+        yield* generateChecked(tts, smaller, options);
+      }
+    } else yield { text, audio: item.audio };
+  }
+}
+self.onmessage = async ({ data }) => {
+  if (data.type !== 'generate') return;
+  try {
+    const tts = await loadEngine();
+    postMessage({ type: 'ready' });
+    let processed = 0;
+    for (const chunk of splitText(data.text)) {
+      for await (const item of generateChecked(tts, chunk, { voice: data.voice, speed: data.speed })) {
+        processed += item.text.length;
+        if (!item.audio) { postMessage({ type: 'progress', processed }); continue; }
+        if (item.audio.sampling_rate !== SAMPLE_RATE) throw new Error('Unexpected audio sample rate.');
+        const pcm = pcm16(item.audio.audio, data.volume);
+        postMessage({ type: 'chunk', pcm, frames: pcm.byteLength / 2, processed }, [pcm]);
+      }
+    }
+    postMessage({ type: 'done' });
+  } catch (error) {
+    postMessage({ type: 'error', message: error.message || String(error) });
+  }
+};
