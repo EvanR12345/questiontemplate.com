@@ -12,7 +12,7 @@ async function loadEngine() {
 }
 // Kokoro's public API truncates long token sequences. Check the exact phoneme
 // sequence and recursively split/retry rather than ever exporting truncated audio.
-async function* generateChecked(tts, text, options) {
+export async function* generateChecked(tts, text, options) {
   if (!text.trim()) { yield { text, audio: null }; return; }
   let offset = 0;
   for await (const item of tts.stream(text, options)) {
@@ -31,7 +31,7 @@ async function* generateChecked(tts, text, options) {
   }
   if (offset < text.length) yield { text: text.slice(offset), audio: null };
 }
-self.onmessage = async ({ data }) => {
+if (typeof self !== 'undefined') self.onmessage = async ({ data }) => {
   if (data.type !== 'generate') return;
   try {
     const tts = await loadEngine();
