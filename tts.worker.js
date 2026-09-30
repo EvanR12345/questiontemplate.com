@@ -14,15 +14,22 @@ async function loadEngine() {
 // sequence and recursively split/retry rather than ever exporting truncated audio.
 async function* generateChecked(tts, text, options) {
   if (!text.trim()) { yield { text, audio: null }; return; }
+  let offset = 0;
   for await (const item of tts.stream(text, options)) {
+    const start = text.indexOf(item.text, offset);
+    if (start < 0) throw new Error('Could not align a speech section with the original script.');
+    const end = start + item.text.length;
+    const source = text.slice(offset, end);
     const tokens = tts.tokenizer(item.phonemes, { truncation: false }).input_ids.dims.at(-1);
     if (tokens > 510) {
-      if (text.length < 2) throw new Error('This text cannot be pronounced safely. Please spell out unusual symbols.');
-      for (const smaller of splitText(text, Math.max(2, Math.floor(text.length / 2)))) {
+      if (source.length < 2) throw new Error('This text cannot be pronounced safely. Please spell out unusual symbols.');
+      for (const smaller of splitText(source, Math.max(2, Math.floor(source.length / 2)))) {
         yield* generateChecked(tts, smaller, options);
       }
-    } else yield { text, audio: item.audio };
+    } else yield { text: source, audio: item.audio };
+    offset = end;
   }
+  if (offset < text.length) yield { text: text.slice(offset), audio: null };
 }
 self.onmessage = async ({ data }) => {
   if (data.type !== 'generate') return;
