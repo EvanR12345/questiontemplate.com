@@ -1,49 +1,7 @@
-# Sheep Cube Solver: Wacky Woollies Supercube
+# Text to Audio Studio
 
-Live website: https://questiontemplate.com
+Live at https://questiontemplate.com/
 
-The GitHub repository root contains the static website. `source/` contains the editable project, including the exact solver and regression tests used to build it. No user-uploaded photos are included in this repository.
+A browser-based text-to-speech studio with device voices, six delivery presets, speed/pitch/volume controls, playback controls, recent scripts, and synthesized sound effects. Text and history remain on the user's device. The High-Energy Creator preset is an original delivery style and does not imitate a real person.
 
-## Use
-
-1. Choose **Only my centers are wrong** if every outside picture tile is already correct. Otherwise choose **My cube is scrambled**.
-2. Capture all six current faces using the holding guides. Drag the crop handles around the face. Return to the same starting hold before every capture. Do not rotate each photo just to make the sheep upright.
-3. For a scrambled cube, review every proposed tile match. Background matching is a heuristic, not automatic picture recognition. Correct uncertain matches and confirm all six faces.
-4. Preview the pictures assembled virtually. Keep your real cube exactly as photographed.
-5. Rotate each middle square in the complete-picture preview until it joins the surrounding image. The desired rotation is relative to the picture, not to the screen's top edge. Confirm all six faces, including unchanged centers.
-6. Choose **Solve pieces + middles together**. Follow the single verified sequence from your original scramble to the complete pictures. Do not twist removable center caps by hand.
-
-Six solved reference photos are not required. In center-only mode, missing photos can be replaced by explicitly entering how far each real center needs to turn. A lone 90-degree center correction is not reachable through legal face turns; a lone 180-degree correction is.
-
-The 3D preview uses six real sheep designs projected from three bundled retailer photographs. Sources: https://us.carrollsirishgifts.com/products/wacky-woolies-puzzle-cube and https://www.sheepandwoolcentre.com/products/wacky-woollies-rubiks-cube . Artwork belongs to its respective owners. The preview arrangement is illustrative, not a factory face-orientation reference. The sheep demo uses those pictures; user scans replace them during real solving. No artwork is generated or invented.
-
-## Implementation
-
-`app/joint-solver.ts` searches individual moves with both cubie state and center rotations in its goal. Iterative deepening uses admissible cubejs phase-one pruning bounds, misplaced-piece bounds and required-center-turn bounds. Default limits are 800,000 nodes, 4.5 seconds and depth 12; interrupted search never claims optimality. If necessary, the solver compares alternate piece-solving routes by their complete supercube cost, with center corrections and cancellation included. The app independently replays the result and compares all 54 photo tiles and rotations against the user's confirmed target. It gives one physical sequence without a center-only restart.
-
-Center correction now searches all proper cube rotations of the verified algorithms using weighted shortest paths (half-turn metric), then removes redundant turns. Across all 2,048 reachable center states, average length fell from 104.68 to 37.14 moves, with 2,002 cases improved and none longer. Each single 180-degree center correction takes at most 12 moves. This optimizes within the algorithm library, not over every possible cube solution. The piece solver remains two-phase; neither phase claims global optimality.
-
-- `app/supercube.ts`: exact sticker positions and picture orientations; center correction generators spanning 2,048 reachable states.
-- `app/solver.worker.ts`: background two-phase cubie solver with validation and solution replay.
-- `app/cube-canvas.tsx`: Three.js view with 54 independent photo textures and animated layer turns.
-- `app/photo-scanner.tsx`: local camera/upload capture, four-corner projective crop, and background sampling.
-- `build/cubejs-compat.ts`: fixes cubejs 1.3.2's legacy top-level `this.Cube` access in strict browser/worker bundles, without modifying dependencies.
-
-Photos stay in memory on the user's device and are not uploaded. Refreshing clears them. The app does not claim fully automatic recognition; the user confirms picture matches and final center rotations.
-
-## Build and verify
-
-From `source/` in the GitHub checkout, install the locked dependencies, then run:
-
-```sh
-npm ci
-npm run build
-npx tsc --project tsconfig.solver.json
-node --test tests/supercube.test.mjs tests/production-solver.test.mjs tests/optimization.test.mjs tests/joint.test.mjs
-```
-
-The static export is in `dist/client/`. Publish its contents at the repository root while keeping the existing `CNAME` and `.nojekyll`. Keep prior content-addressed assets available for clients with cached HTML.
-
-Tests compare every face move with cubejs, verify the center generators preserve all outside picture tiles and rotations, count all 2,048 legal center vectors, exercise center-only corrections, solve 30 deterministic full scrambles including picture orientations, and load/run the compiled browser and worker bundles.
-
-No browser-driven camera or touch testing was performed in this revision; production code execution and mathematical/regression checks are automated.
+The site is a self-contained static `index.html` for GitHub Pages. It preserves the custom domain and the existing Google AdSense publisher script.
