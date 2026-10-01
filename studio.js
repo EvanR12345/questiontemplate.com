@@ -116,7 +116,7 @@ function setFullDownload(partial = false) {
       : new Blob(run.parts.map(part => part.blob), { type: 'audio/mpeg' });
     const link = $('#downloadAll'); link.href = urlFor(blob);
     link.download = run.voice + '-' + (partial ? 'partial-' : '') + 'recording.' + run.format;
-    link.textContent = '↓ Download full ' + run.format.toUpperCase(); link.setAttribute('aria-disabled', 'false');
+    link.textContent = (run.sample ? '↓ Download preview ' : '↓ Download full ') + run.format.toUpperCase(); link.setAttribute('aria-disabled', 'false');
   } catch { $('#recordingNote').textContent = 'Download individual parts; this recording exceeds the WAV format size limit.'; }
 }
 async function complete(message, partial = false) {
@@ -206,7 +206,8 @@ function initializeRun(job, parts = []) {
   run.startFrames = run.frames; run.startOffset = job.processed || 0;
   resetWords(job.processed || 0);
   $('#parts').replaceChildren(); $('#downloads').hidden = false; $('#downloadAll').removeAttribute('href'); $('#downloadAll').setAttribute('aria-disabled', 'true');
-  $('#downloadAll').textContent = '↓ Download full ' + run.format.toUpperCase();
+  $('#recordingHeading').textContent = run.sample ? 'Voice preview' : 'Your recording';
+  $('#downloadAll').textContent = (run.sample ? '↓ Download preview ' : '↓ Download full ') + run.format.toUpperCase();
   $('#resumeSaved').hidden = true;
   parts.forEach(appendPart); updateRecording();
 }
