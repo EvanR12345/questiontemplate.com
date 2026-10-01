@@ -43,7 +43,7 @@ class CudaEngine:
         return {
             'protocol': 2, 'backend': 'cuda', 'gpu': self.gpu, 'sampleRate': 24000,
             'precision': 'float32', 'vocab': self.model.vocab,
-            'capabilities': ['audio', 'image'], 'imageModel': MODEL_ID
+            'capabilities': ['audio', 'image', 'image-queue'], 'imageModel': MODEL_ID
         }
 
     def prepare(self, voice):
@@ -73,152 +73,13 @@ class CudaEngine:
         return self.render(phonemes, voice, speed)
 
 
-class ImageEngine:
-    def __init__(self, torch, device, index, gpu):
-        self.torch, self.device, self.index, self.gpu = torch, device, index, gpu
-        self.low_vram = torch.cuda.get_device_properties(index).total_memory < 5 * 1024**3
-        self.pipe = None
-        self.inpaint = None
-        self.ip_loaded = False
-        self.Image = None
-        self.DPMSolverMultistepScheduler = None
+from image_engine import ImageEngine
+from image_queue import ImageQueue
+from pathlib import Path
+import mimetypes
+from urllib.parse import unquote
 
-    def health(self):
-        return {
-            'ok': True, 'backend': 'cuda', 'gpu': self.gpu, 'model': MODEL_ID,
-            'mode': 'low-VRAM CUDA' if self.low_vram else 'CUDA', 'sharedHelper': True
-        }
-
-    def _imports(self):
-        if self.Image is not None:
-            return
-        from PIL import Image
-        from diffusers import StableDiffusionPipeline, StableDiffusionInpaintPipeline, DPMSolverMultistepScheduler
-        self.Image = Image
-        self.StableDiffusionPipeline = StableDiffusionPipeline
-        self.StableDiffusionInpaintPipeline = StableDiffusionInpaintPipeline
-        self.DPMSolverMultistepScheduler = DPMSolverMultistepScheduler
-
-    def _configure(self, pipe):
-        pipe.scheduler = self.DPMSolverMultistepScheduler.from_config(pipe.scheduler.config, use_karras_sigmas=True)
-        pipe.enable_attention_slicing('max' if self.low_vram else 'auto')
-        pipe.enable_vae_slicing()
-        try:
-            pipe.enable_vae_tiling()
-        except Exception:
-            pass
-        if self.low_vram:
-            pipe.enable_model_cpu_offload(gpu_id=self.index)
-        else:
-            pipe.to(self.device)
-        return pipe
-
-    def load(self):
-        if self.pipe is not None:
-            return
-        self._imports()
-        self.pipe = self.StableDiffusionPipeline.from_pretrained(
-            MODEL_ID, torch_dtype=self.torch.float16, safety_checker=None, requires_safety_checker=False
-        )
-        self._configure(self.pipe)
-
-    def load_ip(self):
-        self.load()
-        if self.ip_loaded:
-            return
-        self.pipe.load_ip_adapter('h94/IP-Adapter', subfolder='models', weight_name='ip-adapter_sd15.bin')
-        self.ip_loaded = True
-
-    def load_inpaint(self):
-        if self.inpaint is not None:
-            return
-        self._imports()
-        self.inpaint = self.StableDiffusionInpaintPipeline.from_pretrained(
-            INPAINT_ID, torch_dtype=self.torch.float16, safety_checker=None, requires_safety_checker=False
-        )
-        self._configure(self.inpaint)
-
-    def decode_image(self, value):
-        self._imports()
-        raw = value.split(',', 1)[-1]
-        return self.Image.open(io.BytesIO(base64.b64decode(raw))).convert('RGB')
-
-    def collage(self, values):
-        imgs = [self.decode_image(v) for v in values[:3] if v]
-        if not imgs:
-            return None
-        size = 384
-        thumbs = []
-        for image in imgs:
-            image.thumbnail((size, size), self.Image.Resampling.LANCZOS)
-            canvas = self.Image.new('RGB', (size, size), 'white')
-            canvas.paste(image, ((size - image.width)//2, (size - image.height)//2))
-            thumbs.append(canvas)
-        out = self.Image.new('RGB', (size * len(thumbs), size), 'white')
-        for i, image in enumerate(thumbs):
-            out.paste(image, (i * size, 0))
-        return out
-
-    @staticmethod
-    def _clamp8(value, lo, hi):
-        n = max(lo, min(hi, int(value)))
-        return n - n % 8
-
-    def encode(self, image):
-        out = io.BytesIO()
-        image.save(out, 'PNG', optimize=True)
-        return 'data:image/png;base64,' + base64.b64encode(out.getvalue()).decode()
-
-    def generate(self, data):
-        torch = self.torch
-        self.load()
-        refs = data.get('reference_images') or []
-        kwargs = {
-            'prompt': str(data.get('prompt', ''))[:12000],
-            'negative_prompt': str(data.get('negative', ''))[:4000],
-            'width': self._clamp8(data.get('width', 512), 384, 768),
-            'height': self._clamp8(data.get('height', 512), 384, 768),
-            'num_inference_steps': max(8, min(50, int(data.get('steps', 26)))),
-            'guidance_scale': max(1, min(14, float(data.get('guidance', 7.5))))
-        }
-        seed = int(data.get('seed') or secrets.randbelow(2**31 - 1))
-        kwargs['generator'] = torch.Generator(device=self.device).manual_seed(seed)
-        if refs:
-            self.load_ip()
-            self.pipe.set_ip_adapter_scale(max(0, min(1, float(data.get('reference_strength', 0.7)))))
-            kwargs['ip_adapter_image'] = self.collage(refs)
-        started = time.perf_counter()
-        with torch.inference_mode():
-            image = self.pipe(**kwargs).images[0]
-        if self.ip_loaded:
-            try:
-                self.pipe.set_ip_adapter_scale(0)
-            except Exception:
-                pass
-        return {'image': self.encode(image), 'seed': seed, 'seconds': time.perf_counter() - started}
-
-    def do_inpaint(self, data):
-        torch = self.torch
-        self.load_inpaint()
-        image = self.decode_image(data['image'])
-        mask = self.decode_image(data['mask']).convert('L')
-        w = self._clamp8(image.width, 384, 768)
-        h = self._clamp8(image.height, 384, 768)
-        image = image.resize((w, h), self.Image.Resampling.LANCZOS)
-        mask = mask.resize(image.size, self.Image.Resampling.NEAREST)
-        seed = int(data.get('seed') or secrets.randbelow(2**31 - 1))
-        started = time.perf_counter()
-        with torch.inference_mode():
-            result = self.inpaint(
-                prompt=str(data.get('prompt', ''))[:12000],
-                negative_prompt=str(data.get('negative', ''))[:4000],
-                image=image, mask_image=mask,
-                num_inference_steps=max(8, min(50, int(data.get('steps', 28)))),
-                guidance_scale=max(1, min(14, float(data.get('guidance', 7.5)))),
-                generator=torch.Generator(device=self.device).manual_seed(seed)
-            ).images[0]
-        return {'image': self.encode(result), 'seed': seed, 'seconds': time.perf_counter() - started}
-
+WEB_ROOT = Path(os.environ.get('QT_WEB_ROOT', str(Path(__file__).resolve().parent / 'web'))).resolve()
 
 def allowed_origin(origin):
     if origin in ('https://questiontemplate.com', 'https://www.questiontemplate.com'):
@@ -227,23 +88,40 @@ def allowed_origin(origin):
     return parsed.scheme == 'http' and parsed.hostname in ('127.0.0.1', 'localhost')
 
 
-def make_handler(audio_engine, key):
-    gpu_lock = threading.Lock()
+def make_handler(audio_engine, key, queue_root=None, image_factory=None):
+    gpu_lock = getattr(audio_engine, "lock", threading.Lock())
     image_engine = None
 
     def get_image_engine():
         nonlocal image_engine
         if image_engine is None:
-            image_engine = ImageEngine(
-                audio_engine.torch, audio_engine.device, audio_engine.index, audio_engine.gpu
+            image_engine = (image_factory or ImageEngine)(
+                audio_engine.torch, audio_engine.device, audio_engine.index, audio_engine.gpu, MODEL_ID, INPAINT_ID
             )
         return image_engine
 
+    def before_image():
+        audio_engine.model.to('cpu')
+        audio_engine.voices = {name: voice.to('cpu') for name, voice in audio_engine.voices.items()}
+        audio_engine.torch.cuda.empty_cache()
+
+    def before_audio():
+        if image_engine is not None:
+            image_engine.unload()
+        if hasattr(audio_engine, 'model'):
+            audio_engine.model.to(audio_engine.device)
+            audio_engine.voices = {name: voice.to(audio_engine.device) for name, voice in audio_engine.voices.items()}
+
+    queue = ImageQueue(queue_root or Path(__file__).resolve().parent / 'outputs',
+                       lambda data, checkpoint: get_image_engine().generate(data, checkpoint), gpu_lock,
+                       before_image if hasattr(audio_engine, 'model') else lambda: None)
+
     class Handler(BaseHTTPRequestHandler):
+        image_queue = queue
         def log_message(self, *_):
             pass
 
-        def reply(self, code, payload, binary=False):
+        def reply(self, code, payload, binary=False, content_type=None):
             data = payload if binary else json.dumps(payload).encode()
             self.send_response(code)
             origin = self.headers.get('Origin', '')
@@ -255,12 +133,15 @@ def make_handler(audio_engine, key):
                 self.send_header('Access-Control-Expose-Headers', 'X-Sample-Rate')
                 self.send_header('Access-Control-Allow-Private-Network', 'true')
             self.send_header('Cache-Control', 'no-store')
-            self.send_header('Content-Type', 'application/octet-stream' if binary else 'application/json')
-            if binary:
+            self.send_header('Content-Type', content_type or ('application/octet-stream' if binary else 'application/json'))
+            if binary and content_type is None:
                 self.send_header('X-Sample-Rate', '24000')
             self.send_header('Content-Length', str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                pass
 
         def permitted(self):
             origin = self.headers.get('Origin')
@@ -279,12 +160,35 @@ def make_handler(audio_engine, key):
                 self.reply(200, {})
 
         def do_GET(self):
+            path = urlparse(self.path).path
+            if path.startswith('/app/'):
+                file = (WEB_ROOT / unquote(path[5:])).resolve()
+                if not file.is_relative_to(WEB_ROOT) or any(part.startswith('.') for part in file.relative_to(WEB_ROOT).parts):
+                    self.reply(404, {'error':'File not found.'})
+                    return
+                if file.is_dir():
+                    file = file / 'index.html'
+                try:
+                    data = file.read_bytes()
+                except (OSError, ValueError):
+                    self.reply(404, {'error':'File not found.'})
+                    return
+                content_type = 'text/javascript' if file.suffix in ('.mjs','.js') else mimetypes.guess_type(str(file))[0] or 'application/octet-stream'
+                self.reply(200, data, binary=True, content_type=content_type)
+                return
             if not self.permitted():
                 return
-            if self.path == '/health':
+            if path == '/health':
                 self.reply(200, audio_engine.health())
-            elif self.path == '/image/health':
+            elif path == '/image/health':
                 self.reply(200, get_image_engine().health())
+            elif path == '/image/queue':
+                self.reply(200, queue.snapshot())
+            elif path.startswith('/image/result/'):
+                try:
+                    self.reply(200, queue.result_path(path.rsplit('/', 1)[-1]).read_bytes(), binary=True, content_type='image/png')
+                except (ValueError, FileNotFoundError) as error:
+                    self.reply(404, {'error': str(error)})
             else:
                 self.reply(404, {'error': 'Unknown endpoint.'})
 
@@ -297,11 +201,26 @@ def make_handler(audio_engine, key):
                     self.reply(413, {'error': 'Request is too large.'})
                     return
                 body = json.loads(self.rfile.read(length))
+                if not isinstance(body, dict):
+                    raise ValueError('Request must be an object.')
                 path = self.path
-                if not gpu_lock.acquire(blocking=False):
-                    self.reply(409, {'error': 'The NVIDIA helper is busy in another tab. Wait for that job to finish.'})
+                # Controls must never wait behind the inference lock.
+                if path == '/image/queue':
+                    self.reply(202, queue.enqueue(body))
+                    return
+                if path == '/image/control':
+                    self.reply(200, queue.control(body.get('action')))
+                    return
+                audio_request = path in ('/prepare', '/synthesize')
+                if audio_request:
+                    queue.control('yield-audio')
+                if not gpu_lock.acquire(timeout=15 if audio_request else 0):
+                    self.reply(409, {'error': 'GPU is generating. Pause the image queue and cancel its current image before switching to Audio.'})
                     return
                 try:
+                    if path in ('/prepare', '/synthesize'):
+                        queue.control('pause')
+                        before_audio()
                     if path == '/prepare':
                         voice = body.get('voice')
                         audio_engine.prepare(voice)
@@ -317,9 +236,11 @@ def make_handler(audio_engine, key):
                             raise ValueError('Choose a speaking speed between 0.5 and 2.')
                         self.reply(200, audio_engine.synthesize(phonemes, voice, speed), binary=True)
                     elif path == '/image/generate':
-                        self.reply(200, get_image_engine().generate(body))
+                        before_image()
+                        self.reply(200, get_image_engine().legacy(body))
                     elif path == '/image/inpaint':
-                        self.reply(200, get_image_engine().do_inpaint(body))
+                        before_image()
+                        self.reply(200, get_image_engine().legacy({**body, 'operation':'inpaint'}))
                     else:
                         self.reply(404, {'error': 'Unknown endpoint.'})
                 finally:
@@ -337,7 +258,7 @@ def make_handler(audio_engine, key):
                 else:
                     print('Local helper request failed:', type(error).__name__, flush=True)
                     traceback.print_exc()
-                    message = 'Local NVIDIA generation failed. Check the helper window and try again.'
+                    message = type(error).__name__ + ': ' + str(error)[:800]
                 self.reply(503, {'error': message})
     return Handler
 
@@ -345,10 +266,20 @@ def make_handler(audio_engine, key):
 def main():
     print('Loading QuestionTemplate local NVIDIA helper.', flush=True)
     audio_engine = CudaEngine()
-    key = secrets.token_hex(32)
+    key_path = Path(__file__).resolve().parent / '.pairing-key'
+    key = key_path.read_text().strip() if key_path.exists() else secrets.token_hex(32)
+    if len(key) != 64 or any(c not in '0123456789abcdef' for c in key):
+        key = secrets.token_hex(32)
+    key_path.write_text(key)
+    # Keep the reconnect credential readable only by the current Windows user.
+    if os.name == 'nt':
+        import subprocess
+        account = os.environ.get('USERDOMAIN', '') + '\\' + os.environ.get('USERNAME', '')
+        subprocess.run(['icacls', str(key_path), '/inheritance:r', '/grant:r', account + ':F'], capture_output=True)
     server = ThreadingHTTPServer(('127.0.0.1', PORT), make_handler(audio_engine, key))
     server.daemon_threads = True
-    link = 'https://questiontemplate.com/#native=' + key
+    site = 'https://questiontemplate.com/manga.html'
+    link = site + '#native=' + key
     print(
         '\nReady on ' + audio_engine.gpu +
         '. Audio and Studio now share this one helper.\n'
@@ -356,12 +287,14 @@ def main():
         'Open this link once to pair:\n' + link,
         flush=True
     )
-    webbrowser.open(link)
+    if os.environ.get('QT_NO_BROWSER') != '1':
+        webbrowser.open(link)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        server.RequestHandlerClass.image_queue.close()
         server.server_close()
 
 

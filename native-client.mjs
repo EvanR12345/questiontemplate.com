@@ -21,7 +21,7 @@ export async function nativeRequest(path, key, body, fetcher = fetch) {
 }
 export async function nativeHealth(key, fetcher) {
   const info = await (await nativeRequest('/health', key, undefined, fetcher)).json();
-  if (info.protocol !== 1 || info.backend !== 'cuda' || info.sampleRate !== 24000 || !info.vocab) throw new Error('Update the NVIDIA helper using the website’s setup download.');
+  if (![1, 2].includes(info.protocol) || info.backend !== 'cuda' || info.sampleRate !== 24000 || !info.vocab) throw new Error('Update the NVIDIA helper using the website’s setup download.');
   return info;
 }
 export function nativeTokenizer(vocab) {

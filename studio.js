@@ -1,21 +1,12 @@
 import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=opus-1';
 import { beginSession, savePart, saveJob, loadSession } from './session-store.mjs?v=long-fast-2';
-import { nativeHealth } from './native-client.mjs?v=nvidia-1';
+import { nativeHealth } from './native-client.mjs?v=queue-1';
+import { pairingKey } from './helper-connection.mjs?v=queue-1';
 const $ = selector => document.querySelector(selector);
 const script = $('#text'), synth = window.speechSynthesis;
 let worker, busy = false, run, urls = [], deviceVoices = [], previewId = 0, activeUtterance;
-const LOCAL_HELPER_KEY = 'qt-local-helper-key';
-let nativeKey = '';
-try { nativeKey = localStorage.getItem(LOCAL_HELPER_KEY) || ''; } catch {}
+let nativeKey = pairingKey();
 let nativeConnected = false, connectingNative = false;
-const pairing = location.hash.match(/^#native=([a-f0-9]{64})$/);
-if (pairing) {
-  nativeKey = pairing[1];
-  try { localStorage.setItem(LOCAL_HELPER_KEY, nativeKey); } catch {}
-  window.history.replaceState(null, '', location.pathname + location.search);
-  $('#nativeSetup').open = true;
-  $('#nativeStatus').textContent = 'Helper link received. Reconnecting automatically…';
-}
 let history = [];
 try { const saved = JSON.parse(localStorage.getItem('tts-history') || '[]'); if (Array.isArray(saved)) history = saved.filter(x => typeof x === 'string').slice(0, 6); } catch {}
 const examples = {
@@ -234,7 +225,7 @@ async function startWorker() {
   $('#pauseGeneration').textContent = 'Ⅱ Pause generation'; run.pauseRequested = false;
   status('Preparing the local voice engine…');
   try {
-    if (!worker) { worker = new Worker('./tts.worker.js?v=opus-1', { type: 'module' }); worker.onmessage = receive;
+    if (!worker) { worker = new Worker('./tts.worker.js?v=queue-1', { type: 'module' }); worker.onmessage = receive;
       worker.onerror = event => { event.preventDefault(); fail(event.message || 'Voice engine failed'); }; }
     worker.postMessage({ type: 'generate', text: run.text, voice: run.voice, speed: run.speed, volume: run.volume,
       format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', offset: run.processed,
@@ -400,3 +391,5 @@ window.addEventListener('beforeunload', event => { if (busy) { event.preventDefa
 if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
 selectVoice($('#studioVoice').value); outputs(); formatOutputs(); renderHistory();
 if (nativeKey) setTimeout(() => $('#connectNative').click(), 120);
+
+setInterval(() => { if(nativeKey && !nativeConnected && !busy && !connectingNative) $('#connectNative').click(); }, 10000);

@@ -4,6 +4,11 @@ import { nativeRequest, nativeHealth, nativeAudio, nativeTokenizer, NATIVE_URL }
 import { prepareBatches } from './audio-core.mjs';
 const key = 'a'.repeat(64);
 
+test('Audio accepts the shared Audio and Studio helper protocol', async () => {
+  const info=await nativeHealth(key,async()=>new Response(JSON.stringify({protocol:2,backend:'cuda',sampleRate:24000,vocab:{h:1}})));
+  assert.equal(info.protocol,2);
+});
+
 test('pairing validation prevents any unpaired network request', async () => {
   let requests = 0;
   await assert.rejects(nativeHealth('', () => { requests++; }), /Connect NVIDIA/);

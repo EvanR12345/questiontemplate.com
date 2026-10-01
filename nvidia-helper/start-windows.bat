@@ -1,38 +1,27 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo QuestionTemplate - local NVIDIA helper (Audio + Studio)
-
-rem Pull the latest helper code on every launch. If offline, keep using the installed copy.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $base='https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/main/nvidia-helper/'; Invoke-WebRequest -UseBasicParsing ($base+'server.py') -OutFile 'server.py.new'; Invoke-WebRequest -UseBasicParsing ($base+'requirements.txt') -OutFile 'requirements.txt.new'; Move-Item -Force 'server.py.new' 'server.py'; Move-Item -Force 'requirements.txt.new' 'requirements.txt'" >nul 2>nul
-if errorlevel 1 echo Could not check for updates. Starting the installed helper.
-
+echo QuestionTemplate - shared NVIDIA helper (Audio + Studio)
+rem Updates are explicit; never overwrite installed fixes during launch.
 if not exist ".venv\Scripts\python.exe" (
-  py -3.11 -m venv .venv
-  if errorlevel 1 goto python_missing
+  echo Shared .venv is missing. This launcher will not create or replace it.
+  pause
+  exit /b 1
 )
-if not exist ".venv\installed-v2.txt" (
-  echo Updating the shared helper. First image generation downloads additional model files.
-  .venv\Scripts\python.exe -m pip install --upgrade pip
-  if errorlevel 1 goto failed
-  .venv\Scripts\python.exe -c "import torch; assert torch.cuda.is_available()" >nul 2>nul
-  if errorlevel 1 (
-    .venv\Scripts\python.exe -m pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-    if errorlevel 1 goto failed
-  )
+rem Reopen the paired public Studio when the shared helper is already running.
+.venv\Scripts\python.exe -c "import pathlib,urllib.request,webbrowser; key=pathlib.Path('.pairing-key').read_text().strip(); req=urllib.request.Request('http://127.0.0.1:8765/health',headers={'Authorization':'Bearer '+key}); urllib.request.urlopen(req,timeout=2).read(); webbrowser.open('https://questiontemplate.com/manga.html#native='+key)" >nul 2>nul
+if not errorlevel 1 exit /b
+.venv\Scripts\python.exe -c "import torch; assert torch.cuda.is_available(), 'Check the NVIDIA driver'"
+if errorlevel 1 goto failed
+.venv\Scripts\python.exe -c "import kokoro,diffusers,accelerate,safetensors,PIL"
+if errorlevel 1 (
   .venv\Scripts\python.exe -m pip install -r requirements.txt
   if errorlevel 1 goto failed
-  echo ready> .venv\installed-v2.txt
 )
 .venv\Scripts\python.exe server.py
 if errorlevel 1 goto failed
-goto end
-:python_missing
-echo Install Python 3.11 for Windows with the Python launcher enabled:
-echo https://www.python.org/downloads/release/python-3119/
-echo Then run this file again.
-goto end
+exit /b
 :failed
-echo Setup or engine failed. Read the message above. Check your NVIDIA driver and internet connection.
-:end
+echo Helper failed. Read the message above. The existing environment was preserved.
 pause
+exit /b 1
