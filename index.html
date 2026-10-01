@@ -77,15 +77,16 @@
             <button class="preset" data-voice="bm_george" aria-pressed="false"><span class="rank">#7</span><strong>George</strong><span>British male</span><span class="reason">Try if you prefer a British accent</span></button>
           </div>
           <div class="range"><label for="rate">Speed</label><input id="rate" type="range" min="0.5" max="2" step="0.05" value="1"><output id="rateOut">1.00×</output></div>
-          <p class="note">MP3 · 48 kbps · approximately 32–43 MB for 90–120 minutes by default.</p>
+          <p class="note">Opus · 64 kbps by default · approximately 43–58 MB for 90–120 minutes.</p>
           <details><summary class="label">More settings</summary>
           <label class="label" for="studioVoice">Voice</label>
           <select id="studioVoice"><option value="am_michael" selected>Michael · American male</option><option value="am_fenrir">Fenrir · American male</option><option value="am_puck">Puck · American male</option><option value="af_heart">Heart · American female</option><option value="af_bella">Bella · American female</option><option value="af_nicole">Nicole · American female</option><option value="bm_george">George · British male</option><option value="bf_emma">Emma · British female</option></select>
           <label class="label" for="format">Download format</label>
-          <select id="format"><option value="mp3">MP3 · compact, recommended</option><option value="wav">WAV · uncompressed editing file</option></select>
-          <label class="label" for="bitrate">MP3 quality</label>
-          <select id="bitrate"><option value="32">32 kbps · smallest</option><option value="48" selected>48 kbps · recommended</option><option value="64">64 kbps · higher quality</option></select>
-          <p class="note" id="sizeEstimate">90–120 minutes: about 32–43 MB.</p>
+          <select id="format"><option value="opus" selected>Opus · efficient, recommended</option><option value="mp3">MP3 · widely compatible</option><option value="wav">WAV · uncompressed editing file</option></select>
+          <label class="label" for="bitrate">Compressed audio quality</label>
+          <select id="bitrate"><option value="64" selected>64 kbps · recommended</option><option value="128">128 kbps · higher bitrate</option><option value="256">256 kbps · highest bitrate</option></select>
+          <p class="note">Opus uses variable bitrate. For editing software that does not accept Opus, choose WAV or MP3.</p>
+          <p class="note" id="sizeEstimate">90–120 minutes: about 43–58 MB.</p>
           <details><summary class="label">Generation options</summary>
             <label class="label" for="engine">Acceleration</label><select id="engine"><option value="auto">Automatic · use browser GPU when available</option><option value="cpu">Smaller model · CPU (about 90 MB)</option><option value="gpu">Browser GPU only</option><option value="native">NVIDIA CUDA · requires local helper</option></select>
             <p class="note">The GPU model downloads about 330 MB once. CPU uses a smaller model. Both are cached when browser storage is available.</p>
@@ -105,8 +106,8 @@
         <article class="card sounds"><details><summary>Sound effects</summary><p class="note">Standalone previews, not mixed into your recording.</p><div class="sound-grid"><button class="sound" data-sound="ding"><b>🔔</b>Ding</button><button class="sound" data-sound="pop"><b>🫧</b>Pop</button><button class="sound" data-sound="laser"><b>⚡</b>Laser</button><button class="sound" data-sound="whoosh"><b>💨</b>Whoosh</button><button class="sound" data-sound="buzz"><b>📳</b>Buzz</button><button class="sound" data-sound="win"><b>🏆</b>Win</button></div></details></article>
       </aside>
     </section>
-    <footer class="footer"><span>No fixed word cap. Available memory and processing time still depend on your device.</span><span>Local speech powered by Kokoro · MP3 + WAV · Best on desktop.</span></footer>
+    <footer class="footer"><span>No fixed word cap. Available memory and processing time still depend on your device.</span><span>Local speech powered by Kokoro · Opus + MP3 + WAV · Best on desktop.</span></footer>
   </main>
-  <script type="module" src="./studio.js?v=cuda-overlap-1"></script>
+  <script type="module" src="./studio.js?v=opus-1"></script>
 </body>
 </html>

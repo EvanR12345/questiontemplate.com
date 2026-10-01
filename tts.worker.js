@@ -1,7 +1,7 @@
-import { splitText, prepareBatches, SAMPLE_RATE, PART_SECONDS } from './audio-core.mjs?v=english-2';
+import { splitText, prepareBatches, SAMPLE_RATE, PART_SECONDS } from './audio-core.mjs?v=opus-1';
 import { phonemize } from './phonemize.mjs?v=english-2';
 import { loadLexicon } from './english-phonemes.mjs?v=english-2';
-import { createEncoder } from './encode-audio.mjs?v=long-fast-2';
+import { createEncoder } from './encode-audio.mjs?v=opus-1';
 import { pronunciationRules, speechText } from './pronunciation.mjs?v=english-2';
 import { nativeHealth, nativeRequest, nativeTokenizer, nativeAudio } from './native-client.mjs?v=nvidia-1';
 import { streamSynthesis } from './synthesis-pipeline.mjs?v=overlap-1';

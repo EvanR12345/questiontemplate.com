@@ -1,4 +1,4 @@
-import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=english-2';
+import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=opus-1';
 import { beginSession, savePart, saveJob, loadSession } from './session-store.mjs?v=long-fast-2';
 import { nativeHealth } from './native-client.mjs?v=nvidia-1';
 const $ = selector => document.querySelector(selector);
@@ -98,7 +98,7 @@ function storageFailure() {
   $('#engineStatus').textContent = 'Checkpoint storage is unavailable or full. Download completed parts before closing this tab.';
 }
 function appendPart(part) {
-  const blob = run.format === 'wav' ? wavBlob([part.blob], part.frames) : new Blob([part.blob], { type: 'audio/mpeg' });
+  const blob = run.format === 'wav' ? wavBlob([part.blob], part.frames) : new Blob([part.blob], { type: run.format === 'opus' ? 'audio/ogg; codecs=opus' : 'audio/mpeg' });
   const url = urlFor(blob), index = run.parts.indexOf(part) + 1;
   const card = document.createElement('section'); card.className = 'part';
   const header = document.createElement('header'), title = document.createElement('h3'), download = document.createElement('a');
@@ -122,7 +122,7 @@ function setFullDownload(partial = false) {
   if (!run.parts.length) return;
   try {
     const blob = run.format === 'wav' ? wavBlob(run.parts.map(part => part.blob), run.frames)
-      : new Blob(run.parts.map(part => part.blob), { type: 'audio/mpeg' });
+      : new Blob(run.parts.map(part => part.blob), { type: run.format === 'opus' ? 'audio/ogg; codecs=opus' : 'audio/mpeg' });
     const link = $('#downloadAll'); link.href = urlFor(blob);
     link.download = run.voice + '-' + (partial ? 'partial-' : '') + 'recording.' + run.format;
     link.textContent = (run.sample ? '↓ Download preview ' : '↓ Download full ') + run.format.toUpperCase(); link.setAttribute('aria-disabled', 'false');
@@ -179,7 +179,7 @@ async function receive({ data }) {
   if (data.type === 'notice') { status(data.message); return; }
   if (data.type === 'ready') {
     run.ready = true; run.generationStart ||= performance.now();
-    $('#engineStatus').textContent = (data.backend === 'cuda' ? 'NVIDIA CUDA · ' + data.gpu : data.backend === 'webgpu' ? 'Browser GPU acceleration' : 'CPU · smaller model') + ' · ' + run.format.toUpperCase() + (run.format === 'mp3' ? ' ' + run.bitrate + ' kbps mono' : '');
+    $('#engineStatus').textContent = (data.backend === 'cuda' ? 'NVIDIA CUDA · ' + data.gpu : data.backend === 'webgpu' ? 'Browser GPU acceleration' : 'CPU · smaller model') + ' · ' + run.format.toUpperCase() + (run.format !== 'wav' ? ' ' + run.bitrate + ' kbps mono' : '');
     status('Generating locally. Completed parts are saved automatically.'); return;
   }
   if (data.type === 'backend') { $('#engineStatus').textContent = 'CPU · smaller model · ' + run.format.toUpperCase(); return; }
@@ -230,7 +230,7 @@ async function startWorker() {
   $('#pauseGeneration').textContent = 'Ⅱ Pause generation'; run.pauseRequested = false;
   status('Preparing the local voice engine…');
   try {
-    if (!worker) { worker = new Worker('./tts.worker.js?v=cuda-overlap-1', { type: 'module' }); worker.onmessage = receive;
+    if (!worker) { worker = new Worker('./tts.worker.js?v=opus-1', { type: 'module' }); worker.onmessage = receive;
       worker.onerror = event => { event.preventDefault(); fail(event.message || 'Voice engine failed'); }; }
     worker.postMessage({ type: 'generate', text: run.text, voice: run.voice, speed: run.speed, volume: run.volume,
       format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', offset: run.processed,
@@ -271,7 +271,7 @@ async function restore() {
     const saved = await loadSession(); if (!saved?.parts.length) { status('No completed parts are saved yet.'); return; }
     const { job, parts } = saved;
     script.value = job.text; $('#studioVoice').value = job.voice; selectVoice(job.voice);
-    $('#rate').value = job.speed; $('#volume').value = job.volume; $('#format').value = job.format; $('#bitrate').value = job.bitrate; $('#engine').value = job.engine;
+    $('#rate').value = job.speed; $('#volume').value = job.volume; $('#format').value = job.format; $('#bitrate').value = [64, 128, 256].includes(job.bitrate) ? job.bitrate : 64; $('#engine').value = job.engine;
     $('#pronunciation').value = job.pronunciation || '';
     initializeRun(job, parts); outputs(); formatOutputs(); $('#recovery').hidden = true; setFullDownload(!job.complete);
     $('#resumeSaved').hidden = job.complete || job.processed >= job.text.length;
@@ -283,7 +283,7 @@ function formatOutputs() {
   const format = $('#format').value, bitrate = Number($('#bitrate').value);
   $('#bitrate').disabled = busy || format === 'wav';
   const mb = seconds => (estimatedBytes(seconds, format, bitrate) / 1e6).toFixed(0);
-  $('#sizeEstimate').textContent = '90–120 min ≈ ' + mb(5400) + '–' + mb(7200) + ' MB. Your script ≈ ' + mb(countWords(script.value) / (155 * Number($('#rate').value)) * 60) + ' MB.';
+  $('#sizeEstimate').textContent = (format === 'opus' ? 'Variable bitrate estimate: ' : '') + '90–120 min ≈ ' + mb(5400) + '–' + mb(7200) + ' MB. Your script ≈ ' + mb(countWords(script.value) / (155 * Number($('#rate').value)) * 60) + ' MB.';
 }
 function stopPreview() { previewId++; synth?.cancel(); activeUtterance = null; }
 function loadVoices() {
@@ -298,7 +298,7 @@ async function devicePreview() {
   const value = script.value.trim(); if (!value) { status('Type something first.'); return; }
   stopPreview(); const id = previewId;
   // Smaller utterances avoid browser speech engines dropping long scripts.
-  const { splitText } = await import('./audio-core.mjs?v=english-2');
+  const { splitText } = await import('./audio-core.mjs?v=opus-1');
   const chunks = splitText(value);
   function next() {
     if (id !== previewId) return;

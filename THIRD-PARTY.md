@@ -6,3 +6,6 @@
 - lamejs 1.2.1: https://github.com/zhuker/lamejs. LGPL; see vendor/LICENSE-LAME.txt. `vendor/lame.mjs` is the upstream minified browser source with an ES module export added. The public repository supplies the complete adapted module; upstream supplies the original editable sources. No private or server-only modifications.
 
 - Misaki English gold lexicons and phoneme/inflection rules: https://github.com/hexgrad/misaki, Apache-2.0, pinned at fba1236595f2d2bf21d414ba6e57d25256afada3. See LICENSE-MISAKI.txt. The rebuild script filters to lowercase unambiguous string entries, removes context-dependent entries and maps flaps/glottal stops to the v1 alphabet. `english-phonemes.mjs` adapts lookup, inflection and eSpeak conversion for the browser; it does not include spaCy/POS tagging or the neural fallback.
+
+- libopus-wasm 0.4.1 (https://github.com/openclaw/libopus-wasm), MIT wrapper; embedded libopus 1.6.1, BSD-style license. Pinned local files under `vendor/opus/`, including LICENSE.txt and LICENSE-LIBOPUS.txt. Ogg framing is implemented locally following RFC 7845.
+- Local LAME adaptation selects 48 kHz output above 160 kbps so 256 kbps MP3 is exported at its selected bitrate.

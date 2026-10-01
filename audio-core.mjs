@@ -61,10 +61,10 @@ export function duration(seconds) {
   return [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60]
     .filter((_, i) => i > 0 || total >= 3600).map((n, i) => i ? String(n).padStart(2, '0') : String(n)).join(':');
 }
-export function estimatedBytes(seconds, format = 'mp3', bitrate = 48) {
+export function estimatedBytes(seconds, format = 'mp3', bitrate = 64) {
   return format === 'wav' ? seconds * SAMPLE_RATE * 2 + 44 : seconds * bitrate * 1000 / 8;
 }
-export function recordedSeconds(frames, bytes, format, bitrate = 48) {
+export function recordedSeconds(frames, bytes, format, bitrate = 64) {
   // MP3 CBR output has no ID3/Xing tags. This includes codec padding, making
   // exported duration/WPM match the actual track rather than pre-encode PCM.
   return format === 'mp3' ? bytes * 8 / (bitrate * 1000) : frames / SAMPLE_RATE;
