@@ -207,7 +207,7 @@ async function startWorker() {
   $('#pauseGeneration').textContent = 'Ⅱ Pause generation'; run.pauseRequested = false;
   status('Preparing the local voice engine…');
   try {
-    if (!worker) { worker = new Worker('./tts.worker.js?v=long-fast-2', { type: 'module' }); worker.onmessage = receive;
+    if (!worker) { worker = new Worker('./tts.worker.js?v=long-fast-3', { type: 'module' }); worker.onmessage = receive;
       worker.onerror = event => { event.preventDefault(); fail(event.message || 'Voice engine failed'); }; }
     worker.postMessage({ type: 'generate', text: run.text, voice: run.voice, speed: run.speed, volume: run.volume,
       format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', offset: run.processed });

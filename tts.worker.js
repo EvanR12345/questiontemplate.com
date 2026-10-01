@@ -26,6 +26,9 @@ async function loadEngine(mode = 'auto', forceCpu = false) {
   return engine;
 }
 async function gate() {
+  // Inference can resolve through microtasks without yielding to incoming
+  // worker messages. Give pause/cancel a task boundary between sections.
+  await new Promise(resolve => setTimeout(resolve, 0));
   if (paused && !canceled) {
     send({ type: 'paused' });
     await new Promise(resolve => { resumePause = resolve; });
