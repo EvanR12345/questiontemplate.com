@@ -46,7 +46,7 @@
           <p class="note">Preview checks the first 35 words. Generate records your whole script. Keep this tab open; completed parts are saved for recovery.</p>
           <div id="recovery" class="creator-note" hidden><span id="recoveryText"></span> <button class="chip" id="restore">Restore recording</button></div>
           <div class="metrics performance" id="performance" hidden><div class="metric"><strong id="elapsed">0:00</strong><span>Elapsed time</span></div><div class="metric"><strong id="generationSpeed">—</strong><span>Generation speed</span></div><div class="metric"><strong id="timeLeft">—</strong><span>Time remaining · estimate</span></div></div>
-          <p class="note" id="engineStatus">Automatic acceleration · Compact MP3 output</p>
+          <p class="note" id="engineStatus">Automatic acceleration · Opus 64 kbps output</p>
           <details id="nativeSetup"><summary class="label" style="cursor:pointer">Use your NVIDIA GPU directly</summary>
             <p class="note">Optional local engine for NVIDIA laptops. Uses the same voices through CUDA. Generation speed depends on your GPU; 10× is a target, not a guarantee.</p>
             <ol class="note"><li><a style="color:var(--cyan)" href="https://www.python.org/downloads/release/python-3119/" target="_blank" rel="noopener noreferrer">Install Python 3.11 for Windows</a> with the Python launcher enabled.</li><li><a class="download" href="./nvidia-helper.zip" download>Download NVIDIA helper</a> Extract it and double-click <strong>start-windows.bat</strong>. First setup downloads several GB; later launches reuse them.</li><li>Keep its window open. It opens this site when ready. Click <strong>Connect NVIDIA</strong> below and allow Local network access if your browser asks.</li></ol>
@@ -57,7 +57,7 @@
           <div class="status" id="status" role="status">Ready</div>
         </article>
         <article class="card downloads" id="downloads" hidden>
-          <div class="result-head"><h2 id="recordingHeading">Your recording</h2><a id="downloadAll" class="download" aria-disabled="true">↓ Download full MP3</a></div>
+          <div class="result-head"><h2 id="recordingHeading">Your recording</h2><a id="downloadAll" class="download" aria-disabled="true">↓ Download full OPUS</a></div>
           <div class="metrics"><div class="metric"><strong id="actualDuration">0:00</strong><span>Recorded duration</span></div><div class="metric"><strong id="actualWpm">—</strong><span>Actual words / min</span></div><div class="metric"><strong id="size">0 MB</strong><span>Download size</span></div></div>
           <p class="note" id="recordingNote">Generated parts appear here. Actual WPM includes pauses.</p><button class="btn" id="resumeSaved" hidden>▶ Resume remaining text</button><div id="parts"></div>
         </article>
