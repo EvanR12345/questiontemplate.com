@@ -157,6 +157,7 @@ function normalize_text(text) {
       .trim()
   );
 }
+export { normalize_text as normalizeText };
 
 /**
  * Escapes regular expression special characters from a string by replacing them with their escaped counterparts.

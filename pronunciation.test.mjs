@@ -77,7 +77,7 @@ test('only the last recursive batch gets synthetic final punctuation', async () 
 });
 test('compressed dictionaries load once per accent and retry after failure', async () => {
   let calls = 0;
-  const fetcher = async url => { calls++; return new Response(readFileSync(url.pathname), {status: 200}); };
+  const fetcher = async url => { calls++; const file = new URL(url); file.search = ''; return new Response(readFileSync(file), {status: 200}); };
   const a = await loadLexicon('a', fetcher);
   assert.equal(a.party, dictionaries.a.party);
   assert.equal(await loadLexicon('a', fetcher), a);

@@ -10,6 +10,6 @@ for (let second = 0; second < 60; second++) blocks.push(encoder.encode(samples))
 blocks.push(encoder.flush());
 const minute = joinBytes(blocks), elapsed = (performance.now() - start) / 1000;
 const blob = new Blob(Array(120).fill(new Blob([minute])), { type: 'audio/mpeg' });
-await fs.writeFile('/workspace/scratch/tts-export-120min.mp3', new Uint8Array(await blob.arrayBuffer()));
+await fs.writeFile(process.argv[2] || 'tts-export-120min.mp3', new Uint8Array(await blob.arrayBuffer()));
 console.log(JSON.stringify({ encodedSeconds: 60, encodingSeconds: elapsed, encodingRealtime: 60 / elapsed, exportBytes: blob.size,
   exportSeconds: recordedSeconds(0, blob.size, 'mp3', 48), equivalentWavBytes: 7200 * 48000 + 44, heapMB: process.memoryUsage().heapUsed / 1e6 }));

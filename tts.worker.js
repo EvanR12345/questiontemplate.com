@@ -4,6 +4,7 @@ import { loadLexicon } from './english-phonemes.mjs?v=english-2';
 import { createEncoder } from './encode-audio.mjs?v=long-fast-2';
 import { pronunciationRules, speechText } from './pronunciation.mjs?v=english-2';
 import { nativeHealth, nativeRequest, nativeTokenizer, nativeAudio } from './native-client.mjs?v=nvidia-1';
+import { streamSynthesis } from './synthesis-pipeline.mjs?v=overlap-1';
 let engine, backend, currentMode, running = false, canceled = false, paused = false, resumePause, acknowledge;
 const send = data => postMessage(data);
 async function discardEngine() {
@@ -75,14 +76,7 @@ async function runJob(data) {
         yield* prepareBatches(chunk, tts.tokenizer, pronounce, language, 280, position === data.text.length);
       }
     }
-    const input = batches(); let pending = input.next();
-    while (await gate()) {
-      const item = await pending;
-      if (item.done) break;
-      // Prepare one section ahead while inference is in flight. Queue stays bounded.
-      pending = input.next(); pending.catch(() => {});
-      const batch = item.value;
-      if (!batch.ids) { processed += batch.text.length; send({ type: 'progress', processed }); continue; }
+    const render = async batch => {
       let audio;
       try { audio = data.engine === 'native'
         ? await nativeAudio(data.nativeKey, batch, data.voice, data.speed)
@@ -94,6 +88,12 @@ async function runJob(data) {
         send({ type: 'backend', backend });
         audio = await engine.generate_from_ids(batch.ids, { voice: data.voice, speed: data.speed });
       }
+      return audio;
+    };
+    for await (const { batch, audio } of streamSynthesis(batches(), render, {
+      gate, prefetch: data.engine === 'native', canPrefetch: () => !paused && !canceled,
+    })) {
+      if (!batch.ids) { processed += batch.text.length; send({ type: 'progress', processed }); continue; }
       if (audio.sampling_rate !== SAMPLE_RATE) throw new Error('Unexpected audio sample rate.');
       encoder ||= await createEncoder(data.format, data.bitrate);
       const bytes = encoder.encode(audio.audio, data.volume);

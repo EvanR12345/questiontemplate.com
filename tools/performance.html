@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Local speech performance measurement</title>
+<style>body{font:16px system-ui;max-width:1000px;margin:40px auto;background:#10141d;color:#e6e9ef}button,select{font:inherit;padding:10px;margin:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block}</style>
+<h1>Local speech performance measurement</h1>
+<p>Fixed public test text, full precision, Michael, normal playback speed, 48 kbps MP3. Uses a separate localhost recording store.</p>
+<label>Test <select id="mode"><option value="baseline">Baseline pipeline</option><option value="overlap">Overlap inference and encoding</option></select></label>
+<button id="run">Run benchmark</button><button id="download" disabled>Download measurements</button>
+<p id="status" role="status">Waiting for helper pairing link.</p><pre id="result"></pre>
+<script type="module">
+import { beginSession, savePart, saveJob } from '../session-store.mjs';
+const key = location.hash.match(/^#native=([a-f0-9]{64})$/)?.[1] || '';
+history.replaceState(null, '', location.pathname);
+const local = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
+document.querySelector('#run').disabled = !local || !key;
+document.querySelector('#status').textContent = !local ? 'Serve this benchmark on localhost to keep test recordings separate from the live studio.' : key ? 'Paired locally. Ready to measure.' : 'Missing helper pairing key.';
+let worker, result, parts=[], pending=[], frames=0, checkpointMs=0;
+const job={text:'Public benchmark fixture',sample:true,format:'mp3',bitrate:48};
+document.querySelector('#run').onclick=async()=>{
+  if (!local || !key) return;
+  document.querySelector('#run').disabled=true;document.querySelector('#download').disabled=true;
+  parts=[];pending=[];frames=0;checkpointMs=0;
+  const started=performance.now();await beginSession(job);checkpointMs+=performance.now()-started;
+  worker ||= new Worker('./performance.worker.mjs',{type:'module'});
+  worker.onmessage=async({data})=>{
+    if(data.type==='chunk'){pending.push(new Blob([data.bytes]));frames+=data.frames;}
+    if(data.type==='partEnd'){
+      const part={index:parts.length,blob:new Blob(pending),frames,processed:data.processed};
+      parts.push(part);pending=[];frames=0;const start=performance.now();await savePart(job,part);checkpointMs+=performance.now()-start;worker.postMessage({type:'ack'});
+    }
+    if(data.type==='progress')document.querySelector('#status').textContent=`${data.processed} source characters processed; ${data.seconds.toFixed(1)} seconds of audio generated.`;
+    if(data.type==='done'){
+      const start=performance.now();await saveJob({...job,complete:true});checkpointMs+=performance.now()-start;
+      result={...data.metrics,checkpointMs,parts:parts.length,bytes:parts.reduce((n,p)=>n+p.blob.size,0)};
+      document.querySelector('#result').textContent=JSON.stringify(result,null,2);
+      document.querySelector('#status').textContent='Benchmark complete';document.querySelector('#run').disabled=false;document.querySelector('#download').disabled=false;
+    }
+    if(data.type==='error'){document.querySelector('#status').textContent=data.message;document.querySelector('#run').disabled=false;}
+  };
+  worker.postMessage({type:'run',key,mode:document.querySelector('#mode').value});
+};
+document.querySelector('#download').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));a.download=`speech-${result.mode}.json`;a.click();};
+</script>
