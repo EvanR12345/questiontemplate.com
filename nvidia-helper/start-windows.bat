@@ -1,20 +1,23 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo Text to Audio Studio - local NVIDIA helper
+echo QuestionTemplate - local NVIDIA helper (Audio + Studio)
 if not exist ".venv\Scripts\python.exe" (
   py -3.11 -m venv .venv
   if errorlevel 1 goto python_missing
 )
-if not exist ".venv\installed-v1.txt" (
-  echo First setup downloads several GB. Keep this window open.
+if not exist ".venv\installed-v2.txt" (
+  echo Updating the shared helper. First image setup downloads additional model files later.
   .venv\Scripts\python.exe -m pip install --upgrade pip
   if errorlevel 1 goto failed
-  .venv\Scripts\python.exe -m pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-  if errorlevel 1 goto failed
+  .venv\Scripts\python.exe -c "import torch; assert torch.cuda.is_available()" >nul 2>nul
+  if errorlevel 1 (
+    .venv\Scripts\python.exe -m pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+    if errorlevel 1 goto failed
+  )
   .venv\Scripts\python.exe -m pip install -r requirements.txt
   if errorlevel 1 goto failed
-  echo ready> .venv\installed-v1.txt
+  echo ready> .venv\installed-v2.txt
 )
 .venv\Scripts\python.exe server.py
 if errorlevel 1 goto failed
