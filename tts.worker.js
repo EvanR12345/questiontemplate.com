@@ -1,61 +1,97 @@
-import { splitText, pcm16, SAMPLE_RATE } from './audio-core.mjs';
-let engine;
-async function loadEngine() {
-  if (!engine) {
-    const { KokoroTTS, TextSplitterStream } = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js');
-    engine = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-      dtype: 'q8', device: 'wasm',
-      progress_callback: progress => postMessage({ type: 'loading', progress }),
-    });
-    engine.createInput = text => {
-      const input = new TextSplitterStream();
-      input.push(text); input.close();
-      return input;
-    };
+import { splitText, prepareBatches, SAMPLE_RATE, PART_SECONDS } from './audio-core.mjs';
+import { phonemize } from './phonemize.mjs';
+import { createEncoder } from './encode-audio.mjs';
+import { pronunciationRules, speechText } from './pronunciation.mjs';
+let engine, backend, currentMode, running = false, canceled = false, paused = false, resumePause, acknowledge;
+const send = data => postMessage(data);
+async function discardEngine() {
+  try { await engine?.model.dispose(); } catch {}
+  engine = null; backend = null;
+}
+async function loadEngine(mode = 'auto', forceCpu = false) {
+  if (engine && currentMode === mode && (!forceCpu || backend === 'wasm')) return engine;
+  await discardEngine(); currentMode = mode;
+  const { KokoroTTS } = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js');
+  let gpu = false;
+  if (mode !== 'cpu' && !forceCpu && navigator.gpu) {
+    try { const adapter = await navigator.gpu.requestAdapter(); gpu = !!adapter && adapter.isFallbackAdapter !== true; } catch {}
   }
+  if (mode === 'gpu' && !gpu && !forceCpu) throw new Error('GPU acceleration is unavailable. Select Automatic or Smaller model.');
+  const options = { progress_callback: progress => send({ type: 'loading', progress }) };
+  if (gpu) {
+    try { engine = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', { ...options, device: 'webgpu', dtype: 'fp32' }); backend = 'webgpu'; }
+    catch (error) { if (mode === 'gpu') throw error; send({ type: 'notice', message: 'GPU could not start. Switching to the smaller CPU model.' }); }
+  }
+  if (!engine) { engine = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', { ...options, device: 'wasm', dtype: 'q8' }); backend = 'wasm'; }
   return engine;
 }
-// Kokoro's public API truncates long token sequences. Check the exact phoneme
-// sequence and recursively split/retry rather than ever exporting truncated audio.
-export async function* generateChecked(tts, text, options) {
-  if (!text.trim()) { yield { text, audio: null }; return; }
-  let offset = 0;
-  // Explicitly close the splitter: the library's string streaming overload
-  // leaves its final sentence buffered and waits for additional input.
-  const input = tts.createInput ? tts.createInput(text) : text;
-  for await (const item of tts.stream(input, options)) {
-    const start = text.indexOf(item.text, offset);
-    if (start < 0) throw new Error('Could not align a speech section with the original script.');
-    const end = start + item.text.length;
-    const source = text.slice(offset, end);
-    const tokens = tts.tokenizer(item.phonemes, { truncation: false }).input_ids.dims.at(-1);
-    if (tokens > 510) {
-      if (source.length < 2) throw new Error('This text cannot be pronounced safely. Please spell out unusual symbols.');
-      for (const smaller of splitText(source, Math.max(2, Math.floor(source.length / 2)))) {
-        yield* generateChecked(tts, smaller, options);
-      }
-    } else yield { text: source, audio: item.audio };
-    offset = end;
+async function gate() {
+  if (paused && !canceled) {
+    send({ type: 'paused' });
+    await new Promise(resolve => { resumePause = resolve; });
+    resumePause = null; send({ type: 'resumed' });
   }
-  if (offset < text.length) yield { text: text.slice(offset), audio: null };
+  return !canceled;
 }
-if (typeof self !== 'undefined') self.onmessage = async ({ data }) => {
-  if (data.type !== 'generate') return;
+async function runJob(data) {
+  running = true; canceled = paused = false;
+  let encoder, partFrames = 0, processed = data.offset || 0, failure;
+  const emit = (bytes, frames = 0) => {
+    const buffer = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+      ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    postMessage({ type: 'chunk', bytes: buffer, frames, processed }, [buffer]);
+  };
+  const closePart = async () => {
+    if (!partFrames || !encoder) return;
+    emit(encoder.flush());
+    const saved = new Promise(resolve => { acknowledge = resolve; });
+    send({ type: 'partEnd', processed });
+    await saved; acknowledge = null;
+    partFrames = 0; encoder = null;
+  };
   try {
-    const tts = await loadEngine();
-    postMessage({ type: 'ready' });
-    let processed = 0;
-    for (const chunk of splitText(data.text)) {
-      for await (const item of generateChecked(tts, chunk, { voice: data.voice, speed: data.speed })) {
-        processed += item.text.length;
-        if (!item.audio) { postMessage({ type: 'progress', processed }); continue; }
-        if (item.audio.sampling_rate !== SAMPLE_RATE) throw new Error('Unexpected audio sample rate.');
-        const pcm = pcm16(item.audio.audio, data.volume);
-        postMessage({ type: 'chunk', pcm, frames: pcm.byteLength / 2, processed }, [pcm]);
+    const tts = await loadEngine(data.engine);
+    send({ type: 'ready', backend });
+    const language = data.voice[0];
+    const rules = pronunciationRules(data.pronunciation);
+    const pronounce = (text, language) => phonemize(speechText(text, rules), language);
+    async function* batches() {
+      for (const chunk of splitText(data.text.slice(processed), 420)) {
+        yield* prepareBatches(chunk, tts.tokenizer, pronounce, language, 280);
       }
     }
-    postMessage({ type: 'done' });
-  } catch (error) {
-    postMessage({ type: 'error', message: error.message || String(error) });
-  }
+    const input = batches(); let pending = input.next();
+    while (await gate()) {
+      const item = await pending;
+      if (item.done) break;
+      // Prepare one section ahead while inference is in flight. Queue stays bounded.
+      pending = input.next(); pending.catch(() => {});
+      const batch = item.value;
+      if (!batch.ids) { processed += batch.text.length; send({ type: 'progress', processed }); continue; }
+      let audio;
+      try { audio = await engine.generate_from_ids(batch.ids, { voice: data.voice, speed: data.speed }); }
+      catch (error) {
+        if (backend !== 'webgpu' || data.engine === 'gpu') throw error;
+        send({ type: 'notice', message: 'GPU generation failed. Continuing this section on CPU.' });
+        await loadEngine(data.engine, true);
+        audio = await engine.generate_from_ids(batch.ids, { voice: data.voice, speed: data.speed });
+      }
+      if (audio.sampling_rate !== SAMPLE_RATE) throw new Error('Unexpected audio sample rate.');
+      encoder ||= await createEncoder(data.format, data.bitrate);
+      const bytes = encoder.encode(audio.audio, data.volume);
+      processed += batch.text.length; partFrames += audio.audio.length;
+      emit(bytes, audio.audio.length);
+      if (partFrames >= PART_SECONDS * SAMPLE_RATE) await closePart();
+    }
+  } catch (error) { failure = error.message || String(error); }
+  try { await closePart(); } catch (error) { failure ||= error.message; }
+  send({ type: failure ? 'error' : canceled ? 'canceled' : 'done', message: failure, processed });
+  running = false;
+}
+if (typeof self !== 'undefined') self.onmessage = ({ data }) => {
+  if (data.type === 'generate' && !running) void runJob(data);
+  if (data.type === 'ack') acknowledge?.();
+  if (data.type === 'pause') paused = true;
+  if (data.type === 'resume') { paused = false; resumePause?.(); }
+  if (data.type === 'cancel') { canceled = true; paused = false; resumePause?.(); }
 };

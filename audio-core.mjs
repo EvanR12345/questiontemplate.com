@@ -1,8 +1,10 @@
 // Shared, dependency-free audio helpers. No text is truncated.
 export const SAMPLE_RATE = 24000;
-export const PART_SECONDS = 15 * 60;
+export const PART_SECONDS = 5 * 60;
 export function countWords(text) {
-  return (text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) || []).length;
+  let count = 0;
+  for (const _ of text.matchAll(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)) count++;
+  return count;
 }
 export function* splitText(text, max = 350) {
   let offset = 0;
@@ -26,10 +28,10 @@ export function* splitText(text, max = 350) {
 }
 export function pcm16(samples, volume = 1) {
   const buffer = new ArrayBuffer(samples.length * 2), view = new DataView(buffer);
-  samples.forEach((value, i) => {
-    const sample = Math.max(-1, Math.min(1, value * volume));
+  for (let i = 0; i < samples.length; i++) {
+    const sample = Math.max(-1, Math.min(1, samples[i] * volume));
     view.setInt16(i * 2, Math.round(sample * (sample < 0 ? 32768 : 32767)), true);
-  });
+  }
   return buffer;
 }
 export function wavHeader(frames, sampleRate = SAMPLE_RATE) {
@@ -50,4 +52,24 @@ export function duration(seconds) {
   const total = Math.round(seconds);
   return [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60]
     .filter((_, i) => i > 0 || total >= 3600).map((n, i) => i ? String(n).padStart(2, '0') : String(n)).join(':');
+}
+export function estimatedBytes(seconds, format = 'mp3', bitrate = 48) {
+  return format === 'wav' ? seconds * SAMPLE_RATE * 2 + 44 : seconds * bitrate * 1000 / 8;
+}
+export function recordedSeconds(frames, bytes, format, bitrate = 48) {
+  // MP3 CBR output has no ID3/Xing tags. This includes codec padding, making
+  // exported duration/WPM match the actual track rather than pre-encode PCM.
+  return format === 'mp3' ? bytes * 8 / (bitrate * 1000) : frames / SAMPLE_RATE;
+}
+// Token validation happens before neural inference, so long numbers cannot
+// silently lose words and no discarded/truncated audio is generated first.
+export async function* prepareBatches(text, tokenizer, phonemize, language, maxTokens = 280) {
+  if (!text.trim()) { yield { text, ids: null }; return; }
+  const phonemes = await phonemize(text, language);
+  const ids = tokenizer(phonemes, { truncation: false }).input_ids;
+  if (ids.dims.at(-1) <= maxTokens) { yield { text, ids }; return; }
+  if (text.length <= 2) throw new Error('Please spell out this unusually long symbol or number.');
+  for (const chunk of splitText(text, Math.max(2, Math.floor(text.length / 2)))) {
+    yield* prepareBatches(chunk, tokenizer, phonemize, language, maxTokens);
+  }
 }
