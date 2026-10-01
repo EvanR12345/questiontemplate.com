@@ -22,27 +22,31 @@
     .transport{grid-template-columns:2fr 1fr 1fr}#recovery[hidden]{display:none}#recovery button{margin-top:8px}details summary{cursor:pointer}.metrics .metric{min-width:0}.metric strong{overflow-wrap:anywhere}
     .recent-list{min-width:0;overflow:hidden}.recent-list button{min-width:0;max-width:100%}.recent-list button span{min-width:0;flex:1}.recent .card-head .chip{width:auto;flex:none}
     @media(max-width:460px){.metrics{gap:6px}.metric{padding:9px}.metric strong{font-size:1.1rem}.transport.preview-controls{grid-template-columns:1fr 1fr}}
+    .hero h1{font-size:clamp(2.5rem,6vw,4rem)}.hero{margin:12px 0 22px}.steps{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;color:#cbd2e2;font-size:.83rem}.steps b,.step-number{display:inline-grid;place-items:center;background:#7c5cff25;color:#bcaeff;border-radius:50%;width:25px;height:25px;margin-right:7px}.card-head h2{display:flex;align-items:center}.main-actions{grid-template-columns:1fr 1.3fr}.generation-controls{display:flex;gap:8px;margin-top:10px}.generation-controls[hidden],.performance[hidden]{display:none}.generation-controls .btn{flex:1}.voice-choice{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:15px 0 0;padding:11px 13px;border:1px solid var(--line);border-radius:12px;font-size:.82rem}.voice-choice a{color:var(--cyan)}.preset:first-child{grid-column:1/-1}.preset{min-height:85px}.preset .reason{font-size:.71rem;color:#ccd4e6}.preset.active::after{content:'✓ Selected';display:block;font-size:.7rem;color:var(--green);margin-top:5px}.settings details{border-top:1px solid var(--line);margin-top:18px}.settings details details{margin-top:12px}.advanced-note{font-size:.73rem;color:var(--muted)}.sounds details summary{font-weight:750;cursor:pointer}.recent summary{cursor:pointer;font-size:.88rem;font-weight:750}.recent .card-head{margin-top:12px}.status{color:#cbd2e2}.download-hint{color:var(--muted);font-size:.75rem}.settings{scroll-margin-top:16px}.range{grid-template-columns:56px 1fr 48px}
+    .side{align-content:start}
+    @media(max-width:800px){.main-actions{grid-template-columns:1fr 1fr}.main-actions .primary{grid-column:auto}.counter{max-width:130px;text-align:right}.hero p{font-size:1rem}}
+    @media(max-width:460px){.presets{grid-template-columns:1fr 1fr}.preset{padding:10px}.steps{gap:8px;font-size:.75rem}.privacy{max-width:130px}.voice-choice{font-size:.75rem}.hero h1{font-size:2.8rem}}
   </style>
 </head>
 <body>
   <main class="shell">
     <header class="topbar"><div class="brand"><span class="logo" aria-hidden="true">◖))</span>Text to Audio Studio</div><div class="privacy"><i></i>Text stays on your device</div></header>
-    <section class="hero"><div class="eyebrow">Your browser. Your voice studio.</div><h1>Type it. <span>Hear it.</span></h1><p>Turn long scripts into compact audio tracks. Download one complete recording or save it in parts. No fixed word limit, no sign-in.</p></section>
+    <section class="hero"><div class="eyebrow">Your browser. Your voice studio.</div><h1>Type it. <span>Hear it.</span></h1><p>Paste your script, choose a voice, and download your audio. No fixed word limit. No account needed.</p><div class="steps"><span><b>1</b>Paste text</span><span><b>2</b>Choose a voice</span><span><b>3</b>Generate &amp; download</span></div></section>
     <section class="grid">
       <div>
         <article class="card editor">
-          <div class="card-head"><h2>Your script</h2><span class="counter"><b id="count">0</b> characters · No fixed limit</span></div>
+          <div class="card-head"><h2><span class="step-number">1</span>Your script</h2><span class="counter"><b id="count">0</b> characters · No fixed limit</span></div>
           <label class="visually-hidden" for="text">Text to speak</label>
           <textarea id="text" placeholder="Type or paste what you want the voice to say…">The lights went out at exactly midnight. That was when Maya heard three slow knocks at the door. She had been warned never to open it after dark. Tonight, someone on the other side knew her name.</textarea>
-          <div class="quick"><button class="chip" data-example="intro">Video intro</button><button class="chip" data-example="ad">Short ad</button><button class="chip" data-example="story">Story opener</button><button class="chip" id="clear">Clear</button></div>
+          <div class="quick"><button class="chip" id="importScript">Import .txt</button><input type="file" id="scriptFile" accept=".txt,text/plain" hidden><button class="chip" data-example="story">Try an example</button><button class="chip" id="clear">Clear</button></div>
           <div class="metrics"><div class="metric"><strong id="words">0</strong><span>Words</span></div><div class="metric"><strong id="estimate">0:00</strong><span>Estimated duration</span></div><div class="metric"><strong id="targetWpm">155</strong><span>Estimated words / min</span></div></div>
-          <p class="note">Built for long recordings. Completed 5-minute parts are saved on this device so you can resume after a reload. Keep this tab open; a desktop gives the best performance.</p>
-          <div class="transport"><button class="btn primary" id="generate">↓ Generate audio</button><button class="btn" id="pauseGeneration" disabled>Ⅱ Pause generation</button><button class="btn" id="cancel" disabled>Cancel</button></div>
+          <div class="voice-choice"><span id="selectedVoice">Michael · American male</span><a href="#voices">Change voice</a></div>
+          <div class="transport main-actions"><button class="btn" id="sample">▶ Preview voice</button><button class="btn primary" id="generate">↓ Generate audio</button></div>
+          <div class="generation-controls" id="generationControls" hidden><button class="btn" id="pauseGeneration" disabled>Ⅱ Pause generation</button><button class="btn" id="cancel" disabled>Cancel</button></div>
+          <p class="note">Preview checks the first 35 words. Generate records your whole script. Keep this tab open; completed parts are saved for recovery.</p>
           <div id="recovery" class="creator-note" hidden><span id="recoveryText"></span> <button class="chip" id="restore">Restore recording</button></div>
-          <div class="metrics"><div class="metric"><strong id="elapsed">0:00</strong><span>Elapsed time</span></div><div class="metric"><strong id="generationSpeed">—</strong><span>Generation speed</span></div><div class="metric"><strong id="timeLeft">—</strong><span>Time remaining · estimate</span></div></div>
+          <div class="metrics performance" id="performance" hidden><div class="metric"><strong id="elapsed">0:00</strong><span>Elapsed time</span></div><div class="metric"><strong id="generationSpeed">—</strong><span>Generation speed</span></div><div class="metric"><strong id="timeLeft">—</strong><span>Time remaining · estimate</span></div></div>
           <p class="note" id="engineStatus">Automatic acceleration · Compact MP3 output</p>
-          <div class="transport preview-controls"><button class="btn" id="preview">▶ Device preview</button><button class="btn" id="pause">Ⅱ Pause</button><button class="btn" id="resume">▶ Resume</button><button class="btn" id="stop">■ Stop</button></div>
-          <p class="note">Device preview is instant but cannot be downloaded. Use Generate audio for the selected studio voice.</p>
           <progress class="progress" id="progress" max="100" value="0" aria-label="Audio generation progress" hidden></progress>
           <div class="status" id="status" role="status">Ready</div>
         </article>
@@ -51,12 +55,26 @@
           <div class="metrics"><div class="metric"><strong id="actualDuration">0:00</strong><span>Recorded duration</span></div><div class="metric"><strong id="actualWpm">—</strong><span>Actual words / min</span></div><div class="metric"><strong id="size">0 MB</strong><span>Download size</span></div></div>
           <p class="note" id="recordingNote">Generated parts appear here. Actual WPM includes pauses.</p><button class="btn" id="resumeSaved" hidden>▶ Resume remaining text</button><div id="parts"></div>
         </article>
-        <article class="card recent"><div class="card-head"><h2>Recent scripts</h2><button class="chip" id="clearHistory">Clear history</button></div><div class="recent-list" id="recent"></div></article>
+        <article class="card recent"><details><summary>Recent scripts</summary><div class="card-head"><h2>Saved on this device</h2><button class="chip" id="clearHistory">Clear history</button></div><div class="recent-list" id="recent"></div></details></article>
       </div>
       <aside class="side">
-        <article class="card settings">
-          <div class="card-head"><h2>Best recommendations</h2><span aria-hidden="true">🎙️</span></div>
-          <p class="note">Starting picks for engaging narration. Preview your text to find your favorite.</p>
+        <article class="card settings" id="voices">
+          <div class="card-head"><h2><span class="step-number">2</span>Best recommendations</h2></div>
+          <p class="note">Seven starting picks. Tap a voice, then Preview voice to hear your own script. Rankings are starting suggestions, not an objective score.</p>
+          <div class="presets" id="presets">
+            <button class="preset active" data-voice="am_michael" aria-pressed="true"><span class="rank">#1 · Best recommendation</span><strong>Michael</strong><span>American male</span><span class="reason">Start here for balanced narration</span></button>
+            <button class="preset" data-voice="am_fenrir" aria-pressed="false"><span class="rank">#2</span><strong>Fenrir</strong><span>American male</span><span class="reason">Try for a bolder delivery</span></button>
+            <button class="preset" data-voice="am_puck" aria-pressed="false"><span class="rank">#3</span><strong>Puck</strong><span>American male</span><span class="reason">Try for upbeat delivery</span></button>
+            <button class="preset" data-voice="af_heart" aria-pressed="false"><span class="rank">#4</span><strong>Heart</strong><span>American female</span><span class="reason">Try for clear, even delivery</span></button>
+            <button class="preset" data-voice="af_bella" aria-pressed="false"><span class="rank">#5</span><strong>Bella</strong><span>American female</span><span class="reason">Try for expressive delivery</span></button>
+            <button class="preset" data-voice="af_nicole" aria-pressed="false"><span class="rank">#6</span><strong>Nicole</strong><span>American female</span><span class="reason">Another female voice to compare</span></button>
+            <button class="preset" data-voice="bm_george" aria-pressed="false"><span class="rank">#7</span><strong>George</strong><span>British male</span><span class="reason">Try if you prefer a British accent</span></button>
+          </div>
+          <div class="range"><label for="rate">Speed</label><input id="rate" type="range" min="0.5" max="2" step="0.05" value="1"><output id="rateOut">1.00×</output></div>
+          <p class="note">MP3 · 48 kbps · approximately 32–43 MB for 90–120 minutes by default.</p>
+          <details><summary class="label">More settings</summary>
+          <label class="label" for="studioVoice">Voice</label>
+          <select id="studioVoice"><option value="am_michael" selected>Michael · American male</option><option value="am_fenrir">Fenrir · American male</option><option value="am_puck">Puck · American male</option><option value="af_heart">Heart · American female</option><option value="af_bella">Bella · American female</option><option value="af_nicole">Nicole · American female</option><option value="bm_george">George · British male</option><option value="bf_emma">Emma · British female</option></select>
           <label class="label" for="format">Download format</label>
           <select id="format"><option value="mp3">MP3 · compact, recommended</option><option value="wav">WAV · uncompressed editing file</option></select>
           <label class="label" for="bitrate">MP3 quality</label>
@@ -66,34 +84,23 @@
             <label class="label" for="engine">Acceleration</label><select id="engine"><option value="auto">Automatic · use GPU when available</option><option value="cpu">Smaller model · CPU (about 90 MB)</option><option value="gpu">GPU only · faster on compatible hardware</option></select>
             <p class="note">The GPU model downloads about 330 MB once. CPU uses a smaller model. Both are cached when browser storage is available.</p>
           </details>
-          <div class="presets" id="presets">
-            <button class="preset active" data-voice="af_heart" aria-pressed="true"><span class="rank">#1 Recommended</span><strong>Heart</strong><span>Clear · American female</span></button>
-            <button class="preset" data-voice="af_bella" aria-pressed="false"><span class="rank">#2 Recommended</span><strong>Bella</strong><span>Expressive · American female</span></button>
-            <button class="preset" data-voice="am_michael" aria-pressed="false"><span class="rank">#3 Recommended</span><strong>Michael</strong><span>Balanced · American male</span></button>
-            <button class="preset" data-voice="am_fenrir" aria-pressed="false"><span class="rank">#4 Recommended</span><strong>Fenrir</strong><span>Bold · American male</span></button>
-            <button class="preset" data-voice="am_puck" aria-pressed="false"><span class="rank">#5 Recommended</span><strong>High-Energy Creator</strong><span>Upbeat · Original delivery</span></button>
-            <button class="preset" data-voice="bm_george" aria-pressed="false"><span class="rank">#6 Recommended</span><strong>George</strong><span>Measured · British male</span></button>
-          </div>
-          <label class="label" for="studioVoice">Studio voice · downloadable</label>
-          <select id="studioVoice"><option value="am_michael">Michael · American male</option><option value="am_fenrir">Fenrir · American male</option><option value="af_heart" selected>Heart · American female</option><option value="af_bella">Bella · American female</option><option value="am_puck">High-Energy Creator · Puck</option><option value="bm_george">George · British male</option><option value="af_nicole">Nicole · American female</option><option value="bf_emma">Emma · British female</option></select>
           <details><summary class="label">Pronunciation fixes</summary>
             <label class="label" for="pronunciation">One correction per line: word = spoken spelling</label>
             <textarea id="pronunciation" style="min-height:110px;font-size:.85rem;margin:5px 0" placeholder="Maya = My uh&#10;API = A P I"></textarea>
             <p class="note">Applies to studio audio without changing your script. Preview a short sample before a long recording. Voice accents vary; American and British voices are labeled above.</p>
           </details>
-          <button class="btn" id="sample" style="width:100%;margin-top:10px">▶ Preview studio voice</button>
           <p class="note">Runs locally in English, without an API key. First use downloads the selected voice model and runtime. After that, the engine stays ready for your next recording.</p>
-          <label class="label" for="voice">Device preview voice</label><select id="voice"><option>Loading voices…</option></select>
-          <div class="range"><label for="rate">Speed</label><input id="rate" type="range" min="0.5" max="2" step="0.05" value="1"><output id="rateOut">1.00×</output></div>
-          <div class="range"><label for="pitch">Pitch*</label><input id="pitch" type="range" min="0.1" max="2" step="0.05" value="1"><output id="pitchOut">1.00</output></div>
           <div class="range"><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step="0.05" value="1"><output id="volumeOut">100%</output></div>
-          <p class="pitch-note">*Pitch applies only to device preview. Speed and volume apply to downloads too.</p><p class="creator-note">High-Energy Creator is an original delivery preset. It does not imitate or clone any real person.</p>
+          <details><summary class="label">Instant device preview</summary><p class="note">Uses your device's own voice. This preview cannot be downloaded and sounds different from the selected studio voice.</p><label class="label" for="voice">Device voice</label><select id="voice"><option>Loading voices…</option></select>
+          <div class="range"><label for="pitch">Pitch</label><input id="pitch" type="range" min="0.1" max="2" step="0.05" value="1"><output id="pitchOut">1.00</output></div>
+          <div class="transport preview-controls"><button class="btn" id="preview">▶ Play</button><button class="btn" id="pause">Ⅱ Pause</button><button class="btn" id="resume">▶ Resume</button><button class="btn" id="stop">■ Stop</button></div></details>
+          <p class="pitch-note">Pitch affects device preview only. These are original studio voices.</p></details>
         </article>
-        <article class="card sounds"><div class="card-head"><h2>Sound effects</h2><span aria-hidden="true">✨</span></div><p class="note">Standalone previews, not mixed into your recording.</p><div class="sound-grid"><button class="sound" data-sound="ding"><b>🔔</b>Ding</button><button class="sound" data-sound="pop"><b>🫧</b>Pop</button><button class="sound" data-sound="laser"><b>⚡</b>Laser</button><button class="sound" data-sound="whoosh"><b>💨</b>Whoosh</button><button class="sound" data-sound="buzz"><b>📳</b>Buzz</button><button class="sound" data-sound="win"><b>🏆</b>Win</button></div></article>
+        <article class="card sounds"><details><summary>Sound effects</summary><p class="note">Standalone previews, not mixed into your recording.</p><div class="sound-grid"><button class="sound" data-sound="ding"><b>🔔</b>Ding</button><button class="sound" data-sound="pop"><b>🫧</b>Pop</button><button class="sound" data-sound="laser"><b>⚡</b>Laser</button><button class="sound" data-sound="whoosh"><b>💨</b>Whoosh</button><button class="sound" data-sound="buzz"><b>📳</b>Buzz</button><button class="sound" data-sound="win"><b>🏆</b>Win</button></div></details></article>
       </aside>
     </section>
     <footer class="footer"><span>No fixed word cap. Available memory and processing time still depend on your device.</span><span>Local speech powered by Kokoro · MP3 + WAV · Best on desktop.</span></footer>
   </main>
-  <script type="module" src="./studio.js?v=long-fast-3"></script>
+  <script type="module" src="./studio.js?v=seven-easy-1"></script>
 </body>
 </html>

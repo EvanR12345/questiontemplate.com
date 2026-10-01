@@ -43,7 +43,9 @@ function remember(value) {
 }
 function controls(generating) {
   busy = generating;
-  for (const el of document.querySelectorAll('#generate,#sample,#studioVoice,#rate,#volume,#text,#clear,#format,#bitrate,#engine,#restore,#resumeSaved,#pronunciation,[data-example],[data-voice]')) el.disabled = generating;
+  for (const el of document.querySelectorAll('#generate,#sample,#studioVoice,#rate,#volume,#text,#clear,#importScript,#format,#bitrate,#engine,#restore,#resumeSaved,#pronunciation,[data-example],[data-voice]')) el.disabled = generating;
+  $('#generationControls').hidden = !generating;
+  if (generating) $('#performance').hidden = false;
   $('#cancel').disabled = !generating;
   $('#pauseGeneration').disabled = !generating;
   $('#bitrate').disabled = generating || $('#format').value === 'wav';
@@ -51,11 +53,11 @@ function controls(generating) {
 }
 function selectVoice(id) {
   $('#studioVoice').value = id;
+  $('#selectedVoice').textContent = $('#studioVoice').selectedOptions[0].textContent;
   document.querySelectorAll('[data-voice]').forEach(b => {
     const selected = b.dataset.voice === id;
     b.classList.toggle('active', selected); b.setAttribute('aria-pressed', String(selected));
   });
-  if (id === 'am_puck') { $('#rate').value = 1.15; outputs(); }
 }
 function revokeUrls() { urls.forEach(url => URL.revokeObjectURL(url)); urls = []; }
 function urlFor(blob) { const url = URL.createObjectURL(blob); urls.push(url); return url; }
@@ -131,6 +133,16 @@ async function complete(message, partial = false) {
   $('#resumeSaved').hidden = !partial || run.processed >= run.text.length || run.sample;
   clearInterval(run.timer); updateRecording(); controls(false); status(message);
   await wakeLock?.release().catch(() => {}); wakeLock = null;
+  if (run.sample && run.frames && !partial) {
+    const audio = $('#parts audio');
+    $('#downloads').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try { await audio.play(); status('Voice preview ready. Generate audio to record your whole script.'); }
+    catch { status('Voice preview ready. Press play below to listen.'); }
+    try {
+      const saved = await loadSession();
+      if (saved?.parts.length) { $('#recoveryText').textContent = 'Your earlier recording is still saved.'; $('#recovery').hidden = false; }
+    } catch {}
+  }
 }
 function advance(processed) {
   run.processed = processed;
@@ -310,6 +322,17 @@ function sound(name) {
 }
 let countTimer; script.addEventListener('input', () => { clearTimeout(countTimer); countTimer = setTimeout(() => { updateCounts(); formatOutputs(); }, 150); });
 $('#generate').onclick = () => generate(); $('#sample').onclick = () => generate(true);
+$('#importScript').onclick = () => $('#scriptFile').click();
+$('#scriptFile').onchange = async event => {
+  const file = event.target.files[0];
+  if (!file || busy) return;
+  try {
+    const value = await file.text();
+    if (busy) return;
+    script.value = value; outputs(); status('Script imported. Choose a voice or preview it.'); script.focus();
+  } catch { status('Could not read this file. Please paste its text instead.'); }
+  finally { event.target.value = ''; }
+};
 $('#cancel').onclick = () => {
   if (!run.ready) { worker?.terminate(); worker = null; void complete('Stopped before generation. No completed audio was lost.', true); return; }
   worker?.postMessage({ type: 'cancel' }); $('#cancel').disabled = true; $('#pauseGeneration').disabled = true;
@@ -343,4 +366,4 @@ $('#studioVoice').onchange = () => selectVoice($('#studioVoice').value);
 ['rate', 'pitch', 'volume'].forEach(id => $('#' + id).oninput = outputs);
 window.addEventListener('beforeunload', event => { if (busy) { event.preventDefault(); event.returnValue = ''; } });
 if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
-outputs(); formatOutputs(); renderHistory();
+selectVoice($('#studioVoice').value); outputs(); formatOutputs(); renderHistory();
