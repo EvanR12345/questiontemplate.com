@@ -1,5 +1,5 @@
 import { splitText, prepareBatches, SAMPLE_RATE, PART_SECONDS } from './audio-core.mjs?v=long-fast-2';
-import { phonemize } from './phonemize.mjs?v=long-fast-2';
+import { phonemize } from './phonemize.mjs?v=pronounce-1';
 import { createEncoder } from './encode-audio.mjs?v=long-fast-2';
 import { pronunciationRules, speechText } from './pronunciation.mjs?v=long-fast-2';
 import { nativeHealth, nativeRequest, nativeTokenizer, nativeAudio } from './native-client.mjs?v=nvidia-1';

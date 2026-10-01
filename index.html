@@ -93,7 +93,7 @@
           <details><summary class="label">Pronunciation fixes</summary>
             <label class="label" for="pronunciation">One correction per line: word = spoken spelling</label>
             <textarea id="pronunciation" style="min-height:110px;font-size:.85rem;margin:5px 0" placeholder="Maya = My uh&#10;API = A P I"></textarea>
-            <p class="note">Applies to studio audio without changing your script. Preview a short sample before a long recording. Voice accents vary; American and British voices are labeled above.</p>
+            <p class="note">Automatic fixes include “protagonist” and its plural and possessive forms. Your corrections take priority and apply to browser and NVIDIA audio without changing your script. Preview a short sample before a long recording.</p>
           </details>
           <p class="note">Runs locally in English, without an API key. First use downloads the selected voice model and runtime. After that, the engine stays ready for your next recording.</p>
           <div class="range"><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step="0.05" value="1"><output id="volumeOut">100%</output></div>
@@ -107,6 +107,6 @@
     </section>
     <footer class="footer"><span>No fixed word cap. Available memory and processing time still depend on your device.</span><span>Local speech powered by Kokoro · MP3 + WAV · Best on desktop.</span></footer>
   </main>
-  <script type="module" src="./studio.js?v=nvidia-1"></script>
+  <script type="module" src="./studio.js?v=pronounce-1"></script>
 </body>
 </html>

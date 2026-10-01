@@ -14,5 +14,6 @@ Optional local NVIDIA CUDA generation is available through the downloadable `nvi
 
 Run helper tests with `node --test audio-core.test.mjs`.
 Run local engine checks with `node --test native-client.test.mjs` and `python -m unittest discover -s nvidia-helper -p '*_test.py'`.
+Reviewed whole-word phoneme exceptions correct protagonist, protagonists and possessives in the shared phonemizer used by both browser and CUDA inference. User spoken-spelling corrections run first and take precedence. The original script and word counts remain unchanged. Run pronunciation regression checks with `node --test pronunciation.test.mjs`.
 
 `node benchmark-exports.mjs` encodes a synthetic minute and constructs a two-hour MP3 export for format/size validation. It does not benchmark two hours of neural speech synthesis.

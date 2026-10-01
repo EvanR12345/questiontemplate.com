@@ -1,5 +1,6 @@
 // Adapted from hexgrad/kokoro kokoro.js/src/phonemize.js (Apache-2.0).
 // Change: lazy pinned browser import, allowing direct batched inference.
+import { BUILTIN_WORD_PATTERN, builtinPhonemes } from './pronunciation-lexicon.mjs?v=pronounce-1';
 let espeakng;
 async function getPhonemizer() {
   if (!espeakng) espeakng = (await import("https://cdn.jsdelivr.net/npm/phonemizer@1.2.1/dist/phonemizer.js")).phonemize;
@@ -169,6 +170,7 @@ function escapeRegExp(string) {
 
 const PUNCTUATION = ';:,.!?¡¿—…"«»“”(){}[]';
 const PUNCTUATION_PATTERN = new RegExp(`(\\s*[${escapeRegExp(PUNCTUATION)}]+\\s*)+`, "g");
+const CORRECTED_PATTERN = new RegExp(`${PUNCTUATION_PATTERN.source}|${BUILTIN_WORD_PATTERN}`, 'giu');
 
 /**
  * Phonemize text using the eSpeak-NG phonemizer
@@ -177,19 +179,26 @@ const PUNCTUATION_PATTERN = new RegExp(`(\\s*[${escapeRegExp(PUNCTUATION)}]+\\s*
  * @param {boolean} norm Whether to normalize the text
  * @returns {Promise<string>} The phonemized text
  */
-export async function phonemize(text, language = "a", norm = true) {
-  const espeakng = await getPhonemizer();
+export async function phonemize(text, language = "a", norm = true, phonemizer) {
+  const espeakng = phonemizer || await getPhonemizer();
   // 1. Normalize text
   if (norm) {
     text = normalize_text(text);
   }
 
   // 2. Split into chunks, to ensure we preserve punctuation
-  const sections = split(text, PUNCTUATION_PATTERN);
+  const corrected = new RegExp(BUILTIN_WORD_PATTERN, 'iu').test(text);
+  const sections = split(text, corrected ? CORRECTED_PATTERN : PUNCTUATION_PATTERN);
 
   // 3. Convert each section to phonemes
   const lang = language === "a" ? "en-us" : "en";
-  const ps = (await Promise.all(sections.map(async ({ match, text }) => (match ? text : (await espeakng(text, lang)).join(" "))))).join("");
+  const ps = (await Promise.all(sections.map(async ({ match, text }) => {
+    if (match) return builtinPhonemes(text) || text;
+    const converted = (await espeakng(text, lang)).join(' ');
+    // Split exceptions inside the sentence without joining neighboring words.
+    // Keep the legacy path unchanged for sentences without a reviewed exception.
+    return corrected ? ( /^\s/.test(text) ? ' ' : '') + converted + (/\s$/.test(text) ? ' ' : '') : converted;
+  }))).join("");
 
   // 4. Post-process phonemes
   let processed = ps
