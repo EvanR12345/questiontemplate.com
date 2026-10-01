@@ -1,7 +1,7 @@
-import { splitText, prepareBatches, SAMPLE_RATE, PART_SECONDS } from './audio-core.mjs';
-import { phonemize } from './phonemize.mjs';
-import { createEncoder } from './encode-audio.mjs';
-import { pronunciationRules, speechText } from './pronunciation.mjs';
+import { splitText, prepareBatches, SAMPLE_RATE, PART_SECONDS } from './audio-core.mjs?v=long-fast-2';
+import { phonemize } from './phonemize.mjs?v=long-fast-2';
+import { createEncoder } from './encode-audio.mjs?v=long-fast-2';
+import { pronunciationRules, speechText } from './pronunciation.mjs?v=long-fast-2';
 let engine, backend, currentMode, running = false, canceled = false, paused = false, resumePause, acknowledge;
 const send = data => postMessage(data);
 async function discardEngine() {
