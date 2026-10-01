@@ -10,6 +10,9 @@ The studio shows words, estimated pacing/duration/size, actual exported WPM/dura
 
 Static GitHub Pages; no server/API key. Model downloads are about 330 MB for GPU fp32 or 90 MB for CPU q8, plus runtime, cached when available. Text stays on-device. The custom domain and AdSense script are preserved. See THIRD-PARTY.md for source/license notices.
 
+Optional local NVIDIA CUDA generation is available through the downloadable `nvidia-helper.zip`. See `nvidia-helper/README.md` for Windows setup. It uses one persistent full-precision PyTorch model, a GPU voice cache, bounded sections and the existing browser phonemizer/encoder/recovery flow. It requires a local helper; GitHub Pages cannot run CUDA itself. The helper is bound to loopback, requires an ephemeral pairing key, restricts origins, and never falls back to CPU. Keys are excluded from history/checkpoints. The site identifies the CUDA device and reports measured speed. 10× remains an unverified target on GTX 1650; no GPU benchmark is claimed.
+
 Run helper tests with `node --test audio-core.test.mjs`.
+Run local engine checks with `node --test native-client.test.mjs` and `python -m unittest discover -s nvidia-helper -p '*_test.py'`.
 
 `node benchmark-exports.mjs` encodes a synthetic minute and constructs a two-hour MP3 export for format/size validation. It does not benchmark two hours of neural speech synthesis.

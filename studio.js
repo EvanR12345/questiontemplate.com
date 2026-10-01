@@ -1,8 +1,17 @@
 import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=long-fast-2';
 import { beginSession, savePart, saveJob, loadSession } from './session-store.mjs?v=long-fast-2';
+import { nativeHealth } from './native-client.mjs?v=nvidia-1';
 const $ = selector => document.querySelector(selector);
 const script = $('#text'), synth = window.speechSynthesis;
 let worker, busy = false, run, urls = [], deviceVoices = [], previewId = 0, activeUtterance;
+let nativeKey = '', nativeConnected = false, connectingNative = false;
+const pairing = location.hash.match(/^#native=([a-f0-9]{64})$/);
+if (pairing) {
+  nativeKey = pairing[1];
+  window.history.replaceState(null, '', location.pathname + location.search);
+  $('#nativeSetup').open = true;
+  $('#nativeStatus').textContent = 'Helper link received. Click Connect NVIDIA.';
+}
 let history = [];
 try { const saved = JSON.parse(localStorage.getItem('tts-history') || '[]'); if (Array.isArray(saved)) history = saved.filter(x => typeof x === 'string').slice(0, 6); } catch {}
 const examples = {
@@ -43,7 +52,7 @@ function remember(value) {
 }
 function controls(generating) {
   busy = generating;
-  for (const el of document.querySelectorAll('#generate,#sample,#studioVoice,#rate,#volume,#text,#clear,#importScript,#format,#bitrate,#engine,#restore,#resumeSaved,#pronunciation,[data-example],[data-voice]')) el.disabled = generating;
+  for (const el of document.querySelectorAll('#generate,#sample,#studioVoice,#rate,#volume,#text,#clear,#importScript,#format,#bitrate,#engine,#restore,#resumeSaved,#pronunciation,#connectNative,[data-example],[data-voice]')) el.disabled = generating;
   $('#generationControls').hidden = !generating;
   if (generating) $('#performance').hidden = false;
   $('#cancel').disabled = !generating;
@@ -170,9 +179,10 @@ async function receive({ data }) {
   if (data.type === 'notice') { status(data.message); return; }
   if (data.type === 'ready') {
     run.ready = true; run.generationStart ||= performance.now();
-    $('#engineStatus').textContent = (data.backend === 'webgpu' ? 'GPU acceleration' : 'CPU · smaller model') + ' · ' + run.format.toUpperCase() + (run.format === 'mp3' ? ' ' + run.bitrate + ' kbps mono' : '');
+    $('#engineStatus').textContent = (data.backend === 'cuda' ? 'NVIDIA CUDA · ' + data.gpu : data.backend === 'webgpu' ? 'Browser GPU acceleration' : 'CPU · smaller model') + ' · ' + run.format.toUpperCase() + (run.format === 'mp3' ? ' ' + run.bitrate + ' kbps mono' : '');
     status('Generating locally. Completed parts are saved automatically.'); return;
   }
+  if (data.type === 'backend') { $('#engineStatus').textContent = 'CPU · smaller model · ' + run.format.toUpperCase(); return; }
   if (data.type === 'paused') { run.pauseStart ||= performance.now(); status('Generation paused. Resume whenever you are ready.'); return; }
   if (data.type === 'resumed') { if (run.pauseStart) run.pausedMs += performance.now() - run.pauseStart; run.pauseStart = 0; status('Generation resumed.'); return; }
   if (data.type === 'chunk' || data.type === 'progress') {
@@ -220,14 +230,16 @@ async function startWorker() {
   $('#pauseGeneration').textContent = 'Ⅱ Pause generation'; run.pauseRequested = false;
   status('Preparing the local voice engine…');
   try {
-    if (!worker) { worker = new Worker('./tts.worker.js?v=long-fast-3', { type: 'module' }); worker.onmessage = receive;
+    if (!worker) { worker = new Worker('./tts.worker.js?v=nvidia-1', { type: 'module' }); worker.onmessage = receive;
       worker.onerror = event => { event.preventDefault(); fail(event.message || 'Voice engine failed'); }; }
     worker.postMessage({ type: 'generate', text: run.text, voice: run.voice, speed: run.speed, volume: run.volume,
-      format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', offset: run.processed });
+      format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', offset: run.processed,
+      nativeKey: run.engine === 'native' ? nativeKey : undefined });
   } catch (error) { fail(error.message); }
 }
 async function generate(sample = false) {
-  if (busy) return;
+  if (busy || connectingNative) return;
+  if ($('#engine').value === 'native' && (!nativeKey || !nativeConnected)) { $('#nativeSetup').open = true; status('Connect the NVIDIA helper before generating.'); $('#connectNative').focus(); return; }
   const full = script.value.trim();
   if (!full || !countWords(full)) { status('Add some words to your script first.'); script.focus(); return; }
   if (!window.Worker || !window.WebAssembly) { status('Use a current browser for downloadable audio.'); return; }
@@ -246,6 +258,7 @@ async function generate(sample = false) {
 }
 async function resumeSaved() {
   if (busy || !run || run.processed >= run.text.length) return;
+  if (run.engine === 'native' && (!nativeKey || !nativeConnected)) { $('#nativeSetup').open = true; status('Reconnect the NVIDIA helper, then resume your saved recording.'); return; }
   document.querySelectorAll('audio').forEach(audio => audio.pause());
   run.startFrames = run.frames; run.startOffset = run.processed; run.wallStart = performance.now();
   run.generationStart = 0; run.pausedMs = run.pauseStart = 0; run.ready = false;
@@ -323,6 +336,19 @@ function sound(name) {
 }
 let countTimer; script.addEventListener('input', () => { clearTimeout(countTimer); countTimer = setTimeout(() => { updateCounts(); formatOutputs(); }, 150); });
 $('#generate').onclick = () => generate(); $('#sample').onclick = () => generate(true);
+$('#connectNative').onclick = async () => {
+  if (busy || connectingNative) return;
+  connectingNative = true; $('#connectNative').disabled = true;
+  $('#nativeStatus').textContent = 'Connecting to your NVIDIA helper…';
+  try {
+    const info = await nativeHealth(nativeKey);
+    nativeConnected = true; $('#engine').value = 'native';
+    $('#nativeStatus').textContent = 'Connected · ' + info.gpu + ' · CUDA · full precision';
+    $('#engineStatus').textContent = 'NVIDIA CUDA ready · ' + info.gpu;
+    status('NVIDIA connected. Preview your script to measure generation speed.');
+  } catch (error) { nativeConnected = false; $('#nativeStatus').textContent = error.message; }
+  finally { connectingNative = false; $('#connectNative').disabled = busy; }
+};
 $('#importScript').onclick = () => $('#scriptFile').click();
 $('#scriptFile').onchange = async event => {
   const file = event.target.files[0];

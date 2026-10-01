@@ -2,6 +2,7 @@ import { splitText, prepareBatches, SAMPLE_RATE, PART_SECONDS } from './audio-co
 import { phonemize } from './phonemize.mjs?v=long-fast-2';
 import { createEncoder } from './encode-audio.mjs?v=long-fast-2';
 import { pronunciationRules, speechText } from './pronunciation.mjs?v=long-fast-2';
+import { nativeHealth, nativeRequest, nativeTokenizer, nativeAudio } from './native-client.mjs?v=nvidia-1';
 let engine, backend, currentMode, running = false, canceled = false, paused = false, resumePause, acknowledge;
 const send = data => postMessage(data);
 async function discardEngine() {
@@ -14,7 +15,7 @@ async function loadEngine(mode = 'auto', forceCpu = false) {
   const { KokoroTTS } = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js');
   let gpu = false;
   if (mode !== 'cpu' && !forceCpu && navigator.gpu) {
-    try { const adapter = await navigator.gpu.requestAdapter(); gpu = !!adapter && adapter.isFallbackAdapter !== true; } catch {}
+    try { const adapter = await navigator.gpu.requestAdapter(); gpu = !!adapter && (adapter.info?.isFallbackAdapter ?? adapter.isFallbackAdapter) !== true; } catch {}
   }
   if (mode === 'gpu' && !gpu && !forceCpu) throw new Error('GPU acceleration is unavailable. Select Automatic or Smaller model.');
   const options = { progress_callback: progress => send({ type: 'loading', progress }) };
@@ -53,8 +54,15 @@ async function runJob(data) {
     partFrames = 0; encoder = null;
   };
   try {
-    const tts = await loadEngine(data.engine);
-    send({ type: 'ready', backend });
+    let tts, nativeInfo;
+    if (data.engine === 'native') {
+      await discardEngine();
+      nativeInfo = await nativeHealth(data.nativeKey);
+      await nativeRequest('/prepare', data.nativeKey, { voice: data.voice });
+      backend = 'cuda';
+      tts = { tokenizer: nativeTokenizer(nativeInfo.vocab) };
+    } else tts = await loadEngine(data.engine);
+    send({ type: 'ready', backend, gpu: nativeInfo?.gpu });
     const language = data.voice[0];
     const rules = pronunciationRules(data.pronunciation);
     const pronounce = (text, language) => phonemize(speechText(text, rules), language);
@@ -72,11 +80,14 @@ async function runJob(data) {
       const batch = item.value;
       if (!batch.ids) { processed += batch.text.length; send({ type: 'progress', processed }); continue; }
       let audio;
-      try { audio = await engine.generate_from_ids(batch.ids, { voice: data.voice, speed: data.speed }); }
+      try { audio = data.engine === 'native'
+        ? await nativeAudio(data.nativeKey, batch, data.voice, data.speed)
+        : await engine.generate_from_ids(batch.ids, { voice: data.voice, speed: data.speed }); }
       catch (error) {
         if (backend !== 'webgpu' || data.engine === 'gpu') throw error;
         send({ type: 'notice', message: 'GPU generation failed. Continuing this section on CPU.' });
         await loadEngine(data.engine, true);
+        send({ type: 'backend', backend });
         audio = await engine.generate_from_ids(batch.ids, { voice: data.voice, speed: data.speed });
       }
       if (audio.sampling_rate !== SAMPLE_RATE) throw new Error('Unexpected audio sample rate.');

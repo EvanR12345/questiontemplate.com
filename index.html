@@ -47,6 +47,12 @@
           <div id="recovery" class="creator-note" hidden><span id="recoveryText"></span> <button class="chip" id="restore">Restore recording</button></div>
           <div class="metrics performance" id="performance" hidden><div class="metric"><strong id="elapsed">0:00</strong><span>Elapsed time</span></div><div class="metric"><strong id="generationSpeed">—</strong><span>Generation speed</span></div><div class="metric"><strong id="timeLeft">—</strong><span>Time remaining · estimate</span></div></div>
           <p class="note" id="engineStatus">Automatic acceleration · Compact MP3 output</p>
+          <details id="nativeSetup"><summary class="label" style="cursor:pointer">Use your NVIDIA GPU directly</summary>
+            <p class="note">Optional local engine for NVIDIA laptops. Uses the same voices through CUDA. Generation speed depends on your GPU; 10× is a target, not a guarantee.</p>
+            <ol class="note"><li><a style="color:var(--cyan)" href="https://www.python.org/downloads/release/python-3119/" target="_blank" rel="noopener noreferrer">Install Python 3.11 for Windows</a> with the Python launcher enabled.</li><li><a class="download" href="./nvidia-helper.zip" download>Download NVIDIA helper</a> Extract it and double-click <strong>start-windows.bat</strong>. First setup downloads several GB; later launches reuse them.</li><li>Keep its window open. It opens this site when ready. Click <strong>Connect NVIDIA</strong> below and allow Local network access if your browser asks.</li></ol>
+            <button class="chip" id="connectNative">Connect NVIDIA</button>
+            <p class="note" id="nativeStatus" role="status">Start the helper to receive your connection link.</p>
+          </details>
           <progress class="progress" id="progress" max="100" value="0" aria-label="Audio generation progress" hidden></progress>
           <div class="status" id="status" role="status">Ready</div>
         </article>
@@ -81,7 +87,7 @@
           <select id="bitrate"><option value="32">32 kbps · smallest</option><option value="48" selected>48 kbps · recommended</option><option value="64">64 kbps · higher quality</option></select>
           <p class="note" id="sizeEstimate">90–120 minutes: about 32–43 MB.</p>
           <details><summary class="label">Generation options</summary>
-            <label class="label" for="engine">Acceleration</label><select id="engine"><option value="auto">Automatic · use GPU when available</option><option value="cpu">Smaller model · CPU (about 90 MB)</option><option value="gpu">GPU only · faster on compatible hardware</option></select>
+            <label class="label" for="engine">Acceleration</label><select id="engine"><option value="auto">Automatic · use browser GPU when available</option><option value="cpu">Smaller model · CPU (about 90 MB)</option><option value="gpu">Browser GPU only</option><option value="native">NVIDIA CUDA · requires local helper</option></select>
             <p class="note">The GPU model downloads about 330 MB once. CPU uses a smaller model. Both are cached when browser storage is available.</p>
           </details>
           <details><summary class="label">Pronunciation fixes</summary>
@@ -101,6 +107,6 @@
     </section>
     <footer class="footer"><span>No fixed word cap. Available memory and processing time still depend on your device.</span><span>Local speech powered by Kokoro · MP3 + WAV · Best on desktop.</span></footer>
   </main>
-  <script type="module" src="./studio.js?v=seven-easy-2"></script>
+  <script type="module" src="./studio.js?v=nvidia-1"></script>
 </body>
 </html>
