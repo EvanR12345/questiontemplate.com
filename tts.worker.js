@@ -1,7 +1,8 @@
-import { splitText, prepareBatches, SAMPLE_RATE, PART_SECONDS } from './audio-core.mjs?v=long-fast-2';
-import { phonemize } from './phonemize.mjs?v=pronounce-1';
+import { splitText, prepareBatches, SAMPLE_RATE, PART_SECONDS } from './audio-core.mjs?v=english-2';
+import { phonemize } from './phonemize.mjs?v=english-2';
+import { loadLexicon } from './english-phonemes.mjs?v=english-2';
 import { createEncoder } from './encode-audio.mjs?v=long-fast-2';
-import { pronunciationRules, speechText } from './pronunciation.mjs?v=long-fast-2';
+import { pronunciationRules, speechText } from './pronunciation.mjs?v=english-2';
 import { nativeHealth, nativeRequest, nativeTokenizer, nativeAudio } from './native-client.mjs?v=nvidia-1';
 let engine, backend, currentMode, running = false, canceled = false, paused = false, resumePause, acknowledge;
 const send = data => postMessage(data);
@@ -62,13 +63,16 @@ async function runJob(data) {
       backend = 'cuda';
       tts = { tokenizer: nativeTokenizer(nativeInfo.vocab) };
     } else tts = await loadEngine(data.engine);
-    send({ type: 'ready', backend, gpu: nativeInfo?.gpu });
     const language = data.voice[0];
+    await loadLexicon(language);
+    send({ type: 'ready', backend, gpu: nativeInfo?.gpu });
     const rules = pronunciationRules(data.pronunciation);
-    const pronounce = (text, language) => phonemize(speechText(text, rules), language);
+    const pronounce = (text, language, final) => phonemize(speechText(text, rules, final), language);
     async function* batches() {
+      let position = processed;
       for (const chunk of splitText(data.text.slice(processed), 420)) {
-        yield* prepareBatches(chunk, tts.tokenizer, pronounce, language, 280);
+        position += chunk.length;
+        yield* prepareBatches(chunk, tts.tokenizer, pronounce, language, 280, position === data.text.length);
       }
     }
     const input = batches(); let pending = input.next();

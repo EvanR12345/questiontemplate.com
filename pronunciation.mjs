@@ -8,12 +8,12 @@ export function pronunciationRules(value = '') {
     return [{ pattern: new RegExp('(^|[^\\p{L}\\p{N}])' + escaped + '(?=$|[^\\p{L}\\p{N}])', 'giu'), spoken }];
   });
 }
-export function speechText(source, rules = []) {
+export function speechText(source, rules = [], final = true) {
   let text = source;
   for (const rule of rules) text = text.replace(rule.pattern, (_, prefix) => prefix + rule.spoken);
   text = text.trim();
-  // A mid-sentence chunk still needs a clear acoustic end. Never truncate PCM
-  // or cut off word tails; the model receives an explicit terminal punctuation.
-  if (text && !/[.!?,;:]["'”’)]?$/.test(text)) text += '.';
+  // Only close the actual script ending. Internal batches retain the author's
+  // punctuation rather than inventing a sentence ending after every chunk.
+  if (final && text && !/[.!?,;:]["'”’)]?$/.test(text)) text += '.';
   return text;
 }

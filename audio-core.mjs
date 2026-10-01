@@ -17,7 +17,15 @@ export function* splitText(text, max = 350) {
       if (last && last.index > max / 3) end = offset + last.index + last[0].length;
       else {
         const spaces = [...window.matchAll(/\s+/g)];
-        if (spaces.length) end = offset + spaces.at(-1).index + spaces.at(-1)[0].length;
+        const clauses = [...window.matchAll(/[,;:]\s+/g)];
+        const clause = clauses.at(-1);
+        if (clause && clause.index > max / 3) end = offset + clause.index + clause[0].length;
+        else if (spaces.length) end = offset + spaces.at(-1).index + spaces.at(-1)[0].length;
+        else if (/\p{L}/u.test(window)) {
+          // An ordinary word stays whole even with a tiny recursive budget.
+          const nextSpace = text.slice(end).search(/\s/);
+          end = nextSpace < 0 ? text.length : end + nextSpace;
+        }
       }
       // Keep UTF-16 surrogate pairs together.
       if (/[\uD800-\uDBFF]/.test(text[end - 1])) end--;
@@ -63,13 +71,15 @@ export function recordedSeconds(frames, bytes, format, bitrate = 48) {
 }
 // Token validation happens before neural inference, so long numbers cannot
 // silently lose words and no discarded/truncated audio is generated first.
-export async function* prepareBatches(text, tokenizer, phonemize, language, maxTokens = 280) {
+export async function* prepareBatches(text, tokenizer, phonemize, language, maxTokens = 280, final = true) {
   if (!text.trim()) { yield { text, ids: null }; return; }
-  const phonemes = await phonemize(text, language);
+  const phonemes = await phonemize(text, language, final);
   const ids = tokenizer(phonemes, { truncation: false }).input_ids;
   if (ids.dims.at(-1) <= maxTokens) { yield { text, ids }; return; }
   if (text.length <= 2) throw new Error('Please spell out this unusually long symbol or number.');
-  for (const chunk of splitText(text, Math.max(2, Math.floor(text.length / 2)))) {
-    yield* prepareBatches(chunk, tokenizer, phonemize, language, maxTokens);
+  const chunks = [...splitText(text, Math.max(2, Math.floor(text.length / 2)))];
+  if (chunks.length === 1) throw new Error('This word is too long for the voice model. Add spaces or a spoken-spelling correction.');
+  for (let i = 0; i < chunks.length; i++) {
+    yield* prepareBatches(chunks[i], tokenizer, phonemize, language, maxTokens, final && i === chunks.length - 1);
   }
 }

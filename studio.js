@@ -1,4 +1,4 @@
-import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=long-fast-2';
+import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=english-2';
 import { beginSession, savePart, saveJob, loadSession } from './session-store.mjs?v=long-fast-2';
 import { nativeHealth } from './native-client.mjs?v=nvidia-1';
 const $ = selector => document.querySelector(selector);
@@ -230,7 +230,7 @@ async function startWorker() {
   $('#pauseGeneration').textContent = 'Ⅱ Pause generation'; run.pauseRequested = false;
   status('Preparing the local voice engine…');
   try {
-    if (!worker) { worker = new Worker('./tts.worker.js?v=pronounce-1', { type: 'module' }); worker.onmessage = receive;
+    if (!worker) { worker = new Worker('./tts.worker.js?v=english-2', { type: 'module' }); worker.onmessage = receive;
       worker.onerror = event => { event.preventDefault(); fail(event.message || 'Voice engine failed'); }; }
     worker.postMessage({ type: 'generate', text: run.text, voice: run.voice, speed: run.speed, volume: run.volume,
       format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', offset: run.processed,
@@ -298,7 +298,7 @@ async function devicePreview() {
   const value = script.value.trim(); if (!value) { status('Type something first.'); return; }
   stopPreview(); const id = previewId;
   // Smaller utterances avoid browser speech engines dropping long scripts.
-  const { splitText } = await import('./audio-core.mjs?v=long-fast-2');
+  const { splitText } = await import('./audio-core.mjs?v=english-2');
   const chunks = splitText(value);
   function next() {
     if (id !== previewId) return;

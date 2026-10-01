@@ -1,6 +1,6 @@
 // Adapted from hexgrad/kokoro kokoro.js/src/phonemize.js (Apache-2.0).
-// Change: lazy pinned browser import, allowing direct batched inference.
-import { BUILTIN_WORD_PATTERN, builtinPhonemes } from './pronunciation-lexicon.mjs?v=pronounce-1';
+// Changes: lazy pinned browser import and shared dictionary-based English G2P.
+import { loadLexicon, dictionaryPhonemes, espeakToKokoro } from './english-phonemes.mjs?v=english-2';
 let espeakng;
 async function getPhonemizer() {
   if (!espeakng) espeakng = (await import("https://cdn.jsdelivr.net/npm/phonemizer@1.2.1/dist/phonemizer.js")).phonemize;
@@ -170,7 +170,6 @@ function escapeRegExp(string) {
 
 const PUNCTUATION = ';:,.!?¡¿—…"«»“”(){}[]';
 const PUNCTUATION_PATTERN = new RegExp(`(\\s*[${escapeRegExp(PUNCTUATION)}]+\\s*)+`, "g");
-const CORRECTED_PATTERN = new RegExp(`${PUNCTUATION_PATTERN.source}|${BUILTIN_WORD_PATTERN}`, 'giu');
 
 /**
  * Phonemize text using the eSpeak-NG phonemizer
@@ -179,42 +178,48 @@ const CORRECTED_PATTERN = new RegExp(`${PUNCTUATION_PATTERN.source}|${BUILTIN_WO
  * @param {boolean} norm Whether to normalize the text
  * @returns {Promise<string>} The phonemized text
  */
-export async function phonemize(text, language = "a", norm = true, phonemizer) {
-  const espeakng = phonemizer || await getPhonemizer();
+export async function phonemize(text, language = "a", norm = true, phonemizer, lexicon) {
+  const [espeakng, dictionary] = await Promise.all([phonemizer || getPhonemizer(), lexicon || loadLexicon(language)]);
   // 1. Normalize text
   if (norm) {
     text = normalize_text(text);
   }
 
   // 2. Split into chunks, to ensure we preserve punctuation
-  const corrected = new RegExp(BUILTIN_WORD_PATTERN, 'iu').test(text);
-  const sections = split(text, corrected ? CORRECTED_PATTERN : PUNCTUATION_PATTERN);
+  const sections = split(text, PUNCTUATION_PATTERN);
 
   // 3. Convert each section to phonemes
   const lang = language === "a" ? "en-us" : "en";
-  const ps = (await Promise.all(sections.map(async ({ match, text }) => {
-    if (match) return builtinPhonemes(text) || text;
-    const converted = (await espeakng(text, lang)).join(' ');
-    // Split exceptions inside the sentence without joining neighboring words.
-    // Keep the legacy path unchanged for sentences without a reviewed exception.
-    return corrected ? ( /^\s/.test(text) ? ' ' : '') + converted + (/\s$/.test(text) ? ' ' : '') : converted;
-  }))).join("");
-
-  // 4. Post-process phonemes
-  let processed = ps
-    // https://en.wiktionary.org/wiki/kokoro#English
-    .replace(/kəkˈoːɹoʊ/g, "kˈoʊkəɹoʊ")
-    .replace(/kəkˈɔːɹəʊ/g, "kˈəʊkəɹəʊ")
-    .replace(/ʲ/g, "j")
-    .replace(/r/g, "ɹ")
-    .replace(/x/g, "k")
-    .replace(/ɬ/g, "l")
-    .replace(/(?<=[a-zɹː])(?=hˈʌndɹɪd)/g, " ")
-    .replace(/ z(?=[;:,.!?¡¿—…"«»“” ]|$)/g, "z");
-
-  // 5. Additional post-processing for American English
-  if (language === "a") {
-    processed = processed.replace(/(?<=nˈaɪn)ti(?!ː)/g, "di");
+  const fallback = async (source, before, after) => {
+    if (!source.trim()) return source;
+    if (/^[\s\-/]+$/.test(source)) return source.replace(/[\-/]/g, ' ');
+    // Include neighboring dictionary words while eSpeak chooses weak forms
+    // and contextual pronunciation. Their sounds are supplied by the lexicon.
+    const context = [before, source.trim(), after].filter(Boolean).join(' ');
+    let raw = (await espeakng(context, lang)).join(' ').trim();
+    if (before || after) {
+      const words = raw.split(/\s+/);
+      if (words.length > Number(!!before) + Number(!!after)) raw = words.slice(before ? 1 : 0, after ? -1 : undefined).join(' ');
+      else raw = (await espeakng(source, lang)).join(' ');
+    }
+    const converted = espeakToKokoro(raw, language);
+    if (!converted.trim()) throw new Error('A word could not be pronounced. Check this section for unsupported characters.');
+    return (/^\s/.test(source) ? ' ' : '') + converted.trim() + (/\s$/.test(source) ? ' ' : '');
+  };
+  const results = [];
+  for (const section of sections) {
+    if (section.match) { results.push(section.text); continue; }
+    let offset = 0, previous;
+    // Match entire Unicode words so English entries never replace fragments
+    // of names, digit-bearing tokens or words in another writing system.
+    for (const match of section.text.matchAll(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*['’]?/gu)) {
+      const known = dictionaryPhonemes(match[0], dictionary, language);
+      if (!known) continue;
+      results.push(await fallback(section.text.slice(offset, match.index), previous, match[0]), known);
+      offset = match.index + match[0].length;
+      previous = match[0];
+    }
+    results.push(await fallback(section.text.slice(offset), previous));
   }
-  return processed.trim();
+  return results.join('').replace(/\s+/g, ' ').trim();
 }
