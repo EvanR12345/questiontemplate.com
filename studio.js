@@ -4,13 +4,17 @@ import { nativeHealth } from './native-client.mjs?v=nvidia-1';
 const $ = selector => document.querySelector(selector);
 const script = $('#text'), synth = window.speechSynthesis;
 let worker, busy = false, run, urls = [], deviceVoices = [], previewId = 0, activeUtterance;
-let nativeKey = '', nativeConnected = false, connectingNative = false;
+const LOCAL_HELPER_KEY = 'qt-local-helper-key';
+let nativeKey = '';
+try { nativeKey = localStorage.getItem(LOCAL_HELPER_KEY) || ''; } catch {}
+let nativeConnected = false, connectingNative = false;
 const pairing = location.hash.match(/^#native=([a-f0-9]{64})$/);
 if (pairing) {
   nativeKey = pairing[1];
+  try { localStorage.setItem(LOCAL_HELPER_KEY, nativeKey); } catch {}
   window.history.replaceState(null, '', location.pathname + location.search);
   $('#nativeSetup').open = true;
-  $('#nativeStatus').textContent = 'Helper link received. Click Connect NVIDIA.';
+  $('#nativeStatus').textContent = 'Helper link received. Reconnecting automatically…';
 }
 let history = [];
 try { const saved = JSON.parse(localStorage.getItem('tts-history') || '[]'); if (Array.isArray(saved)) history = saved.filter(x => typeof x === 'string').slice(0, 6); } catch {}
@@ -343,6 +347,7 @@ $('#connectNative').onclick = async () => {
   try {
     const info = await nativeHealth(nativeKey);
     nativeConnected = true; $('#engine').value = 'native';
+    try { localStorage.setItem(LOCAL_HELPER_KEY, nativeKey); } catch {}
     $('#nativeStatus').textContent = 'Connected · ' + info.gpu + ' · CUDA · full precision';
     $('#engineStatus').textContent = 'NVIDIA CUDA ready · ' + info.gpu;
     status('NVIDIA connected. Preview your script to measure generation speed.');
@@ -394,3 +399,4 @@ $('#studioVoice').onchange = () => selectVoice($('#studioVoice').value);
 window.addEventListener('beforeunload', event => { if (busy) { event.preventDefault(); event.returnValue = ''; } });
 if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
 selectVoice($('#studioVoice').value); outputs(); formatOutputs(); renderHistory();
+if (nativeKey) setTimeout(() => $('#connectNative').click(), 120);
