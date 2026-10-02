@@ -202,7 +202,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/project':self.reply(200,studio.store.load(query['id'][0]))
                     elif path=='/studio/revision':self.reply(200,studio.store.revision(query['id'][0]))
                     elif path=='/studio/queue':self.reply(200,studio.snapshot())
-                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated')})
+                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
                 except (ValueError,KeyError,FileNotFoundError) as error:self.reply(404,{'error':str(error)})
@@ -267,6 +267,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 return studio.store.save(p)
             if path=='/studio/import':return studio.store.save(body['project'])
             if path=='/studio/config':return studio.configure(body)
+            if path=='/studio/cloud-test':
+                from openai_director import OpenAIDirector
+                return OpenAIDirector(studio.config,studio.store.root).verify_key()
             if path=='/studio/control':return studio.control(body['action'],body.get('job'))
             if path=='/studio/jobs':return studio.enqueue(body['project'],body.get('chapter'),body['kind'],body.get('shots'),body.get('options'))
             pid=body['project']

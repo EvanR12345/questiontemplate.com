@@ -3,3 +3,5 @@
 **/.pairing-key
 nvidia-helper/outputs/
 *.log
+**/.studio-secrets.json
+**/.env

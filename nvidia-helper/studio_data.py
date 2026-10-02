@@ -250,7 +250,8 @@ def new_project(name="My story"):
                 "height": 720,
                 "fps": 24,
                 "crf": 21,
-                "imageFit": "contain",
+                "imageFit": "cover",
+                "motionMode": "gentle",
             },
         },
         "intro": {

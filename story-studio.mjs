@@ -339,7 +339,8 @@ function offlineProject() {
         height: 720,
         fps: 24,
         crf: 21,
-        imageFit: "contain",
+        imageFit: "cover",
+        motionMode: "gentle",
       },
     },
     intro: {
@@ -541,7 +542,7 @@ function timeline() {
   return `<h2>Chapter timeline</h2><p class="muted">Chapter narration begins at 00:00. Click a shot to edit its timing, motion or transition.</p>${c.audio.path ? `<audio controls data-asset="${escape(c.audio.path)}"></audio>` : ""}<div class="timeline">${shots()
     .map(
       (s) =>
-        `<button data-shot="${s.id}" data-shot-action="edit" style="width:${Math.max(70, (s.end - s.start) * 7)}px">${time(s.start)}<small>${escape(s.camera.shot)}</small><small>${(s.end - s.start).toFixed(1)}s · ${escape(s.motion)}</small></button>`,
+        `<button data-shot="${s.id}" data-shot-action="edit" style="width:${Math.max(70, (s.end - s.start) * 7)}px">${time(s.start)}<small>${escape(s.camera.shot)}</small><small>${(s.end - s.start).toFixed(1)}s · ${escape(shotMotionLabel(s))}</small></button>`,
     )
     .join(
       "",
@@ -570,7 +571,13 @@ function settings() {
     ],
     project.intro.placement,
   )}</select></label><label>Title<input id="introTitle" value="${escape(project.intro.title)}"></label><label>Subtitle<input id="introSubtitle" value="${escape(project.intro.subtitle)}"></label></div><label>Intro visual description<textarea id="introVisualPrompt" rows="2">${escape(project.intro.visualPrompt || "")}</textarea></label><label>Optional explicit intro voice text<textarea id="introVoiceText" rows="2">${escape(project.intro.voiceText)}</textarea></label><div class="toolbar"><button id="introUpload">Choose background image</button><button id="introGenerate">Generate intro visual</button><button id="introAudio">Generate separate intro voice</button><button id="introPreview">Preview intro</button></div>${project.intro.visualPath ? `<img data-asset="${escape(project.intro.visualPath)}" alt="Intro background" style="max-width:260px;margin-top:12px">` : ""}</div>
-  <details><summary>Advanced AI settings</summary><div class="two-col"><label>Director provider<select id="settingDirectorProvider">${options([["local-qwen", "Local Qwen3.5-4B Q4_K_M"]], s.director.provider)}</select></label><label>Director reasoning<select id="settingReasoning">${options(["Fast", "Balanced", "High"], s.director.reasoning)}</select></label><label>Continuity strictness<select id="settingContinuity">${options(["Low", "Medium", "High"], s.continuityStrictness)}</select></label><label>Appearance changes<select id="settingAppearance">${options(["Automatic", "Review changes", "Strict"], s.appearanceHandling)}</select></label><label>Max image retries<input id="settingRetries" type="number" min="0" max="10" value="${s.maxImageRetries}"></label><label>Resolution<select id="settingResolution">${options(
+  <details><summary>Advanced AI settings</summary><div class="two-col"><label>Director provider<select id="settingDirectorProvider">${options(
+    [
+      ["local-qwen", "Local Qwen3.5-4B Q4_K_M"],
+      ["openai-luna", "GPT-6 Luna · OpenAI API"],
+    ],
+    s.director.provider,
+  )}</select></label><label>Director reasoning<select id="settingReasoning">${options(["Fast", "Balanced", "High"], s.director.reasoning)}</select></label><label>Continuity strictness<select id="settingContinuity">${options(["Low", "Medium", "High"], s.continuityStrictness)}</select></label><label>Appearance changes<select id="settingAppearance">${options(["Automatic", "Review changes", "Strict"], s.appearanceHandling)}</select></label><label>Max image retries<input id="settingRetries" type="number" min="0" max="10" value="${s.maxImageRetries}"></label><label>Resolution<select id="settingResolution">${options(
     [
       ["384x384", "384 × 384 · references / repair"],
       ["448x448", "448 × 448 · native balanced"],
@@ -579,7 +586,7 @@ function settings() {
       ["512x768", "512 × 768"],
     ],
     i.width + "x" + i.height,
-  )}</select></label><label>Steps<input id="settingSteps" type="number" min="1" max="50" value="${i.steps}"></label><label>Guidance<input id="settingGuidance" type="number" min="1" max="14" step=".5" value="${i.guidance}"></label><label>Sampler<input id="settingSampler" value="${escape(i.sampler)}"></label><label>Scheduler<input id="settingScheduler" value="${escape(i.scheduler)}"></label></div><label class="inline"><input id="settingVision" type="checkbox" ${s.visionQC ? "checked" : ""}>Vision QC (requires director vision projector)</label><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""}>Automatic repair within retry limit</label><label class="inline"><input id="settingFallback" type="checkbox" ${i.fallbackEnabled ? "checked" : ""}>Enable explicit SD 1.5 fallback when the chosen provider fails</label><button id="editCustomLayout">Edit custom pacing targets</button> <button id="editImageSettings">Edit conditioning / LoRA / full generation settings</button> <button id="configureRuntimes">Configure local runtime paths</button><p class="muted">Unsupported settings are rejected before jobs are queued. No silent model substitution.</p></details>
+  )}</select></label><label>Steps<input id="settingSteps" type="number" min="1" max="50" value="${i.steps}"></label><label>Guidance<input id="settingGuidance" type="number" min="1" max="14" step=".5" value="${i.guidance}"></label><label>Sampler<input id="settingSampler" value="${escape(i.sampler)}"></label><label>Scheduler<input id="settingScheduler" value="${escape(i.scheduler)}"></label></div><label class="inline"><input id="settingVision" type="checkbox" ${s.visionQC ? "checked" : ""}>Vision QC (Luna vision or local Qwen projector)</label><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""}>Automatic repair within retry limit</label><label class="inline"><input id="settingFallback" type="checkbox" ${i.fallbackEnabled ? "checked" : ""}>Enable explicit SD 1.5 fallback when the chosen provider fails</label><button id="editCustomLayout">Edit custom pacing targets</button> <button id="editImageSettings">Edit conditioning / LoRA / full generation settings</button> <button id="configureCloud">Cloud setup · Luna + Runpod</button> <button id="configureRuntimes">Configure local runtime paths</button><p class="muted">Unsupported settings are rejected before jobs are queued. No silent model substitution.</p></details>
   <details><summary>Video output</summary><div class="two-col"><label>Video size<select id="settingVideoSize">${options(
     [
       ["640x360", "640 × 360"],
@@ -593,6 +600,13 @@ function settings() {
       ["cover", "Fill frame (crop edges)"],
     ],
     s.video.imageFit || "contain",
+  )}</select></label><label>Image motion<select id="settingMotionMode">${options(
+    [
+      ["gentle", "Gentle zooms and pans"],
+      ["director", "Use each shot’s motion"],
+      ["static", "All images static"],
+    ],
+    s.video.motionMode || "director",
   )}</select></label><label>Frames per second<select id="settingVideoFps">${options(
     [
       ["24", "24"],
@@ -601,6 +615,29 @@ function settings() {
     ],
     String(s.video.fps),
   )}</select></label></div></details><button class="primary" id="productionSaveSettings">Save project settings</button>`;
+}
+function shotMotionLabel(shot) {
+  const mode = project.settings.video.motionMode || "director";
+  if (mode === "static") return "static";
+  const motion = shot.motion || "static";
+  if (mode !== "gentle" || shot.manual?.motion || motion !== "static")
+    return motion;
+  const camera = (shot.camera?.shot || "").toLowerCase();
+  const duration = shot.end - shot.start;
+  if (
+    duration < 2 ||
+    camera.includes("insert") ||
+    camera.includes("extreme close")
+  )
+    return "static";
+  if (
+    duration >= 8 &&
+    (camera.includes("establishing") || camera.includes("extreme wide"))
+  )
+    return "pan right";
+  if (camera.includes("close") || camera.includes("reaction"))
+    return "slow zoom out";
+  return "slow zoom in";
 }
 function renderQueue() {
   const el = $("#productionQueue");
@@ -1504,6 +1541,39 @@ function wireSettings() {
         true,
       ),
     );
+  $("#configureCloud").onclick = () => {
+    const ready = health?.directorProviders?.["openai-luna"]?.installed;
+    formDialog(
+      "Cloud setup",
+      `<p>Luna directs your story. Runpod runs the image workflow; its GPU and storage are billed separately.</p><ol><li><a href="https://platform.openai.com/" target="_blank" rel="noopener">Create your OpenAI API account</a>, add API billing, and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">create a project API key</a>.</li><li>Enter that key below to connect Luna. Your key stays in the local helper, outside project exports and browser storage.</li><li><a href="https://console.runpod.io/" target="_blank" rel="noopener">Create your Runpod account</a> and add billing. Use a 50 GB network volume in a region with an available RTX 5090. See the <a href="./CLOUD-SETUP.md" target="_blank" rel="noopener">step-by-step cloud guide</a> before deployment.</li></ol><label>OpenAI API key ${ready ? "(already saved; leave blank to retain)" : ""}<input id="cloudOpenAIKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label><p class="muted">Saving verifies Luna access and selects it for this project. Image generation remains on your current provider until a cloud image workflow is connected and tested.</p>`,
+      async () => {
+        const key = $("#cloudOpenAIKey").value.trim();
+        if (key) health = await api("config", { openaiApiKey: key });
+        else if (!ready)
+          throw new Error(
+            "Enter an OpenAI API key after enabling API billing.",
+          );
+        await api("cloud-test", {});
+        await patch(
+          "project",
+          project.id,
+          {
+            settings: {
+              ...project.settings,
+              director: {
+                ...project.settings.director,
+                provider: "openai-luna",
+              },
+            },
+          },
+          false,
+        );
+        note(
+          "Luna connected and selected. Your image provider and completed assets are preserved.",
+        );
+      },
+    );
+  };
   $("#configureRuntimes").onclick = () =>
     action(async () => {
       const config = await api("config");
@@ -1573,6 +1643,7 @@ async function saveSettings() {
     .map(Number);
   s.video.fps = Number($("#settingVideoFps").value);
   s.video.imageFit = $("#settingImageFit").value;
+  s.video.motionMode = $("#settingMotionMode").value;
   Object.assign(intro, {
     enabled: $("#introEnabled").checked,
     duration: Number($("#introDuration").value),

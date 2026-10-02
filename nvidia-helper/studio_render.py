@@ -5,6 +5,25 @@ from pathlib import Path
 from studio_data import digest
 
 
+def effective_motion(shot, video):
+    """Project motion adds movement to AI holds, preserving explicit shot edits."""
+    motion = shot.get("motion", "static").lower()
+    mode = video.get("motionMode", "director")
+    if mode == "static":
+        return "static"
+    if mode != "gentle" or shot.get("manual", {}).get("motion") or motion != "static":
+        return motion
+    duration = shot.get("end", 0) - shot.get("start", 0)
+    camera = shot.get("camera", {}).get("shot", "").lower()
+    if duration < 2 or "insert" in camera or "extreme close" in camera:
+        return "static"
+    if duration >= 8 and ("establishing" in camera or "extreme wide" in camera):
+        return "pan right"
+    if "close" in camera or "reaction" in camera:
+        return "slow zoom out"
+    return "slow zoom in"
+
+
 class VideoRenderer:
     def __init__(self, store, config):
         self.store = store
@@ -77,26 +96,27 @@ class VideoRenderer:
 
     def motion(self, shot, v, frames):
         w, h = v["width"], v["height"]
-        motion = shot.get("motion", "static").lower()
+        motion = effective_motion(shot, v)
+        interval = max(1, frames - 1)
         zoom = "1"
         x = "iw/2-(iw/zoom/2)"
         y = "ih/2-(ih/zoom/2)"
         if "zoom in" in motion:
-            zoom = f"1+0.08*on/{max(1,frames)}"
+            zoom = f"1+0.06*on/{interval}"
         elif "zoom out" in motion:
-            zoom = f"1.08-0.08*on/{max(1,frames)}"
+            zoom = f"1.06-0.06*on/{interval}"
         elif "pan left" in motion:
             zoom = "1.08"
-            x = f"(iw-iw/zoom)*(1-on/{max(1,frames)})"
+            x = f"(iw-iw/zoom)*(1-on/{interval})"
         elif "pan right" in motion:
             zoom = "1.08"
-            x = f"(iw-iw/zoom)*on/{max(1,frames)}"
+            x = f"(iw-iw/zoom)*on/{interval}"
         elif "pan up" in motion:
             zoom = "1.08"
-            y = f"(ih-ih/zoom)*(1-on/{max(1,frames)})"
+            y = f"(ih-ih/zoom)*(1-on/{interval})"
         elif "pan down" in motion:
             zoom = "1.08"
-            y = f"(ih-ih/zoom)*on/{max(1,frames)}"
+            y = f"(ih-ih/zoom)*on/{interval}"
         fitting = (
             f"scale={w*2}:{h*2}:force_original_aspect_ratio=increase,crop={w*2}:{h*2}"
             if v.get("imageFit") == "cover"
@@ -166,7 +186,7 @@ class VideoRenderer:
         folder = self.store.folder(p["id"]) / ch["id"]
         folder.mkdir(exist_ok=True)
         signature = digest(
-            {"rendererVersion": 2, "shots": shots, "audio": ch["audio"], "video": v}
+            {"rendererVersion": 3, "shots": shots, "audio": ch["audio"], "video": v}
         )
         old = ch.get("render", {}).get("narrationRender", ch.get("render", {}))
         if (
@@ -181,7 +201,7 @@ class VideoRenderer:
             # Round absolute boundaries, avoiding accumulated per-shot rounding drift.
             frames = max(1, round(s["end"] * fps) - round(s["start"] * fps))
             duration = frames / fps
-            name = "clip-" + digest({"shot": s, "video": v})[:24] + ".mp4"
+            name = "clip-" + digest({"rendererVersion": 3, "shot": s, "video": v})[:24] + ".mp4"
             clip = folder / name
             if not clip.exists():
                 temporary = clip.with_suffix(".partial.mp4")

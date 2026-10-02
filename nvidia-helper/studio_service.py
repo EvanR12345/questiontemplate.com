@@ -4,6 +4,7 @@ import base64, copy, io, json, os, re, secrets, sqlite3, threading, time, traceb
 from pathlib import Path
 from studio_data import *
 from director_provider import LocalQwenDirector
+from openai_director import OpenAIDirector
 from image_provider import (
     ExistingImageProvider,
     NativeFluxProvider,
@@ -215,6 +216,10 @@ class StudioService:
             "studioProtocol": 1,
             "hardware": hardware,
             "director": self.director.healthCheck(),
+            "directorProviders": {
+                "local-qwen": LocalQwenDirector(self.config, self.store.root).healthCheck(),
+                "openai-luna": OpenAIDirector(self.config, self.store.root).healthCheck(),
+            },
             "providers": {
                 k: v.healthCheck()
                 | {
@@ -245,6 +250,7 @@ class StudioService:
             "comfyWorkflow",
             "ffmpeg",
             "font",
+            "openaiApiKey",
         }
         if not isinstance(data, dict) or any(k not in allowed for k in data):
             raise ValueError("Unknown helper configuration option.")
@@ -254,6 +260,14 @@ class StudioService:
                     "Pause and cancel the current operation before changing runtime paths."
                 )
             self.unload_models()
+            data = dict(data)
+            if "openaiApiKey" in data:
+                key = str(data.pop("openaiApiKey")).strip()
+                if key and (not key.startswith("sk-") or len(key) < 20):
+                    raise ValueError("Enter a valid OpenAI API key.")
+                path = self.config_path.with_name(".studio-secrets.json")
+                path.write_text(json.dumps({"openaiApiKey": key}), encoding="utf-8")
+                self.config["openaiKeyFile"] = str(path)
             self.config.update(data)
             self.config_path.write_text(
                 json.dumps(self.config, indent=2), encoding="utf-8"
@@ -469,6 +483,18 @@ class StudioService:
         if id not in self.providers:
             raise ValueError("Unknown image provider: " + str(id))
         return self.providers[id]
+
+    def select_director(self, project):
+        selected = project["settings"]["director"].get("provider", "local-qwen")
+        if selected not in ("local-qwen", "openai-luna"):
+            raise ValueError("Unknown director provider. Select local Qwen or Luna.")
+        if selected == "openai-luna" and not isinstance(self.director, OpenAIDirector):
+            self.director.stop()
+            self.director = OpenAIDirector(self.config, self.store.root)
+        elif selected == "local-qwen" and isinstance(self.director, OpenAIDirector):
+            self.director.stop()
+            self.director = LocalQwenDirector(self.config, self.store.root)
+        self.director.reasoning = project["settings"]["director"].get("reasoning", "Balanced")
 
     def control(self, action, job=None):
         with self.cv:
@@ -1296,6 +1322,7 @@ class StudioService:
         from director_provider import obj, arr, short_text
 
         p = self.store.load(pid)
+        self.select_director(p)
         ch = get_chapter(p, chid)
         introductions = first_verified_appearances(p, ch)
         original_scenes = digest(ch["scenes"])
@@ -1608,6 +1635,7 @@ class StudioService:
         self.store.mutate(p["id"], save)
 
     def analyze(self, p, chid, options):
+        self.select_director(p)
         self.director.timing_callback = (
             lambda stage, seconds, details: self.record_timing(
                 p["id"],
@@ -2905,6 +2933,7 @@ class StudioService:
             )
 
     def visual_check(self, p, shot, path):
+        self.select_director(p)
         references, _ = select_references(
             p, shot, self.store, self.provider(shot["imageProvider"])
         )
