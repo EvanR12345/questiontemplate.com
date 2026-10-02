@@ -31,6 +31,10 @@ def validate_job(data):
                 raise ValueError(f'{key} must be between {low} and {high}.')
     if data.get('operation', 'generate') not in ('generate', 'inpaint'):
         raise ValueError('Unsupported image operation.')
+    if data.get('model') not in (None, 'sd15', 'dreamshaper8'):
+        raise ValueError('Choose a supported local image model.')
+    if 'continuity_target' in data and (not isinstance(data['continuity_target'], str) or len(data['continuity_target']) > 100):
+        raise ValueError('Invalid scene reference target.')
     if data.get('operation') == 'inpaint' and not (data.get('image') and data.get('mask')):
         raise ValueError('Inpainting needs an image and mask.')
     if not isinstance(data.get('reference_images', []), list) or len(data.get('reference_images', [])) > 3:
@@ -75,13 +79,23 @@ class ImageQueue:
             path.write_text(value, encoding='utf-8')
         return {'asset': name}
 
-    def _expand(self, data):
+    def _expand(self, data, project=''):
         def get(value):
             return (self.root / 'assets' / value['asset']).read_text(encoding='utf-8') if isinstance(value, dict) else value
         data['reference_images'] = [get(x) for x in data.get('reference_images', [])]
         for key in ('image', 'mask'):
             if key in data:
                 data[key] = get(data[key])
+        target = data.get('continuity_target')
+        if target and data.get('operation') != 'inpaint':
+            with self.cv:
+                anchor = self.db.execute("SELECT id FROM jobs WHERE project=? AND target=? AND kind='panel' AND state='completed' ORDER BY rowid DESC LIMIT 1", (project, target)).fetchone()
+            if anchor:
+                import base64
+                reference = 'data:image/png;base64,' + base64.b64encode(self.result_path(anchor['id']).read_bytes()).decode()
+                if len(data['reference_images']) < 3:
+                    data['reference_images'].append(reference)
+                    data['continuity_used'] = True
         return data
 
     def enqueue(self, body):
@@ -189,7 +203,7 @@ class ImageQueue:
             try:
                 self.checkpoint(message='Loading model (first use can take longer)')
                 self.before_image()
-                data = self._expand(json.loads(row['payload']))
+                data = self._expand(json.loads(row['payload']), row['project'])
                 result = self.generate(data, self.checkpoint)
                 result['seconds'] = max(.001, result['seconds'] - self.pause_seconds)
                 self.checkpoint(message='Saving PNG')

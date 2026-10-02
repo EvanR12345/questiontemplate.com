@@ -13,6 +13,28 @@ def wait_for(predicate, timeout=4):
     raise AssertionError('Timed out waiting for queue transition')
 
 class QueueTest(unittest.TestCase):
+    def test_scene_anchor_is_resolved_after_first_queued_image_finishes(self):
+        payloads = []
+        original = self.queue.generate
+        def capture(data, checkpoint):
+            payloads.append(data)
+            return original(data, checkpoint)
+        self.queue.generate = capture
+        self.queue.enqueue({'project':'story', 'jobs':[
+            {'prompt':'first scene image','target':'anchor','kind':'panel','seed':0},
+            {'prompt':'next action','target':'next','kind':'panel','seed':1,'continuity_target':'anchor'},
+        ]})
+        wait_for(lambda:self.queue.snapshot()['counts']['completed']==2)
+        self.assertEqual(payloads[0]['reference_images'], [])
+        self.assertTrue(payloads[1]['continuity_used'])
+        self.assertTrue(payloads[1]['reference_images'][0].startswith('data:image/png;base64,'))
+
+    def test_scene_anchor_cannot_reference_a_different_project(self):
+        self.queue.enqueue({'project':'other', 'jobs':[{'prompt':'first','target':'anchor','kind':'panel'}]})
+        wait_for(lambda:self.queue.snapshot()['counts']['completed']==1)
+        data = self.queue._expand({'reference_images':[], 'continuity_target':'anchor'}, 'story')
+        self.assertEqual(data['reference_images'], [])
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.calls=[]

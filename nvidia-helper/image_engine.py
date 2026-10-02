@@ -15,12 +15,17 @@ PRESETS = {
     'balanced': {'steps': 20, 'guidance': 7.0},
     'quality': {'steps': 30, 'guidance': 7.5},
 }
+MODELS = {
+    'sd15': 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+    'dreamshaper8': 'Lykon/dreamshaper-8',
+}
 
 
 class ImageEngine:
     def __init__(self, torch, device, index, gpu, model_id, inpaint_id):
         self.torch, self.device, self.index, self.gpu = torch, device, index, gpu
         self.model_id, self.inpaint_id = model_id, inpaint_id
+        self.default_model_id = model_id
         self.low_vram = torch.cuda.get_device_properties(index).total_memory < 5 * 1024**3
         self.pipe = None
         self.operation = None
@@ -32,7 +37,8 @@ class ImageEngine:
     def health(self):
         return {'ok': True, 'backend': 'cuda', 'gpu': self.gpu, 'model': self.model_id,
                 'mode': '4 GB model offload + SDPA + float32 VAE' if self.low_vram else 'CUDA + float32 VAE',
-                'sharedHelper': True, 'queue': True, 'presets': PRESETS}
+                'sharedHelper': True, 'queue': True, 'presets': PRESETS,
+                'models': MODELS, 'storyContinuity': 1, 'longPrompts': True}
 
     def unload(self):
         if self.pipe is not None:
@@ -80,6 +86,8 @@ class ImageEngine:
         cls = StableDiffusionInpaintPipeline if operation == 'inpaint' else StableDiffusionPipeline
         dtype = self.torch.float32 if self.safe_unet else self.torch.float16
         options = dict(torch_dtype=dtype, safety_checker=None, requires_safety_checker=False)
+        if self.model_id == MODELS['dreamshaper8']:
+            options.update(variant='fp16', use_safetensors=True)
         try:
             self.pipe = cls.from_pretrained(self.model_id, local_files_only=True, **options)
         except OSError:
@@ -92,6 +100,29 @@ class ImageEngine:
         self._configure()
         self._safe_encode()
         checkpoint(0, 0, 'Model ready')
+
+    def encode_prompts(self, positive, negative, checkpoint):
+        """Encode all text in CLIP windows instead of silently dropping the action."""
+        tokenizer = self.pipe.tokenizer
+        positive_ids = tokenizer(positive, add_special_tokens=False, truncation=False)['input_ids']
+        negative_ids = tokenizer(negative, add_special_tokens=False, truncation=False)['input_ids']
+        window = tokenizer.model_max_length - 2
+        count = max(1, (max(len(positive_ids), len(negative_ids)) + window - 1) // window)
+        if count > 4:
+            raise ValueError(f'Prompt has {len(positive_ids)} tokens. Keep action, cast and setting below {window * 4} tokens; nothing was silently truncated.')
+        checkpoint(0, 0, f'Encoding complete prompt ({len(positive_ids)} tokens, {count} text windows)')
+        def encode(ids):
+            values = []
+            for index in range(count):
+                chunk = ids[index * window:(index + 1) * window]
+                chunk = [tokenizer.bos_token_id] + chunk + [tokenizer.eos_token_id]
+                chunk += [tokenizer.pad_token_id] * (tokenizer.model_max_length - len(chunk))
+                inputs = self.torch.tensor([chunk], device=self.device, dtype=self.torch.long)
+                with self.torch.inference_mode():
+                    value = self.pipe.text_encoder(inputs)[0]
+                values.append(value.to(dtype=self.pipe.unet.dtype))
+            return self.torch.cat(values, dim=1)
+        return encode(positive_ids), encode(negative_ids), len(positive_ids)
 
     def _safe_encode(self):
         if self.operation == 'inpaint':
@@ -192,9 +223,13 @@ class ImageEngine:
         steps = int(data.get('steps', preset['steps']))
         seed = data.get('seed', secrets.randbelow(2**31 - 1))
         started = time.perf_counter()
+        target_model = MODELS.get(data.get('model'), self.default_model_id)
+        if target_model != self.model_id:
+            self.unload()
+            self.model_id = target_model
         self.load(operation, checkpoint)
         refs = data.get('reference_images') or []
-        kwargs = dict(prompt=data['prompt'], negative_prompt=str(data.get('negative', ''))[:4000],
+        kwargs = dict(
                       width=int(data.get('width', 512))//8*8, height=int(data.get('height', 512))//8*8,
                       num_inference_steps=steps, guidance_scale=float(data.get('guidance', preset['guidance'])),
                       generator=torch.Generator(device=self.device).manual_seed(seed), output_type='latent')
@@ -210,6 +245,8 @@ class ImageEngine:
             kwargs.update(image=ImageOps.fit(image, (w, h), Image.Resampling.LANCZOS),
                           mask_image=ImageOps.fit(mask, (w, h), Image.Resampling.NEAREST), strength=1.0)
         kwargs.update(self._reference(refs if operation != 'inpaint' else [], float(data.get('reference_strength', .7)), checkpoint))
+        positive, negative, tokens = self.encode_prompts(data['prompt'], str(data.get('negative', '')), checkpoint)
+        kwargs.update(prompt_embeds=positive, negative_prompt_embeds=negative)
         def callback(pipe, index, timestep, values):
             if not torch.isfinite(values['latents']).all():
                 raise FloatingPointError(f'UNet/scheduler produced invalid latents at step {index+1}; dtype={values["latents"].dtype}.')
@@ -240,7 +277,8 @@ class ImageEngine:
             checkpoint(steps, steps, 'Image validated')
             return {'pil': image, 'seed': seed, 'seconds': time.perf_counter()-started, 'pixels': stats,
                     'precision': 'float32' if self.safe_unet else 'fp16 weights / fp32 convolutions and VAE' if self.safe_convolutions else 'fp16 UNet / fp32 VAE',
-                    'preset': data.get('preset', 'balanced')}
+                    'preset': data.get('preset', 'balanced'), 'model': self.model_id, 'promptTokens': tokens,
+                    'continuityUsed': bool(data.get('continuity_used'))}
         except FloatingPointError:
             if operation == 'generate' and not self.safe_unet:
                 self.safe_unet = True

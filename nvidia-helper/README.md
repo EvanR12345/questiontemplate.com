@@ -21,6 +21,18 @@ After a helper restart or Audio switch, unfinished images restart with the saved
 
 Audio requests yield image work at its next step, pause the queue, unload image pipelines, and restore Kokoro to CUDA. Return to Studio and Resume to continue images. Audio remains float32 and retains its existing phonemizer/encoder.
 
+## Prompt following and scene continuity
+
+Studio now offers DreamShaper 8 (a SD 1.5 finetune for illustrated scenes) and the original SD 1.5 model. DreamShaper's fp16 weights download once, about 2.1 GB, into the existing Hugging Face cache. No environment, Torch or CUDA installation is needed. Only one image model is loaded at a time; the queue reuses it until the chosen model changes or Audio needs the GPU.
+
+The planner groups nearby paragraphs until a location or explicit scene transition changes, keeps sentences as panels within that scene, and resolves simple pronouns from the last named cast. Review this heuristic plan: it is not a language model interpreting the story. Existing edited prompts, images and N/A selections remain intact when old projects gain scene groups. Panel scene assignments are editable.
+
+Layout has a shared story-world field, shared setting/time/lighting for each scene, an action-first prompt and a complete prompt preview. CLIP embeddings are encoded in up to four 75-token windows, with equal-length negative embeddings. Longer prompts fail with a clear message instead of dropping the ending silently. Appearance descriptions and locked portraits are still necessary; a character's name alone does not define its appearance.
+
+For subsequent panels with the same selected cast, the worker can add the first completed panel in that scene as a visual reference. It resolves the image when the job runs, including during a batch submitted before the first image exists. It never looks into another project. Inpaint and explicitly different/N/A casts skip incompatible scene references. Up to three references total are supported; three character references leave no slot for a scene image. If the anchor has not completed, the job uses text and available cast references. Metadata records whether the anchor was used. Disable the per-panel scene reference checkbox when changing composition requires it.
+
+DreamShaper remains a small local model, with limited spatial reasoning and multi-character identity binding. More steps or references do not guarantee correct complex actions or exact faces. Test Balanced at 512×512 on several representative panels before a large batch. Volume is for previews; final panels usually benefit from Balanced or Quality.
+
 ## GPU fix and presets
 
 On this GTX 1650, the original all-fp16 pipeline produced nonfinite denoising latents and NaN VAE output that silently became all-zero PNGs. Reproduced with seed 123 and a simple daylight apple prompt, without references or inpainting. Disabling cuDNN made the same prompt visible but was slow. The installed fix retains fp16 model weights/attention while computing GTX 16xx convolutions and VAE encoding/decoding in float32. PyTorch SDPA replaces maximum attention slicing; model CPU offload fits the 4 GB GPU. Every step checks finite latents; decoding checks finite pixels and rejects completely black outputs.
