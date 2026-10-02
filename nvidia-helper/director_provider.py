@@ -307,7 +307,7 @@ class LocalQwenDirector(DirectorProvider):
             "--port",
             str(urlparse(self.url).port or 8766),
             "-c",
-            "4096",
+            "8192",
             "-np",
             "1",
             "-b",
@@ -441,7 +441,8 @@ class LocalQwenDirector(DirectorProvider):
         # Poll an HTTP request from another thread so pause/cancel remains responsive.
         import concurrent.futures
 
-        for attempt in range(2):
+        for attempt in range(3):
+            began = time.time()
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(
                     request_json, self.url + "/v1/chat/completions", body, 300
@@ -455,6 +456,16 @@ class LocalQwenDirector(DirectorProvider):
                     time.sleep(0.25)
                 response = future.result()
             text = response["choices"][0]["message"]["content"]
+            if getattr(self, "timing_callback", None):
+                self.timing_callback(
+                    role.split(":")[0].split(".")[0],
+                    time.time() - began,
+                    {
+                        "attempt": attempt + 1,
+                        "tokens": response.get("usage", {}).get("completion_tokens"),
+                        "finishReason": response["choices"][0].get("finish_reason"),
+                    },
+                )
             try:
                 value = json.loads(text)
                 validate_schema(value, schema)
@@ -465,7 +476,30 @@ class LocalQwenDirector(DirectorProvider):
                 )
                 temporary.replace(cache)
                 return value
-            except (ValueError, TypeError, KeyError):
+            except (ValueError, TypeError, KeyError) as error:
+                # A constrained grammar still produces incomplete JSON when its
+                # output token limit cuts off a large cast or continuity table.
+                # Keep a local diagnostic and expand ONLY the failed response.
+                cache.parent.mkdir(exist_ok=True)
+                cache.with_suffix(".error.json").write_text(
+                    json.dumps(
+                        {
+                            "role": role,
+                            "error": str(error),
+                            "finishReason": response["choices"][0].get("finish_reason"),
+                            "usage": response.get("usage", {}),
+                            "maxTokens": body["max_tokens"],
+                            "output": text,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                if response["choices"][0].get("finish_reason") == "length":
+                    prompt_tokens = response.get("usage", {}).get("prompt_tokens", 2000)
+                    body["max_tokens"] = min(
+                        5600, 8192 - prompt_tokens - 256, body["max_tokens"] * 2
+                    )
                 body["messages"].append(
                     {
                         "role": "user",
@@ -473,7 +507,7 @@ class LocalQwenDirector(DirectorProvider):
                     }
                 )
         raise ValueError(
-            "Director returned invalid JSON twice. No previous plan was overwritten."
+            "Director could not complete valid JSON after three attempts. See local director-cache diagnostics. No previous plan was overwritten."
         )
 
 

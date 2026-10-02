@@ -8,6 +8,27 @@ import { pronunciationRules, speechText } from './pronunciation.mjs';
 import { prepareBatches, splitText } from './audio-core.mjs';
 const dictionaries = Object.fromEntries(['a', 'b'].map(language => [language,
   JSON.parse(gunzipSync(readFileSync(new URL(`./vendor/english-${language === 'a' ? 'us' : 'gb'}.json.gz`, import.meta.url))))]));
+test('single quoted lines, curly quotes and punctuation never become words', async () => {
+  const fail = () => { throw new Error('Punctuation must not be pronounced'); };
+  for (const source of ["'boss'", "'Boss'\n", '‘boss’', "\n'\n", '**', '*']) {
+    const result = await phonemize(source, 'a', true, fail, dictionaries.a);
+    assert.equal(result.trim(), /boss/i.test(source) ? dictionaryPhonemes('boss', dictionaries.a) : '');
+  }
+  assert.equal(speechText('**BAM**'), 'BAM.');
+  assert.equal(speechText('*Bang* *Bang* *Bang*'), 'Bang Bang Bang.');
+  assert.equal(speechText("I can't leave."), "I can't leave.");
+  const contractions = [];
+  await phonemize("can't", 'a', false, async text => { contractions.push(text); return ['kænt']; }, {});
+  assert.deepEqual(contractions, ["can't"]);
+});
+test('silent marker batches preserve original checkpoints and meaningful failures name the text', async () => {
+  const source = "'\n**\n'";
+  const items = [];
+  for await (const batch of prepareBatches(source, () => { throw new Error('No inference for silent markers'); }, async text => speechText(text), 'a')) items.push(batch);
+  assert.equal(items.map(x => x.text).join(''), source);
+  assert.equal(items[0].ids, null);
+  await assert.rejects(phonemize('Zyrava', 'a', false, async () => [''], {}), /Zyrava.*spoken spelling/);
+});
 test('broad dictionaries cover ordinary words, both accents and general inflections', async () => {
   for (const language of ['a', 'b']) {
     const dictionary = dictionaries[language];

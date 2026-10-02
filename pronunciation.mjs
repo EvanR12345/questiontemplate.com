@@ -11,7 +11,11 @@ export function pronunciationRules(value = '') {
 export function speechText(source, rules = [], final = true) {
   let text = source;
   for (const rule of rules) text = text.replace(rule.pattern, (_, prefix) => prefix + rule.spoken);
-  text = text.trim();
+  // Stars mark emphasis / onomatopoeia in stories, not spoken instructions.
+  // Remove markers even when a long script splits a pair across batches.
+  text = text.replace(/\*/g, '').replace(/[‘’]/g, "'")
+    .replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+  if (!/[\p{L}\p{N}]/u.test(text)) return '';
   // Only close the actual script ending. Internal batches retain the author's
   // punctuation rather than inventing a sentence ending after every chunk.
   if (final && text && !/[.!?,;:]["'”’)]?$/.test(text)) text += '.';

@@ -74,6 +74,7 @@ export function recordedSeconds(frames, bytes, format, bitrate = 64) {
 export async function* prepareBatches(text, tokenizer, phonemize, language, maxTokens = 280, final = true) {
   if (!text.trim()) { yield { text, ids: null }; return; }
   const phonemes = await phonemize(text, language, final);
+  if (!phonemes.trim()) { yield { text, ids: null }; return; }
   const ids = tokenizer(phonemes, { truncation: false }).input_ids;
   if (ids.dims.at(-1) <= maxTokens) { yield { text, ids }; return; }
   if (text.length <= 2) throw new Error('Please spell out this unusually long symbol or number.');

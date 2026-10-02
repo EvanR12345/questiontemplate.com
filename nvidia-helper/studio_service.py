@@ -319,7 +319,10 @@ class StudioService:
                 "projectCounts": project_counts,
                 "etaSeconds": (
                     round(estimate)
-                    if all(r["kind"] in averages for r in pending)
+                    if all(
+                        r["kind"] in averages and r["kind"] != "produce-story"
+                        for r in pending
+                    )
                     else None
                 ),
                 "averageSecondsByKind": averages,
@@ -736,6 +739,35 @@ class StudioService:
         self.store.mutate(pid, update)
         self.gate(stage)
 
+    def record_timing(self, pid, stage, seconds, details=None):
+        def save(p):
+            production = p.setdefault("production", {})
+            timings = production.setdefault("timings", [])
+            timings.append(
+                {
+                    "stage": stage,
+                    "seconds": round(seconds, 3),
+                    "finished": time.time(),
+                    **(details or {}),
+                }
+            )
+
+        self.store.mutate(pid, save)
+
+    def measured_stage(self, pid, stage, callback, *args, **details):
+        began = time.monotonic()
+        try:
+            result = callback(*args)
+        except Exception:
+            self.record_timing(
+                pid, stage, time.monotonic() - began, details | {"status": "FAILED"}
+            )
+            raise
+        self.record_timing(
+            pid, stage, time.monotonic() - began, details | {"status": "COMPLETE"}
+        )
+        return result
+
     def produce_story(self, pid, options):
         """One durable queue job; reuse completed stages and stop safely on errors."""
         p = self.store.load(pid)
@@ -766,7 +798,15 @@ class StudioService:
             previous_audio = ch.get("audio", {}).get("signature")
             self.unload_models()
             self.before_audio()
-            self.narration(p, ch)
+            self.measured_stage(
+                pid,
+                "Narration",
+                self.narration,
+                p,
+                ch,
+                chapter=ch["number"],
+                reused=bool(previous_audio),
+            )
             p = self.store.load(pid)
             ch = get_chapter(p, chid)
             state, _ = state_before(p, chid)
@@ -802,7 +842,15 @@ class StudioService:
                 )
                 self.before_image()
                 self.providers["existing"].unload()
-                self.analyze(p, chid, {"managedPipeline": True})
+                self.measured_stage(
+                    pid,
+                    "AI directing",
+                    self.analyze,
+                    p,
+                    chid,
+                    {"managedPipeline": True},
+                    chapter=ch["number"],
+                )
                 p = self.store.load(pid)
                 ch = get_chapter(p, chid)
                 if ch.get("proposedPlan"):
@@ -858,9 +906,14 @@ class StudioService:
                             pid,
                             f"Chapter {index+1} / {len(chapters)} · reference for {person['name']}",
                         )
-                        self.character_reference(
+                        self.measured_stage(
+                            pid,
+                            "Character reference",
+                            self.character_reference,
                             self.store.load(pid),
                             {"characterId": person["id"], "referenceKind": "face"},
+                            chapter=ch["number"],
+                            character=person["name"],
                         )
 
             def prepare_images(latest):
@@ -906,12 +959,17 @@ class StudioService:
                 )
                 if not complete:
                     try:
-                        self.generate(
+                        self.measured_stage(
+                            pid,
+                            "Image + quality checks",
+                            self.generate,
                             self.store.load(pid),
                             chid,
                             shot["id"],
                             shot["generationSettings"]["seed"],
                             {},
+                            chapter=ch["number"],
+                            shot=shot["id"],
                         )
                     except (JobCancelled, AudioYield):
                         raise
@@ -937,7 +995,15 @@ class StudioService:
             self.providers["existing"].unload()
             p = self.store.load(pid)
             ch = get_chapter(p, chid)
-            result = self.renderer.chapter(p, ch, self.gate)
+            result = self.measured_stage(
+                pid,
+                "Render chapter",
+                self.renderer.chapter,
+                p,
+                ch,
+                self.gate,
+                chapter=ch["number"],
+            )
 
             def chapter_saved(latest):
                 chapter = get_chapter(latest, chid)
@@ -980,7 +1046,13 @@ class StudioService:
         )
         self.unload_models()
         self.providers["existing"].unload()
-        result = self.renderer.full(self.store.load(pid), self.gate)
+        result = self.measured_stage(
+            pid,
+            "Assemble full video",
+            self.renderer.full,
+            self.store.load(pid),
+            self.gate,
+        )
 
         def saved(latest):
             if (
@@ -1082,7 +1154,7 @@ class StudioService:
             for index, sentence in enumerate(sections):
                 self.gate(f"Narration sentence {index+1}/{len(sections)}")
                 begin = offset
-                for result in pipeline(sentence):
+                for result in pipeline(sentence.replace("*", "")):
                     phonemes = "".join(
                         c for c in result.phonemes if c in self.audio.model.vocab
                     )
@@ -1255,6 +1327,14 @@ class StudioService:
         self.store.mutate(p["id"], save)
 
     def analyze(self, p, chid, options):
+        self.director.timing_callback = (
+            lambda stage, seconds, details: self.record_timing(
+                p["id"],
+                stage,
+                seconds,
+                details | {"chapter": get_chapter(p, chid)["number"], "detail": True},
+            )
+        )
         self.director.reasoning = p["settings"]["director"].get("reasoning", "Balanced")
         ch = get_chapter(p, chid)
         self.status(p["id"], chid, "DIRECTING")

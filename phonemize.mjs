@@ -180,6 +180,7 @@ const PUNCTUATION_PATTERN = new RegExp(`(\\s*[${escapeRegExp(PUNCTUATION)}]+\\s*
  * @returns {Promise<string>} The phonemized text
  */
 export async function phonemize(text, language = "a", norm = true, phonemizer, lexicon) {
+  if (!/[\p{L}\p{N}]/u.test(text)) return '';
   const [espeakng, dictionary] = await Promise.all([phonemizer || getPhonemizer(), lexicon || loadLexicon(language)]);
   // 1. Normalize text
   if (norm) {
@@ -193,7 +194,10 @@ export async function phonemize(text, language = "a", norm = true, phonemizer, l
   const lang = language === "a" ? "en-us" : "en";
   const fallback = async (source, before, after) => {
     if (!source.trim()) return source;
-    if (/^[\s\-/]+$/.test(source)) return source.replace(/[\-/]/g, ' ');
+    // Opening single quotes and formatting between lexicon words have no
+    // speech sounds. Never ask eSpeak to pronounce them as isolated words.
+    // Apostrophes INSIDE words still reach the lexicon / contextual fallback.
+    if (!/[\p{L}\p{N}]/u.test(source)) return source.replace(/[^\s;:,.!?¡¿—…«»(){}\[\]]/gu, ' ');
     // Include neighboring dictionary words while eSpeak chooses weak forms
     // and contextual pronunciation. Their sounds are supplied by the lexicon.
     const context = [before, source.trim(), after].filter(Boolean).join(' ');
@@ -204,7 +208,7 @@ export async function phonemize(text, language = "a", norm = true, phonemizer, l
       else raw = (await espeakng(source, lang)).join(' ');
     }
     const converted = espeakToKokoro(raw, language);
-    if (!converted.trim()) throw new Error('A word could not be pronounced. Check this section for unsupported characters.');
+    if (!converted.trim()) throw new Error('Could not pronounce ' + JSON.stringify(source.trim().slice(0, 100)) + '. Add a spoken spelling in Pronunciation fixes.');
     return (/^\s/.test(source) ? ' ' : '') + converted.trim() + (/\s$/.test(source) ? ' ' : '');
   };
   const results = [];

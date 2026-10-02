@@ -616,6 +616,25 @@ function renderQueue() {
           tab = "timeline";
           render();
         });
+    if (run.timings?.length) {
+      const entries = run.timings.filter((t) => !t.detail),
+        totals = {};
+      for (const entry of entries)
+        totals[entry.stage] = (totals[entry.stage] || 0) + entry.seconds;
+      runStatus.insertAdjacentHTML(
+        "beforeend",
+        `<details><summary>Measured production times</summary><p class="muted">Recorded wall time, including loading, retries and pauses. Reused assets take only their validation time.</p><table><thead><tr><th>Stage</th><th>Time</th></tr></thead><tbody>${Object.entries(
+          totals,
+        )
+          .map(
+            ([stage, seconds]) =>
+              `<tr><td>${escape(stage)}</td><td>${time(seconds)}</td></tr>`,
+          )
+          .join(
+            "",
+          )}</tbody></table><details><summary>Every stage and director pass</summary>${run.timings.map((t) => `<p class="muted">${t.chapter ? "Chapter " + t.chapter + " · " : ""}${escape(t.stage)}${t.shot ? " · " + escape(t.shot) : ""} · ${t.seconds.toFixed(1)} s${t.reused ? " · reused" : ""}${t.status === "FAILED" ? " · failed attempt" : ""}</p>`).join("")}</details></details>`,
+      );
+    }
   }
   const jobs = queue.jobs.filter((j) => j.project === project.id),
     counts = queue.projectCounts?.[project.id],

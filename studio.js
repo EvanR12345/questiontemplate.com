@@ -1,4 +1,6 @@
-import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=opus-1';
+import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=speech-3';
+import { speechText } from './pronunciation.mjs?v=speech-3';
+import { GenerationEstimate, measuredPace, narrationEstimate } from './speech-progress.mjs?v=speech-3';
 import { beginSession, savePart, saveJob, loadSession } from './session-store.mjs?v=long-fast-2';
 import { nativeHealth } from './native-client.mjs?v=queue-1';
 import { pairingKey } from './helper-connection.mjs?v=queue-1';
@@ -8,6 +10,11 @@ let worker, busy = false, run, urls = [], deviceVoices = [], previewId = 0, acti
 let nativeKey = pairingKey();
 let nativeConnected = false, connectingNative = false;
 let history = [];
+let voicePaces = {};
+try { voicePaces = JSON.parse(localStorage.getItem('tts-voice-paces') || '{}') || {}; } catch {}
+function paceKey(voice = $('#studioVoice').value, engine = $('#engine').value) { return engine + ':' + voice; }
+function scriptEstimate() { return narrationEstimate(countWords(script.value), Number($('#rate').value), voicePaces[paceKey()]); }
+function estimateRange(estimate) { return duration(estimate.low) + '–' + duration(estimate.high); }
 try { const saved = JSON.parse(localStorage.getItem('tts-history') || '[]'); if (Array.isArray(saved)) history = saved.filter(x => typeof x === 'string').slice(0, 6); } catch {}
 const examples = {
   intro: 'You are not ready for what happens next. Today, we are testing the biggest challenge we have ever built!',
@@ -16,11 +23,12 @@ const examples = {
 };
 function status(message) { $('#status').textContent = message; }
 function updateCounts() {
-  const words = countWords(script.value), wpm = Math.round(155 * Number($('#rate').value));
+  const words = countWords(script.value), estimate = scriptEstimate();
   $('#count').textContent = script.value.length.toLocaleString();
   $('#words').textContent = words.toLocaleString();
-  $('#targetWpm').textContent = wpm;
-  $('#estimate').textContent = duration(words / wpm * 60);
+  $('#targetWpm').textContent = '≈ ' + Math.round(estimate.wpm);
+  $('#estimate').textContent = words ? estimateRange(estimate) : '0:00';
+  $('#estimate').title = estimate.measured ? 'Based on audio measured for this voice, including pauses. Story punctuation can change the pace.' : 'Rough range until a voice preview measures your narration pace.';
 }
 function outputs() {
   $('#rateOut').textContent = Number($('#rate').value).toFixed(2) + '×';
@@ -62,20 +70,26 @@ function selectVoice(id) {
     const selected = b.dataset.voice === id;
     b.classList.toggle('active', selected); b.setAttribute('aria-pressed', String(selected));
   });
+  updateCounts(); formatOutputs();
 }
 function revokeUrls() { urls.forEach(url => URL.revokeObjectURL(url)); urls = []; }
 function urlFor(blob) { const url = URL.createObjectURL(blob); urls.push(url); return url; }
 function recordingDuration() { return recordedSeconds(run.frames, run.bytes, run.format, run.bitrate); }
+function activeSeconds(now = performance.now()) {
+  if (!run.generationStart) return 0;
+  now = run.finishedAt || now;
+  return Math.max(0, (now - run.generationStart - run.pausedMs - (run.pauseStart ? now - run.pauseStart : 0)) / 1000);
+}
 function performanceStats() {
   if (!run) return;
-  const now = performance.now();
+  const now = run.finishedAt || performance.now();
   $('#elapsed').textContent = duration((now - run.wallStart) / 1000);
   if (!run.generationStart) return;
-  const active = Math.max(.001, (now - run.generationStart - run.pausedMs - (run.pauseStart ? now - run.pauseStart : 0)) / 1000);
+  const active = Math.max(.001, activeSeconds(now));
   const audio = (run.frames - run.startFrames) / SAMPLE_RATE;
   $('#generationSpeed').textContent = audio ? (audio / active).toFixed(2) + '× realtime' : '—';
-  const chars = run.processed - run.startOffset;
-  $('#timeLeft').textContent = run.pauseStart ? 'Paused' : chars > 0 ? duration((run.text.length - run.processed) / chars * active) : 'Measuring…';
+  const estimate = run.estimator.remaining(run.totalWords - run.words, active);
+  $('#timeLeft').textContent = run.pauseStart ? 'Paused' : run.finishedAt ? (run.processed >= run.text.length ? 'Complete' : 'Stopped') : !estimate ? 'Measuring…' : estimate.delayed ? 'Waiting for current section…' : estimate.seconds ? '≈ ' + duration(estimate.seconds) : 'Finishing…';
 }
 function updateRecording() {
   const seconds = recordingDuration();
@@ -124,6 +138,7 @@ function setFullDownload(partial = false) {
   } catch { $('#recordingNote').textContent = 'Download individual parts; this recording exceeds the WAV format size limit.'; }
 }
 async function complete(message, partial = false) {
+  run.finishedAt = performance.now();
   $('#progress').hidden = true;
   if (run.frames) {
     setFullDownload(partial);
@@ -185,6 +200,15 @@ async function receive({ data }) {
     if (data.type === 'chunk') {
       if (data.bytes.byteLength) { run.current.push(new Blob([data.bytes])); run.bytes += data.bytes.byteLength; }
       run.partFrames += data.frames; run.frames += data.frames;
+      if (data.frames > 0) {
+        run.estimator.record(run.words - run.startWords, activeSeconds());
+        const pace = measuredPace(run.words - run.startWords, (run.frames - run.startFrames) / SAMPLE_RATE, run.speed);
+        if (pace) {
+          voicePaces[paceKey(run.voice, run.engine)] = pace;
+          try { localStorage.setItem('tts-voice-paces', JSON.stringify(voicePaces)); } catch {}
+          updateCounts(); formatOutputs();
+        }
+      }
     }
     const percent = Math.min(100, run.processed / run.text.length * 100);
     $('#progress').value = percent;
@@ -197,7 +221,7 @@ async function receive({ data }) {
   }
   if (data.type === 'done') { run.checkpoint = run.processed; await complete(run.sample ? 'Voice sample ready. Press play below.' : 'Recording ready. Download the full track or individual parts.'); }
   if (data.type === 'canceled') await complete('Stopped safely. Completed audio is downloadable. Resume to continue.', true);
-  if (data.type === 'error') await complete('Could not finish: ' + data.message + '. Completed sections are downloadable.', true);
+  if (data.type === 'error') await complete('Could not finish: ' + data.message.replace(/[.\s]+$/, '') + '. Completed sections are downloadable.', true);
 }
 function resetWords(processed = 0) {
   run.wordIterator = run.text.matchAll(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu);
@@ -210,6 +234,8 @@ function initializeRun(job, parts = []) {
     generationStart: 0, pausedMs: 0, pauseStart: 0, persist: !job.sample, ready: false };
   run.startFrames = run.frames; run.startOffset = job.processed || 0;
   resetWords(job.processed || 0);
+  run.startWords = run.words; run.totalWords = countWords(run.text); run.estimator = new GenerationEstimate();
+  $('#generationSpeed').textContent = '—'; $('#timeLeft').textContent = 'Measuring…';
   $('#parts').replaceChildren(); $('#downloads').hidden = false; $('#downloadAll').removeAttribute('href'); $('#downloadAll').setAttribute('aria-disabled', 'true');
   $('#recordingHeading').textContent = run.sample ? 'Voice preview' : 'Your recording';
   $('#downloadAll').textContent = (run.sample ? '↓ Download preview ' : '↓ Download full ') + run.format.toUpperCase();
@@ -225,7 +251,7 @@ async function startWorker() {
   $('#pauseGeneration').textContent = 'Ⅱ Pause generation'; run.pauseRequested = false;
   status('Preparing the local voice engine…');
   try {
-    if (!worker) { worker = new Worker('./tts.worker.js?v=queue-1', { type: 'module' }); worker.onmessage = receive;
+    if (!worker) { worker = new Worker('./tts.worker.js?v=speech-3', { type: 'module' }); worker.onmessage = receive;
       worker.onerror = event => { event.preventDefault(); fail(event.message || 'Voice engine failed'); }; }
     worker.postMessage({ type: 'generate', text: run.text, voice: run.voice, speed: run.speed, volume: run.volume,
       format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', offset: run.processed,
@@ -257,6 +283,7 @@ async function resumeSaved() {
   document.querySelectorAll('audio').forEach(audio => audio.pause());
   run.startFrames = run.frames; run.startOffset = run.processed; run.wallStart = performance.now();
   run.generationStart = 0; run.pausedMs = run.pauseStart = 0; run.ready = false;
+  run.finishedAt = 0; run.startWords = run.words; run.estimator = new GenerationEstimate();
   $('#resumeSaved').hidden = true; $('#downloadAll').setAttribute('aria-disabled', 'true');
   controls(true); await startWorker();
 }
@@ -275,10 +302,12 @@ async function restore() {
   } catch { status('Saved recording could not be opened.'); }
 }
 function formatOutputs() {
+  updateCounts();
   const format = $('#format').value, bitrate = Number($('#bitrate').value);
   $('#bitrate').disabled = busy || format === 'wav';
   const mb = seconds => (estimatedBytes(seconds, format, bitrate) / 1e6).toFixed(0);
-  $('#sizeEstimate').textContent = (format === 'opus' ? 'Variable bitrate estimate: ' : '') + '90–120 min ≈ ' + mb(5400) + '–' + mb(7200) + ' MB. Your script ≈ ' + mb(countWords(script.value) / (155 * Number($('#rate').value)) * 60) + ' MB.';
+  const estimate = scriptEstimate();
+  $('#sizeEstimate').textContent = (format === 'opus' ? 'Variable bitrate estimate: ' : '') + '90–120 min ≈ ' + mb(5400) + '–' + mb(7200) + ' MB. Your script ≈ ' + mb(estimate.low) + '–' + mb(estimate.high) + ' MB.';
 }
 function stopPreview() { previewId++; synth?.cancel(); activeUtterance = null; }
 function loadVoices() {
@@ -293,12 +322,14 @@ async function devicePreview() {
   const value = script.value.trim(); if (!value) { status('Type something first.'); return; }
   stopPreview(); const id = previewId;
   // Smaller utterances avoid browser speech engines dropping long scripts.
-  const { splitText } = await import('./audio-core.mjs?v=opus-1');
+  const { splitText } = await import('./audio-core.mjs?v=speech-3');
   const chunks = splitText(value);
   function next() {
     if (id !== previewId) return;
     const chunk = chunks.next(); if (chunk.done) { if (!busy) status('Device preview finished.'); return; }
-    const utterance = new SpeechSynthesisUtterance(chunk.value); activeUtterance = utterance;
+    const spoken = speechText(chunk.value, [], false);
+    if (!spoken) { next(); return; }
+    const utterance = new SpeechSynthesisUtterance(spoken); activeUtterance = utterance;
     const voice = deviceVoices[Number($('#voice').value)]; if (voice) utterance.voice = voice;
     utterance.rate = Number($('#rate').value); utterance.pitch = Number($('#pitch').value); utterance.volume = Number($('#volume').value);
     utterance.onend = next; utterance.onerror = event => { if (id === previewId && event.error !== 'canceled' && !busy) status('Device preview failed. Try another device voice.'); };
