@@ -396,6 +396,24 @@ function stats() {
   const c = ch();
   return `<div class="stats"><div><strong>${time(c.audio.duration)}</strong><small>Narration duration</small></div><div><strong>${c.scenes.length}</strong><small>Scenes</small></div><div><strong>${shots().length}</strong><small>Shots</small></div><div><strong>${shots().filter((s) => s.imagePath).length}</strong><small>Images saved</small></div><div><strong>${c.people.filter((p) => p.type !== "main").length}</strong><small>Supporting / temporary</small></div></div>`;
 }
+function refreshBackgroundSummary() {
+  for (const button of root.querySelectorAll("[data-chapter]")) {
+    const chapter = project.chapters.find(
+      (item) => item.id === button.dataset.chapter,
+    );
+    if (!chapter) continue;
+    button.querySelector("strong").textContent = chapter.name;
+    button.querySelector("small").textContent =
+      chapter.status.replaceAll("_", " ") +
+      (chapter.continuityNeedsReview ? " · review continuity" : "");
+  }
+  const subtitle = root.querySelector(".chapter-heading .subtitle");
+  if (subtitle)
+    subtitle.textContent = `${ch().status.replaceAll("_", " ")} · ${project.settings.image.model} · ${project.settings.image.workflow}`;
+  const summary = root.querySelector("#productionContent > .stats");
+  if (summary) summary.outerHTML = stats();
+  // Update progress without replacing the story/narration editor or its selection.
+}
 function render() {
   if (!project) {
     root.innerHTML =
@@ -1612,6 +1630,7 @@ async function poll() {
           await cache();
           if (["review", "cast", "timeline"].includes(tab)) render();
           else {
+            refreshBackgroundSummary();
             $("#productionSaveState").textContent =
               "Background results saved · " + ch().status.replaceAll("_", " ");
           }
