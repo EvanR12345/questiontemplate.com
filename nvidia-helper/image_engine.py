@@ -38,7 +38,7 @@ class ImageEngine:
         return {'ok': True, 'backend': 'cuda', 'gpu': self.gpu, 'model': self.model_id,
                 'mode': '4 GB model offload + SDPA + float32 VAE' if self.low_vram else 'CUDA + float32 VAE',
                 'sharedHelper': True, 'queue': True, 'presets': PRESETS,
-                'models': MODELS, 'storyContinuity': 1, 'longPrompts': True}
+                'models': MODELS, 'storyContinuity': 1, 'longPrompts': True, 'promptSafeguards': 1}
 
     def unload(self):
         if self.pipe is not None:
@@ -244,12 +244,15 @@ class ImageEngine:
             w, h = kwargs['width'], kwargs['height']
             kwargs.update(image=ImageOps.fit(image, (w, h), Image.Resampling.LANCZOS),
                           mask_image=ImageOps.fit(mask, (w, h), Image.Resampling.NEAREST), strength=1.0)
-        kwargs.update(self._reference(refs if operation != 'inpaint' else [], float(data.get('reference_strength', .7)), checkpoint))
+        reference_strength = float(data.get('reference_strength', .45))
+        kwargs.update(self._reference(refs if operation != 'inpaint' else [], reference_strength, checkpoint))
         positive, negative, tokens = self.encode_prompts(data['prompt'], str(data.get('negative', '')), checkpoint)
         kwargs.update(prompt_embeds=positive, negative_prompt_embeds=negative)
         def callback(pipe, index, timestep, values):
             if not torch.isfinite(values['latents']).all():
                 raise FloatingPointError(f'UNet/scheduler produced invalid latents at step {index+1}; dtype={values["latents"].dtype}.')
+            if data.get('scene_reference_only') and self.ip_loaded and index + 1 >= int(steps * .8):
+                self.pipe.set_ip_adapter_scale(0)
             checkpoint(index+1, steps, 'Denoising')
             return values
         kwargs['callback_on_step_end'] = callback
@@ -278,7 +281,10 @@ class ImageEngine:
             return {'pil': image, 'seed': seed, 'seconds': time.perf_counter()-started, 'pixels': stats,
                     'precision': 'float32' if self.safe_unet else 'fp16 weights / fp32 convolutions and VAE' if self.safe_convolutions else 'fp16 UNet / fp32 VAE',
                     'preset': data.get('preset', 'balanced'), 'model': self.model_id, 'promptTokens': tokens,
-                    'continuityUsed': bool(data.get('continuity_used'))}
+                    'continuityUsed': bool(data.get('continuity_used')),
+                    'continuitySkipped': data.get('continuity_skipped', ''),
+                    'referenceStrengthUsed': reference_strength if refs else 0,
+                    'sceneReferenceOnly': bool(data.get('scene_reference_only'))}
         except FloatingPointError:
             if operation == 'generate' and not self.safe_unet:
                 self.safe_unet = True

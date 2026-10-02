@@ -3,7 +3,7 @@ import threading
 import time
 import unittest
 from PIL import Image
-from image_queue import ImageQueue
+from image_queue import ImageQueue, validate_job
 
 def wait_for(predicate, timeout=4):
     end=time.monotonic()+timeout
@@ -28,6 +28,42 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(payloads[0]['reference_images'], [])
         self.assertTrue(payloads[1]['continuity_used'])
         self.assertTrue(payloads[1]['reference_images'][0].startswith('data:image/png;base64,'))
+        self.assertLessEqual(payloads[1]['reference_strength'], .25)
+
+    def test_background_anchor_is_skipped_for_a_people_action(self):
+        self.queue.enqueue({'project':'story', 'jobs':[{'prompt':'An empty room.', 'target':'anchor','kind':'panel'}]})
+        wait_for(lambda:self.queue.snapshot()['counts']['completed']==1)
+        data=self.queue._expand({'prompt':'A woman watches a man falling.', 'reference_images':[], 'continuity_target':'anchor'},'story')
+        self.assertEqual(data['reference_images'],[])
+        self.assertIn('foreground subjects',data['continuity_skipped'])
+
+    def test_legacy_sound_anchor_is_skipped_without_removing_its_saved_image(self):
+        self.queue.enqueue({'project':'story', 'jobs':[{'prompt':'An empty room.', 'target':'anchor','kind':'panel'}]})
+        wait_for(lambda:self.queue.snapshot()['counts']['completed']==1)
+        with self.queue.cv:
+            self.queue.db.execute('UPDATE jobs SET payload=?', ('{"prompt":"Bang. in the room."}',))
+            self.queue.db.commit()
+        data=self.queue._expand({'prompt':'A man falls.', 'reference_images':[], 'continuity_target':'anchor'},'story')
+        self.assertEqual(data['reference_images'],[])
+        self.assertIn('sound effect',data['continuity_skipped'])
+        self.assertTrue(self.queue.result_path(self.queue.snapshot()['jobs'][0]['id']).exists())
+
+    def test_sound_only_action_rejected_but_visible_screaming_action_accepted(self):
+        with self.assertRaisesRegex(ValueError,'sound effect'):
+            validate_job({'kind':'panel','prompt':'Bang. in the room.'})
+        validate_job({'kind':'panel','prompt':'A woman screams as a man falls. in the room.'})
+
+    def test_scene_reference_does_not_raise_a_lower_strength(self):
+        self.queue.enqueue({'project':'story','jobs':[{'prompt':'A man walks.','target':'anchor','kind':'panel'}]})
+        wait_for(lambda:self.queue.snapshot()['counts']['completed']==1)
+        data=self.queue._expand({'prompt':'A man stands.', 'reference_images':[],'reference_strength':.1,'continuity_target':'anchor'},'story')
+        self.assertEqual(data['reference_strength'],.1)
+
+    def test_named_cast_retains_continuity_when_action_uses_a_pronoun(self):
+        self.queue.enqueue({'project':'story','jobs':[{'prompt':'A woman named Mira stands.','cast_ids':['m'],'target':'anchor','kind':'panel'}]})
+        wait_for(lambda:self.queue.snapshot()['counts']['completed']==1)
+        data=self.queue._expand({'prompt':'She raises a sword.', 'cast_ids':['m'],'reference_images':[],'continuity_target':'anchor'},'story')
+        self.assertTrue(data['continuity_used'])
 
     def test_scene_anchor_cannot_reference_a_different_project(self):
         self.queue.enqueue({'project':'other', 'jobs':[{'prompt':'first','target':'anchor','kind':'panel'}]})

@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -19,11 +20,26 @@ class YieldAudio(Exception):
     pass
 
 
+def action_text(data):
+    return str(data.get('action_prompt') or data.get('prompt', '')).split('.', 1)[0].strip(' *"\u201c\u201d')
+
+
+def sound_only(text):
+    return bool(re.fullmatch(r'(?:bang|boom|crash|pow|thud|(?:a+|o+|e+)c*k*h*|screams?|gasps?)[.!?\s*-]*', re.sub(r'["\u201c\u201d\x27]', '', text.strip()), re.I))
+
+
+def human_subjects(text):
+    plurals = {'men':'man', 'women':'woman', 'boys':'boy', 'girls':'girl', 'people':'person', 'children':'child'}
+    return {plurals.get(word, word) for word in re.findall(r'\b(?:man|men|woman|women|boy|boys|girl|girls|person|people|crowd|child|children)\b', text.lower())}
+
+
 def validate_job(data):
     if not isinstance(data, dict) or not str(data.get('prompt', '')).strip():
         raise ValueError('Every image needs a prompt.')
     if len(str(data['prompt'])) > 12000:
         raise ValueError('Image prompt exceeds 12,000 characters.')
+    if data.get('kind') == 'panel' and sound_only(action_text(data)):
+        raise ValueError('This panel contains only a sound effect. In Layout, describe the visible action (who does what) and put Bang/screams in SFX. No image was queued.')
     for key, low, high in [('width', 384, 768), ('height', 384, 768), ('steps', 8, 50), ('guidance', 1, 14), ('reference_strength', 0, 1)]:
         if key in data:
             n = data[key]
@@ -33,6 +49,8 @@ def validate_job(data):
         raise ValueError('Unsupported image operation.')
     if data.get('model') not in (None, 'sd15', 'dreamshaper8'):
         raise ValueError('Choose a supported local image model.')
+    if 'cast_ids' in data and (not isinstance(data['cast_ids'], list) or len(data['cast_ids']) > 20 or any(not isinstance(value, str) or len(value) > 100 for value in data['cast_ids'])):
+        raise ValueError('Invalid panel cast selection.')
     if 'continuity_target' in data and (not isinstance(data['continuity_target'], str) or len(data['continuity_target']) > 100):
         raise ValueError('Invalid scene reference target.')
     if data.get('operation') == 'inpaint' and not (data.get('image') and data.get('mask')):
@@ -89,13 +107,25 @@ class ImageQueue:
         target = data.get('continuity_target')
         if target and data.get('operation') != 'inpaint':
             with self.cv:
-                anchor = self.db.execute("SELECT id FROM jobs WHERE project=? AND target=? AND kind='panel' AND state='completed' ORDER BY rowid DESC LIMIT 1", (project, target)).fetchone()
+                anchor = self.db.execute("SELECT id,payload FROM jobs WHERE project=? AND target=? AND kind='panel' AND state='completed' ORDER BY rowid DESC LIMIT 1", (project, target)).fetchone()
             if anchor:
+                anchor_data = json.loads(anchor['payload'])
+                if sound_only(action_text(anchor_data)):
+                    data['continuity_skipped'] = 'Scene anchor contains only a sound effect.'
+                    return data
+                current_cast, anchor_cast = set(data.get('cast_ids', [])), set(anchor_data.get('cast_ids', []))
+                incompatible = current_cast != anchor_cast if current_cast or anchor_cast else human_subjects(action_text(anchor_data)) != human_subjects(action_text(data))
+                if incompatible:
+                    data['continuity_skipped'] = 'Scene anchor has different foreground subjects.'
+                    return data
                 import base64
                 reference = 'data:image/png;base64,' + base64.b64encode(self.result_path(anchor['id']).read_bytes()).decode()
                 if len(data['reference_images']) < 3:
+                    data['scene_reference_only'] = not data['reference_images']
                     data['reference_images'].append(reference)
                     data['continuity_used'] = True
+                    if data['scene_reference_only']:
+                        data['reference_strength'] = min(float(data.get('reference_strength', .25)), .25)
         return data
 
     def enqueue(self, body):

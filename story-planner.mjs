@@ -50,6 +50,13 @@ export function migrateScenes(project) {
   project.continuityVersion = 1;
 }
 export function sceneFor(panel, project) { return project.scenes[Number(panel.scene) - 1]; }
+export function soundOnly(text) {
+  return /^(?:bang|boom|crash|pow|thud|(?:a+|o+|e+)c*k*h*|screams?|gasps?)[.!?\s*-]*$/i.test(clean(text).replace(/["“”']/g, ''));
+}
+export function humanSubjects(text) {
+  return [...new Set((clean(text).toLowerCase().match(/\b(?:man|men|woman|women|boy|boys|girl|girls|person|people|crowd|child|children)\b/g) || [])
+    .map(word => ({men:'man',women:'woman',boys:'boy',girls:'girl',people:'person',children:'child'}[word] || word)))].sort();
+}
 export function panelPrompt(panel, project, style) {
   const cast = panel.characters.map(id => project.characters.find(c => c.id === id)).filter(Boolean);
   let action = clean(panel.prompt);
@@ -58,15 +65,20 @@ export function panelPrompt(panel, project, style) {
   const people = cast.map(c => [c.name, clean(c.description), c.outfit ? 'wearing ' + clean(c.outfit) : ''].filter(Boolean).join(', '));
   const scene = sceneFor(panel, project);
   // Put the event before style so even older helpers retain the subject/action.
-  return [action, ...people, clean(scene?.setting), clean(project.world), style,
+  const subjects = humanSubjects(action);
+  const foreground = subjects.length ? (subjects.length === 2 ? 'two people in the foreground: ' : subjects.length > 2 ? 'people in the foreground: ' : 'foreground subject: ') + subjects.join(' and ') + ', focus on their visible action' : '';
+  return [action, ...people, foreground, clean(scene?.setting), clean(project.world), style,
     `${panel.shot}, ${panel.angle}, ${String(panel.mood || 'neutral').toLowerCase()} mood`,
     'single comic panel, no lettering'].filter(Boolean).join('. ');
 }
 export function continuityTarget(panel, project) {
   if (panel.continuity === false) return null;
-  const first = project.panels.find(p => p.scene === panel.scene);
+  const first = project.panels.find(p => Number(p.scene) === Number(panel.scene) && !soundOnly(p.prompt));
   if (!first || first.id === panel.id) return null;
   // Do not inject another character into an explicitly empty or different cast.
   const sameCast = first.characters.length === panel.characters.length && first.characters.every(id => panel.characters.includes(id));
-  return sameCast ? first.id : null;
+  // Empty cast selections may still contain unnamed people in the action.
+  // An establishing room or a man alone must not override a woman-and-man panel.
+  const sameSubjects = humanSubjects(first.prompt).join('|') === humanSubjects(panel.prompt).join('|');
+  return sameCast && (panel.characters.length || sameSubjects) ? first.id : null;
 }
