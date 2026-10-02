@@ -81,6 +81,12 @@ def text_groups(text, max_chars=8500):
         offset = end
 
 
+def unidentified_gunshot(text):
+    return bool(re.search(r"\bgunshots?\b.+\bheard\b", text, re.I)) and not re.search(
+        r"\b(?:man|woman|boy|girl|he|she|they|people|crowd|fired|firing|shoots|shooting|aimed)\b", text, re.I
+    )
+
+
 def first_verified_appearances(project, chapter):
     """New unnamed protagonists cannot inherit an earlier unidentified victim.
 

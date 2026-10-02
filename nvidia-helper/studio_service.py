@@ -1306,7 +1306,7 @@ class StudioService:
                 "source": ch["sourceText"],
                 "shots": [s["id"] for s in shots],
                 "introductions": introductions,
-                "bindingVersion": 2,
+                "bindingVersion": 3,
             }
         )
         if ch.get("identityBindingSignature") == signature:
@@ -1325,7 +1325,15 @@ class StudioService:
             for e in s.get("intentionalAppearanceChanges", [])
             if not supported_appearance_change(e)
         ]
-        if not affected and not unsupported_changes:
+        sound_only = {
+            s["id"]
+            for s in shots
+            if introductions
+            and s["endSentence"] < max(introductions.values())
+            and unidentified_gunshot(s["narrationSegment"])
+            and not s.get("unknownIdentityFraming")
+        }
+        if not affected and not unsupported_changes and not sound_only:
             self.store.mutate(
                 pid,
                 lambda latest: get_chapter(latest, chid).update(
@@ -1333,7 +1341,10 @@ class StudioService:
                 ),
             )
             return
-        if any(s.get("manual") for s in affected):
+        if any(
+            s.get("manual")
+            for s in affected + [s for s in shots if s["id"] in sound_only]
+        ):
             raise ValueError(
                 "Opening character identities need review; manual shot edits were preserved."
             )
@@ -1444,11 +1455,34 @@ class StudioService:
                         {"id": cid, "type": people[cid]["type"], "appearanceState": {}}
                         for cid in update["characters"]
                     ]
+                if shot["id"] in sound_only:
+                    notes.append(
+                        {
+                            "shotId": shot["id"],
+                            "originalAction": shot["action"],
+                            "reason": "Narration hears a gunshot but does not identify a visible shooter; keep the unknown face outside the frame",
+                        }
+                    )
+                    shot.update(
+                        action="A tight cinematic insert of a gun muzzle firing with a bright muzzle flash. The shooter's face and body remain entirely outside the frame. Blurred party lights in the background.",
+                        expression="",
+                        pose="",
+                        characters=[],
+                        unknownIdentityFraming=True,
+                    )
+                    shot["camera"].update(
+                        shot="insert shot",
+                        composition="Gun barrel fills the frame; no visible face or body",
+                    )
                 for selected in shot["characters"]:
                     selected["appearanceState"] = copy.deepcopy(
                         state["characters"].get(selected["id"], {})
                     )
-                if shot["id"] in corrections or old_appearance != shot["characters"]:
+                if (
+                    shot["id"] in corrections
+                    or shot["id"] in sound_only
+                    or old_appearance != shot["characters"]
+                ):
                     if shot.get("manual"):
                         raise ValueError(
                             "Inherited appearance needs review; manual shot fields were preserved."
@@ -1467,7 +1501,9 @@ class StudioService:
             )
         ch["handoff"]["state"] = state
         ch["analysis"]["identityBindingRepairs"] = notes
-        ch["analysis"].setdefault("rejectedAppearanceChanges", []).extend(unsupported_changes)
+        ch["analysis"].setdefault("rejectedAppearanceChanges", []).extend(
+            unsupported_changes
+        )
         ch["identityBindingSignature"] = signature
         ch["renderStale"] = True
         ch["status"] = "READY_FOR_IMAGES"

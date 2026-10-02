@@ -12,6 +12,14 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_heard_gunshot_does_not_reveal_an_unidentified_shooters_face(self):
+        self.assertTrue(unidentified_gunshot("Bang. A loud gunshot was heard."))
+        self.assertTrue(unidentified_gunshot("Three more gunshots were heard."))
+        self.assertFalse(
+            unidentified_gunshot("Michael fired, and a gunshot was heard by the crowd.")
+        )
+        self.assertFalse(unidentified_gunshot("A man fired his gun."))
+
     def test_quoted_shooting_action_does_not_support_an_invented_heart_wound(self):
         event = {
             "characterId": "hero",
