@@ -1,6 +1,6 @@
 # Cloud image selection — October 2, 2026
 
-Target: one RTX 5090 (32 GB VRAM), 71 GB archive storage on one Runpod account, GPU/working disk on a separate account. Preserve the existing 6–7 story images per minute, original project data, references, assets, and working local voice environment.
+Target: one funded Runpod account for both 71 GB persistent storage and an available high-end GPU. Prefer an RTX PRO 6000 (96 GB) for the first reference/quality benchmark; retain the RTX 5090 (32 GB) as a lower-cost option when available. Preserve the existing 6–7 story images per minute, original project data, references, assets, and working local voice environment.
 
 ## Recommendation pending a real benchmark
 
@@ -42,15 +42,13 @@ Use accepted project reference images and real story facts. Preserve every promp
 
 Begin around one megapixel with landscape dimensions suitable for full-frame video. Try higher resolution only after identity and adherence pass. Compare human identity/style review alongside bounded Luna/Qwen QC. Record analysis, audio, transfers, model loading, sampling, decoding, QC, retries and rendering separately. Maintain shot density across model comparisons.
 
-Accept the default only after successful generation, one successful multi-character edit, a cancelled job that preserves previous outputs, archived outputs verified through the other account, same-seed retry metadata preservation, and provider selection surviving refresh. Keep current images and the local provider until acceptance.
+Accept the default only after successful generation, one successful multi-character edit, a cancelled job that preserves previous outputs, downloaded outputs verified through the local helper, same-seed retry metadata preservation, and provider selection surviving refresh. Keep current images and the local provider until acceptance.
 
-## Two-account storage design
+## Single-account storage design
 
-Archive account: a 71 GB standard network volume in an S3-compatible region, at $4.97/month. Check both account funding and the creation result before describing any archive as deployed.
+The user now requires one Runpod account for both storage and compute. Create a 71 GB standard network volume in the same data center as the available GPU and mount it at `/workspace`. The sampled rate is $4.97/month, independent of GPU rental. Previous cross-account transfer planning is superseded.
 
-Compute account: verify account identity/access and the actual deployment quote. Do not create billable GPU work under the archive account.
-
-The supported transport to investigate is the storage account's S3-compatible API with explicit transfers. Direct cross-account volume attachment is unverified. Compute still needs its own working disk and retains associated storage charges if kept after stopping. Cold-start model transfers consume time and may be billed during GPU startup. Keep storage credentials out of the website and project exports. Remote secret creation/permissions and paid GPU deployment require completion of their concrete setup steps; neither has occurred.
+Prepare SSH and cloud management credentials before starting paid compute. Preserve the local audio environment and project assets. Run downloads on the cloud worker, reuse compatible encoders and VAE files, and avoid duplicate diffusion variants until the benchmark justifies their space. Actual model loading, generation, reference editing and Luna QC remain mandatory acceptance checks.
 
 ## Storage performance and deployment selection
 
@@ -66,7 +64,7 @@ Observed October 2, 2026 console quotes for 71 GB:
 
 Check the current console quote before creating any resource. Include GPU, container/working disk, retained disk while stopped, archive storage, model transfers, loading, retries, and output transfers in the cost comparison. No paid GPU has been deployed by this evaluation.
 
-The live catalog during this inspection showed RTX 5090 out of capacity under the checked filters. Available alternatives included 48 GB RTX 6000 Ada/L40S and 96 GB RTX PRO 6000. Availability and quoted host allocations change; these are alternatives to evaluate, not an authorized automatic GPU substitution or a speed benchmark. Do not treat a two-GPU 24 GB offer as a single 48 GB GPU.
+The live catalog during this inspection showed RTX 5090 out of capacity under the checked filters. Available alternatives included 48 GB RTX 6000 Ada/L40S and 96 GB RTX PRO 6000. Availability and quoted host allocations change; these are alternatives to evaluate, capacity candidates, not a speed benchmark. Do not treat a two-GPU 24 GB offer as a single 48 GB GPU.
 
 Before deployment, verify one GPU's VRAM, assigned system RAM, CPU allocation, local NVMe/SSD, supported CUDA and template, actual region, cloud type, and the complete hourly quote. For Qwen FP8, a 48 GB card provides more memory headroom than a 32 GB card, but actual peak memory with multiple references must still be measured. A 96 GB card can test higher-precision configurations at higher hourly cost; it does not guarantee a visually superior result. Obtain the user's choice if the requested RTX 5090 is unavailable.
 

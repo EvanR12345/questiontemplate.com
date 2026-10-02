@@ -202,7 +202,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/project':self.reply(200,studio.store.load(query['id'][0]))
                     elif path=='/studio/revision':self.reply(200,studio.store.revision(query['id'][0]))
                     elif path=='/studio/queue':self.reply(200,studio.snapshot())
-                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile')})
+                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
                 except (ValueError,KeyError,FileNotFoundError) as error:self.reply(404,{'error':str(error)})

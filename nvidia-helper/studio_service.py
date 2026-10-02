@@ -252,6 +252,7 @@ class StudioService:
             "ffmpeg",
             "font",
             "openaiApiKey",
+            "runpodApiKey",
         }
         if not isinstance(data, dict) or any(k not in allowed for k in data):
             raise ValueError("Unknown helper configuration option.")
@@ -262,13 +263,25 @@ class StudioService:
                 )
             self.unload_models()
             data = dict(data)
-            if "openaiApiKey" in data:
-                key = str(data.pop("openaiApiKey")).strip()
-                if key and (not key.startswith("sk-") or len(key) < 20):
-                    raise ValueError("Enter a valid OpenAI API key.")
+            secret_updates = {}
+            for field in ("openaiApiKey", "runpodApiKey"):
+                if field not in data:
+                    continue
+                key = str(data.pop(field)).strip()
+                if key and (len(key) < 20 or field == "openaiApiKey" and not key.startswith("sk-")):
+                    raise ValueError("Enter a valid " + ("OpenAI" if field == "openaiApiKey" else "Runpod") + " API key.")
+                secret_updates[field] = key
+            if secret_updates:
                 path = self.config_path.with_name(".studio-secrets.json")
-                path.write_text(json.dumps({"openaiApiKey": key}), encoding="utf-8")
-                self.config["openaiKeyFile"] = str(path)
+                saved = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+                saved.update(secret_updates)
+                temporary = path.with_suffix(".json.tmp")
+                temporary.write_text(json.dumps(saved), encoding="utf-8")
+                temporary.replace(path)
+                if "openaiApiKey" in saved:
+                    self.config["openaiKeyFile"] = str(path)
+                if "runpodApiKey" in saved:
+                    self.config["runpodKeyFile"] = str(path)
             self.config.update(data)
             self.config_path.write_text(
                 json.dumps(self.config, indent=2), encoding="utf-8"

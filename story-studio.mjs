@@ -1557,14 +1557,20 @@ function wireSettings() {
     const ready = health?.directorProviders?.["openai-luna"]?.installed;
     formDialog(
       "Cloud setup",
-      `<p>Luna directs your story. Runpod runs the image workflow; its GPU and storage are billed separately.</p><ol><li><a href="https://platform.openai.com/" target="_blank" rel="noopener">Create your OpenAI API account</a>, add API billing, and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">create a project API key</a>.</li><li>Enter that key below to connect Luna. Your key stays in the local helper, outside project exports and browser storage.</li><li><a href="https://console.runpod.io/" target="_blank" rel="noopener">Configure Runpod billing</a> and an RTX 5090 image worker. Storage on a separate account needs file transfers and a working disk on the GPU account. See the <a href="./CLOUD-SETUP.md" target="_blank" rel="noopener">cloud setup guide</a> before deployment.</li></ol><p><a href="./CLOUD-IMAGE-EVALUATION.md" target="_blank" rel="noopener">Image model comparison and character-reference tests</a>: Qwen-Image-Edit-2511 is the first character and repair candidate. The cloud workflow must pass generation and reference-edit tests before it becomes active.</p><label>OpenAI API key ${ready ? "(already saved; leave blank to retain)" : ""}<input id="cloudOpenAIKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label><p class="muted">Saving verifies Luna access and selects it for this project. Image generation remains on your current provider until a cloud image workflow is connected and tested.</p>`,
+      `<p>Luna directs your story. Runpod runs the image workflow; its GPU and storage are billed separately.</p><ol><li><a href="https://platform.openai.com/" target="_blank" rel="noopener">Create your OpenAI API account</a>, add API billing, and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">create a project API key</a>.</li><li>Enter that key below to connect Luna. Your key stays in the local helper, outside project exports and browser storage.</li><li><a href="https://console.runpod.io/" target="_blank" rel="noopener">Configure Runpod billing</a> and use one account for both the image worker and persistent storage. Choose an available RTX 5090 or RTX PRO 6000 after checking its live rate and region. See the <a href="./CLOUD-SETUP.md" target="_blank" rel="noopener">cloud setup guide</a> before deployment.</li></ol><p><a href="./CLOUD-IMAGE-EVALUATION.md" target="_blank" rel="noopener">Image model comparison and character-reference tests</a>: Qwen-Image-Edit-2511 is the first character and repair candidate. The cloud workflow must pass generation and reference-edit tests before it becomes active.</p><label>OpenAI API key ${ready ? "(already saved; leave blank to retain)" : ""}<input id="cloudOpenAIKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label><label>Runpod API key (optional; leave blank to retain)<input id="cloudRunpodKey" type="password" autocomplete="off" spellcheck="false" placeholder="Runpod API key"></label><p class="muted">Keys stay in your local helper and are excluded from project exports and browser storage. Saving an OpenAI key verifies Luna access and selects it for this project. Saving a Runpod key prepares worker management; it does not rent a GPU or download a model. Image generation remains on your current provider until a cloud workflow passes generation tests.</p>`,
       async () => {
         const key = $("#cloudOpenAIKey").value.trim();
-        if (key) health = await api("config", { openaiApiKey: key });
-        else if (!ready)
-          throw new Error(
-            "Enter an OpenAI API key after enabling API billing.",
-          );
+        const runpodKey = $("#cloudRunpodKey").value.trim();
+        if (!key && !runpodKey && !ready)
+          throw new Error("Enter an OpenAI or Runpod API key to save its connection.");
+        if (key || runpodKey) health = await api("config", {
+          ...(key ? { openaiApiKey: key } : {}),
+          ...(runpodKey ? { runpodApiKey: runpodKey } : {}),
+        });
+        if (!key && !ready) {
+          note("Runpod key saved privately. GPU deployment and image validation are still required.");
+          return;
+        }
         await api("cloud-test", {});
         await patch(
           "project",

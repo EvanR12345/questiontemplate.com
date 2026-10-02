@@ -1,6 +1,6 @@
 # Studio cloud setup
 
-The video can keep the existing 6–7 images per minute. Luna plans the story; a rented RTX 5090 generates images; the existing local voice environment continues to generate narration. Existing projects, references, image history and videos remain on the laptop.
+The video can keep the existing 6–7 images per minute. Luna plans the story; a rented cloud GPU generates images; the existing local voice environment continues to generate narration. Existing projects, references, image history and videos remain on the laptop.
 
 ## 1. Connect Luna
 
@@ -16,33 +16,27 @@ Reference: [OpenAI quickstart](https://developers.openai.com/api/docs/quickstart
 
 ## 2. Create Runpod storage and rent the GPU
 
-### Requested setup: two separate accounts
+### Current setup: one Runpod account
 
-With separate accounts, reserve one for **71 GB standard network storage** and the other for compute. Do not merge their credits, create a team or put GPU charges on the storage account without changing that decision explicitly.
+Use the same funded account for the GPU and **71 GB of standard network storage**. Do not create resources in the previous storage-only account or attempt cross-account mounting.
 
-An archive can be named `questiontemplate-studio-archive` in an **S3-compatible region**, such as US-IL-1. Standard 71 GB storage costs **$4.97/month** at the published rate. If Create returns **“Insufficient funds, please add funds to continue”**, resolve account funding before using the archive. A monthly price is not necessarily the service's creation threshold; do not guess the minimum required balance.
+1. Check current GPU availability before choosing a storage region. Prefer an available RTX PRO 6000 with 96 GB VRAM for the first Qwen quality/reference benchmark; an RTX 5090 with 32 GB remains a lower-cost alternative if available and the tested graph fits.
+2. Create a standard 71 GB network volume named `questiontemplate-studio` in the **same data center** as the available GPU. The sampled monthly storage quote is **$4.97**. Review the console's final quote and account funding.
+3. Select the **official ComfyUI CUDA 13.0 template** for Blackwell hardware. The current official image observed on October 2 is `runpod/comfyui:1.3.3-comfyuiv0.30.0-cuda13.0`. Its template requests a 150 GB container disk; that working disk is separate from the 71 GB persistent volume and has an hourly charge.
+4. Enable SSH and register the helper's public key before the worker's first boot. The private SSH key stays on the laptop. Use a localhost port forward to ComfyUI; do not expose an unauthenticated image-generation endpoint publicly.
+5. Download only the selected model files directly into the mounted cloud volume. Do not download multi-GB weights or another Torch install onto the laptop.
+6. Export and validate the ComfyUI API workflow, attach real character references, and test generation through the website before selecting it for normal production.
+7. Bound the paid test time and stop the GPU when idle. Persistent storage continues billing while the GPU is stopped; preserve it because it holds the models.
 
-For this split, use the storage account's S3-compatible API for explicit downloads/uploads. A direct cross-account filesystem mount has not been verified. A compute pod still needs its own working disk. Download/cache selected models there, run generation, and copy each completed result back to the archive. Persist job metadata before advancing the queue; verify the archived object before declaring an upload complete. Repeated cold starts can require downloading model weights again and incur paid setup time. Retaining a compute-side disk also costs money on the compute account. This cross-account transfer path is planned, **not connected or tested yet**.
+The Studio Cloud setup form accepts OpenAI and Runpod keys independently. Keys are saved in the local helper's `.studio-secrets.json`; updating one retains the other. Saving a Runpod key does not deploy a GPU or claim that the image worker is ready. Create credentials in their provider dashboards, enter them privately in Studio, and never paste them into chat.
 
-Do not pass storage credentials to the website, director model, project JSON or logs. Use the storage account's S3 credentials only in the helper/worker configuration. Any remote credential provisioning remains a separate setup step. Keep a local copy of original project data and completed assets. The existing audio `.venv` must remain intact.
+The observed RTX PRO 6000 quote was $2.09/hour plus approximately $0.021/hour for the template's 150 GB container disk. GPU availability changes during setup. Keep the account identity, region, exact deployment quote and timed benchmark result in the private setup record. OpenAI API credit is separate from Runpod credit.
 
-At the published standard rate, $5 funds approximately one month of a 71 GB volume. Storage must remain funded after GPU work stops. See [S3 access](https://docs.runpod.io/storage/s3-api) and [network volumes](https://docs.runpod.io/storage/network-volumes).
-
-### Simpler alternative: one account (not the user's current choice)
-
-1. Create an account at [Runpod Console](https://console.runpod.io/) and add billing.
-2. Check **Pods** for an available **RTX 5090, 32 GB VRAM**. Note its data center before creating storage.
-3. In **Storage**, create a **standard network volume**, name it `questiontemplate-studio`, choose **50 GB**, and choose that same data center. Network storage persists independently of the GPU pod.
-4. Deploy **one RTX 5090** in that data center using a ComfyUI template and attach the network volume at `/workspace`. Review the actual GPU rate and container-storage charges shown before deployment.
-5. Store models, the image workflow and generated assets under `/workspace`. Install only the selected model's required files; 50 GB should not become a collection of duplicate checkpoints.
-6. Enable SSH for the pod. The helper's existing ComfyUI provider can connect through a localhost SSH port forward to the pod's ComfyUI port. This keeps the local authenticated helper connection shared with Audio and avoids exposing a public, unauthenticated generator.
-7. After the pod is running, use its **Connect** details to create the SSH tunnel. The exact host, port and user depend on the deployed pod. Export the tested ComfyUI **API workflow** and supply its node bindings, capabilities and model name to the helper configuration.
-
-Reference: [Network volumes](https://docs.runpod.io/storage/network-volumes), [Pod connections](https://docs.runpod.io/pods/connect-to-a-pod), [Manage pods](https://docs.runpod.io/pods/manage-pods).
+References: [Network volumes](https://docs.runpod.io/storage/network-volumes), [Pod connections](https://docs.runpod.io/pods/connect-to-a-pod), [Manage pods](https://docs.runpod.io/pods/manage-pods).
 
 ## 3. Select the image workflow through an actual benchmark
 
-The 5090 has not been provisioned or benchmarked yet. There is no honest single “best model” conclusion before testing the actual character references and scenes.
+The cloud GPU has not been provisioned or benchmarked yet. There is no honest single “best model” conclusion before testing the actual character references and scenes.
 
 First compare ten representative shots: a close-up, two characters, an action, a wide location, selected illustration/anime style, and targeted appearance repair. Keep prompts, saved seeds and required references in the benchmark record. Compare total time including retries, prompt adherence, identity, correct appearance, editing, memory and output resolution.
 
@@ -53,7 +47,7 @@ First compare ten representative shots: a close-up, two characters, an action, a
 
 The current first quality candidate is **Qwen-Image-Edit-2511 FP8 mixed**, using ComfyUI's maintained repack and model-specific natural-language instructions. The diffusion weights are approximately 20.5 GB on disk, the FP8 text encoder 9.38 GB, and VAE 254 MB. Disk size is not peak VRAM: profile the entire graph on the 32 GB 5090, including references, activations and decoding, and offload the encoder when necessary. Do not claim BF16 inference fits entirely in 32 GB: the diffusion weights alone are approximately 40.9 GB. Start at roughly one megapixel with two character references and 40 steps; compare a 4-step Lightning workflow separately for speed versus fidelity. Do not apply a Lightning LoRA blindly to an incompatible quantized model.
 
-Qwen-Image-Edit requires image input. Existing accepted character references can supply that input. For initial reference sheets and shots with no relevant image input, use a separate validated text-to-image workflow, such as Qwen-Image-2512, rather than pretending the edit graph works without references. Share compatible encoders and VAE files, and retain only required model variants on the 71 GB archive. The current laptop generator remains available until both cloud generation and editing pass actual tests.
+Qwen-Image-Edit requires image input. Existing accepted character references can supply that input. For initial reference sheets and shots with no relevant image input, use a separate validated text-to-image workflow, such as Qwen-Image-2512, rather than pretending the edit graph works without references. Share compatible encoders and VAE files, and retain only required model variants on the 71 GB volume. The current laptop generator remains available until both cloud generation and editing pass actual tests.
 
 Every identity reference must be named by its image index and associated with the correct character. A repair uses image 1 as its source; identity references follow it. Scene appearance state overrides clothing in reference images. Reference capacity includes the repair source. The adapter now checks ComfyUI's reported GPU memory, not the laptop's, and rejects unbound references instead of uploading and ignoring them. These adapter checks passed automated tests; they are not a cloud quality benchmark.
 

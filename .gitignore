@@ -4,4 +4,5 @@
 nvidia-helper/outputs/
 *.log
 **/.studio-secrets.json
+**/.studio-secrets.json.tmp
 **/.env
