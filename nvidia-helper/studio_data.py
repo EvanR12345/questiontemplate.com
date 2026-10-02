@@ -68,6 +68,19 @@ def sentences(text):
     ]
 
 
+def text_groups(text, max_chars=8500):
+    """Bound model input while retaining every character and full words."""
+    offset = 0
+    while offset < len(text):
+        end = min(len(text), offset + max_chars)
+        if end < len(text):
+            boundary = max(text.rfind("\n", offset, end), text.rfind(" ", offset, end))
+            if boundary > offset + max_chars // 2:
+                end = boundary + 1
+        yield text[offset:end]
+        offset = end
+
+
 def new_chapter(number):
     return {
         "id": uid("ch-"),

@@ -120,6 +120,14 @@ CAMERA = obj({"shotIndex": INT, "shot": STR, "angle": STR, "composition": STR})
 
 
 class DirectorProvider:
+    def resolvePeople(self, context, gate):
+        return self.call(
+            "Casting supervisor. Identify the actual people and groups in this chapter, resolving repeated pronouns and aliases against the supplied known cast. One entry per identity. Do not split the same protagonist into new people every time an action changes. Do not merge different people merely because both are unnamed men. Use clear role-specific labels for unnamed people. Only central recurring protagonists and already established main characters are main; casualties, panicking bystanders, staff and incidental attackers are supporting/temporary/group. Represent crowds and factions as groups, not dozens of permanent profiles. Alias lists must be supported by the chapter. Do not invent names, ages, traits or events. Identity descriptions should be concise. Default appearance is the earliest baseline; later clothing, injuries and transformations belong to continuity changes. Preserve supplied known IDs when it is clearly the same person; otherwise assign a short distinct local label.",
+            context,
+            obj({"people": arr(obj(PERSON["properties"] | {"aliases": arr(STR)}))}),
+            gate,
+        )
+
     def analyzeStory(self, context, gate):
         evidence = {"type": "string", "enum": [s["text"] for s in context["sentences"]]}
         schema = obj(
@@ -131,8 +139,15 @@ class DirectorProvider:
                 ),
             }
         )
+        if context.get("chapterCast"):
+            schema["properties"]["people"]["maxItems"] = 0
+            valid_ids = [person["id"] for person in context["chapterCast"]]
+            schema["properties"]["changes"]["items"]["properties"]["characterId"] = {
+                "type": "string",
+                "enum": valid_ids,
+            }
         return self.call(
-            "Story analyst. Extract every held/dropped object, injury, clothing change and hairstyle change. Change field names should be specific: outfit, hairStyle, injury, key, sword, phone, not generic accessories when an object is picked up. Each change reason MUST select its exact source sentence from the evidence enum. Extract time/weather changes in environmentChanges with exact quoted evidence. Main people: separate permanent identity from current clothes/appearance; leave unknown fields empty. Supporting people need only a brief description, identity fields may be empty. Never guess ages or traits. Classify unnamed passersby as temporary; staff as supporting. Known main IDs are supplied.",
+            "Story analyst. Use the supplied chapterCast as the source of character identity. When chapterCast is provided, return people=[]; do not create duplicates. Resolve aliases and pronouns to those existing IDs. Extract explicit held/dropped objects, injury, clothing and hairstyle changes. Do not repeat unchanged state. Change field names should be specific: outfit, hairStyle, injury, key, sword, phone. Each change reason MUST select its exact source sentence from the evidence enum. Extract time/weather changes with exact quoted evidence. Keep summary, beats and descriptions concise. Never guess traits or invent story events.",
             context,
             schema,
             gate,
@@ -584,11 +599,19 @@ def validate_schema(value, schema):
     elif kind == "array":
         if not isinstance(value, list):
             raise ValueError("Expected array")
+        if len(value) > schema.get("maxItems", len(value)) or len(value) < schema.get(
+            "minItems", 0
+        ):
+            raise ValueError("Array length violates schema bounds")
         for v in value:
             validate_schema(v, schema["items"])
     elif kind == "string" and not isinstance(value, str):
         raise ValueError("Expected string")
     elif kind == "integer" and (isinstance(value, bool) or not isinstance(value, int)):
         raise ValueError("Expected integer")
+    elif kind == "integer" and (
+        value < schema.get("minimum", value) or value > schema.get("maximum", value)
+    ):
+        raise ValueError("Integer violates schema bounds")
     elif kind == "boolean" and not isinstance(value, bool):
         raise ValueError("Expected boolean")

@@ -1367,6 +1367,89 @@ class StudioService:
                     ch["number"],
                     old_scene["id"],
                 )
+        known_people = [
+            {
+                "id": c["id"],
+                "name": c["name"],
+                "type": "main",
+                "description": c["description"],
+                "aliases": c.get("aliases", []),
+                "identity": c["permanentIdentity"],
+            }
+            for c in p["characters"]
+        ]
+        for casting_text in text_groups(ch["sourceText"]):
+            casting = self.director.resolvePeople(
+                {
+                    "chapterText": casting_text,
+                    "knownPeople": known_people
+                    + [
+                        {
+                            "id": c["id"],
+                            "name": c["name"],
+                            "type": c["type"],
+                            "description": c["description"],
+                            "aliases": c.get("aliases", []),
+                        }
+                        for c in people
+                    ],
+                    "previousChapterSummary": memory.get("previousChapterSummary", ""),
+                },
+                self.gate,
+            )
+            passes.append({"pass": "casting-supervisor", "output": casting})
+            for detected in casting["people"]:
+                matching = next(
+                    (
+                        c
+                        for c in p["characters"] + people
+                        if c["id"] == detected["id"]
+                        or c["name"].casefold() == detected["name"].casefold()
+                        and not re.match(
+                            r"^(unknown|unnamed|stranger)\b", c["name"], re.I
+                        )
+                    ),
+                    None,
+                )
+                if matching:
+                    continue
+                person = character(
+                    detected["name"], detected["description"], detected["type"]
+                )
+                person.update(
+                    id="person-"
+                    + digest(
+                        {
+                            "project": p["id"],
+                            "chapter": chid,
+                            "name": detected["name"].strip().casefold(),
+                            "role": detected["description"],
+                        }
+                    )[:16],
+                    accepted=False,
+                    evidence=detected["evidence"],
+                    aliases=detected["aliases"],
+                    permanentIdentity=detected["permanentIdentity"],
+                    defaultAppearance=detected["defaultAppearance"],
+                    gender=detected["gender"],
+                    approximateAge=detected["approximateAge"],
+                )
+                if any(c["id"] == person["id"] for c in people):
+                    continue
+                people.append(person)
+                state.setdefault("characters", {})[person["id"]] = copy.deepcopy(
+                    person["defaultAppearance"]
+                )
+        chapter_cast = known_people + [
+            {
+                "id": c["id"],
+                "name": c["name"],
+                "type": c["type"],
+                "description": c["description"],
+                "aliases": c.get("aliases", []),
+            }
+            for c in people
+        ]
         # Bounded chunks follow sentence boundaries; the director chooses scenes in each.
         groups = []
         current = []
@@ -1409,6 +1492,7 @@ class StudioService:
                 "storyMemory": memory,
                 "layoutMode": p["settings"]["layoutMode"],
                 "customTargets": p["settings"]["customLayout"],
+                "chapterCast": chapter_cast,
             }
             self.gate(f"Analyzing group {group_index+1}/{len(groups)}")
             analysis = self.director.analyzeStory(context, self.gate)
@@ -1507,6 +1591,7 @@ class StudioService:
                     "name": c["name"],
                     "type": "main",
                     "description": c["description"],
+                    "aliases": c.get("aliases", []),
                 }
                 for c in p["characters"]
             ] + [
@@ -1515,6 +1600,7 @@ class StudioService:
                     "name": x["name"],
                     "type": x["type"],
                     "description": x["description"],
+                    "aliases": x.get("aliases", []),
                 }
                 for x in people
             ]
@@ -1571,7 +1657,7 @@ class StudioService:
                 {"pass": "scene-director", "group": group_index, "output": detail}
             )
             details = detail["shots"]
-            for attempt in range(2):
+            for attempt in range(3):
                 try:
                     for s in details:
                         matches = [
@@ -1585,15 +1671,59 @@ class StudioService:
                         if len(matches) == 1:
                             s["sceneIndex"] = matches[0]
                     for si, rs in enumerate(ranges):
+                        self.trim_shot_overlaps(
+                            [s for s in details if s["sceneIndex"] == si]
+                        )
                         self.validate_shot_ranges(
                             [s for s in details if s["sceneIndex"] == si], rs
                         )
                     break
                 except ValueError as error:
-                    if attempt:
+                    if attempt == 2:
                         raise
                     from director_provider import obj, arr, SHOT
 
+                    if attempt == 1:
+                        repaired = []
+                        for si, rs in enumerate(ranges):
+                            items = [s for s in details if s["sceneIndex"] == si]
+                            try:
+                                self.validate_shot_ranges(items, rs)
+                            except ValueError as scene_error:
+                                schema_shot = obj(
+                                    SHOT["properties"]
+                                    | {
+                                        "sceneIndex": {"type": "integer", "enum": [si]},
+                                        "startSentence": {
+                                            "type": "integer",
+                                            "minimum": rs["startSentence"],
+                                            "maximum": rs["endSentence"],
+                                        },
+                                        "endSentence": {
+                                            "type": "integer",
+                                            "minimum": rs["startSentence"],
+                                            "maximum": rs["endSentence"],
+                                        },
+                                    }
+                                )
+                                items = self.director.call(
+                                    "Repair ONLY this scene. Keep its narration exactly once in order, with no overlaps. The first shot starts at startSentence and the last ends at endSentence. Use the supplied inclusive indices. No invented people or actions.",
+                                    {
+                                        "scene": rs,
+                                        "sceneIndex": si,
+                                        "sentences": text[
+                                            rs["startSentence"] : rs["endSentence"] + 1
+                                        ],
+                                        "people": cast,
+                                        "invalidShots": items,
+                                        "error": str(scene_error),
+                                    },
+                                    obj({"shots": arr(schema_shot)}),
+                                    self.gate,
+                                )["shots"]
+                            repaired.extend(items)
+                        details = repaired
+                        continue
                     detail = self.director.call(
                         "Repair shot coverage. sceneIndex is explicitly supplied, ZERO based. Every scene needs shots. Cover each scene sentence range exactly once. One visible moment per shot; no sequential montage.",
                         scene_context | {"invalidPlan": detail, "error": str(error)},
@@ -2153,7 +2283,9 @@ class StudioService:
                 or item["endSentence"] < cursor
                 or item["endSentence"] > scene["endSentence"]
             ):
-                raise ValueError("Director shot timing is invalid. Retry this chapter.")
+                raise ValueError(
+                    f"Shot must start at sentence {cursor} and end between {cursor} and {scene['endSentence']}; received {item['startSentence']}..{item['endSentence']}."
+                )
             if any(
                 item["startSentence"] < n <= item["endSentence"]
                 for n in change_sentences
@@ -2164,6 +2296,19 @@ class StudioService:
             cursor = item["endSentence"] + 1
         if cursor != scene["endSentence"] + 1:
             raise ValueError("Director shots do not cover the scene narration.")
+
+    def trim_shot_overlaps(self, items):
+        for previous, current in zip(items, items[1:]):
+            if (
+                previous["startSentence"]
+                < current["startSentence"]
+                <= previous["endSentence"]
+            ):
+                previous["timingRepair"] = {
+                    "originalEndSentence": previous["endSentence"],
+                    "reason": "Trimmed overlap at the next director-selected shot boundary",
+                }
+                previous["endSentence"] = current["startSentence"] - 1
 
     def generate(self, p, chid, sid, seed, options):
         self.director.stop()

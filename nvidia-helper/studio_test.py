@@ -12,6 +12,31 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_casting_input_groups_preserve_all_chapter_text(self):
+        text = "A named character speaks.\n" * 1000
+        groups = list(text_groups(text, 900))
+        self.assertEqual("".join(groups), text)
+        self.assertTrue(all(len(group) <= 900 for group in groups))
+
+    def test_overlapping_ai_shots_trim_at_director_selected_boundary(self):
+        from studio_service import StudioService
+
+        service = object.__new__(StudioService)
+        shots = [
+            {"startSentence": 0, "endSentence": 1, "action": "A close-up"},
+            {"startSentence": 1, "endSentence": 1, "action": "A reaction"},
+        ]
+        service.trim_shot_overlaps(shots)
+        service.validate_shot_ranges(shots, {"startSentence": 0, "endSentence": 1})
+        self.assertEqual(shots[0]["endSentence"], 0)
+        self.assertEqual(shots[1]["action"], "A reaction")
+        self.assertEqual(shots[0]["timingRepair"]["originalEndSentence"], 1)
+        with self.assertRaises(ValueError):
+            service.validate_shot_ranges(
+                [{"startSentence": 0, "endSentence": 0}],
+                {"startSentence": 0, "endSentence": 2},
+            )
+
     def test_clean_audio_preserves_quoted_dialogue_and_story(self):
         text = "Chapter One\n\nMichael said, “Chapter One is the title.”\nScene 7: Hallway\nDirector: use a close-up\nSarah put the key in her pocket."
         cleaned = clean_narration(text)
