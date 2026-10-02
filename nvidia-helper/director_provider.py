@@ -130,25 +130,17 @@ class DirectorProvider:
         # Evidence is an actual short quote, never an unbounded list of imagined
         # sentence numbers. Bounds also keep the local JSON grammar from looping.
         person = obj(
-            PERSON["properties"]
-            | {
+            {
                 "id": short_text(64),
                 "name": short_text(80),
                 "description": short_text(360),
                 "evidence": short_text(180),
                 "aliases": arr(short_text(64)) | {"maxItems": 5},
-                "permanentIdentity": obj(
-                    {key: short_text(140) for key in IDENTITY["properties"]}
-                ),
-                "defaultAppearance": obj(
-                    {key: short_text(140) for key in APPEARANCE["properties"]}
-                ),
-                "gender": short_text(40),
-                "approximateAge": short_text(40),
+                "type": PERSON["properties"]["type"],
             }
         )
         return self.call(
-            "Casting supervisor. Identify actual people and groups, resolving pronouns and aliases against known cast. One entry per identity. Do not split one protagonist by action or merge distinct unnamed men. Only central recurring protagonists and established main characters are main; casualties, bystanders and incidental attackers are temporary/supporting/group. Represent factions and crowds as groups. evidence MUST be ONE brief verbatim quote from chapterText; NEVER list sentence numbers. Use empty strings for unknown identity, age and gender. Keep every field brief. Do not invent traits or events. Default appearance is the earliest baseline; later changes belong to continuity. Preserve known IDs where identity is clear. Aliases must appear in the story.",
+            "Casting supervisor. Return a SMALL cast of distinct story roles, not every anonymous individual. Output id, name, type, description, evidence, aliases ONLY. Examples of role labels: scarred protagonist, opposing faction, protagonist allies, party crowd, screaming woman. Group anonymous soldiers/attackers by faction; NEVER create repeated entries named man. Resolve pronouns and aliases against known cast. Only central recurring protagonists and established main characters are main. Casualties and bystanders are temporary/supporting/group. evidence MUST be ONE brief verbatim quote from chapterText; NEVER list sentence numbers. Description records only stated identity traits and earliest clothing. Keep every field brief. Do not invent traits, names or events. Preserve known IDs where identity is clear. Aliases must appear in the story.",
             context,
             obj({"people": arr(person)}),
             gate,

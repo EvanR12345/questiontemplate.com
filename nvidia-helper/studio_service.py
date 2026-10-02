@@ -1429,11 +1429,41 @@ class StudioService:
                     accepted=False,
                     evidence=detected["evidence"],
                     aliases=detected["aliases"],
-                    permanentIdentity=detected["permanentIdentity"],
-                    defaultAppearance=detected["defaultAppearance"],
-                    gender=detected["gender"],
-                    approximateAge=detected["approximateAge"],
                 )
+                if detected["type"] == "main":
+                    # Casting decides identities; a separate small pass extracts
+                    # the protagonist's bible without filling dozens of fields
+                    # for every bystander or unnamed member of a crowd.
+                    from director_provider import obj, short_text, IDENTITY, APPEARANCE
+
+                    profile = self.director.call(
+                        "Character bible. Extract ONLY explicitly stated identity traits and EARLIEST baseline appearance for the supplied person. Unknown fields MUST be empty strings. Do not borrow another person's clothing. Later injuries and clothing changes belong to scene continuity. Return permanentIdentity, defaultAppearance, gender, approximateAge.",
+                        {"person": detected, "chapterText": casting_text},
+                        obj(
+                            {
+                                "permanentIdentity": obj(
+                                    {k: short_text(140) for k in IDENTITY["properties"]}
+                                ),
+                                "defaultAppearance": obj(
+                                    {
+                                        k: short_text(140)
+                                        for k in APPEARANCE["properties"]
+                                    }
+                                ),
+                                "gender": short_text(40),
+                                "approximateAge": short_text(40),
+                            }
+                        ),
+                        self.gate,
+                    )
+                    person.update(profile)
+                    passes.append(
+                        {
+                            "pass": "character-bible",
+                            "person": person["id"],
+                            "output": profile,
+                        }
+                    )
                 if any(c["id"] == person["id"] for c in people):
                     continue
                 people.append(person)
