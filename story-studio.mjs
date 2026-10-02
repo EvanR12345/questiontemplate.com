@@ -616,6 +616,37 @@ function renderQueue() {
           tab = "timeline";
           render();
         });
+    if (activeFullRun?.started) {
+      const elapsed = Math.max(0, Date.now() / 1000 - activeFullRun.started);
+      const samples = (run.timings || [])
+        .filter(
+          (t) =>
+            t.stage === "Image + quality checks" &&
+            t.status === "COMPLETE" &&
+            t.chapter === run.chapterNumber,
+        )
+        .slice(-5);
+      let remaining =
+        "Full-story ETA is being measured as chapters are planned.";
+      if (
+        samples.length >= 2 &&
+        run.shotId &&
+        run.totalImages > run.completedImages
+      ) {
+        const average =
+          samples.reduce((sum, item) => sum + item.seconds, 0) / samples.length;
+        const seconds = Math.max(
+          average,
+          (run.totalImages - run.completedImages) * average -
+            Math.max(0, Date.now() / 1000 - run.updated),
+        );
+        remaining = `Images remaining in this chapter: approximately ${time(seconds * 0.8)}–${time(seconds * 1.25)}. Later chapters and rendering take additional time.`;
+      }
+      runStatus.insertAdjacentHTML(
+        "beforeend",
+        `<p class="muted">This attempt: ${time(elapsed)} elapsed. ${remaining}</p>`,
+      );
+    }
     if (run.timings?.length) {
       const entries = run.timings.filter((t) => !t.detail),
         totals = {};
