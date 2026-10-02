@@ -1460,7 +1460,20 @@ class StudioService:
                     ),
                     None,
                 )
-                id = match or (existing["id"] if existing else uid("person-"))
+                # Stable provisional IDs make subsequent director contexts and
+                # their validated cache entries reusable after a failed pass.
+                id = match or (
+                    existing["id"]
+                    if existing
+                    else "person-"
+                    + digest(
+                        {
+                            "project": p["id"],
+                            "chapter": chid,
+                            "name": detected["name"].strip().casefold(),
+                        }
+                    )[:16]
+                )
                 mapping[detected["id"]] = id
                 if not existing and not match:
                     person = character(

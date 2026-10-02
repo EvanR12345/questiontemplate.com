@@ -290,8 +290,11 @@ class LocalQwenDirector(DirectorProvider):
         }
 
     def start(self, gate):
+        wants_vision = bool(getattr(self, "request_vision", False))
         if self.process and self.process.poll() is None:
-            return
+            if getattr(self, "loaded_vision", False) == wants_vision:
+                return
+            self.stop()
         if not self.healthCheck()["installed"]:
             raise RuntimeError(
                 "Local director is not installed. Configure llama-server and Qwen3.5-4B Q4_K_M in Advanced AI Settings / helper studio-config.json."
@@ -317,7 +320,15 @@ class LocalQwenDirector(DirectorProvider):
             "-t",
             "4",
             "-ngl",
-            str(self.config.get("directorGpuLayers", 99)),
+            str(
+                self.config.get("directorGpuLayers", "auto")
+                if self.config.get("directorGpuLayers") != 99
+                else "auto"
+            ),
+            "--fit-target",
+            "768",
+            "--cache-ram",
+            "128",
             "--no-warmup",
             "--no-webui",
         ]
@@ -325,7 +336,7 @@ class LocalQwenDirector(DirectorProvider):
             args += ["--device", self.config["directorDevice"]]
         projector = self.config.get("directorProjector")
         self.vision_available = bool(projector and Path(projector).is_file())
-        if self.vision_available:
+        if self.vision_available and wants_vision:
             args += [
                 "--mmproj",
                 projector,
@@ -333,6 +344,7 @@ class LocalQwenDirector(DirectorProvider):
                 "--image-max-tokens",
                 "512",
             ]
+        self.loaded_vision = wants_vision
         self.process = subprocess.Popen(
             args,
             stdout=self.log,
@@ -398,7 +410,12 @@ class LocalQwenDirector(DirectorProvider):
             gate("Restoring saved " + role.split(".")[0])
             value = json.loads(cache.read_text(encoding="utf-8"))
             validate_schema(value, schema)
+            if getattr(self, "timing_callback", None):
+                self.timing_callback(
+                    role.split(":")[0].split(".")[0], 0, {"reused": True}
+                )
             return value
+        self.request_vision = vision
         self.start(gate)
         gate(role)
         system = (
@@ -454,7 +471,43 @@ class LocalQwenDirector(DirectorProvider):
                         self.stop()
                         raise
                     time.sleep(0.25)
-                response = future.result()
+                try:
+                    response = future.result()
+                except urllib.error.HTTPError as error:
+                    diagnostic = error.read().decode("utf-8", errors="replace")
+                    if getattr(self, "timing_callback", None):
+                        self.timing_callback(
+                            role.split(":")[0].split(".")[0],
+                            time.time() - began,
+                            {
+                                "attempt": attempt + 1,
+                                "status": "FAILED",
+                                "error": diagnostic[:500],
+                            },
+                        )
+                    cache.parent.mkdir(exist_ok=True)
+                    cache.with_suffix(".error.json").write_text(
+                        json.dumps(
+                            {
+                                "role": role,
+                                "httpStatus": error.code,
+                                "error": diagnostic,
+                                "attempt": attempt + 1,
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    if (
+                        error.code == 500
+                        and "alloc" in diagnostic.casefold()
+                        and attempt < 2
+                    ):
+                        self.stop()
+                        self.start(gate)
+                        continue
+                    raise RuntimeError(
+                        "Local director failed: " + diagnostic[:500]
+                    ) from error
             text = response["choices"][0]["message"]["content"]
             if getattr(self, "timing_callback", None):
                 self.timing_callback(
