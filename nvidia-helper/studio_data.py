@@ -524,6 +524,40 @@ def state_before(p, chid):
     return state, memory
 
 
+def supported_appearance_change(event):
+    """A quoted sentence alone does not prove the proposed appearance change."""
+    if event.get("origin") == "MANUAL":
+        return True
+    if event.get("type") == "injury":
+        reason = event.get("reason", "")
+        injury = str(event.get("to", {}).get("injury", ""))
+        parts = r"\b(?:heart|head|face|cheek|eye|eyebrow|nose|mouth|neck|chest|shoulder|arm|hand|wrist|finger|leg|knee|foot|ankle|back|stomach)\b"
+        if set(re.findall(parts, injury.casefold())) - set(
+            re.findall(parts, reason.casefold())
+        ):
+            return False
+        if (
+            re.search(r"\bright\b", injury, re.I)
+            and re.search(r"\bleft\b", reason, re.I)
+            and not re.search(r"\bright\b", reason, re.I)
+        ):
+            return False
+        if (
+            re.search(r"\bleft\b", injury, re.I)
+            and re.search(r"\bright\b", reason, re.I)
+            and not re.search(r"\bleft\b", reason, re.I)
+        ):
+            return False
+        return bool(
+            re.search(
+                r"\b(?:injur\w*|wound\w*|cut|cuts|bruis\w*|bleed\w*|blood\w*|stab\w*|burn\w*|hurt|scar\w*|shot|hit|damage\w*|pain\w*|punch\w*|crush\w*|gash\w*)\b",
+                event.get("reason", ""),
+                re.I,
+            )
+        )
+    return True
+
+
 def apply_changes(state, changes, chapter, scene):
     result = copy.deepcopy(state)
     for event in changes:
@@ -532,6 +566,7 @@ def apply_changes(state, changes, chapter, scene):
             or not event.get("reason")
             or not event.get("characterId")
             or not isinstance(event.get("to"), dict)
+            or not supported_appearance_change(event)
         ):
             continue
         current = result.setdefault("characters", {}).setdefault(

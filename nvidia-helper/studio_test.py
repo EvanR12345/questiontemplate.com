@@ -12,6 +12,26 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_quoted_shooting_action_does_not_support_an_invented_heart_wound(self):
+        event = {
+            "characterId": "hero",
+            "type": "injury",
+            "to": {"injury": "heart wound"},
+            "reason": "The man continued to shoot at his enemies.",
+        }
+        result = apply_changes(
+            {"characters": {"hero": {}}, "appearanceHistory": []}, [event], 1, "scene"
+        )
+        self.assertEqual(result["characters"]["hero"], {})
+        self.assertEqual(result["appearanceHistory"], [])
+        event["reason"] = "A cut opened on his right cheek."
+        event["to"]["injury"] = "cut on right cheek"
+        self.assertTrue(supported_appearance_change(event))
+        event["to"]["injury"] = "heart wound"
+        self.assertFalse(supported_appearance_change(event))
+        event.update(reason="User override", origin="MANUAL")
+        self.assertTrue(supported_appearance_change(event))
+
     def test_unknown_opening_victim_does_not_establish_later_protagonist_identity(self):
         p = new_project()
         ch = p["chapters"][0]

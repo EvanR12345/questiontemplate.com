@@ -1306,6 +1306,7 @@ class StudioService:
                 "source": ch["sourceText"],
                 "shots": [s["id"] for s in shots],
                 "introductions": introductions,
+                "bindingVersion": 2,
             }
         )
         if ch.get("identityBindingSignature") == signature:
@@ -1318,7 +1319,13 @@ class StudioService:
                 for c in s["characters"]
             )
         ]
-        if not affected:
+        unsupported_changes = [
+            e
+            for s in shots
+            for e in s.get("intentionalAppearanceChanges", [])
+            if not supported_appearance_change(e)
+        ]
+        if not affected and not unsupported_changes:
             self.store.mutate(
                 pid,
                 lambda latest: get_chapter(latest, chid).update(
@@ -1401,14 +1408,15 @@ class StudioService:
             state.setdefault("characters", {}).setdefault(
                 person["id"], copy.deepcopy(person["defaultAppearance"])
             )
-        notes = []
+        notes = copy.deepcopy(ch["analysis"].get("identityBindingRepairs", []))
         for scene in ch["scenes"]:
             scene["appearanceChanges"] = []
             for shot in scene["shots"]:
                 old_appearance = copy.deepcopy(shot["characters"])
                 changes = [
                     e
-                    for e in shot["intentionalAppearanceChanges"]
+                    for e in shot.get("intentionalAppearanceChanges", [])
+                    if supported_appearance_change(e)
                     if not (
                         e["characterId"] in introductions
                         and shot["endSentence"] < introductions[e["characterId"]]
@@ -1459,6 +1467,7 @@ class StudioService:
             )
         ch["handoff"]["state"] = state
         ch["analysis"]["identityBindingRepairs"] = notes
+        ch["analysis"].setdefault("rejectedAppearanceChanges", []).extend(unsupported_changes)
         ch["identityBindingSignature"] = signature
         ch["renderStale"] = True
         ch["status"] = "READY_FOR_IMAGES"
