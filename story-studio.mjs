@@ -697,13 +697,14 @@ function renderQueue() {
     .filter(
       (j) =>
         j.status === "FAILED" ||
+        j.status === "CANCELLED" ||
         j.status === "RUNNING" ||
         j.status === "QUEUED",
     )
     .slice(0, 30)
     .map(
       (j) =>
-        `<div class="queue-job"><span>${escape(j.kind)} · ${escape(j.message)}</span><button data-job-priority="${j.id}">Prioritize</button>${j.status === "FAILED" ? `<button data-job-retry="${j.id}">Retry same seed</button>` : ""}</div>`,
+        `<div class="queue-job"><span>${escape(j.kind)} · ${escape(j.message)}</span><button data-job-priority="${j.id}">Prioritize</button>${["FAILED", "CANCELLED"].includes(j.status) ? `<button data-job-retry="${j.id}">Retry same seed</button>` : ""}</div>`,
     )
     .join("")}</div>`;
   el.querySelectorAll("[data-control]").forEach(
