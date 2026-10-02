@@ -42,6 +42,12 @@ def arr(item):
 
 
 STR = {"type": "string"}
+
+
+def short_text(limit):
+    return {"type": "string", "maxLength": limit}
+
+
 INT = {"type": "integer"}
 BOOL = {"type": "boolean"}
 IDENTITY = obj(
@@ -121,10 +127,30 @@ CAMERA = obj({"shotIndex": INT, "shot": STR, "angle": STR, "composition": STR})
 
 class DirectorProvider:
     def resolvePeople(self, context, gate):
+        # Evidence is an actual short quote, never an unbounded list of imagined
+        # sentence numbers. Bounds also keep the local JSON grammar from looping.
+        person = obj(
+            PERSON["properties"]
+            | {
+                "id": short_text(64),
+                "name": short_text(80),
+                "description": short_text(360),
+                "evidence": short_text(180),
+                "aliases": arr(short_text(64)) | {"maxItems": 5},
+                "permanentIdentity": obj(
+                    {key: short_text(140) for key in IDENTITY["properties"]}
+                ),
+                "defaultAppearance": obj(
+                    {key: short_text(140) for key in APPEARANCE["properties"]}
+                ),
+                "gender": short_text(40),
+                "approximateAge": short_text(40),
+            }
+        )
         return self.call(
-            "Casting supervisor. Identify the actual people and groups in this chapter, resolving repeated pronouns and aliases against the supplied known cast. One entry per identity. Do not split the same protagonist into new people every time an action changes. Do not merge different people merely because both are unnamed men. Use clear role-specific labels for unnamed people. Only central recurring protagonists and already established main characters are main; casualties, panicking bystanders, staff and incidental attackers are supporting/temporary/group. Represent crowds and factions as groups, not dozens of permanent profiles. Alias lists must be supported by the chapter. Do not invent names, ages, traits or events. Identity descriptions should be concise. Default appearance is the earliest baseline; later clothing, injuries and transformations belong to continuity changes. Preserve supplied known IDs when it is clearly the same person; otherwise assign a short distinct local label.",
+            "Casting supervisor. Identify actual people and groups, resolving pronouns and aliases against known cast. One entry per identity. Do not split one protagonist by action or merge distinct unnamed men. Only central recurring protagonists and established main characters are main; casualties, bystanders and incidental attackers are temporary/supporting/group. Represent factions and crowds as groups. evidence MUST be ONE brief verbatim quote from chapterText; NEVER list sentence numbers. Use empty strings for unknown identity, age and gender. Keep every field brief. Do not invent traits or events. Default appearance is the earliest baseline; later changes belong to continuity. Preserve known IDs where identity is clear. Aliases must appear in the story.",
             context,
-            obj({"people": arr(obj(PERSON["properties"] | {"aliases": arr(STR)}))}),
+            obj({"people": arr(person)}),
             gate,
         )
 
@@ -162,18 +188,32 @@ class DirectorProvider:
         )
 
     def planChapter(self, context, gate):
+        schema = obj({"scenes": arr(SCENE)})
+        ids = [p["id"] for p in context.get("people", context.get("chapterCast", []))]
+        if ids:
+            schema["properties"]["scenes"]["items"] = obj(
+                SCENE["properties"]
+                | {"characters": arr({"type": "string", "enum": ids})}
+            )
         return self.call(
             "Chapter director: choose story-driven scenes; cover every sentence once in order. Indices are inclusive. No fixed scene count. Dialogue may stay in a single scene; actions need useful changes.",
             context,
-            obj({"scenes": arr(SCENE)}),
+            schema,
             gate,
         )
 
     def planScenes(self, context, gate):
+        schema = obj({"shots": arr(SHOT)})
+        ids = [p["id"] for p in context.get("people", context.get("chapterCast", []))]
+        if ids:
+            schema["properties"]["shots"]["items"] = obj(
+                SHOT["properties"]
+                | {"characters": arr({"type": "string", "enum": ids})}
+            )
         return self.call(
             "Scene director: one shot depicts ONE simultaneous visible moment. Never combine sequential actions (handover, rescue, then sitting) in one image. Use different shots when visible action changes. Favor 3–15 second shots; longer holds only for genuinely quiet beats. Cover each narration sentence once in order with inclusive indices and no gaps. Identity description sentences may share a shot. Use only supplied character IDs. Keep supporting people only where story calls for them. Shot action should be concise and drawable, without narration or sequential montage.",
             context,
-            obj({"shots": arr(SHOT)}),
+            schema,
             gate,
         )
 
@@ -605,8 +645,13 @@ def validate_schema(value, schema):
             raise ValueError("Array length violates schema bounds")
         for v in value:
             validate_schema(v, schema["items"])
-    elif kind == "string" and not isinstance(value, str):
-        raise ValueError("Expected string")
+    elif kind == "string":
+        if not isinstance(value, str):
+            raise ValueError("Expected string")
+        if len(value) > schema.get("maxLength", len(value)) or len(value) < schema.get(
+            "minLength", 0
+        ):
+            raise ValueError("String length violates schema bounds")
     elif kind == "integer" and (isinstance(value, bool) or not isinstance(value, int)):
         raise ValueError("Expected integer")
     elif kind == "integer" and (

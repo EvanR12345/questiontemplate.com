@@ -1,10 +1,46 @@
 import json, tempfile, unittest, io, urllib.error
 from pathlib import Path
 from unittest.mock import patch
-from director_provider import LocalQwenDirector, obj, STR
+from director_provider import (
+    LocalQwenDirector,
+    DirectorProvider,
+    obj,
+    STR,
+    validate_schema,
+)
 
 
 class DirectorRecoveryTest(unittest.TestCase):
+    def test_casting_evidence_cannot_grow_into_unbounded_sentence_numbers(self):
+        director = DirectorProvider()
+        captured = []
+        director.call = lambda role, context, schema, gate: captured.append(
+            (role, schema)
+        ) or {"people": []}
+        director.resolvePeople(
+            {"chapterText": "The boss raised his hand."}, lambda *args: None
+        )
+        role, schema = captured[0]
+        self.assertIn("NEVER list sentence numbers", role)
+        evidence = schema["properties"]["people"]["items"]["properties"]["evidence"]
+        validate_schema("The boss raised his hand.", evidence)
+        with self.assertRaisesRegex(ValueError, "String length"):
+            validate_schema("1, 3, 5, " * 100, evidence)
+
+    def test_scene_and_shot_cast_ids_are_constrained(self):
+        director = DirectorProvider()
+        schemas = []
+        director.call = lambda role, context, schema, gate: schemas.append(schema) or {}
+        context = {"people": [{"id": "boss"}, {"id": "guard"}]}
+        director.planChapter(context, lambda *args: None)
+        director.planScenes(context, lambda *args: None)
+        for schema in schemas:
+            collection = next(iter(schema["properties"].values()))
+            field = collection["items"]["properties"]["characters"]
+            validate_schema(["boss", "guard"], field)
+            with self.assertRaisesRegex(ValueError, "Invalid enum"):
+                validate_schema(["invented-person"], field)
+
     def test_allocation_error_restarts_and_retries_only_the_failed_pass(self):
         with tempfile.TemporaryDirectory() as folder:
             director = LocalQwenDirector({}, Path(folder))
