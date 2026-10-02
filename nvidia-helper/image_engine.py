@@ -86,7 +86,7 @@ class ImageEngine:
         cls = StableDiffusionInpaintPipeline if operation == 'inpaint' else StableDiffusionPipeline
         dtype = self.torch.float32 if self.safe_unet else self.torch.float16
         options = dict(torch_dtype=dtype, safety_checker=None, requires_safety_checker=False)
-        if self.model_id == MODELS['dreamshaper8']:
+        if self.model_id in MODELS.values():
             options.update(variant='fp16', use_safetensors=True)
         try:
             self.pipe = cls.from_pretrained(self.model_id, local_files_only=True, **options)

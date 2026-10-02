@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 VOICES = {'am_michael', 'am_fenrir', 'am_puck', 'af_heart', 'af_bella', 'af_nicole', 'bm_george', 'bf_emma'}
 PORT = 8765
 MAX_BODY = 32 * 1024 * 1024
-MODEL_ID = os.environ.get('QT_IMAGE_MODEL', 'Lykon/dreamshaper-8')
+MODEL_ID = os.environ.get('QT_IMAGE_MODEL', 'stable-diffusion-v1-5/stable-diffusion-v1-5')
 INPAINT_ID = os.environ.get('QT_INPAINT_MODEL', 'runwayml/stable-diffusion-inpainting')
 
 
