@@ -1,0 +1,610 @@
+{
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^pr-[a-f0-9]{16}$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "settings": {
+      "type": "object"
+    },
+    "intro": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 20
+        },
+        "placement": {
+          "enum": [
+            "full_story_only",
+            "every_chapter"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "subtitle": {
+          "type": "string"
+        },
+        "voiceText": {
+          "type": "string"
+        },
+        "visualPath": {
+          "type": "string"
+        },
+        "audioPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "duration",
+        "placement"
+      ],
+      "additionalProperties": true
+    },
+    "characters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/character"
+      }
+    },
+    "chapters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/chapter"
+      }
+    },
+    "locations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "continuity": {
+      "type": "object"
+    },
+    "storyMemory": {
+      "type": "object"
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "render": {
+      "type": "object"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "settings",
+    "intro",
+    "characters",
+    "chapters"
+  ],
+  "additionalProperties": true,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://questiontemplate.com/studio-project.schema.json",
+  "$defs": {
+    "character": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(char|person)-[a-f0-9]{16}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "main",
+            "supporting",
+            "temporary",
+            "background",
+            "group"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "gender": {
+          "type": "string"
+        },
+        "approximateAge": {
+          "type": "string"
+        },
+        "permanentIdentity": {
+          "type": "object",
+          "properties": {
+            "face": {
+              "type": "string"
+            },
+            "naturalHair": {
+              "type": "string"
+            },
+            "eyes": {
+              "type": "string"
+            },
+            "skin": {
+              "type": "string"
+            },
+            "build": {
+              "type": "string"
+            },
+            "height": {
+              "type": "string"
+            },
+            "distinguishingMarks": {
+              "type": "string"
+            },
+            "identityAccessories": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "defaultAppearance": {
+          "type": "object"
+        },
+        "currentAppearance": {
+          "type": "object"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "appearanceHistory": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "clothingHistory": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "permanentIdentity",
+        "defaultAppearance",
+        "references"
+      ],
+      "additionalProperties": true
+    },
+    "generationSettings": {
+      "type": "object",
+      "properties": {
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 256
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 256
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sampler": {
+          "type": "string"
+        },
+        "scheduler": {
+          "type": "string"
+        },
+        "guidance": {
+          "type": "number",
+          "minimum": 0
+        },
+        "denoisingStrength": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "loras": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "controlnets": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "ipAdapter": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "steps"
+      ],
+      "additionalProperties": true
+    },
+    "shot": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^shot-[a-f0-9]{16}$"
+        },
+        "sceneId": {
+          "type": "string"
+        },
+        "chapterId": {
+          "type": "string"
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "main",
+                  "supporting",
+                  "temporary",
+                  "background",
+                  "group"
+                ]
+              },
+              "appearanceState": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "appearanceState"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "camera": {
+          "type": "object",
+          "properties": {
+            "shot": {
+              "type": "string"
+            },
+            "angle": {
+              "type": "string"
+            },
+            "composition": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "action": {
+          "type": "string"
+        },
+        "narrationSegment": {
+          "type": "string"
+        },
+        "imageProvider": {
+          "type": "string"
+        },
+        "imageModel": {
+          "type": "string"
+        },
+        "workflow": {
+          "type": "string"
+        },
+        "generationSettings": {
+          "$ref": "#/$defs/generationSettings"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "negativePrompt": {
+          "type": "string"
+        },
+        "referenceImages": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "imagePath": {
+          "type": "string"
+        },
+        "sourceImagePath": {
+          "type": "string"
+        },
+        "intentionalAppearanceChanges": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "continuity": {
+          "type": "object"
+        },
+        "qc": {
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "NOT_ANALYZED",
+            "ANALYZING",
+            "NARRATION_PREPARING",
+            "AUDIO_GENERATING",
+            "DIRECTING",
+            "IMAGE_PROVIDER_CHECK",
+            "READY_FOR_IMAGES",
+            "QUEUED",
+            "GENERATING",
+            "QC",
+            "REPAIRING",
+            "PASSED",
+            "FAILED",
+            "PAUSED",
+            "CANCELLED",
+            "COMPLETE"
+          ]
+        },
+        "manual": {
+          "type": "object"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "sceneId",
+        "chapterId",
+        "start",
+        "end",
+        "characters",
+        "camera",
+        "generationSettings",
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "scene": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^scene-[a-f0-9]{16}$"
+        },
+        "chapterId": {
+          "type": "string"
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "appearanceChanges": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "shots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/shot"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "shots"
+      ],
+      "additionalProperties": true
+    },
+    "chapter": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^ch-[a-f0-9]{16}$"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "sourceText": {
+          "type": "string"
+        },
+        "cleanNarrationText": {
+          "type": "string"
+        },
+        "narrationMode": {
+          "enum": [
+            "automatic",
+            "manual"
+          ]
+        },
+        "includeChapterLabel": {
+          "type": "boolean"
+        },
+        "audio": {
+          "type": "object"
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/character"
+          }
+        },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/scene"
+          }
+        },
+        "handoff": {
+          "type": "object"
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "manual": {
+          "type": "object"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "render": {
+          "type": "object"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "status": {
+          "enum": [
+            "NOT_ANALYZED",
+            "ANALYZING",
+            "NARRATION_PREPARING",
+            "AUDIO_GENERATING",
+            "DIRECTING",
+            "IMAGE_PROVIDER_CHECK",
+            "READY_FOR_IMAGES",
+            "QUEUED",
+            "GENERATING",
+            "QC",
+            "REPAIRING",
+            "PASSED",
+            "FAILED",
+            "PAUSED",
+            "CANCELLED",
+            "COMPLETE"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "name",
+        "sourceText",
+        "cleanNarrationText",
+        "audio",
+        "people",
+        "scenes",
+        "status"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

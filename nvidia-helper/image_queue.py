@@ -40,7 +40,7 @@ def validate_job(data):
         raise ValueError('Image prompt exceeds 12,000 characters.')
     if data.get('kind') == 'panel' and sound_only(action_text(data)):
         raise ValueError('This panel contains only a sound effect. In Layout, describe the visible action (who does what) and put Bang/screams in SFX. No image was queued.')
-    for key, low, high in [('width', 384, 768), ('height', 384, 768), ('steps', 8, 50), ('guidance', 1, 14), ('reference_strength', 0, 1)]:
+    for key, low, high in [('width', 384, 768), ('height', 384, 768), ('steps', 8, 50), ('guidance', 1, 14), ('reference_strength', 0, 1), ('denoising_strength', .1, 1)]:
         if key in data:
             n = data[key]
             if isinstance(n, bool) or not isinstance(n, (float, int)) or not math.isfinite(n) or not low <= n <= high:

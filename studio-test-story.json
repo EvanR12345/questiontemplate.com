@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "id": "pr-084459e21e2e4a35",
+  "name": "The brass key \u00b7 studio test",
+  "revision": 0,
+  "created": 1790912684.2632933,
+  "updated": 1790912684.2632933,
+  "settings": {
+    "style": "cinematic illustration",
+    "layoutMode": "AUTO",
+    "generationMode": "BALANCED",
+    "autoContinue": false,
+    "voice": "am_michael",
+    "speed": 1.0,
+    "director": {
+      "provider": "local-qwen",
+      "model": "Qwen3.5-4B Q4_K_M",
+      "reasoning": "Balanced",
+      "vision": false
+    },
+    "image": {
+      "provider": "existing",
+      "model": "sd15",
+      "workflow": "text-to-image",
+      "preset": "Balanced Quality",
+      "width": 512,
+      "height": 512,
+      "steps": 20,
+      "sampler": "DPM++ 2M",
+      "scheduler": "karras",
+      "guidance": 7,
+      "referenceStrength": 0.65,
+      "loras": [],
+      "controlnets": [],
+      "ipAdapter": {},
+      "fallbackEnabled": false,
+      "fallback": {
+        "provider": "existing",
+        "model": "sd15"
+      }
+    },
+    "continuityStrictness": "Medium",
+    "appearanceHandling": "Automatic",
+    "maxImageRetries": 2,
+    "visionQC": false,
+    "automaticRepair": true,
+    "customLayout": {
+      "sceneCount": null,
+      "minDuration": 3,
+      "maxDuration": 30,
+      "imagesPerMinute": 8,
+      "minShots": 1,
+      "maxShots": 4,
+      "pacing": "balanced",
+      "cameraVariety": "medium",
+      "closeUpFrequency": "medium",
+      "establishingFrequency": "low",
+      "transition": "cut",
+      "movement": "subtle",
+      "promptDetail": "normal"
+    },
+    "video": {
+      "width": 1280,
+      "height": 720,
+      "fps": 24,
+      "crf": 21
+    }
+  },
+  "intro": {
+    "enabled": false,
+    "duration": 15,
+    "placement": "full_story_only",
+    "title": "The brass key \u00b7 studio test",
+    "subtitle": "",
+    "voiceText": "",
+    "visualPath": "",
+    "audioPath": "",
+    "motion": "slow zoom in"
+  },
+  "characters": [
+    {
+      "id": "char-73d37898ad1541d5",
+      "name": "Michael",
+      "type": "main",
+      "description": "Young adult man; short black hair, brown eyes, lean build; scar above right eyebrow.",
+      "permanentIdentity": {
+        "face": "",
+        "naturalHair": "short black hair",
+        "eyes": "brown",
+        "skin": "",
+        "build": "lean",
+        "height": "",
+        "distinguishingMarks": "scar above right eyebrow",
+        "identityAccessories": "silver watch on LEFT wrist"
+      },
+      "defaultAppearance": {
+        "outfit": "black jacket",
+        "hairStyle": "",
+        "accessories": "silver watch LEFT wrist"
+      },
+      "currentAppearance": {},
+      "appearanceHistory": [],
+      "clothingHistory": [],
+      "references": [],
+      "relationships": [],
+      "personality": "",
+      "accepted": true
+    },
+    {
+      "id": "char-67c4c7bdd3fb459b",
+      "name": "Sarah",
+      "type": "main",
+      "description": "Young adult woman; long brown hair, green eyes.",
+      "permanentIdentity": {
+        "face": "",
+        "naturalHair": "long brown hair",
+        "eyes": "green",
+        "skin": "",
+        "build": "",
+        "height": "",
+        "distinguishingMarks": "",
+        "identityAccessories": ""
+      },
+      "defaultAppearance": {
+        "outfit": "red coat",
+        "hairStyle": "",
+        "accessories": ""
+      },
+      "currentAppearance": {},
+      "appearanceHistory": [],
+      "clothingHistory": [],
+      "references": [],
+      "relationships": [],
+      "personality": "",
+      "accepted": true
+    }
+  ],
+  "locations": [],
+  "styleReferences": [],
+  "continuity": {},
+  "storyMemory": {},
+  "chapters": [
+    {
+      "id": "ch-8d099b0fc4894440",
+      "number": 1,
+      "name": "Chapter 1",
+      "sourceText": "Chapter 1\nMichael and Sarah waited on the railway platform. Michael had short black hair, brown eyes, and a scar above his right eyebrow. He wore a black jacket and a silver watch on his left wrist. Sarah had long brown hair, green eyes, and a red coat.\nThe station guard pointed toward the exit. An unnamed man in a gray coat walked past them.\nSarah handed Michael a brass key. Michael put the key in his right hand. \u201cKeep it safe,\u201d Sarah said.\nA loose wooden crate slid toward Sarah. Michael pulled her out of its path and scraped his right cheek on the crate.\nThey quietly sat on a bench and watched the train leave.",
+      "cleanNarrationText": "Michael and Sarah waited on the railway platform. Michael had short black hair, brown eyes, and a scar above his right eyebrow. He wore a black jacket and a silver watch on his left wrist. Sarah had long brown hair, green eyes, and a red coat.\nThe station guard pointed toward the exit. An unnamed man in a gray coat walked past them.\nSarah handed Michael a brass key. Michael put the key in his right hand. \u201cKeep it safe,\u201d Sarah said.\nA loose wooden crate slid toward Sarah. Michael pulled her out of its path and scraped his right cheek on the crate.\nThey quietly sat on a bench and watched the train leave.",
+      "narrationMode": "automatic",
+      "includeChapterLabel": false,
+      "status": "NOT_ANALYZED",
+      "audio": {},
+      "people": [],
+      "scenes": [],
+      "timeline": [],
+      "analysis": {},
+      "handoff": {},
+      "manual": {},
+      "history": [],
+      "render": {},
+      "errors": []
+    },
+    {
+      "id": "ch-4edb2702316e4c63",
+      "number": 2,
+      "name": "Chapter 2",
+      "sourceText": "Chapter Two\nAt the school entrance the following morning, Michael still carried the brass key in his right hand. The scrape on his right cheek remained visible. He changed from his black jacket into a blue school uniform, keeping his silver watch on his left wrist.\nSarah tied her long brown hair into a ponytail and removed her red coat, revealing a white sweater. \u201cThe guard told us to come here,\u201d she said.\nA teacher with gray hair opened the classroom door. Michael and Sarah entered the classroom together.\nMichael placed the brass key on the teacher\u2019s desk. Sarah stood beside him. They waited quietly for the teacher to speak.",
+      "cleanNarrationText": "At the school entrance the following morning, Michael still carried the brass key in his right hand. The scrape on his right cheek remained visible. He changed from his black jacket into a blue school uniform, keeping his silver watch on his left wrist.\nSarah tied her long brown hair into a ponytail and removed her red coat, revealing a white sweater. \u201cThe guard told us to come here,\u201d she said.\nA teacher with gray hair opened the classroom door. Michael and Sarah entered the classroom together.\nMichael placed the brass key on the teacher\u2019s desk. Sarah stood beside him. They waited quietly for the teacher to speak.",
+      "narrationMode": "automatic",
+      "includeChapterLabel": false,
+      "status": "NOT_ANALYZED",
+      "audio": {},
+      "people": [],
+      "scenes": [],
+      "timeline": [],
+      "analysis": {},
+      "handoff": {},
+      "manual": {},
+      "history": [],
+      "render": {},
+      "errors": []
+    }
+  ],
+  "assets": [],
+  "render": {},
+  "warnings": []
+}

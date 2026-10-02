@@ -20,3 +20,6 @@ export const saveProjectState = state => operation('projects', 'readwrite', stor
 export const loadProjectState = () => operation('projects', 'readonly', store => store.get('active'));
 export const saveImageBlob = (id, blob) => operation('images', 'readwrite', store => store.put(blob, id));
 export const loadImageBlob = id => operation('images', 'readonly', store => store.get(id));
+export const saveStudioProject = project => operation('projects', 'readwrite', store => store.put(project, 'studio:' + project.id));
+export const loadStudioProject = id => operation('projects', 'readonly', store => store.get('studio:' + id));
+export const listStudioProjects = async () => (await operation('projects', 'readonly', store => store.getAll())).filter(p => p?.schemaVersion === 1 && p?.chapters);

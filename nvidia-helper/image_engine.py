@@ -243,7 +243,7 @@ class ImageEngine:
                 raise ValueError('Mask is entirely black. Paint the area to change in white.')
             w, h = kwargs['width'], kwargs['height']
             kwargs.update(image=ImageOps.fit(image, (w, h), Image.Resampling.LANCZOS),
-                          mask_image=ImageOps.fit(mask, (w, h), Image.Resampling.NEAREST), strength=1.0)
+                          mask_image=ImageOps.fit(mask, (w, h), Image.Resampling.NEAREST), strength=float(data.get('denoising_strength', 1.0)))
         reference_strength = float(data.get('reference_strength', .45))
         kwargs.update(self._reference(refs if operation != 'inpaint' else [], reference_strength, checkpoint))
         positive, negative, tokens = self.encode_prompts(data['prompt'], str(data.get('negative', '')), checkpoint)

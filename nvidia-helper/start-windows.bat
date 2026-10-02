@@ -18,6 +18,12 @@ if errorlevel 1 (
   .venv\Scripts\python.exe -m pip install -r requirements.txt
   if errorlevel 1 goto failed
 )
+rem English pronunciation data only; never resolve another Torch installation.
+.venv\Scripts\python.exe -c "import en_core_web_sm" >nul 2>nul
+if errorlevel 1 (
+  .venv\Scripts\python.exe -m pip install --no-deps "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+  if errorlevel 1 goto failed
+)
 .venv\Scripts\python.exe server.py
 if errorlevel 1 goto failed
 exit /b

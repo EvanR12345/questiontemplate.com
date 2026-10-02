@@ -1,0 +1,2056 @@
+"""Persistent production jobs: audio, directing, shot generation, QC and renders."""
+
+import base64, copy, io, json, os, re, secrets, sqlite3, threading, time, traceback, wave
+from pathlib import Path
+from studio_data import *
+from director_provider import LocalQwenDirector
+from image_provider import (
+    ExistingImageProvider,
+    NativeFluxProvider,
+    ComfyImageProvider,
+    format_prompt,
+    select_references,
+    data_url,
+)
+from studio_render import VideoRenderer
+
+
+class JobCancelled(Exception):
+    pass
+
+
+class AudioYield(Exception):
+    pass
+
+
+class StudioService:
+    def __init__(
+        self,
+        root,
+        audio,
+        image_factory,
+        gpu_lock,
+        before_audio,
+        before_image,
+        legacy_queue,
+    ):
+        self.store = ProjectStore(root)
+        self.audio = audio
+        self.gpu_lock = gpu_lock
+        self.before_audio = before_audio
+        self.before_image = before_image
+        self.legacy_queue = legacy_queue
+        self.config_path = Path(__file__).resolve().parent / "studio-config.json"
+        self.config = (
+            json.loads(self.config_path.read_text(encoding="utf-8"))
+            if self.config_path.exists()
+            else {}
+        )
+        self.director = LocalQwenDirector(self.config, self.store.root)
+        self.providers = {
+            "existing": ExistingImageProvider(image_factory),
+            "native-flux": NativeFluxProvider(self.config, self.store.root),
+            "comfyui": ComfyImageProvider(self.config),
+        }
+        self.renderer = VideoRenderer(self.store, self.config)
+        self.cv = threading.Condition(threading.RLock())
+        self.current = None
+        self.cancel = False
+        self.yield_requested = False
+        self.closed = False
+        self.db = sqlite3.connect(
+            self.store.root / "jobs.sqlite3", check_same_thread=False
+        )
+        self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,project TEXT,chapter TEXT,shot TEXT,kind TEXT,payload TEXT,status TEXT,message TEXT,priority INTEGER,created REAL,started REAL,seconds REAL,attempt INTEGER,seed INTEGER)"
+        )
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)"
+        )
+        recovered = self.db.execute(
+            "UPDATE jobs SET status='QUEUED',message='Helper restarted. Resume restarts this item using saved assets and seed.' WHERE status='RUNNING'"
+        ).rowcount
+        row = self.db.execute(
+            "SELECT value FROM settings WHERE key='paused'"
+        ).fetchone()
+        self.paused = bool(recovered or row and row[0] == "1")
+        self.db.commit()
+        self.sync_queue_states()
+        self.thread = threading.Thread(
+            target=self.worker, daemon=True, name="story-production"
+        )
+        self.thread.start()
+
+    def sync_queue_states(self):
+        """Restore persistent item states without touching completed image assets."""
+        with self.cv:
+            rows = [
+                dict(r)
+                for r in self.db.execute(
+                    "SELECT project,chapter,shot,status FROM jobs ORDER BY created"
+                )
+            ]
+        latest = {(r["project"], r["chapter"], r["shot"]): r for r in rows}
+        byproject = {}
+        for r in latest.values():
+            if r["chapter"]:
+                byproject.setdefault(r["project"], []).append(r)
+        for pid, items in byproject.items():
+
+            def update(p):
+                affected = set()
+                for item in items:
+                    try:
+                        c = get_chapter(p, item["chapter"])
+                    except StopIteration:
+                        continue
+                    state = item["status"]
+                    affected.add(c["id"])
+                    if item["shot"]:
+                        try:
+                            s = get_shot(p, c["id"], item["shot"])
+                        except StopIteration:
+                            continue
+                        if state != "COMPLETE":
+                            s["status"] = (
+                                "PAUSED"
+                                if state == "QUEUED" and self.paused
+                                else "GENERATING" if state == "RUNNING" else state
+                            )
+                    elif state != "COMPLETE":
+                        c["status"] = (
+                            "PAUSED"
+                            if state == "QUEUED" and self.paused
+                            else "ANALYZING" if state == "RUNNING" else state
+                        )
+                for cid in affected:
+                    c = get_chapter(p, cid)
+                    active = [
+                        r
+                        for r in items
+                        if r["chapter"] == cid and r["status"] in ("QUEUED", "RUNNING")
+                    ]
+                    if active:
+                        c["status"] = (
+                            "PAUSED"
+                            if self.paused
+                            else (
+                                "GENERATING"
+                                if any(r["status"] == "RUNNING" for r in active)
+                                else "QUEUED"
+                            )
+                        )
+                    elif c.get("scenes"):
+                        shots = [s for sc in c["scenes"] for s in sc["shots"]]
+                        if shots and all(
+                            s.get("imagePath") and s["status"] in ("COMPLETE", "PASSED")
+                            for s in shots
+                        ):
+                            c["status"] = "COMPLETE"
+
+            try:
+                self.store.mutate(pid, update)
+            except FileNotFoundError:
+                pass
+
+    def unload_models(self):
+        self.director.stop()
+        self.providers["native-flux"].unload()
+
+    def health(self):
+        import shutil, subprocess
+
+        hardware = {"gpu": self.audio.gpu, "vramGB": 4, "ramGB": 8}
+        try:
+            values = (
+                subprocess.check_output(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=memory.total,memory.free",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    text=True,
+                )
+                .splitlines()[0]
+                .split(",")
+            )
+            hardware.update(
+                vramGB=round(float(values[0]) / 1024, 1),
+                freeVramGB=round(float(values[1]) / 1024, 2),
+            )
+        except Exception:
+            pass
+        try:
+            import ctypes
+
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong)] + [
+                    (n, ctypes.c_ulonglong)
+                    for n in (
+                        "totalPhys",
+                        "availPhys",
+                        "totalPage",
+                        "availPage",
+                        "totalVirtual",
+                        "availVirtual",
+                        "availExtended",
+                    )
+                ]
+
+            mem = MEMORYSTATUSEX()
+            mem.length = ctypes.sizeof(mem)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(mem))
+            hardware.update(
+                ramGB=round(mem.totalPhys / 2**30, 1),
+                freeRamGB=round(mem.availPhys / 2**30, 2),
+            )
+        except Exception:
+            pass
+        hardware["diskFreeGB"] = round(
+            shutil.disk_usage(self.store.root).free / 2**30, 1
+        )
+        return {
+            "studioProtocol": 1,
+            "hardware": hardware,
+            "director": self.director.healthCheck(),
+            "providers": {
+                k: v.healthCheck()
+                | {
+                    "capabilities": v.getCapabilities(),
+                    "recommended": v.getRecommendedSettings(),
+                }
+                for k, v in self.providers.items()
+            },
+            "renderer": {"installed": Path(self.config.get("ffmpeg", "")).is_file()},
+            "outputFolder": str(self.store.root),
+            "queue": self.snapshot(),
+        }
+
+    def configure(self, data):
+        allowed = {
+            "directorExecutable",
+            "directorModel",
+            "directorProjector",
+            "directorGpuLayers",
+            "directorDevice",
+            "directorEndpoint",
+            "imageExecutable",
+            "imageBackend",
+            "fluxModel",
+            "fluxEncoder",
+            "fluxVae",
+            "comfyEndpoint",
+            "comfyWorkflow",
+            "ffmpeg",
+            "font",
+        }
+        if not isinstance(data, dict) or any(k not in allowed for k in data):
+            raise ValueError("Unknown helper configuration option.")
+        with self.cv:
+            if self.current:
+                raise ValueError(
+                    "Pause and cancel the current operation before changing runtime paths."
+                )
+            self.unload_models()
+            self.config.update(data)
+            self.config_path.write_text(
+                json.dumps(self.config, indent=2), encoding="utf-8"
+            )
+            self.director.config = self.config
+            self.providers["native-flux"].config = self.config
+            self.providers["comfyui"] = ComfyImageProvider(self.config)
+            self.renderer.config = self.config
+        return self.health()
+
+    def snapshot(self):
+        with self.cv:
+            rows = [
+                dict(r)
+                for r in self.db.execute(
+                    "SELECT id,project,chapter,shot,kind,status,message,priority,created,started,seconds,attempt,seed FROM jobs WHERE status IN ('QUEUED','RUNNING') OR id IN (SELECT id FROM jobs ORDER BY created DESC LIMIT 1100) ORDER BY created DESC"
+                )
+            ]
+            counts = {
+                s: 0 for s in ("QUEUED", "RUNNING", "COMPLETE", "FAILED", "CANCELLED")
+            }
+            project_counts = {}
+            for group in self.db.execute(
+                "SELECT project,kind,status,count(*) AS total FROM jobs GROUP BY project,kind,status"
+            ):
+                counts[group["status"]] += group["total"]
+                project = project_counts.setdefault(
+                    group["project"], {"all": {}, "image": {}}
+                )
+                project["all"][group["status"]] = (
+                    project["all"].get(group["status"], 0) + group["total"]
+                )
+                if group["kind"] == "image":
+                    project["image"][group["status"]] = group["total"]
+            averages = {}
+            for kind in {j["kind"] for j in rows}:
+                durations = [
+                    r["seconds"]
+                    for r in rows
+                    if r["kind"] == kind
+                    and r["status"] == "COMPLETE"
+                    and r["seconds"] > 0
+                ][:30]
+                if durations:
+                    averages[kind] = sum(durations) / len(durations)
+            pending = [r for r in rows if r["status"] in ("QUEUED", "RUNNING")]
+            estimate = sum(
+                max(
+                    0,
+                    averages.get(r["kind"], 0)
+                    - (
+                        time.time() - r["started"]
+                        if r["status"] == "RUNNING" and r["started"]
+                        else 0
+                    ),
+                )
+                for r in pending
+            )
+            return {
+                "paused": self.paused,
+                "current": self.current,
+                "counts": counts,
+                "projectCounts": project_counts,
+                "etaSeconds": (
+                    round(estimate)
+                    if all(r["kind"] in averages for r in pending)
+                    else None
+                ),
+                "averageSecondsByKind": averages,
+                "jobs": rows,
+                "outputFolder": str(self.store.root),
+            }
+
+    def enqueue(self, pid, chapter, kind, shots=None, options=None):
+        p = self.store.load(pid)
+        options = options or {}
+        ch = get_chapter(p, chapter) if chapter else None
+        if kind not in (
+            "analyze",
+            "scene-plan",
+            "narration",
+            "image",
+            "qc",
+            "character-reference",
+            "render-chapter",
+            "render-full",
+            "intro-audio",
+            "intro-image",
+            "intro-render",
+        ):
+            raise ValueError("Unknown studio operation.")
+        ids = shots if kind in ("image", "qc") else [None]
+        if not ids or len(ids) > 1000:
+            raise ValueError("Submit 1–1000 shots.")
+        planned = []
+        for sid in ids:
+            shot = get_shot(p, chapter, sid) if sid else None
+            if shot:
+                if any(
+                    c["type"] == "main" and not c.get("accepted")
+                    for c in ch["people"]
+                    if any(s["id"] == c["id"] for s in shot["characters"])
+                ):
+                    raise ValueError(
+                        "Confirm detected main characters in Characters, or classify them as supporting/temporary, before generating their shots."
+                    )
+                scene = next(s for s in ch["scenes"] if s["id"] == shot["sceneId"])
+                if (
+                    p["settings"]["appearanceHandling"] != "Automatic"
+                    and scene.get("appearanceChanges")
+                    and not scene.get("appearanceChangesReviewed")
+                ):
+                    raise ValueError(
+                        "Review and accept this scene’s planned appearance changes before generating images."
+                    )
+                provider = self.provider(
+                    shot.get("imageProvider") or p["settings"]["image"]["provider"]
+                )
+                settings = provider.validateSettings(
+                    shot["generationSettings"] | {"model": shot["imageModel"]}
+                )
+                shot["generationSettings"] = settings
+                seed = settings["seed"]
+            else:
+                seed = None
+            planned.append(
+                (
+                    uid("job-"),
+                    sid,
+                    seed,
+                    options | ({"shotSnapshot": copy.deepcopy(shot)} if shot else {}),
+                )
+            )
+        with self.cv:
+            count = self.db.execute(
+                "SELECT count(*) FROM jobs WHERE status IN ('QUEUED','RUNNING')"
+            ).fetchone()[0]
+            if count + len(ids) > 1000:
+                raise ValueError(
+                    "The production queue has room for 1000 unfinished jobs."
+                )
+            for id, sid, seed, payload in planned:
+                exists = self.db.execute(
+                    "SELECT id FROM jobs WHERE project=? AND chapter=? AND kind=? AND shot IS ? AND status IN ('QUEUED','RUNNING')",
+                    (pid, chapter, kind, sid),
+                ).fetchone()
+                if exists:
+                    continue
+                self.db.execute(
+                    "INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        id,
+                        pid,
+                        chapter,
+                        sid,
+                        kind,
+                        json.dumps(payload),
+                        "QUEUED",
+                        "Waiting",
+                        int(options.get("priority", 0)),
+                        time.time(),
+                        None,
+                        0,
+                        0,
+                        seed,
+                    ),
+                )
+            self.db.commit()
+            self.cv.notify_all()
+        if kind == "image":
+
+            def mark(latest):
+                c = get_chapter(latest, chapter)
+                c["status"] = "QUEUED"
+                for _, sid, seed, _ in planned:
+                    s = get_shot(latest, chapter, sid)
+                    s["generationSettings"]["seed"] = seed
+                    s["status"] = "QUEUED"
+
+            self.store.mutate(pid, mark)
+        self.sync_queue_states()
+        return self.snapshot()
+
+    def provider(self, id):
+        if id not in self.providers:
+            raise ValueError("Unknown image provider: " + str(id))
+        return self.providers[id]
+
+    def control(self, action, job=None):
+        with self.cv:
+            if action == "pause":
+                self.paused = True
+            elif action == "resume":
+                self.paused = False
+                self.yield_requested = False
+            elif action == "cancel-current":
+                self.cancel = True
+            elif action == "cancel-all":
+                self.cancel = True
+                self.paused = True
+                self.db.execute(
+                    "UPDATE jobs SET status='CANCELLED',message='Cancelled; completed assets retained' WHERE status='QUEUED'"
+                )
+            elif action == "retry":
+                available = (
+                    1000
+                    - self.db.execute(
+                        "SELECT count(*) FROM jobs WHERE status IN ('QUEUED','RUNNING')"
+                    ).fetchone()[0]
+                )
+                self.db.execute(
+                    "UPDATE jobs SET status='QUEUED',message='Retrying with saved seed' WHERE id IN (SELECT id FROM jobs WHERE status IN ('FAILED','CANCELLED')"
+                    + (" AND id=?" if job else "")
+                    + " ORDER BY priority DESC,created LIMIT ?)",
+                    (job, available) if job else (available,),
+                )
+                self.paused = False
+            elif action == "priority":
+                self.db.execute(
+                    "UPDATE jobs SET priority=100 WHERE id=? AND status=?",
+                    (job, "QUEUED"),
+                )
+            elif action == "yield-audio":
+                self.yield_requested = True
+            else:
+                raise ValueError("Unknown production queue control.")
+            self.db.execute(
+                "INSERT OR REPLACE INTO settings VALUES('paused',?)",
+                ("1" if self.paused else "0",),
+            )
+            self.db.commit()
+            self.cv.notify_all()
+        self.sync_queue_states()
+        return self.snapshot()
+
+    def gate(self, message="", step=0, total=0, wait_paused=True):
+        with self.cv:
+            if self.closed or self.cancel:
+                raise JobCancelled()
+            if self.yield_requested:
+                raise AudioYield()
+            if message and self.current:
+                self.db.execute(
+                    "UPDATE jobs SET message=? WHERE id=?", (message, self.current)
+                )
+                self.db.commit()
+            while self.paused and wait_paused:
+                if self.closed or self.cancel:
+                    raise JobCancelled()
+                if self.yield_requested:
+                    raise AudioYield()
+                self.cv.wait(0.25)
+
+    def checkpoint(self, step, total, message):
+        self.gate(
+            f"{message} · {step}/{total}" if total else message,
+            step,
+            total,
+            wait_paused=False,
+        )
+
+    def status(self, pid, chid, value):
+        if chid:
+            self.store.mutate(pid, lambda p: get_chapter(p, chid).update(status=value))
+
+    def worker(self):
+        while True:
+            with self.cv:
+                while not self.closed:
+                    job = self.db.execute(
+                        "SELECT * FROM jobs WHERE status='QUEUED' ORDER BY priority DESC,created LIMIT 1"
+                    ).fetchone()
+                    if job and not self.paused:
+                        break
+                    self.cv.wait(0.5)
+                if self.closed:
+                    return
+                job = dict(job)
+                self.current = job["id"]
+                self.cancel = False
+                self.yield_requested = False
+                self.db.execute(
+                    "UPDATE jobs SET status='RUNNING',started=?,attempt=attempt+1 WHERE id=?",
+                    (time.time(), job["id"]),
+                )
+                self.db.commit()
+            started = time.time()
+            state = "COMPLETE"
+            message = "Complete"
+            try:
+                self.legacy_queue.control("yield-audio")
+                self.legacy_queue.control("pause")
+                while not self.gpu_lock.acquire(timeout=0.25):
+                    self.gate("Waiting for GPU helper")
+                try:
+                    p = self.store.load(job["project"])
+                    options = json.loads(job["payload"])
+                    if job["kind"] in (
+                        "analyze",
+                        "scene-plan",
+                        "narration",
+                        "intro-audio",
+                    ):
+                        self.unload_models()
+                        self.before_audio()
+                        if job["kind"] == "intro-audio":
+                            self.intro_audio(p)
+                        else:
+                            ch = get_chapter(p, job["chapter"])
+                            self.narration(p, ch)
+                            if job["kind"] == "narration":
+                                self.status(
+                                    p["id"],
+                                    ch["id"],
+                                    (
+                                        "READY_FOR_IMAGES"
+                                        if ch["scenes"]
+                                        else "NOT_ANALYZED"
+                                    ),
+                                )
+                            if job["kind"] in ("analyze", "scene-plan"):
+                                self.before_image()
+                                self.providers["existing"].unload()
+                                self.analyze(
+                                    self.store.load(p["id"]), job["chapter"], options
+                                )
+                    elif job["kind"] == "image":
+                        self.generate(
+                            p, job["chapter"], job["shot"], job["seed"], options
+                        )
+                    elif job["kind"] == "qc":
+                        self.inspect_shot(p, job["chapter"], job["shot"])
+                    elif job["kind"] == "intro-image":
+                        self.intro_image(p)
+                    elif job["kind"] == "character-reference":
+                        self.character_reference(p, options)
+                    else:
+                        self.unload_models()
+                        self.providers["existing"].unload()
+                        if job["kind"] == "intro-render":
+                            result = self.renderer.intro(p, self.gate)
+                            self.store.mutate(
+                                p["id"],
+                                lambda q: q["intro"].update(videoPath=result.name),
+                            )
+                        elif job["kind"] == "render-full":
+                            result = self.renderer.full(p, self.gate)
+
+                            def full_saved(q):
+                                if (
+                                    q.get("render", {}).get("path")
+                                    and q["render"]["path"] != result["path"]
+                                ):
+                                    q.setdefault("renderHistory", []).append(
+                                        q["render"]
+                                    )
+                                q.update(render=result, renderStale=False)
+
+                            self.store.mutate(p["id"], full_saved)
+                        else:
+                            ch = get_chapter(p, job["chapter"])
+                            result = self.renderer.chapter_export(p, ch, self.gate)
+
+                            def chapter_saved(q):
+                                c = get_chapter(q, ch["id"])
+                                if (
+                                    c.get("render", {}).get("path")
+                                    and c["render"]["path"] != result["path"]
+                                ):
+                                    c.setdefault("renderHistory", []).append(
+                                        c["render"]
+                                    )
+                                c.update(
+                                    render=result, status="COMPLETE", renderStale=False
+                                )
+                                q["renderStale"] = True
+
+                            self.store.mutate(p["id"], chapter_saved)
+                finally:
+                    self.gpu_lock.release()
+            except AudioYield:
+                state = "QUEUED"
+                message = "Paused to free models for Audio"
+                self.paused = True
+            except JobCancelled:
+                state = "CANCELLED"
+                message = "Cancelled; completed assets preserved"
+                self.status(job["project"], job["chapter"], "CANCELLED")
+            except Exception as error:
+                state = "FAILED"
+                message = type(error).__name__ + ": " + str(error)[:1800]
+                traceback.print_exc()
+
+                def fail(p):
+                    if job["chapter"]:
+                        ch = get_chapter(p, job["chapter"])
+                        ch["status"] = "FAILED"
+                        ch["errors"].append(
+                            {"time": time.time(), "job": job["id"], "message": message}
+                        )
+                        if job["shot"]:
+                            s = get_shot(p, job["chapter"], job["shot"])
+                            s["status"] = "FAILED"
+                            s["generationError"] = message
+
+                try:
+                    self.store.mutate(job["project"], fail)
+                except Exception:
+                    pass
+            finally:
+                if state in ("CANCELLED", "QUEUED", "FAILED"):
+                    self.unload_models()
+                with self.cv:
+                    self.db.execute(
+                        "UPDATE jobs SET status=?,message=?,seconds=? WHERE id=?",
+                        (state, message, time.time() - started, job["id"]),
+                    )
+                    self.db.commit()
+                    self.current = None
+                    self.cancel = False
+                    self.cv.notify_all()
+                self.sync_queue_states()
+
+    def narration(self, p, ch):
+        text = (
+            ch["cleanNarrationText"]
+            if ch.get("narrationMode") == "manual"
+            else clean_narration(
+                ch["sourceText"], ch["name"], ch.get("includeChapterLabel", False)
+            )
+        )
+        if not text.strip():
+            raise ValueError("Paste chapter narration first.")
+        signature = digest(
+            {
+                "text": text,
+                "voice": p["settings"]["voice"],
+                "speed": p["settings"]["speed"],
+            }
+        )
+        if (
+            ch.get("audio", {}).get("signature") == signature
+            and self.store.asset(p["id"], ch["audio"]["path"]).exists()
+        ):
+            return
+        self.status(p["id"], ch["id"], "AUDIO_GENERATING")
+        folder = self.store.folder(p["id"]) / ch["id"]
+        folder.mkdir(exist_ok=True)
+        self.store.mutate(
+            p["id"], lambda q: get_chapter(q, ch["id"]).update(cleanNarrationText=text)
+        )
+        result = self.create_audio(
+            text,
+            p["settings"]["voice"],
+            p["settings"]["speed"],
+            folder / f"chapter-{ch['number']:03d}-{signature[:12]}.wav",
+        )
+        result.update(
+            signature=signature,
+            textDigest=digest(text),
+            voice=p["settings"]["voice"],
+            speed=p["settings"]["speed"],
+            path=str(
+                Path(result["path"]).relative_to(self.store.folder(p["id"]))
+            ).replace("\\", "/"),
+            downloadName=f"chapter-{ch['number']:03d}.wav",
+        )
+
+        def audio_saved(q):
+            get_chapter(q, ch["id"]).update(
+                audio=result, status="DIRECTING", renderStale=True
+            )
+            q["renderStale"] = True
+
+        self.store.mutate(p["id"], audio_saved)
+
+    def create_audio(self, text, voice, speed, target):
+        import numpy as np
+        from kokoro import KPipeline
+
+        if voice not in (
+            "am_michael",
+            "am_fenrir",
+            "am_puck",
+            "af_heart",
+            "af_bella",
+            "af_nicole",
+            "bm_george",
+            "bf_emma",
+        ):
+            raise ValueError("Unsupported voice.")
+        if not 0.5 <= speed <= 2:
+            raise ValueError("Voice speed must be 0.5–2.")
+        # Existing KModel is shared; KPipeline here only prepares phonemes.
+        pipeline = KPipeline(
+            lang_code=voice[0], repo_id="hexgrad/Kokoro-82M", model=False
+        )
+        self.audio.prepare(voice)
+        sections = sentences(text)
+        offset = 0
+        timings = []
+        tmp = target.with_suffix(".partial.wav")
+        with wave.open(str(tmp), "wb") as wav:
+            wav.setparams((1, 2, 24000, 0, "NONE", "not compressed"))
+            for index, sentence in enumerate(sections):
+                self.gate(f"Narration sentence {index+1}/{len(sections)}")
+                begin = offset
+                for result in pipeline(sentence):
+                    phonemes = "".join(
+                        c for c in result.phonemes if c in self.audio.model.vocab
+                    )
+                    if not phonemes.strip():
+                        raise ValueError(
+                            "Narration contains an unpronounceable sentence. Edit narration preview."
+                        )
+                    # Small inference sections are streamed into ONE WAV; no truncation
+                    # and no separate sentence audio assets are created.
+                    remaining = phonemes
+                    while remaining:
+                        self.gate(f"Narration sentence {index+1}/{len(sections)}")
+                        boundary = (
+                            remaining.rfind(" ", 0, 251)
+                            if len(remaining) > 250
+                            else len(remaining)
+                        )
+                        if boundary <= 0:
+                            boundary = min(250, len(remaining))
+                        section = remaining[:boundary].strip()
+                        remaining = remaining[boundary:].lstrip()
+                        if not section:
+                            continue
+                        raw = self.audio.synthesize(section, voice, speed)
+                        pcm = np.frombuffer(raw, dtype="<f4")
+                        wav.writeframes(
+                            (np.clip(pcm, -1, 1) * 32767).astype("<i2").tobytes()
+                        )
+                        offset += len(pcm) / 24000
+                timings.append(
+                    {
+                        "index": index,
+                        "text": sentence,
+                        "start": begin,
+                        "end": offset,
+                        "timingSource": "synthesized-sentence-duration",
+                    }
+                )
+        if offset <= 0:
+            raise RuntimeError("No narration audio was produced.")
+        tmp.replace(target)
+        paragraphs = []
+        cursor = 0
+        for paragraph in re.split(r"\n\s*\n", text):
+            count = len(sentences(paragraph))
+            if count and cursor + count <= len(timings):
+                paragraphs.append(
+                    {
+                        "index": len(paragraphs),
+                        "text": paragraph,
+                        "start": timings[cursor]["start"],
+                        "end": timings[cursor + count - 1]["end"],
+                    }
+                )
+                cursor += count
+        return {
+            "path": str(target),
+            "duration": offset,
+            "sampleRate": 24000,
+            "sentences": timings,
+            "paragraphs": paragraphs,
+            "wordTimingAvailable": False,
+            "timingSource": "exact sentence synthesis boundaries",
+            "created": time.time(),
+        }
+
+    def intro_audio(self, p):
+        text = p["intro"].get("voiceText", "").strip()
+        if not text:
+            raise ValueError(
+                "Enter explicit intro voice text first. Chapter labels are never inserted."
+            )
+        result = self.create_audio(
+            text,
+            p["settings"]["voice"],
+            p["settings"]["speed"],
+            self.store.folder(p["id"]) / "intro.wav",
+        )
+        self.store.mutate(
+            p["id"],
+            lambda q: q["intro"].update(
+                audioPath="intro.wav", audioDuration=result["duration"]
+            ),
+        )
+
+    def intro_image(self, p):
+        self.unload_models()
+        self.before_image()
+        provider = self.provider(p["settings"]["image"]["provider"])
+        if provider.id != "existing":
+            self.providers["existing"].unload()
+        settings = provider.validateSettings(p["settings"]["image"])
+        prompt = p["intro"].get("visualPrompt") or (
+            "Atmospheric opening image for "
+            + p["name"]
+            + ", "
+            + p["settings"]["style"]
+            + ". Coherent environment, cinematic lighting. No letters or captions."
+        )
+        result = provider.generateImage(
+            {
+                "prompt": prompt,
+                "negativePrompt": (
+                    "text, watermark"
+                    if provider.getCapabilities()["supportsNegativePrompt"]
+                    else ""
+                ),
+                "referenceImages": [],
+                "settings": settings,
+            },
+            self.checkpoint,
+        )
+        name = "intro-" + uid() + ".png"
+        path = self.store.folder(p["id"]) / name
+        result.pop("pil").save(path, "PNG")
+        self.store.mutate(
+            p["id"],
+            lambda q: q["intro"].update(
+                visualPath=name,
+                imageMetadata=result | {"settings": settings, "prompt": prompt},
+            ),
+        )
+
+    def character_reference(self, p, options):
+        self.unload_models()
+        self.before_image()
+        provider = self.provider(p["settings"]["image"]["provider"])
+        if provider.id != "existing":
+            self.providers["existing"].unload()
+        person = next(c for c in p["characters"] if c["id"] == options["characterId"])
+        settings = provider.validateSettings(p["settings"]["image"])
+        prompt = f"A clear single-character {options.get('referenceKind','face')} reference portrait of {person['name']}. {person['description']}. Permanent identity: {json.dumps(person['permanentIdentity'])}. Appearance: {json.dumps(person['defaultAppearance'])}. {p['settings']['style']}. Neutral plain background, no other people, no text."
+        refs = [
+            data_url(self.store.asset(p["id"], r["path"]))
+            for r in person["references"][
+                : provider.getCapabilities().get("maxReferenceImages", 0)
+            ]
+        ]
+        if refs and provider.id == "native-flux":
+            settings.update(width=384, height=384)
+        result = provider.generateImage(
+            {
+                "prompt": prompt,
+                "negativePrompt": (
+                    "text, watermark, extra people"
+                    if provider.getCapabilities()["supportsNegativePrompt"]
+                    else ""
+                ),
+                "referenceImages": refs,
+                "settings": settings,
+            },
+            self.checkpoint,
+        )
+        name = "references/" + uid() + ".png"
+        path = self.store.asset(p["id"], name)
+        path.parent.mkdir(exist_ok=True)
+        result.pop("pil").save(path, "PNG")
+
+        def save(latest):
+            next(c for c in latest["characters"] if c["id"] == person["id"])[
+                "references"
+            ].append(
+                {
+                    "path": name,
+                    "kind": options.get("referenceKind", "face"),
+                    "metadata": result | {"prompt": prompt, "settings": settings},
+                }
+            )
+
+        self.store.mutate(p["id"], save)
+
+    def analyze(self, p, chid, options):
+        self.director.reasoning = p["settings"]["director"].get("reasoning", "Balanced")
+        ch = get_chapter(p, chid)
+        self.status(p["id"], chid, "DIRECTING")
+        timings = ch["audio"]["sentences"]
+        state, memory = state_before(p, chid)
+        original = copy.deepcopy(ch.get("handoff", {}))
+        scenes = []
+        people = []
+        analyses = []
+        locations = []
+        passes = []
+        selected_scene = next(
+            (s for s in ch["scenes"] if s["id"] == options.get("sceneId")), None
+        )
+        if selected_scene:
+            timings = [
+                t
+                for t in timings
+                if selected_scene["startSentence"]
+                <= t["index"]
+                <= selected_scene["endSentence"]
+            ]
+            people = copy.deepcopy(ch["people"])
+            for old_scene in ch["scenes"]:
+                if old_scene["id"] == selected_scene["id"]:
+                    break
+                state = apply_changes(
+                    state,
+                    old_scene.get("appearanceChanges", []),
+                    ch["number"],
+                    old_scene["id"],
+                )
+        # Bounded chunks follow sentence boundaries; the director chooses scenes in each.
+        groups = []
+        current = []
+        size = 0
+        for item in timings:
+            if current and (size + len(item["text"]) > 2500 or len(current) >= 12):
+                groups.append(current)
+                current = []
+                size = 0
+            current.append(item)
+            size += len(item["text"])
+        if current:
+            groups.append(current)
+        provider = self.provider(p["settings"]["image"]["provider"])
+        health = provider.healthCheck()
+        if not health["installed"]:
+            raise ValueError(
+                "Selected image workflow is unavailable. Choose an installed model before analyzing."
+            )
+        for group_index, group in enumerate(groups):
+            base = group[0]["index"]
+            text = [
+                {"index": i, "text": t["text"], "start": t["start"], "end": t["end"]}
+                for i, t in enumerate(group)
+            ]
+            canonical = [
+                {
+                    "id": c["id"],
+                    "name": c["name"],
+                    "description": c["description"],
+                    "identity": c["permanentIdentity"],
+                }
+                for c in p["characters"]
+            ]
+            compact_state = {k: v for k, v in state.items() if k != "appearanceHistory"}
+            context = {
+                "sentences": text,
+                "knownMainCharacters": canonical,
+                "priorState": compact_state,
+                "storyMemory": memory,
+                "layoutMode": p["settings"]["layoutMode"],
+                "customTargets": p["settings"]["customLayout"],
+            }
+            self.gate(f"Analyzing group {group_index+1}/{len(groups)}")
+            analysis = self.director.analyzeStory(context, self.gate)
+            analyses.append(analysis)
+            passes.append(
+                {"pass": "story-analyst", "group": group_index, "output": analysis}
+            )
+            align_evidence(analysis["changes"], text)
+            align_evidence(analysis.get("environmentChanges", []), text)
+            invalid = [
+                e
+                for e in analysis["changes"]
+                if not 0 <= e["sentence"] < len(group)
+                or e["reason"].casefold() not in group[e["sentence"]]["text"].casefold()
+            ]
+            if invalid:
+                from director_provider import obj, arr, CHANGE
+
+                repaired = self.director.call(
+                    "Repair state-change evidence. Preserve changes supported by narration. Every reason must be an exact verbatim substring of its source sentence. Return ONLY supported changes; use specific fields (outfit, hairStyle, injury, key).",
+                    {
+                        "sentences": text,
+                        "changes": analysis["changes"],
+                        "people": canonical,
+                    },
+                    obj({"changes": arr(CHANGE)}),
+                    self.gate,
+                )
+                analysis["changes"] = align_evidence(repaired["changes"], text)
+                if any(
+                    not 0 <= e["sentence"] < len(group)
+                    or e["reason"].casefold()
+                    not in group[e["sentence"]]["text"].casefold()
+                    for e in analysis["changes"]
+                ):
+                    raise ValueError(
+                        "Director state changes lack exact story evidence after repair. Review chapter text and retry; prior continuity was retained."
+                    )
+            known = {c["id"]: c for c in p["characters"]}
+            byname = {c["name"].casefold(): c["id"] for c in p["characters"]}
+            mapping = {}
+            for detected in analysis["people"]:
+                match = byname.get(detected["name"].casefold())
+                existing = next(
+                    (
+                        x
+                        for x in people
+                        if x["name"].casefold() == detected["name"].casefold()
+                    ),
+                    None,
+                )
+                id = match or (existing["id"] if existing else uid("person-"))
+                mapping[detected["id"]] = id
+                if not existing and not match:
+                    person = character(
+                        detected["name"], detected["description"], detected["type"]
+                    )
+                    person.update(
+                        id=id,
+                        accepted=False,
+                        evidence=detected["evidence"],
+                        permanentIdentity=detected.get(
+                            "permanentIdentity", person["permanentIdentity"]
+                        ),
+                        defaultAppearance=detected.get(
+                            "defaultAppearance", person["defaultAppearance"]
+                        ),
+                        gender=detected.get("gender", ""),
+                        approximateAge=detected.get("approximateAge", ""),
+                    )
+                    people.append(person)
+                    state.setdefault("characters", {})[id] = copy.deepcopy(
+                        person["defaultAppearance"]
+                    )
+                if match:
+                    person = known[match]
+                    for field, value in detected.get("permanentIdentity", {}).items():
+                        if value and not person["permanentIdentity"].get(field):
+                            person["permanentIdentity"][field] = value
+            cast = [
+                {
+                    "id": c["id"],
+                    "name": c["name"],
+                    "type": "main",
+                    "description": c["description"],
+                }
+                for c in p["characters"]
+            ] + [
+                {
+                    "id": x["id"],
+                    "name": x["name"],
+                    "type": x["type"],
+                    "description": x["description"],
+                }
+                for x in people
+            ]
+            for loc in analysis["locations"]:
+                item = next(
+                    (
+                        l
+                        for l in p["locations"] + locations
+                        if l["name"].casefold() == loc["name"].casefold()
+                    ),
+                    None,
+                )
+                if not item:
+                    locations.append(
+                        {
+                            "id": uid("loc-"),
+                            "name": loc["name"],
+                            "description": loc["description"],
+                            "references": [],
+                        }
+                    )
+            plan = self.director.planChapter(
+                context | {"analysis": analysis, "people": cast}, self.gate
+            )
+            passes.append(
+                {"pass": "chapter-director", "group": group_index, "output": plan}
+            )
+            ranges = plan["scenes"]
+            try:
+                self.validate_ranges(ranges, len(group), "scene")
+            except ValueError as error:
+                from director_provider import obj, arr, SCENE
+
+                plan = self.director.call(
+                    "Repair scene boundaries. Cover every supplied sentence exactly once, in order. Start with sentence 0. Keep source story unchanged.",
+                    {"sentences": text, "plan": plan, "error": str(error)},
+                    obj({"scenes": arr(SCENE)}),
+                    self.gate,
+                )
+                ranges = plan["scenes"]
+                self.validate_ranges(ranges, len(group), "scene")
+            change_sentences = sorted({e["sentence"] for e in analysis["changes"]})
+            scene_context = {
+                "sentences": text,
+                "scenes": [r | {"sceneIndex": i} for i, r in enumerate(ranges)],
+                "people": cast,
+                "currentState": compact_state,
+                "storyBeats": analysis["beats"],
+                "requiredVisualChangeBoundaries": change_sentences,
+                "instruction": "Start a shot at each supplied visual-change sentence. Depict that moment explicitly: object handover/pickup, injury, clothing change. Do not bury these moments inside a shot about an earlier action.",
+            }
+            detail = self.director.planScenes(scene_context, self.gate)
+            passes.append(
+                {"pass": "scene-director", "group": group_index, "output": detail}
+            )
+            details = detail["shots"]
+            for attempt in range(2):
+                try:
+                    for s in details:
+                        matches = [
+                            i
+                            for i, r in enumerate(ranges)
+                            if r["startSentence"]
+                            <= s["startSentence"]
+                            <= s["endSentence"]
+                            <= r["endSentence"]
+                        ]
+                        if len(matches) == 1:
+                            s["sceneIndex"] = matches[0]
+                    for si, rs in enumerate(ranges):
+                        self.validate_shot_ranges(
+                            [s for s in details if s["sceneIndex"] == si], rs
+                        )
+                    break
+                except ValueError as error:
+                    if attempt:
+                        raise
+                    from director_provider import obj, arr, SHOT
+
+                    detail = self.director.call(
+                        "Repair shot coverage. sceneIndex is explicitly supplied, ZERO based. Every scene needs shots. Cover each scene sentence range exactly once. One visible moment per shot; no sequential montage.",
+                        scene_context | {"invalidPlan": detail, "error": str(error)},
+                        obj({"shots": arr(SHOT)}),
+                        self.gate,
+                    )
+                    details = detail["shots"]
+            # A small director can miss a required visual-change boundary. The
+            # application retains validated chronology and asks the AI to direct
+            # the resulting moments, rather than accepting an omitted story beat.
+            expanded = []
+            needs_direction = []
+            for ds in details:
+                points = (
+                    [ds["startSentence"]]
+                    + [
+                        n
+                        for n in change_sentences
+                        if ds["startSentence"] < n <= ds["endSentence"]
+                    ]
+                    + [ds["endSentence"] + 1]
+                )
+                for a, b in zip(points, points[1:]):
+                    item = copy.deepcopy(ds)
+                    item.update(startSentence=a, endSentence=b - 1)
+                    expanded.append(item)
+                    if len(points) > 2:
+                        needs_direction.append(item)
+            if needs_direction:
+                from director_provider import obj, STR
+
+                fields = obj(
+                    {
+                        k: STR
+                        for k in (
+                            "action",
+                            "expression",
+                            "pose",
+                            "lighting",
+                            "motion",
+                            "transition",
+                        )
+                    }
+                )
+                for begin in range(0, len(needs_direction), 4):
+                    batch = needs_direction[begin : begin + 4]
+                    slots = {
+                        f"shot{i}": {
+                            "narration": " ".join(
+                                t["text"]
+                                for t in group[
+                                    s["startSentence"] : s["endSentence"] + 1
+                                ]
+                            ),
+                            "people": cast,
+                            "previousAction": s["action"],
+                        }
+                        for i, s in enumerate(batch)
+                    }
+                    repaired = self.director.call(
+                        "Direct each supplied story moment separately. Required shot keys and narration intervals are fixed by story evidence. Describe one visible action from its own narration, with the correct people. Do not reuse an earlier shot action or invent events.",
+                        slots,
+                        obj({k: fields for k in slots}),
+                        self.gate,
+                    )
+                    for i, s in enumerate(batch):
+                        s.update(repaired[f"shot{i}"])
+                passes.append(
+                    {
+                        "pass": "story-beat-boundary-repair",
+                        "count": len(needs_direction),
+                    }
+                )
+            details = expanded
+            cameras = {}
+            if p["settings"]["generationMode"] != "QUICK":
+                result = self.director.planLayout(
+                    {
+                        "shots": details,
+                        "style": p["settings"]["style"],
+                        "mode": p["settings"]["layoutMode"],
+                    },
+                    self.gate,
+                )
+                cameras = {x["shotIndex"]: x for x in result["cameras"]}
+                passes.append(
+                    {"pass": "cinematographer", "group": group_index, "output": result}
+                )
+            workflow = self.director.selectImageWorkflow(
+                {
+                    "available": [
+                        {
+                            "provider": provider.id,
+                            "models": health["models"],
+                            "workflows": health["workflow"],
+                            "capabilities": provider.getCapabilities(),
+                        }
+                    ],
+                    "selected": p["settings"]["image"],
+                    "mainCharacterReferences": sum(
+                        bool(c["references"]) for c in p["characters"]
+                    ),
+                },
+                self.gate,
+            )
+            if (
+                workflow["provider"] != provider.id
+                or workflow["model"] not in health["models"]
+                or workflow["workflow"] not in health["workflow"]
+            ):
+                raise ValueError(
+                    "Director selected an unavailable image model/workflow. Review settings and retry."
+                )
+            passes.append(
+                {
+                    "pass": "image-workflow-planner",
+                    "group": group_index,
+                    "output": workflow,
+                }
+            )
+            continuity = self.director.checkContinuity(
+                {
+                    "knownState": compact_state,
+                    "people": cast,
+                    "objects": analysis["objects"],
+                    "changes": analysis["changes"],
+                    "sentences": text,
+                    "shots": (
+                        details if p["settings"]["generationMode"] != "QUICK" else []
+                    ),
+                },
+                self.gate,
+            )
+            passes.append(
+                {
+                    "pass": "continuity-supervisor",
+                    "group": group_index,
+                    "output": continuity,
+                }
+            )
+            object_changes = align_evidence(
+                grounded_object_changes(
+                    continuity["objectChanges"], analysis["objects"], cast
+                ),
+                text,
+            )
+            if any(
+                not 0 <= e["sentence"] < len(group)
+                or not e["reason"]
+                or e["reason"].casefold() not in group[e["sentence"]]["text"].casefold()
+                or e["field"] == "accessories"
+                for e in object_changes
+            ):
+                from director_provider import obj, arr, CHANGE
+
+                object_changes = self.director.call(
+                    "Repair object continuity only. Keep every supported object position/possession fact. Use specific field key/phone/sword, never accessories. Quote the exact source sentence in reason. Zero based indices.",
+                    {
+                        "sentences": text,
+                        "people": cast,
+                        "invalidChanges": object_changes,
+                    },
+                    obj({"changes": arr(CHANGE)}),
+                    self.gate,
+                )["changes"]
+                if any(
+                    not 0 <= e["sentence"] < len(group)
+                    or not e["reason"]
+                    or e["reason"].casefold()
+                    not in group[e["sentence"]]["text"].casefold()
+                    or e["field"] == "accessories"
+                    for e in object_changes
+                ):
+                    raise ValueError(
+                        "Object continuity lacks exact narration evidence. Existing chapter plan was retained."
+                    )
+            # Object events must never replace a watch, necklace or other clothing accessory.
+            analysis["changes"] = [
+                normalize_object_change(e, analysis["objects"], cast)
+                for e in analysis["changes"]
+            ]
+            analysis["changes"] = sorted(
+                analysis["changes"] + object_changes, key=lambda e: e["sentence"]
+            )
+            known_ids = {x["id"] for x in cast}
+            cursor = 0
+            for si, rs in enumerate(ranges):
+                id = uid("scene-")
+                a, b = rs["startSentence"], rs["endSentence"]
+                location = next(
+                    (
+                        l
+                        for l in p["locations"] + locations
+                        if l["name"].casefold() == rs["location"].casefold()
+                    ),
+                    None,
+                )
+                scene = {
+                    "id": id,
+                    "chapterId": chid,
+                    "start": group[a]["start"],
+                    "end": group[b]["end"],
+                    "startSentence": base + a,
+                    "endSentence": base + b,
+                    "purpose": rs["purpose"],
+                    "mood": rs["mood"],
+                    "locationId": location["id"] if location else None,
+                    "location": rs["location"],
+                    "characters": [],
+                    "appearanceChanges": [],
+                    "shots": [],
+                    "pacingReason": rs["pacingReason"],
+                    "origin": "AI",
+                }
+                for ds in [s for s in details if s["sceneIndex"] == si]:
+                    sa, sb = ds["startSentence"], ds["endSentence"]
+                    changes = []
+                    state.setdefault("environment", {}).update(
+                        location=rs["location"], locationId=scene["locationId"]
+                    )
+                    for e in analysis.get("environmentChanges", []):
+                        if (
+                            sa <= e["sentence"] <= sb
+                            and e["reason"].casefold()
+                            in group[e["sentence"]]["text"].casefold()
+                        ):
+                            state["environment"][e["field"]] = e["value"]
+                    for e in analysis["changes"]:
+                        if sa <= e["sentence"] <= sb:
+                            cid = mapping.get(e["characterId"], e["characterId"])
+                            # Only evidence present in this narration can mutate persistent facts.
+                            if (
+                                cid in known_ids
+                                and e["reason"]
+                                and e["reason"].casefold()
+                                in " ".join(
+                                    x["text"] for x in group[sa : sb + 1]
+                                ).casefold()
+                            ):
+                                changes.append(
+                                    {
+                                        "characterId": cid,
+                                        "type": e["field"],
+                                        "to": {e["field"]: e["value"]},
+                                        "reason": e["reason"],
+                                    }
+                                )
+                    state = apply_changes(state, changes, ch["number"], id)
+                    scene["appearanceChanges"] += changes
+                    selected = []
+                    for cid in ds["characters"]:
+                        cid = mapping.get(cid, cid)
+                        if cid not in known_ids:
+                            raise ValueError(
+                                "Director invented an unknown character ID. Retry this chapter analysis."
+                            )
+                        person = next(x for x in cast if x["id"] == cid)
+                        selected.append(
+                            {
+                                "id": cid,
+                                "type": person["type"],
+                                "appearanceState": copy.deepcopy(
+                                    state.get("characters", {}).get(cid, {})
+                                ),
+                            }
+                        )
+                    cam = cameras.get(
+                        cursor,
+                        {
+                            "shot": "medium",
+                            "angle": "eye level",
+                            "composition": ds["action"],
+                        },
+                    )
+                    cursor += 1
+                    shot_settings = copy.deepcopy(p["settings"]["image"])
+                    if provider.id == "native-flux" and any(
+                        c["references"] and any(s["id"] == c["id"] for s in selected)
+                        for c in p["characters"]
+                    ):
+                        shot_settings.update(width=384, height=384)
+                    settings = provider.validateSettings(shot_settings)
+                    shot = {
+                        "id": uid("shot-"),
+                        "sceneId": id,
+                        "chapterId": chid,
+                        "start": group[sa]["start"],
+                        "end": group[sb]["end"],
+                        "duration": group[sb]["end"] - group[sa]["start"],
+                        "startSentence": base + sa,
+                        "endSentence": base + sb,
+                        "narrationSegment": " ".join(
+                            x["text"] for x in group[sa : sb + 1]
+                        ),
+                        "characters": selected,
+                        "referenceImages": [],
+                        "location": rs["location"],
+                        "locationId": scene["locationId"],
+                        "action": ds["action"],
+                        "expression": ds["expression"],
+                        "pose": ds["pose"],
+                        "camera": {k: cam[k] for k in ("shot", "angle", "composition")},
+                        "lighting": ds["lighting"],
+                        "visualStyle": p["settings"]["style"],
+                        "continuity": copy.deepcopy(state.get("environment", {})),
+                        "intentionalAppearanceChanges": changes,
+                        "imageProvider": provider.id,
+                        "imageModel": settings["model"],
+                        "workflow": workflow["workflow"],
+                        "generationSettings": settings,
+                        "prompt": "",
+                        "negativePrompt": "",
+                        "imagePath": "",
+                        "sourceImagePath": "",
+                        "qc": {"status": "PENDING"},
+                        "status": "READY_FOR_IMAGES",
+                        "retryCount": 0,
+                        "generationError": "",
+                        "history": [],
+                        "origin": "AI",
+                        "manual": {},
+                        "motion": (
+                            ds["motion"]
+                            if ds["motion"]
+                            in (
+                                "static",
+                                "slow zoom in",
+                                "slow zoom out",
+                                "pan left",
+                                "pan right",
+                                "pan up",
+                                "pan down",
+                            )
+                            else "static"
+                        ),
+                        "transition": (
+                            ds["transition"]
+                            if ds["transition"] in ("cut", "crossfade")
+                            else "cut"
+                        ),
+                    }
+                    # Include this chapter's temporary cast when building model-specific prompts.
+                    prompt_project = copy.deepcopy(p)
+                    get_chapter(prompt_project, chid)["people"] = people
+                    shot["prompt"], shot["negativePrompt"] = format_prompt(
+                        prompt_project, shot, provider
+                    )
+                    scene["shots"].append(shot)
+                scene["characters"] = list(
+                    {
+                        x["id"]: {"id": x["id"], "type": x["type"]}
+                        for s in scene["shots"]
+                        for x in s["characters"]
+                    }.values()
+                )
+                scenes.append(scene)
+            memory = {
+                "previousChapterSummary": analysis["summary"],
+                "majorEvents": (
+                    memory.get("majorEvents", [])
+                    + [
+                        {
+                            "chapter": ch["number"],
+                            "group": group_index,
+                            "summary": analysis["summary"],
+                        }
+                    ]
+                )[-12:],
+                "objects": list(
+                    dict.fromkeys(memory.get("objects", []) + analysis["objects"])
+                )[-32:],
+                "goals": analysis["goals"],
+                "unresolved": list(
+                    dict.fromkeys(memory.get("unresolved", []) + analysis["unresolved"])
+                )[-24:],
+                "locationsVisited": list(
+                    dict.fromkeys(
+                        memory.get("locationsVisited", [])
+                        + [l["name"] for l in analysis["locations"]]
+                    )
+                )[-24:],
+                "relationships": {
+                    c["id"]: c.get("relationships", [])
+                    for c in p["characters"]
+                    if c.get("relationships")
+                },
+            }
+            # Summaries remain bounded, canonical state does not grow with full story text.
+        if p["settings"]["generationMode"] != "QUICK":
+            planned_shots = [s for scene in scenes for s in scene["shots"]]
+            for begin in range(0, len(planned_shots), 4):
+                group = planned_shots[begin : begin + 4]
+                output = self.director.writeImagePrompt(
+                    {
+                        "model": p["settings"]["image"]["model"],
+                        "promptFormat": provider.getCapabilities()["promptFormat"],
+                        "shots": [
+                            {
+                                "shotIndex": i,
+                                "narration": s["narrationSegment"],
+                                "draftPrompt": s["prompt"],
+                            }
+                            for i, s in enumerate(group)
+                        ],
+                        "instruction": "Refine the supplied drafts without deleting identity/current appearance constraints or adding any events. Keep each prompt concise. For SD tags, use fewer than 220 words. For natural-language models use complete sentences.",
+                    },
+                    self.gate,
+                )
+                passes.append(
+                    {
+                        "pass": "image-prompt-engineer",
+                        "shots": [s["id"] for s in group],
+                        "output": output,
+                    }
+                )
+                for item in output["prompts"]:
+                    if 0 <= item["shotIndex"] < len(group):
+                        s = group[item["shotIndex"]]
+                        s["directorPrompt"] = item["prompt"]
+                        # The deterministic model adapter keeps canonical identity/state
+                        # constraints intact; the director's refinement remains editable.
+                        if provider.id != "existing":
+                            # Creative refinement supplements, rather than replaces, the
+                            # application-owned identity and current-state constraints.
+                            s["prompt"] = (
+                                s["prompt"] + " Visual direction: " + item["prompt"]
+                            )
+        self.director.stop()
+        if selected_scene:
+            index = ch["scenes"].index(selected_scene)
+            scenes = (
+                copy.deepcopy(ch["scenes"][:index])
+                + scenes
+                + copy.deepcopy(ch["scenes"][index + 1 :])
+            )
+            state = copy.deepcopy(original.get("state", state))
+            memory = copy.deepcopy(original.get("memory", memory))
+
+        def finish(latest):
+            chapter = get_chapter(latest, chid)
+            if chapter.get("scenes"):
+                chapter["history"].append(
+                    {
+                        "time": time.time(),
+                        "scenes": copy.deepcopy(chapter["scenes"]),
+                        "analysis": chapter.get("analysis", {}),
+                        "audio": chapter.get("audio", {}),
+                    }
+                )
+            manual_shots = [
+                s
+                for scene in chapter["scenes"]
+                for s in scene["shots"]
+                if s.get("manual")
+            ] + [s for s in chapter["scenes"] if s.get("manual")]
+            if manual_shots and not options.get("replaceManual", False):
+                chapter["proposedPlan"] = {
+                    "scenes": scenes,
+                    "people": people,
+                    "analyses": analyses,
+                }
+                chapter["status"] = "READY_FOR_IMAGES"
+                chapter["errors"].append(
+                    {
+                        "message": "New analysis is saved as proposedPlan. Existing manual shots were preserved. Apply it explicitly in the chapter editor."
+                    }
+                )
+                return
+            chapter.update(
+                people=people,
+                scenes=scenes,
+                analysis={
+                    "groups": analyses,
+                    "passes": passes,
+                    "providerRecommendation": workflow,
+                },
+                handoff={
+                    "state": state,
+                    "memory": memory,
+                    "sourceSignature": digest(ch["sourceText"]),
+                },
+                inputState=state_before(latest, chid)[0],
+                status="READY_FOR_IMAGES",
+                renderStale=True,
+                timeline=[
+                    {
+                        "shotId": s["id"],
+                        "start": s["start"],
+                        "end": s["end"],
+                        "motion": s["motion"],
+                        "transition": s["transition"],
+                    }
+                    for scene in scenes
+                    for s in scene["shots"]
+                ],
+            )
+            latest["renderStale"] = True
+            latest["locations"] += locations
+            latest["continuity"] = state
+            latest["storyMemory"] = memory
+            warn_dependents(latest, chapter, original)
+            for c in latest["characters"]:
+                enriched = next(
+                    (person for person in p["characters"] if person["id"] == c["id"]), c
+                )
+                for field, value in enriched["permanentIdentity"].items():
+                    if value and not c["permanentIdentity"].get(field):
+                        c["permanentIdentity"][field] = value
+                c["currentAppearance"] = state.get("characters", {}).get(
+                    c["id"], c.get("defaultAppearance", {})
+                )
+                c["appearanceHistory"] = [
+                    e
+                    for e in state.get("appearanceHistory", [])
+                    if e["characterId"] == c["id"]
+                ]
+
+        self.store.mutate(p["id"], finish)
+        if p["settings"]["autoContinue"]:
+            latest = self.store.load(p["id"])
+            c = get_chapter(latest, chid)
+            needs_review = latest["settings"][
+                "appearanceHandling"
+            ] != "Automatic" and any(
+                s["appearanceChanges"] and not s.get("appearanceChangesReviewed")
+                for s in c["scenes"]
+            )
+            if not c.get("proposedPlan") and not needs_review:
+                self.enqueue(
+                    p["id"],
+                    chid,
+                    "image",
+                    [s["id"] for scene in c["scenes"] for s in scene["shots"]],
+                )
+
+    def validate_ranges(self, items, count, label):
+        if not items:
+            raise ValueError("Director returned no " + label + "s.")
+        cursor = 0
+        for item in items:
+            a, b = item["startSentence"], item["endSentence"]
+            if a != cursor or b < a or b >= count:
+                raise ValueError(
+                    "Director scene boundaries do not cover narration in order. Retry analysis; no plan was overwritten."
+                )
+            cursor = b + 1
+        if cursor != count:
+            raise ValueError("Director omitted narration sentences. Retry analysis.")
+
+    def validate_shot_ranges(self, items, scene, change_sentences=()):
+        if not items:
+            raise ValueError("Director returned a scene without shots.")
+        cursor = scene["startSentence"]
+        for item in items:
+            if (
+                item["startSentence"] != cursor
+                or item["endSentence"] < cursor
+                or item["endSentence"] > scene["endSentence"]
+            ):
+                raise ValueError("Director shot timing is invalid. Retry this chapter.")
+            if any(
+                item["startSentence"] < n <= item["endSentence"]
+                for n in change_sentences
+            ):
+                raise ValueError(
+                    "A visual state change was buried inside an earlier shot. Start a separate shot at the requiredVisualChangeBoundary."
+                )
+            cursor = item["endSentence"] + 1
+        if cursor != scene["endSentence"] + 1:
+            raise ValueError("Director shots do not cover the scene narration.")
+
+    def generate(self, p, chid, sid, seed, options):
+        self.director.stop()
+        self.before_image()
+        ch = get_chapter(p, chid)
+        shot = options.get("shotSnapshot") or get_shot(p, chid, sid)
+        provider = self.provider(shot["imageProvider"])
+        if provider.id != "native-flux":
+            self.providers["native-flux"].unload()
+        if provider.id != "existing":
+            self.providers["existing"].unload()
+        self.status(p["id"], chid, "GENERATING")
+        settings = shot["generationSettings"] | {
+            "model": shot["imageModel"],
+            "seed": seed,
+        }
+        references, ref_metadata = select_references(p, shot, self.store, provider)
+        if provider.id == "native-flux" and options.get("operation") == "edit":
+            references = references[:1]
+            ref_metadata = ref_metadata[:1]
+        request = {
+            "prompt": shot["prompt"],
+            "negativePrompt": shot["negativePrompt"],
+            "referenceImages": references,
+            "settings": settings,
+            "operation": options.get("operation", "generate"),
+        }
+        if provider.id == "native-flux" and references:
+            offset = 1 if request["operation"] == "edit" else 0
+            reference_notes = []
+            for index, ref in enumerate(ref_metadata, 1 + offset):
+                if ref.get("characterId"):
+                    person = next(
+                        c
+                        for c in p["characters"] + ch["people"]
+                        if c["id"] == ref["characterId"]
+                    )
+                    appearance = next(
+                        c for c in shot["characters"] if c["id"] == person["id"]
+                    )["appearanceState"]
+                    reference_notes.append(
+                        f'Use image {index} as the identity reference for {person["name"]}. Preserve face and permanent traits. Current appearance overrides reference clothing: {json.dumps(appearance)}.'
+                    )
+                elif ref.get("locationId"):
+                    reference_notes.append(
+                        f"Use image {index} for the location architecture and palette."
+                    )
+            request["prompt"] = " ".join(reference_notes) + " " + request["prompt"]
+        if request["operation"] in ("edit", "inpaint"):
+            source = shot.get("sourceImagePath") or shot.get("imagePath")
+            if not source:
+                raise ValueError(
+                    "Image repair needs a generated or uploaded source image."
+                )
+            request["sourceImage"] = data_url(self.store.asset(p["id"], source))
+            request["mask"] = options.get("mask")
+        retries = int(p["settings"]["maxImageRetries"])
+        qc = {"status": "UNREVIEWED", "pass": None}
+        attempts = []
+        fallback_used = False
+        actual_workflow = shot["workflow"]
+        max_attempts = (
+            retries + 1 + (1 if p["settings"]["image"].get("fallbackEnabled") else 0)
+        )
+        for attempt in range(max_attempts):
+            self.gate(f'Generating {ch["name"]} · shot {sid} · attempt {attempt+1}')
+            try:
+                result = provider.generateImage(request, self.checkpoint)
+            except (JobCancelled, AudioYield):
+                raise
+            except Exception as e:
+                attempts.append(
+                    {
+                        "attempt": attempt,
+                        "error": str(e),
+                        "seed": seed,
+                        "provider": provider.id,
+                        "settings": settings,
+                        "time": time.time(),
+                    }
+                )
+                fallback = p["settings"]["image"].get("fallback")
+                if (
+                    not fallback_used
+                    and p["settings"]["image"].get("fallbackEnabled")
+                    and fallback
+                    and provider.id != fallback["provider"]
+                ):
+                    fallback_used = True
+                    provider.unload()
+                    provider = self.provider(fallback["provider"])
+                    settings = (
+                        provider.getRecommendedSettings() | fallback | {"seed": seed}
+                    )
+                    request["settings"] = settings
+                    prompt, negative = format_prompt(p, shot, provider)
+                    request.update(
+                        prompt=prompt,
+                        negativePrompt=negative,
+                        referenceImages=references[
+                            : provider.getCapabilities().get("maxReferenceImages", 0)
+                        ],
+                    )
+                    actual_workflow = fallback.get("workflow") or (
+                        "inpaint"
+                        if request["operation"] in ("edit", "inpaint")
+                        else "ip-adapter" if references else "text-to-image"
+                    )
+                elif attempt >= retries + int(fallback_used):
+                    raise
+                continue
+            folder = self.store.folder(p["id"]) / chid
+            folder.mkdir(exist_ok=True)
+            filename = f"{sid}-{uid()}-a{attempt}.png"
+            path = folder / filename
+            tmp = path.with_suffix(".partial.png")
+            result.pop("pil").save(tmp, "PNG")
+            tmp.replace(path)
+            relative = str(path.relative_to(self.store.folder(p["id"]))).replace(
+                "\\", "/"
+            )
+            metadata = {
+                "provider": provider.id,
+                "model": settings["model"],
+                "workflow": actual_workflow,
+                "sampler": settings.get("sampler"),
+                "scheduler": settings.get("scheduler"),
+                "seed": seed,
+                "resolution": [settings["width"], settings["height"]],
+                "loras": settings.get("loras", []),
+                "controlnets": settings.get("controlnets", []),
+                "ipAdapter": settings.get("ipAdapter", {}),
+                "denoisingStrength": settings.get("denoisingStrength"),
+                "referenceImages": ref_metadata,
+                "sourceImagePath": shot.get("sourceImagePath"),
+                "prompt": request["prompt"],
+                "negativePrompt": request["negativePrompt"],
+                "settings": settings,
+                "result": result,
+                "time": time.time(),
+                "attempt": attempt,
+                "intentionalAppearanceChanges": shot["intentionalAppearanceChanges"],
+                "fallbackUsed": fallback_used,
+            }
+            attempts.append(metadata)
+
+            # Save before any QC request so a cancel or crash cannot erase the PNG.
+            def saved(latest):
+                s = get_shot(latest, chid, sid)
+                if s.get("imagePath"):
+                    s["history"].append(
+                        {
+                            "imagePath": s["imagePath"],
+                            "metadata": s.get("imageMetadata", {}),
+                            "qc": s.get("qc", {}),
+                        }
+                    )
+                s.update(
+                    imagePath=relative,
+                    imageMetadata=metadata,
+                    referenceImages=ref_metadata,
+                    retryCount=attempt,
+                    status="QC",
+                    generationError="",
+                )
+                s["generationStale"] = (
+                    s["prompt"] != shot["prompt"]
+                    or s["imageModel"] != settings["model"]
+                )
+                get_chapter(latest, chid)["renderStale"] = True
+                latest["renderStale"] = True
+
+            self.store.mutate(p["id"], saved)
+            path.with_suffix(".json").write_text(
+                json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            if (
+                p["settings"]["visionQC"]
+                or p["settings"]["generationMode"] == "MAX QUALITY"
+            ):
+                provider.unload()
+                self.providers["existing"].unload()
+                self.status(p["id"], chid, "QC")
+                qc = self.visual_check(p, shot, path)
+                qc["status"] = (
+                    "PASSED"
+                    if qc.get("pass") is True
+                    else "FAILED" if qc.get("pass") is False else "UNREVIEWED"
+                )
+            if (
+                qc.get("pass") is False
+                and p["settings"]["automaticRepair"]
+                and attempt < retries
+            ):
+                self.status(p["id"], chid, "REPAIRING")
+                request["prompt"] = qc.get("repairPrompt") or shot["prompt"]
+                if (
+                    provider.getCapabilities()["supportsImageEditing"]
+                    and provider.id != "existing"
+                ):
+                    request.update(operation="edit", sourceImage=data_url(path))
+                if request.get("operation") == "edit":
+                    shot["sourceImagePath"] = relative
+                continue
+            break
+
+        def complete(latest):
+            s = get_shot(latest, chid, sid)
+            s.update(
+                qc=qc,
+                status=(
+                    "PASSED"
+                    if qc.get("pass") is True
+                    else "FAILED" if qc.get("pass") is False else "COMPLETE"
+                ),
+                retryHistory=attempts,
+            )
+            chapter = get_chapter(latest, chid)
+            allshots = [x for sc in chapter["scenes"] for x in sc["shots"]]
+            chapter["status"] = (
+                "COMPLETE"
+                if all(
+                    x.get("imagePath") and x["status"] in ("PASSED", "COMPLETE")
+                    for x in allshots
+                )
+                else "READY_FOR_IMAGES"
+            )
+
+        self.store.mutate(p["id"], complete)
+        if qc.get("pass") is False:
+            raise RuntimeError(
+                "Visual QC still found problems after the retry limit. The last image was saved for manual review."
+            )
+
+    def visual_check(self, p, shot, path):
+        references, _ = select_references(
+            p, shot, self.store, self.provider(shot["imageProvider"])
+        )
+        expected = {
+            k: shot.get(k)
+            for k in (
+                "characters",
+                "camera",
+                "location",
+                "action",
+                "pose",
+                "expression",
+                "lighting",
+                "continuity",
+                "intentionalAppearanceChanges",
+            )
+        }
+        expected["mainIdentities"] = [
+            {"id": c["id"], "name": c["name"], "identity": c["permanentIdentity"]}
+            for c in p["characters"]
+            if any(s["id"] == c["id"] for s in shot["characters"])
+        ]
+        result = self.director.inspectGeneratedImage(
+            {
+                "expectedShot": expected,
+                "strictness": p["settings"]["continuityStrictness"],
+                "intentionalChanges": shot["intentionalAppearanceChanges"],
+                "imageOrder": "Generated shot first, followed by available character identity references. Compare clothing to current state, not reference clothing.",
+                "_images": [data_url(path), *references[:2]],
+            },
+            self.gate,
+        )
+        self.director.stop()
+        return result
+
+    def inspect_shot(self, p, chid, sid):
+        shot = get_shot(p, chid, sid)
+        if not shot.get("imagePath"):
+            raise ValueError("Generate the image before visual review.")
+        self.unload_models()
+        self.before_image()
+        self.providers["existing"].unload()
+        self.status(p["id"], chid, "QC")
+        qc = self.visual_check(p, shot, self.store.asset(p["id"], shot["imagePath"]))
+        qc["status"] = (
+            "PASSED"
+            if qc.get("pass") is True
+            else "FAILED" if qc.get("pass") is False else "UNREVIEWED"
+        )
+        self.store.mutate(
+            p["id"],
+            lambda q: get_shot(q, chid, sid).update(
+                qc=qc,
+                status=(
+                    "PASSED"
+                    if qc.get("pass") is True
+                    else "FAILED" if qc.get("pass") is False else "COMPLETE"
+                ),
+            ),
+        )
+
+    def close(self):
+        with self.cv:
+            self.closed = True
+            self.cv.notify_all()
+        self.unload_models()
+        self.thread.join(5)
+        if not self.thread.is_alive():
+            self.db.close()

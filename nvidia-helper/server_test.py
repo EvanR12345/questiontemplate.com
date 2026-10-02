@@ -38,6 +38,7 @@ class BridgeTest(unittest.TestCase):
     def tearDown(self):
         self.server.shutdown()
         self.server.RequestHandlerClass.image_queue.close()
+        self.server.RequestHandlerClass.studio_service.close()
         self.server.server_close()
         self.thread.join()
         self.directory.cleanup()

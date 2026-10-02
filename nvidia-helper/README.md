@@ -2,7 +2,19 @@
 
 Audio and Studio use one localhost service and the existing `.venv`. `start-windows.bat` launches installed code without overwriting fixes or reinstalling Torch. This launcher requires an existing shared environment; it never creates or replaces one.
 
-## Use the website
+## Story → video
+
+The production workspace is integrated into the existing Studio website. Start this helper, open its pairing link, and select **Story → video**. Create a project, add main characters and references, paste a chapter, review cleaned narration, Analyze, review the storyboard, Generate missing images, and Render chapter. Add the next chapter to carry continuity forward. Render full story joins the chapters and includes the optional intro only when enabled.
+
+The installed laptop has been tested with Qwen3.5-4B Q4_K_M directing, quantized FLUX.2 Klein 4B generating reference-conditioned images and source edits, Kokoro generating one chapter WAV, and the existing FFmpeg rendering chapter/full-story MP4s. The production queue persists up to 1000 unfinished jobs, supports priority/pause/resume/cancel/retry, and saves each completed image immediately. Native pause saves the current completed image before holding subsequent work; after a restart, unfinished work resumes from its saved seed.
+
+Projects and their assets live in `outputs/studio/`. Copy a complete project folder to back up generated media; JSON exports preserve structured data without embedding every media file. Advanced settings expose provider/workflow/model paths. A validated native installation becomes the default for new production projects; existing explicit model choices are preserved. SD 1.5 remains available, and the original comic interface retains its own settings.
+
+For other existing helper installations, run the website's `update-helper.bat`, then optionally run `setup-studio-models.bat` (`--vision` adds the vision projector). The installer reuses configured weights, verifies downloads, and never installs Torch or recreates `.venv`. It does not enable the native default until the configuration records a successful local validation. Configure an existing FFmpeg executable if it is not on PATH.
+
+See [STUDIO-IMPLEMENTATION.md](https://questiontemplate.com/STUDIO-IMPLEMENTATION.md) for architecture, model comparison, measured performance and quality limits. A local copy is included under `web/` in the downloaded helper. Fine character identity and left/right corrections still require review; visual QC is advisory.
+
+## Original Comic & panel tools
 
 1. Run `C:\Users\rezke\QuestionTemplateHelper\start-windows.bat`. Keep its window open.
 2. It opens `https://questiontemplate.com/manga.html` with its pairing fragment. Allow Local network access if your browser asks. Once connected, Audio and Studio reconnect after refresh. The pairing token is saved in the helper's private `.pairing-key` file and browser storage; it is excluded from image metadata and exports.
@@ -11,7 +23,7 @@ Audio and Studio use one localhost service and the existing `.venv`. `start-wind
 
 The optional bundled `web/` directory remains available as a local fallback at `http://127.0.0.1:8765/app/`. The launcher opens the public website. Localhost API endpoints require pairing and restrict cross-origin access to questiontemplate.com and localhost. The service binds to 127.0.0.1 only.
 
-## Image queue
+## Original panel image queue
 
 The helper stores up to 1000 outstanding images in SQLite and saves each completed PNG plus seed/settings metadata in `outputs/`. Reference files are deduplicated. Browser project metadata and cached images use IndexedDB. Drawing and layout views show 50 panels at a time.
 
