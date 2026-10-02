@@ -12,6 +12,165 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_unknown_opening_victim_does_not_establish_later_protagonist_identity(self):
+        p = new_project()
+        ch = p["chapters"][0]
+        person = character("Bearded man")
+        person["evidence"] = "A black-haired man with a black beard stood with a gun."
+        ch["people"] = [person]
+        ch["audio"]["sentences"] = [
+            {"text": text}
+            for text in (
+                "A gunshot was heard.",
+                "A man was shot in the heart.",
+                "A woman screamed.",
+                person["evidence"],
+            )
+        ]
+        self.assertEqual(first_verified_appearances(p, ch), {person["id"]: 3})
+        second = new_chapter(2)
+        p["chapters"].append(second)
+        second["people"] = [copy.deepcopy(person)]
+        second["audio"]["sentences"] = [{"text": "He raised his gun."}]
+        self.assertEqual(first_verified_appearances(p, second), {})
+
+    def test_identity_repair_preserves_plan_seeds_and_legitimate_later_object_state(
+        self,
+    ):
+        from studio_service import StudioService
+
+        with tempfile.TemporaryDirectory() as folder:
+            service = object.__new__(StudioService)
+            service.store = ProjectStore(folder)
+            p = new_project()
+            ch = p["chapters"][0]
+            person = character("Bearded man")
+            person["evidence"] = (
+                "A black-haired man with a black beard stood with a gun."
+            )
+            ch["people"] = [person]
+            ch["sourceText"] = (
+                "A gunshot was heard. A man was shot in the heart. A woman screamed. "
+                + person["evidence"]
+            )
+            ch["audio"]["sentences"] = [
+                {"text": text}
+                for text in (
+                    "A gunshot was heard.",
+                    "A man was shot in the heart.",
+                    "A woman screamed.",
+                    person["evidence"],
+                )
+            ]
+            ch["inputState"] = {
+                "characters": {},
+                "environment": {},
+                "appearanceHistory": [],
+            }
+            scene = {"id": "scene-test", "shots": [], "appearanceChanges": []}
+
+            def shot(index):
+                return {
+                    "id": "shot-" + str(index),
+                    "sceneId": scene["id"],
+                    "chapterId": ch["id"],
+                    "start": index * 4,
+                    "end": index * 4 + 4,
+                    "startSentence": index,
+                    "endSentence": index,
+                    "narrationSegment": ch["audio"]["sentences"][index]["text"],
+                    "characters": [
+                        {
+                            "id": person["id"],
+                            "type": "main",
+                            "appearanceState": {"injury": "heart wound"},
+                        }
+                    ],
+                    "intentionalAppearanceChanges": [],
+                    "continuity": {},
+                    "camera": {
+                        "shot": "medium",
+                        "angle": "eye level",
+                        "composition": "man",
+                    },
+                    "action": "man",
+                    "expression": "calm",
+                    "pose": "standing",
+                    "location": "party",
+                    "lighting": "dim",
+                    "generationSettings": {"seed": 123},
+                    "imageProvider": "fake",
+                    "imageModel": "fake",
+                    "workflow": "basic",
+                    "prompt": "old",
+                    "negativePrompt": "",
+                    "status": "READY_FOR_IMAGES",
+                    "manual": {},
+                }
+
+            opening = shot(1)
+            opening["intentionalAppearanceChanges"] = [
+                {
+                    "characterId": person["id"],
+                    "type": "injury",
+                    "to": {"injury": "heart wound"},
+                    "reason": "A man was shot in the heart.",
+                }
+            ]
+            later = shot(3)
+            later["intentionalAppearanceChanges"] = [
+                {
+                    "characterId": person["id"],
+                    "type": "gun",
+                    "to": {"gun": "held"},
+                    "reason": person["evidence"],
+                }
+            ]
+            scene["shots"] = [opening, later]
+            ch["scenes"] = [scene]
+            ch["handoff"] = {"state": {}}
+            p = service.store.save(p)
+
+            class Provider:
+                def getCapabilities(self):
+                    return {
+                        "supportsNegativePrompt": False,
+                        "promptFormat": "natural-language",
+                    }
+
+            class Director:
+                def call(self, role, context, schema, gate):
+                    temporary = next(
+                        c for c in context["allowedPeople"] if c["type"] == "temporary"
+                    )
+                    return {
+                        "shot0": {
+                            "characters": [temporary["id"]],
+                            "action": "An unidentified victim falls",
+                            "composition": "anonymous victim",
+                            "expression": "shock",
+                            "pose": "falling",
+                        }
+                    }
+
+            service.provider = lambda *args: Provider()
+            service.director = Director()
+            service.gate = lambda *args: None
+            service.repair_identity_bindings(p["id"], ch["id"])
+            result = service.store.load(p["id"])["chapters"][0]
+            first, last = result["scenes"][0]["shots"]
+            self.assertEqual(first["characters"][0]["type"], "temporary")
+            self.assertNotIn("injury", last["characters"][0]["appearanceState"])
+            self.assertEqual(
+                result["handoff"]["state"]["characters"][person["id"]]["gun"], "held"
+            )
+            self.assertEqual(last["generationSettings"]["seed"], 123)
+            self.assertEqual(result["scenes"][0]["id"], "scene-test")
+            service.repair_identity_bindings(p["id"], ch["id"])
+            self.assertEqual(
+                len(service.store.load(p["id"])["chapters"][0]["people"]), 2
+            )
+
     def test_same_sentence_pair_camera_views_get_real_sentence_boundaries(self):
         from studio_service import StudioService
 

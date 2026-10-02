@@ -81,6 +81,57 @@ def text_groups(text, max_chars=8500):
         offset = end
 
 
+def first_verified_appearances(project, chapter):
+    """New unnamed protagonists cannot inherit an earlier unidentified victim.
+
+    Known recurring people remain available from the start of later chapters.
+    An explicit name/alias may establish identity before an appearance quote.
+    """
+
+    def normalize(text):
+        return re.sub(r"[^\w]+", " ", text.casefold()).strip()
+
+    earlier = project["chapters"][: project["chapters"].index(chapter)]
+    known = {
+        p["id"] for ch in earlier for p in ch.get("people", []) if p["type"] == "main"
+    }
+    records = chapter.get("audio", {}).get("sentences", [])
+    result = {}
+    generic = {
+        "man",
+        "woman",
+        "person",
+        "boy",
+        "girl",
+        "unknown",
+        "unnamed man",
+        "unnamed woman",
+    }
+    for person in chapter["people"]:
+        if (
+            person["type"] != "main"
+            or person["id"] in known
+            or not person.get("evidence")
+        ):
+            continue
+        quote = normalize(person["evidence"])
+        prefix = " ".join(quote.split()[:8])
+        aliases = [normalize(x) for x in [person["name"]] + person.get("aliases", [])]
+        aliases = [x for x in aliases if len(x) >= 4 and x not in generic]
+        matches = [
+            i
+            for i, record in enumerate(records)
+            if (len(prefix) >= 25 and prefix in normalize(record["text"]))
+            or any(
+                re.search(r"\b" + re.escape(alias) + r"\b", normalize(record["text"]))
+                for alias in aliases
+            )
+        ]
+        if matches:
+            result[person["id"]] = min(matches)
+    return result
+
+
 def new_chapter(number):
     return {
         "id": uid("ch-"),

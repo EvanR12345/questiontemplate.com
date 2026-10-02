@@ -868,6 +868,15 @@ class StudioService:
                     f"{ch['name']}: apply or dismiss its proposed plan before generating the full video."
                 )
 
+            self.measured_stage(
+                pid,
+                "Identity binding review",
+                self.repair_identity_bindings,
+                pid,
+                chid,
+                chapter=ch["number"],
+            )
+
             # This explicit unattended action accepts detected main characters;
             # supporting/background people remain in their chapter.
             def confirm_people(latest):
@@ -1277,6 +1286,233 @@ class StudioService:
                 imageMetadata=result | {"settings": settings, "prompt": prompt},
             ),
         )
+
+    def repair_identity_bindings(self, pid, chid):
+        """Repair ungrounded early main-character assignments before image costs.
+
+        Keep the saved scene plan and seeds. Only affected direction and inherited
+        appearance state change; user edits require review instead of overwrite.
+        """
+        from director_provider import obj, arr, short_text
+
+        p = self.store.load(pid)
+        ch = get_chapter(p, chid)
+        introductions = first_verified_appearances(p, ch)
+        original_scenes = digest(ch["scenes"])
+        original_people = digest(ch["people"])
+        shots = [s for scene in ch["scenes"] for s in scene["shots"]]
+        signature = digest(
+            {
+                "source": ch["sourceText"],
+                "shots": [s["id"] for s in shots],
+                "introductions": introductions,
+            }
+        )
+        if ch.get("identityBindingSignature") == signature:
+            return
+        affected = [
+            s
+            for s in shots
+            if any(
+                c["id"] in introductions and s["endSentence"] < introductions[c["id"]]
+                for c in s["characters"]
+            )
+        ]
+        if not affected:
+            self.store.mutate(
+                pid,
+                lambda latest: get_chapter(latest, chid).update(
+                    identityBindingSignature=signature
+                ),
+            )
+            return
+        if any(s.get("manual") for s in affected):
+            raise ValueError(
+                "Opening character identities need review; manual shot edits were preserved."
+            )
+        temporary = character(
+            "Unidentified opening person",
+            "Identity is unconfirmed. Use only this shot's stated appearance; do not give this person the recurring protagonist's face.",
+            "temporary",
+        )
+        temporary["id"] = (
+            "person-"
+            + digest(
+                {"project": pid, "chapter": chid, "role": "unidentified-opening-person"}
+            )[:16]
+        )
+        if not any(c["id"] == temporary["id"] for c in ch["people"]):
+            ch["people"].append(temporary)
+        people = {c["id"]: c for c in p["characters"] + ch["people"]}
+        corrections = {}
+        for begin in range(0, len(affected), 4):
+            batch = affected[begin : begin + 4]
+            excluded = {
+                c["id"]
+                for s in batch
+                for c in s["characters"]
+                if c["id"] in introductions
+                and s["endSentence"] < introductions[c["id"]]
+            }
+            allowed = [c for c in people.values() if c["id"] not in excluded]
+            item = obj(
+                {
+                    "characters": arr(
+                        {"type": "string", "enum": [c["id"] for c in allowed]}
+                    )
+                    | {"maxItems": 5},
+                    "action": short_text(400),
+                    "composition": short_text(300),
+                    "expression": short_text(120),
+                    "pose": short_text(180),
+                }
+            )
+            result = self.director.call(
+                "Source-faithfulness repair. These opening shots incorrectly assigned an unidentified person to a protagonist introduced later. Do NOT use excluded main characters or their faces. A shot victim and a later calm armed protagonist are different roles unless narration explicitly identifies them as the same. For a heard gunshot with no identified shooter, depict an insert or reaction without inventing a visible known shooter. Use the temporary unidentified person for anonymous foreground people. Preserve exact story actions; no extra deaths, rescues or events. Return one corrected direction for each supplied shot key; character selections use allowed IDs only.",
+                {
+                    "shots": {
+                        f"shot{i}": {
+                            "narration": s["narrationSegment"],
+                            "wrongAction": s["action"],
+                            "location": s["location"],
+                        }
+                        for i, s in enumerate(batch)
+                    },
+                    "allowedPeople": [
+                        {k: c.get(k, "") for k in ("id", "name", "type", "description")}
+                        for c in allowed
+                    ],
+                    "excludedMainCharacters": [
+                        {
+                            "id": cid,
+                            "name": people[cid]["name"],
+                            "laterIdentityEvidence": people[cid].get("evidence", ""),
+                        }
+                        for cid in excluded
+                    ],
+                },
+                obj({f"shot{i}": item for i in range(len(batch))}),
+                self.gate,
+            )
+            for i, s in enumerate(batch):
+                corrections[s["id"]] = result[f"shot{i}"]
+        state = copy.deepcopy(ch.get("inputState", state_before(p, chid)[0]))
+        for person in ch["people"]:
+            state.setdefault("characters", {}).setdefault(
+                person["id"], copy.deepcopy(person["defaultAppearance"])
+            )
+        notes = []
+        for scene in ch["scenes"]:
+            scene["appearanceChanges"] = []
+            for shot in scene["shots"]:
+                old_appearance = copy.deepcopy(shot["characters"])
+                changes = [
+                    e
+                    for e in shot["intentionalAppearanceChanges"]
+                    if not (
+                        e["characterId"] in introductions
+                        and shot["endSentence"] < introductions[e["characterId"]]
+                    )
+                ]
+                shot["intentionalAppearanceChanges"] = changes
+                scene["appearanceChanges"] += changes
+                state["environment"] = copy.deepcopy(shot.get("continuity", {}))
+                state = apply_changes(state, changes, ch["number"], scene["id"])
+                if shot["id"] in corrections:
+                    update = corrections[shot["id"]]
+                    notes.append(
+                        {
+                            "shotId": shot["id"],
+                            "originalAction": shot["action"],
+                            "correctedAction": update["action"],
+                            "reason": "Main character identity was not established in this opening narration",
+                        }
+                    )
+                    shot.update(
+                        {k: update[k] for k in ("action", "expression", "pose")}
+                    )
+                    shot["camera"]["composition"] = update["composition"]
+                    shot["characters"] = [
+                        {"id": cid, "type": people[cid]["type"], "appearanceState": {}}
+                        for cid in update["characters"]
+                    ]
+                for selected in shot["characters"]:
+                    selected["appearanceState"] = copy.deepcopy(
+                        state["characters"].get(selected["id"], {})
+                    )
+                if shot["id"] in corrections or old_appearance != shot["characters"]:
+                    if shot.get("manual"):
+                        raise ValueError(
+                            "Inherited appearance needs review; manual shot fields were preserved."
+                        )
+                    shot["prompt"], shot["negativePrompt"] = format_prompt(
+                        p, shot, self.provider(shot["imageProvider"])
+                    )
+                    shot["generationStale"] = bool(shot.get("imagePath"))
+                    shot["status"] = "READY_FOR_IMAGES"
+            scene["characters"] = list(
+                {
+                    c["id"]: {"id": c["id"], "type": c["type"]}
+                    for s in scene["shots"]
+                    for c in s["characters"]
+                }.values()
+            )
+        ch["handoff"]["state"] = state
+        ch["analysis"]["identityBindingRepairs"] = notes
+        ch["identityBindingSignature"] = signature
+        ch["renderStale"] = True
+        ch["status"] = "READY_FOR_IMAGES"
+        for person in ch["people"]:
+            person["currentAppearance"] = copy.deepcopy(
+                state["characters"].get(person["id"], {})
+            )
+            person["appearanceHistory"] = [
+                e
+                for e in state.get("appearanceHistory", [])
+                if e["characterId"] == person["id"]
+            ]
+
+        def save(latest):
+            target = get_chapter(latest, chid)
+            if target["sourceText"] != ch["sourceText"] or [
+                s["id"] for sc in target["scenes"] for s in sc["shots"]
+            ] != [s["id"] for s in shots]:
+                raise ValueError(
+                    "Chapter changed during identity review; newer work was preserved."
+                )
+            if (
+                digest(target["scenes"]) != original_scenes
+                or digest(target["people"]) != original_people
+            ):
+                raise ValueError(
+                    "Manual edits arrived during identity review; newer work was preserved."
+                )
+            previous = copy.deepcopy(target.get("handoff", {}))
+            target.update(
+                {
+                    k: ch[k]
+                    for k in (
+                        "people",
+                        "scenes",
+                        "handoff",
+                        "analysis",
+                        "identityBindingSignature",
+                        "renderStale",
+                        "status",
+                    )
+                }
+            )
+            warn_dependents(latest, target, previous)
+            following = latest["chapters"][latest["chapters"].index(target) + 1 :]
+            if not any(c.get("handoff", {}).get("sourceSignature") for c in following):
+                latest["continuity"] = state
+                for person in latest["characters"]:
+                    if person["id"] in introductions:
+                        person["currentAppearance"] = copy.deepcopy(
+                            state["characters"].get(person["id"], {})
+                        )
+
+        self.store.mutate(pid, save)
 
     def character_reference(self, p, options):
         self.unload_models()
@@ -2305,6 +2541,9 @@ class StudioService:
                 ]
 
         self.store.mutate(p["id"], finish)
+        saved = self.store.load(p["id"])
+        if not get_chapter(saved, chid).get("proposedPlan"):
+            self.repair_identity_bindings(p["id"], chid)
         if p["settings"]["autoContinue"] and not options.get("managedPipeline"):
             latest = self.store.load(p["id"])
             c = get_chapter(latest, chid)
