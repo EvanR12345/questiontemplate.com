@@ -7,10 +7,100 @@ from director_provider import (
     obj,
     STR,
     validate_schema,
+    compact_source_evidence,
 )
 
 
 class DirectorRecoveryTest(unittest.TestCase):
+    def test_oversized_evidence_is_referenced_without_losing_source_or_cached_passes(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as folder:
+            director = LocalQwenDirector({}, Path(folder))
+            director.start = lambda gate: None
+            sentence = (
+                "Michael receives the brass key and puts it in his left pocket. " * 14
+            )
+            context = {
+                "sentences": [{"index": 0, "text": sentence}],
+                "people": [{"id": "michael"}],
+                "chapterCast": [{"id": "michael"}],
+                "analysis": {
+                    "changes": [
+                        {
+                            "characterId": "michael",
+                            "field": "key",
+                            "value": "left pocket",
+                            "sentence": 0,
+                            "reason": sentence,
+                        }
+                        for _ in range(24)
+                    ]
+                },
+            }
+            self.assertGreater(len(json.dumps(context)), 14000)
+            captured = []
+
+            def response(url, body, timeout):
+                captured.append(json.loads(body["messages"][1]["content"]))
+                return {
+                    "choices": [
+                        {
+                            "message": {"content": '{"summary":"complete"}'},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+
+            with patch("director_provider.request_json", response):
+                for _ in range(2):
+                    self.assertEqual(
+                        director.call(
+                            "Chapter director",
+                            context,
+                            obj({"summary": STR}),
+                            lambda *args: None,
+                        ),
+                        {"summary": "complete"},
+                    )
+            self.assertEqual(len(captured), 1)
+            compact = captured[0]
+            self.assertEqual(compact["sentences"], context["sentences"])
+            self.assertNotIn("chapterCast", compact)
+            for change in compact["analysis"]["changes"]:
+                self.assertEqual(change["value"], "left pocket")
+                self.assertEqual(change["evidenceSentence"], 0)
+            self.assertEqual(context["analysis"]["changes"][0]["reason"], sentence)
+
+    def test_compaction_preserves_unmatched_evidence_and_distinct_cast(self):
+        context = {
+            "sentences": [{"index": 4, "text": "Michael wears a blue coat."}],
+            "people": [{"id": "michael"}],
+            "chapterCast": [{"id": "sarah"}],
+            "changes": [
+                {"sentence": 4, "reason": "blue coat", "value": "blue coat"},
+                {"sentence": 4, "reason": "Unsupported evidence", "value": "red coat"},
+            ],
+        }
+        result = compact_source_evidence(context)
+        self.assertEqual(result["changes"][0]["evidenceSentence"], 4)
+        self.assertEqual(result["changes"][1]["reason"], "Unsupported evidence")
+        self.assertEqual(result["chapterCast"], context["chapterCast"])
+
+    def test_overlarge_source_is_rejected_without_silently_truncating_story(self):
+        with tempfile.TemporaryDirectory() as folder:
+            director = LocalQwenDirector({}, Path(folder))
+            director.start = lambda gate: None
+            with patch("director_provider.request_json") as request:
+                with self.assertRaisesRegex(ValueError, "safe local budget"):
+                    director.call(
+                        "Chapter director",
+                        {"sentences": [{"text": "Story " * 4000}]},
+                        obj({"summary": STR}),
+                        lambda *args: None,
+                    )
+                request.assert_not_called()
+
     def test_continuity_without_objects_cannot_invent_repeated_held_objects(self):
         director = DirectorProvider()
         captured = []

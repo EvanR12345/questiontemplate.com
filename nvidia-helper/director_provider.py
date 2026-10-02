@@ -1,6 +1,6 @@
 """Bounded, schema-constrained director requests. Facts live in ProjectStore."""
 
-import hashlib, json, os, re, subprocess, time, urllib.request
+import copy, hashlib, json, os, re, subprocess, time, urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -46,6 +46,41 @@ STR = {"type": "string"}
 
 def short_text(limit):
     return {"type": "string", "maxLength": limit}
+
+
+def compact_source_evidence(context):
+    """Reference repeated quotes without removing their source or changing facts."""
+    compact = copy.deepcopy(context)
+    sentences = {
+        s.get("index", i): s["text"] for i, s in enumerate(context.get("sentences", []))
+    }
+
+    def visit(value):
+        if isinstance(value, dict):
+            index = value.get("sentence")
+            reason = value.get("reason")
+            source = sentences.get(index)
+            if (
+                isinstance(reason, str)
+                and reason
+                and source
+                and reason.casefold() in source.casefold()
+            ):
+                del value["reason"]
+                value["evidenceSentence"] = index
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(compact)
+    if "chapterCast" in compact and compact.get("people") == compact["chapterCast"]:
+        del compact["chapterCast"]
+    compact["evidenceFormat"] = (
+        "evidenceSentence references the complete source text in sentences[index]; original quoted evidence remains stored in the project."
+    )
+    return compact
 
 
 INT = {"type": "integer"}
@@ -476,6 +511,11 @@ class LocalQwenDirector(DirectorProvider):
         images = context.get("_images", []) if vision else []
         clean = {k: v for k, v in context.items() if not k.startswith("_")}
         content = json.dumps(clean, ensure_ascii=False)
+        if len(content) > 14000:
+            # Keep cache identity based on the original full context. Retrying a
+            # chapter still reuses successful passes, including the analysis.
+            clean = compact_source_evidence(clean)
+            content = json.dumps(clean, ensure_ascii=False, separators=(",", ":"))
         if len(content) > 14000:
             raise ValueError(
                 "Director context exceeds safe local budget. Split this chapter into smaller analysis groups."
