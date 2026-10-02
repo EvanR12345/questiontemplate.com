@@ -651,7 +651,7 @@ function renderQueue() {
   const activeFullRun = queue.jobs.find(
     (j) =>
       j.project === project.id &&
-      j.kind === "produce-story" &&
+      ["produce-story", "render-full"].includes(j.kind) &&
       ["QUEUED", "RUNNING"].includes(j.status),
   );
   if (fullButton) {
@@ -663,7 +663,19 @@ function renderQueue() {
   const run = project.production,
     runStatus = $("#fullVideoStatus");
   if (runStatus && run) {
-    runStatus.innerHTML = `<span>${escape(run.status === "COMPLETE" ? "Full video ready" : ["FAILED", "CANCELLED"].includes(run.status) ? run.status + " · " + run.message : run.stage || run.message || run.status)}</span>${run.status === "COMPLETE" ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}`;
+    const ready =
+      run.status === "COMPLETE" && !project.renderStale && !activeFullRun;
+    const status =
+      activeFullRun?.kind === "render-full"
+        ? activeFullRun.message || "Rendering full story"
+        : ready
+          ? "Full video ready"
+          : run.status === "COMPLETE" && project.renderStale
+            ? "Video settings changed · render the full story to apply"
+            : ["FAILED", "CANCELLED"].includes(run.status)
+              ? run.status + " · " + run.message
+              : run.stage || run.message || run.status;
+    runStatus.innerHTML = `<span>${escape(status)}</span>${ready ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}`;
     const open = $("#openFullVideo");
     if (open)
       open.onclick = () =>
@@ -671,7 +683,7 @@ function renderQueue() {
           tab = "timeline";
           render();
         });
-    if (activeFullRun?.started) {
+    if (activeFullRun?.started && activeFullRun.kind === "produce-story") {
       const elapsed = Math.max(0, Date.now() / 1000 - activeFullRun.started);
       const samples = (run.timings || [])
         .filter(
