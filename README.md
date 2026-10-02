@@ -4,7 +4,9 @@ Live at https://questiontemplate.com/
 
 ## Integrated story-to-video studio
 
-Open [Studio](https://questiontemplate.com/manga.html), start the existing shared NVIDIA helper, and select **Story → video**. Create a project, add main characters/references, paste a chapter, review cleaned narration, Analyze, review the storyboard, Generate missing images, then Render chapter or Render full story. The optional 10–20 second intro is off by default. Audio and the original Comic & panel tools remain available.
+Open [Studio](https://questiontemplate.com/studio.html), start the existing shared NVIDIA helper, and select **Story → video**. Create a project, add main characters/references, paste a chapter, review cleaned narration, Analyze, review the storyboard, Generate missing images, then Render chapter or Render full story. The optional 10–20 second intro is off by default. Audio and the original Comic & panel tools remain available.
+
+For an automatic run, enter all chapters and click **Generate full video** above the chapter editor. This durable job generates narration, analyzes chapters in order, confirms detected main characters, creates missing references/images, renders chapters, and assembles the final video. It reuses completed work when retried. Configured review rules, manual-plan conflicts and generation errors stop the run for review rather than overwriting work. Old `manga.html` bookmarks redirect to `studio.html`, preserving pairing fragments. Audio and Studio share the new Q/play website logo and browser icon.
 
 Projects, chapter WAVs, images, metadata, continuity and videos persist in the helper. The tested local default on the GTX 1650 is quantized FLUX.2 Klein 4B with reference/edit support; SD 1.5 remains configurable. Qwen3.5-4B Q4_K_M directs the story. Models run sequentially using the existing environment, with no duplicate Torch/CUDA installation. See [implementation, model evaluation, measured tests and limitations](STUDIO-IMPLEMENTATION.md) and [helper setup](nvidia-helper/README.md).
 

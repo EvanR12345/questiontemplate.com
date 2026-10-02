@@ -165,7 +165,7 @@ def main():
     from http.server import ThreadingHTTPServer
     print('\nQuestionTemplate Image Helper')
     print('Loading uses your NVIDIA GPU. First generation downloads the model.\n')
-    url=f'https://questiontemplate.com/manga.html?imageKey={KEY}'
+    url=f'https://questiontemplate.com/studio.html?imageKey={KEY}'
     threading.Timer(1.2,lambda:webbrowser.open(url)).start()
     server=ThreadingHTTPServer(('127.0.0.1',PORT),make_app())
     print('Ready on http://127.0.0.1:%d' % PORT)

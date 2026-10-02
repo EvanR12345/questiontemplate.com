@@ -9,7 +9,7 @@ if not exist ".venv\Scripts\python.exe" (
   exit /b 1
 )
 rem Reopen the paired public Studio when the shared helper is already running.
-.venv\Scripts\python.exe -c "import pathlib,urllib.request,webbrowser; key=pathlib.Path('.pairing-key').read_text().strip(); req=urllib.request.Request('http://127.0.0.1:8765/health',headers={'Authorization':'Bearer '+key}); urllib.request.urlopen(req,timeout=2).read(); webbrowser.open('https://questiontemplate.com/manga.html#native='+key)" >nul 2>nul
+.venv\Scripts\python.exe -c "import pathlib,urllib.request,webbrowser; key=pathlib.Path('.pairing-key').read_text().strip(); req=urllib.request.Request('http://127.0.0.1:8765/health',headers={'Authorization':'Bearer '+key}); urllib.request.urlopen(req,timeout=2).read(); webbrowser.open('https://questiontemplate.com/studio.html#native='+key)" >nul 2>nul
 if not errorlevel 1 exit /b
 .venv\Scripts\python.exe -c "import torch; assert torch.cuda.is_available(), 'Check the NVIDIA driver'"
 if errorlevel 1 goto failed

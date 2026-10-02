@@ -1,6 +1,6 @@
 # QuestionTemplate story-to-video studio
 
-Implemented in the existing `manga.html` application. Audio and the original comic/panel tools remain available. The new **Story → video** workspace uses the same paired helper on port 8765.
+Implemented in the existing `studio.html` application. Audio and the original comic/panel tools remain available. The new **Story → video** workspace uses the same paired helper on port 8765.
 
 ## Using the website
 
@@ -14,6 +14,10 @@ Implemented in the existing `manga.html` application. Audio and the original com
 8. Select **Render full story**. Intro is off by default; project settings allow 10–20 seconds, once before the full story or before every chapter.
 
 Existing comic projects remain in their original browser database. The import action creates a story project while retaining the old comic snapshot; the original panel images/export tools remain accessible through **Comic & panel tools**.
+
+**Generate full video** is available above the chapter editor after entering chapters. Its `produce-story` queue job processes narration, analysis, missing main-character references, shot images, cached chapter renders and final assembly sequentially. Project `production` metadata records the current chapter/image/stage across reloads and restarts. Retry restarts orchestration but reuses completed assets and saved shot seeds. Separate jobs for the same project are blocked while the full run is active. The explicit automatic action accepts detected main characters; supporting/temporary people remain in chapters. Strict appearance review, proposed manual-plan conflicts and unrepaired generation failures stop the run with a clear error. Audio use can yield the GPU and pause the run; Resume continues it.
+
+The canonical website route is now `studio.html`; `manga.html` redirects while preserving URL queries and pairing fragments. Audio and Studio use the same vector logo, SVG/ICO favicon and touch icon. Five focused orchestration tests cover two-chapter completion, reference creation, completed-stage reuse, seed-preserving recovery, cancellation and competing-job protection, bringing the backend suite to 44 tests.
 
 ## Architecture and persistence
 

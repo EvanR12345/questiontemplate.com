@@ -6,6 +6,8 @@ Audio and Studio use one localhost service and the existing `.venv`. `start-wind
 
 The production workspace is integrated into the existing Studio website. Start this helper, open its pairing link, and select **Story → video**. Create a project, add main characters and references, paste a chapter, review cleaned narration, Analyze, review the storyboard, Generate missing images, and Render chapter. Add the next chapter to carry continuity forward. Render full story joins the chapters and includes the optional intro only when enabled.
 
+To automate every chapter, enter the chapters first and click **Generate full video**. Keep the helper running. Pause/Resume and Cancel full run remain available; completed audio, references, images and chapter videos are reused on retry. Explicit manual-plan conflicts or strict review settings pause automatic progress for your review. The website is now `studio.html`; existing `manga.html` pairing links redirect safely.
+
 The installed laptop has been tested with Qwen3.5-4B Q4_K_M directing, quantized FLUX.2 Klein 4B generating reference-conditioned images and source edits, Kokoro generating one chapter WAV, and the existing FFmpeg rendering chapter/full-story MP4s. The production queue persists up to 1000 unfinished jobs, supports priority/pause/resume/cancel/retry, and saves each completed image immediately. Native pause saves the current completed image before holding subsequent work; after a restart, unfinished work resumes from its saved seed.
 
 Projects and their assets live in `outputs/studio/`. Copy a complete project folder to back up generated media; JSON exports preserve structured data without embedding every media file. Advanced settings expose provider/workflow/model paths. A validated native installation becomes the default for new production projects; existing explicit model choices are preserved. SD 1.5 remains available, and the original comic interface retains its own settings.
@@ -17,7 +19,7 @@ See [STUDIO-IMPLEMENTATION.md](https://questiontemplate.com/STUDIO-IMPLEMENTATIO
 ## Original Comic & panel tools
 
 1. Run `C:\Users\rezke\QuestionTemplateHelper\start-windows.bat`. Keep its window open.
-2. It opens `https://questiontemplate.com/manga.html` with its pairing fragment. Allow Local network access if your browser asks. Once connected, Audio and Studio reconnect after refresh. The pairing token is saved in the helper's private `.pairing-key` file and browser storage; it is excluded from image metadata and exports.
+2. It opens `https://questiontemplate.com/studio.html` with its pairing fragment. Allow Local network access if your browser asks. Once connected, Audio and Studio reconnect after refresh. The pairing token is saved in the helper's private `.pairing-key` file and browser storage; it is excluded from image metadata and exports.
 3. Studio: paste your story, Analyze, review Cast and Layout, then Draw.
 4. Select Volume for large batches, then Generate missing or Generate all.
 

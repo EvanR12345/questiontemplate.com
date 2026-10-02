@@ -332,6 +332,7 @@ class StudioService:
         options = options or {}
         ch = get_chapter(p, chapter) if chapter else None
         if kind not in (
+            "produce-story",
             "analyze",
             "scene-plan",
             "narration",
@@ -345,6 +346,30 @@ class StudioService:
             "intro-render",
         ):
             raise ValueError("Unknown studio operation.")
+        if kind == "produce-story":
+            if not any(c["sourceText"].strip() for c in p["chapters"]):
+                raise ValueError(
+                    "Paste at least one chapter before generating the full video."
+                )
+            chapter = None
+            ch = None
+        with self.cv:
+            active_run = self.db.execute(
+                "SELECT id,kind FROM jobs WHERE project=? AND status IN ('QUEUED','RUNNING')",
+                (pid,),
+            ).fetchall()
+            if kind == "produce-story" and active_run:
+                if all(j["kind"] == "produce-story" for j in active_run):
+                    return self.snapshot()
+                raise ValueError(
+                    "Finish or cancel this project's existing jobs before starting its full video."
+                )
+            if kind != "produce-story" and any(
+                j["kind"] == "produce-story" for j in active_run
+            ):
+                raise ValueError(
+                    "The full-video run is processing this project. Pause/cancel it before submitting separate jobs."
+                )
         ids = shots if kind in ("image", "qc") else [None]
         if not ids or len(ids) > 1000:
             raise ValueError("Submit 1–1000 shots.")
@@ -551,7 +576,9 @@ class StudioService:
                 try:
                     p = self.store.load(job["project"])
                     options = json.loads(job["payload"])
-                    if job["kind"] in (
+                    if job["kind"] == "produce-story":
+                        self.produce_story(p["id"], options)
+                    elif job["kind"] in (
                         "analyze",
                         "scene-plan",
                         "narration",
@@ -664,6 +691,28 @@ class StudioService:
                 except Exception:
                     pass
             finally:
+                if job["kind"] == "produce-story":
+
+                    def run_finished(p):
+                        run = p.setdefault("production", {})
+                        run.update(status=state, message=message, updated=time.time())
+                        if state in ("FAILED", "CANCELLED", "QUEUED") and run.get(
+                            "chapterId"
+                        ):
+                            chapter = next(
+                                (
+                                    c
+                                    for c in p["chapters"]
+                                    if c["id"] == run["chapterId"]
+                                ),
+                                None,
+                            )
+                            if chapter:
+                                chapter.update(
+                                    status="PAUSED" if state == "QUEUED" else state
+                                )
+
+                    self.store.mutate(job["project"], run_finished)
                 if state in ("CANCELLED", "QUEUED", "FAILED"):
                     self.unload_models()
                 with self.cv:
@@ -676,6 +725,278 @@ class StudioService:
                     self.cancel = False
                     self.cv.notify_all()
                 self.sync_queue_states()
+
+    def production_progress(self, pid, stage, **details):
+        """Persist the current stage alongside assets, including between restarts."""
+
+        def update(p):
+            run = p.setdefault("production", {})
+            run.update(status="RUNNING", stage=stage, updated=time.time(), **details)
+
+        self.store.mutate(pid, update)
+        self.gate(stage)
+
+    def produce_story(self, pid, options):
+        """One durable queue job; reuse completed stages and stop safely on errors."""
+        p = self.store.load(pid)
+        chapters = [c["id"] for c in p["chapters"] if c["sourceText"].strip()]
+        self.production_progress(
+            pid,
+            "Preparing full story",
+            totalChapters=len(chapters),
+            completedChapters=0,
+            completedImages=0,
+            totalImages=0,
+            chapterId=None,
+            shotId=None,
+        )
+        for index, chid in enumerate(chapters):
+            p = self.store.load(pid)
+            ch = get_chapter(p, chid)
+            self.production_progress(
+                pid,
+                f"Chapter {index+1} / {len(chapters)} · narration",
+                chapterId=chid,
+                chapterNumber=ch["number"],
+                completedChapters=index,
+                completedImages=0,
+                totalImages=0,
+                shotId=None,
+            )
+            previous_audio = ch.get("audio", {}).get("signature")
+            self.unload_models()
+            self.before_audio()
+            self.narration(p, ch)
+            p = self.store.load(pid)
+            ch = get_chapter(p, chid)
+            state, _ = state_before(p, chid)
+            participating = {
+                cast["id"]
+                for scene in ch["scenes"]
+                for shot in scene["shots"]
+                for cast in shot["characters"]
+            }
+
+            def relevant_state(value):
+                return {
+                    "characters": {
+                        k: v
+                        for k, v in value.get("characters", {}).items()
+                        if k in participating
+                    },
+                    "environment": value.get("environment", {}),
+                }
+
+            needs_analysis = (
+                not ch["scenes"]
+                or ch.get("handoff", {}).get("sourceSignature")
+                != digest(ch["sourceText"])
+                or previous_audio != ch["audio"].get("signature")
+                or digest(relevant_state(ch.get("inputState", {})))
+                != digest(relevant_state(state))
+                or ch.get("continuityNeedsReview", False)
+            )
+            if needs_analysis:
+                self.production_progress(
+                    pid, f"Chapter {index+1} / {len(chapters)} · AI director"
+                )
+                self.before_image()
+                self.providers["existing"].unload()
+                self.analyze(p, chid, {"managedPipeline": True})
+                p = self.store.load(pid)
+                ch = get_chapter(p, chid)
+                if ch.get("proposedPlan"):
+                    raise ValueError(
+                        f"{ch['name']}: review the proposed analysis before continuing. Existing manual edits were preserved."
+                    )
+                self.store.mutate(
+                    pid,
+                    lambda q: get_chapter(q, chid).update(continuityNeedsReview=False),
+                )
+            p = self.store.load(pid)
+            ch = get_chapter(p, chid)
+            if ch.get("proposedPlan"):
+                raise ValueError(
+                    f"{ch['name']}: apply or dismiss its proposed plan before generating the full video."
+                )
+
+            # This explicit unattended action accepts detected main characters;
+            # supporting/background people remain in their chapter.
+            def confirm_people(latest):
+                chapter = get_chapter(latest, chid)
+                for person in chapter["people"]:
+                    if person["type"] == "main" and not person.get("removed"):
+                        person["accepted"] = True
+                        if not any(
+                            c["id"] == person["id"] for c in latest["characters"]
+                        ):
+                            latest["characters"].append(copy.deepcopy(person))
+                chapter["inputState"] = state_before(latest, chid)[0]
+
+            self.store.mutate(pid, confirm_people)
+            p = self.store.load(pid)
+            ch = get_chapter(p, chid)
+            if p["settings"]["appearanceHandling"] != "Automatic" and any(
+                s.get("appearanceChanges") and not s.get("appearanceChangesReviewed")
+                for s in ch["scenes"]
+            ):
+                raise ValueError(
+                    f"{ch['name']}: your appearance-change settings require review. Accept the changes and retry this run."
+                )
+            active_characters = {
+                c["id"]
+                for sc in ch["scenes"]
+                for shot in sc["shots"]
+                for c in shot["characters"]
+                if c["type"] == "main"
+            }
+            reference_provider = self.provider(p["settings"]["image"]["provider"])
+            if reference_provider.getCapabilities().get("maxReferenceImages", 0):
+                for person in p["characters"]:
+                    if person["id"] in active_characters and not person["references"]:
+                        self.production_progress(
+                            pid,
+                            f"Chapter {index+1} / {len(chapters)} · reference for {person['name']}",
+                        )
+                        self.character_reference(
+                            self.store.load(pid),
+                            {"characterId": person["id"], "referenceKind": "face"},
+                        )
+
+            def prepare_images(latest):
+                chapter = get_chapter(latest, chid)
+                for scene in chapter["scenes"]:
+                    for shot in scene["shots"]:
+                        provider = self.provider(shot["imageProvider"])
+                        settings = shot["generationSettings"]
+                        has_refs = any(
+                            c["references"]
+                            and any(s["id"] == c["id"] for s in shot["characters"])
+                            for c in latest["characters"]
+                        )
+                        if (
+                            provider.id == "native-flux"
+                            and has_refs
+                            and not shot.get("manual", {}).get("generationSettings")
+                        ):
+                            settings["width"] = settings["height"] = 384
+                        validated = provider.validateSettings(
+                            settings | {"model": shot["imageModel"]}
+                        )
+                        shot["generationSettings"] = validated
+
+            self.store.mutate(pid, prepare_images)
+            p = self.store.load(pid)
+            ch = get_chapter(p, chid)
+            shots = [s for scene in ch["scenes"] for s in scene["shots"]]
+            for shot_index, shot in enumerate(shots):
+                self.production_progress(
+                    pid,
+                    f"Chapter {index+1} / {len(chapters)} · image {shot_index+1} / {len(shots)}",
+                    shotId=shot["id"],
+                    imageNumber=shot_index + 1,
+                    totalImages=len(shots),
+                    completedImages=shot_index,
+                )
+                complete = (
+                    shot.get("imagePath")
+                    and shot["status"] in ("COMPLETE", "PASSED")
+                    and not shot.get("generationStale")
+                    and self.store.asset(pid, shot["imagePath"]).is_file()
+                )
+                if not complete:
+                    try:
+                        self.generate(
+                            self.store.load(pid),
+                            chid,
+                            shot["id"],
+                            shot["generationSettings"]["seed"],
+                            {},
+                        )
+                    except (JobCancelled, AudioYield):
+                        raise
+                    except Exception as error:
+
+                        def failed_image(latest):
+                            item = get_shot(latest, chid, shot["id"])
+                            item.update(status="FAILED", generationError=str(error))
+
+                        self.store.mutate(pid, failed_image)
+                        raise
+                self.production_progress(
+                    pid,
+                    f"Chapter {index+1} / {len(chapters)} · saved image {shot_index+1} / {len(shots)}",
+                    completedImages=shot_index + 1,
+                )
+            self.production_progress(
+                pid,
+                f"Chapter {index+1} / {len(chapters)} · render chapter",
+                shotId=None,
+            )
+            self.unload_models()
+            self.providers["existing"].unload()
+            p = self.store.load(pid)
+            ch = get_chapter(p, chid)
+            result = self.renderer.chapter(p, ch, self.gate)
+
+            def chapter_saved(latest):
+                chapter = get_chapter(latest, chid)
+                if (
+                    chapter.get("render", {}).get("path")
+                    and chapter["render"]["path"] != result["path"]
+                ):
+                    chapter.setdefault("renderHistory", []).append(chapter["render"])
+                chapter.update(render=result, renderStale=False, status="COMPLETE")
+
+            self.store.mutate(pid, chapter_saved)
+
+        p = self.store.load(pid)
+        if (
+            p["intro"]["enabled"]
+            and p["intro"].get("voiceText", "").strip()
+            and not p["intro"].get("audioPath")
+        ):
+            self.production_progress(
+                pid, "Preparing separate intro audio", chapterId=None, shotId=None
+            )
+            self.before_audio()
+            self.intro_audio(p)
+        p = self.store.load(pid)
+        if (
+            p["intro"]["enabled"]
+            and p["intro"].get("visualPrompt", "").strip()
+            and not p["intro"].get("visualPath")
+        ):
+            self.production_progress(
+                pid, "Generating intro visual", chapterId=None, shotId=None
+            )
+            self.intro_image(p)
+        self.production_progress(
+            pid,
+            "Rendering full story",
+            chapterId=None,
+            shotId=None,
+            completedChapters=len(chapters),
+        )
+        self.unload_models()
+        self.providers["existing"].unload()
+        result = self.renderer.full(self.store.load(pid), self.gate)
+
+        def saved(latest):
+            if (
+                latest.get("render", {}).get("path")
+                and latest["render"]["path"] != result["path"]
+            ):
+                latest.setdefault("renderHistory", []).append(latest["render"])
+            latest.update(render=result, renderStale=False)
+            latest["production"].update(
+                status="COMPLETE",
+                stage="Full video ready",
+                videoPath=result["path"],
+                completedChapters=len(chapters),
+            )
+
+        self.store.mutate(pid, saved)
 
     def narration(self, p, ch):
         text = (
@@ -1698,7 +2019,7 @@ class StudioService:
                 ]
 
         self.store.mutate(p["id"], finish)
-        if p["settings"]["autoContinue"]:
+        if p["settings"]["autoContinue"] and not options.get("managedPipeline"):
             latest = self.store.load(p["id"])
             c = get_chapter(latest, chid)
             needs_review = latest["settings"][

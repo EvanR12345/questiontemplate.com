@@ -414,6 +414,7 @@ function render() {
     project.id,
   )}</select><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label style="margin:0"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></div>
   <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
+  <div class="full-video-bar"><div><strong>Finished entering your chapters?</strong><p class="muted">Generate narration, direct every chapter, create missing character references and images, then render one full video. Detected main characters are confirmed automatically. Your review settings and manual edits are preserved.</p><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div>
   ${project._unsynced ? '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>' : ""}
   ${project.warnings
     .filter((w) => !w.resolved)
@@ -591,6 +592,31 @@ function renderQueue() {
       '<p class="muted">Connect the helper to see production jobs. Completed assets stay saved after refresh.</p>';
     return;
   }
+  const fullButton = $("#productionFullVideo");
+  const activeFullRun = queue.jobs.find(
+    (j) =>
+      j.project === project.id &&
+      j.kind === "produce-story" &&
+      ["QUEUED", "RUNNING"].includes(j.status),
+  );
+  if (fullButton) {
+    fullButton.disabled = !connected || !!activeFullRun;
+    fullButton.textContent = activeFullRun
+      ? "Full video in progress"
+      : "Generate full video";
+  }
+  const run = project.production,
+    runStatus = $("#fullVideoStatus");
+  if (runStatus && run) {
+    runStatus.innerHTML = `<span>${escape(run.status === "COMPLETE" ? "Full video ready" : ["FAILED", "CANCELLED"].includes(run.status) ? run.status + " · " + run.message : run.stage || run.message || run.status)}</span>${run.status === "COMPLETE" ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}`;
+    const open = $("#openFullVideo");
+    if (open)
+      open.onclick = () =>
+        action(async () => {
+          tab = "timeline";
+          render();
+        });
+  }
   const jobs = queue.jobs.filter((j) => j.project === project.id),
     counts = queue.projectCounts?.[project.id],
     done =
@@ -617,7 +643,7 @@ function renderQueue() {
     currentScene = project.chapters
       .find((c) => c.id === current?.chapter)
       ?.scenes.find((s) => s.id === currentShot?.sceneId);
-  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images" : ""}</h3><span class="muted">${done} complete · ${pending} waiting · ${failureCount} failed · ETA ${queue.etaSeconds == null ? "—" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || "Ready"))}</p><progress max="${Math.max(1, total)}" value="${done}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>Cancel current</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel all queued</button><button data-control="retry">Retry failed / cancelled</button></div><div class="queue-jobs">${jobs
+  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images" : ""}</h3><span class="muted">${done} complete · ${pending} waiting · ${failureCount} failed · ETA ${queue.etaSeconds == null ? "—" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || "Ready"))}</p><progress max="${Math.max(1, total)}" value="${done}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel all queued</button><button data-control="retry">Retry failed / cancelled</button></div><div class="queue-jobs">${jobs
     .filter(
       (j) =>
         j.status === "FAILED" ||
@@ -666,6 +692,15 @@ async function submit(kind, selected, options) {
   note("Added to the production queue. Completed results save immediately.");
 }
 function wire() {
+  $("#productionFullVideo").onclick = () =>
+    action(async () => {
+      await saveSettingsIfVisible();
+      queue = await api("jobs", { project: project.id, kind: "produce-story" });
+      renderQueue();
+      note(
+        "Full video queued. Keep the shared helper running. Pause, cancel or retry here; completed work is saved and reused.",
+      );
+    });
   $("#productionConnect").onclick = () => action(connect);
   $("#productionNewProject").onclick = () => action(newProject);
   $("#productionProject").onchange = (e) =>

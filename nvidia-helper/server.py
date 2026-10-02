@@ -455,7 +455,7 @@ def main():
         subprocess.run(['icacls', str(key_path), '/inheritance:r', '/grant:r', account + ':F'], capture_output=True)
     server = ThreadingHTTPServer(('127.0.0.1', PORT), make_handler(audio_engine, key))
     server.daemon_threads = True
-    site = 'https://questiontemplate.com/manga.html'
+    site = 'https://questiontemplate.com/studio.html'
     link = site + '#native=' + key
     print(
         '\nReady on ' + audio_engine.gpu +
