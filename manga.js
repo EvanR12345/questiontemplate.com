@@ -1,7 +1,7 @@
 import { planScenes, migrateScenes, panelPrompt as buildPanelPrompt, continuityTarget, soundOnly, humanSubjects } from './story-planner.mjs?v=prompt-2';
 import { pairingKey, helperJson } from './helper-connection.mjs?v=queue-1';
 import { nativeRequest } from './native-client.mjs?v=queue-1';
-import { saveProjectState, loadProjectState, saveImageBlob, loadImageBlob } from './image-store.mjs?v=queue-1';
+import { saveProjectState, loadProjectState, saveImageBlob, loadImageBlob } from './image-store.mjs?v=storage-2';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const STYLE={manhwa:'full-color Korean webtoon aesthetic, clean line art, polished cel shading, cinematic dramatic lighting, expressive characters',action:'black and white action manga, bold ink lines, screentones, dynamic motion, impact framing',seinen:'cinematic detailed manga, realistic anatomy, nuanced expressions, textured shadows, mature visual storytelling',romance:'elegant romantic manga, soft lighting, expressive eyes, delicate line work, emotional atmosphere',horror:'psychological horror manga, heavy black ink, unsettling composition, dramatic high contrast, eerie atmosphere',dark:'dark fantasy manga, epic scale, intricate armor and environments, moody dramatic lighting, textured illustration'};
 const SHOTS=['Wide establishing','Medium','Close-up','Extreme close-up','Full body','Over shoulder'];

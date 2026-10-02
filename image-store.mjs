@@ -1,15 +1,33 @@
 let database;
 function db() {
-  return database ||= new Promise((resolve, reject) => {
+  if (database) return database;
+  const pending = new Promise((resolve, reject) => {
     const request = indexedDB.open('qt-image-studio', 1);
     request.onupgradeneeded = () => { request.result.createObjectStore('projects'); request.result.createObjectStore('images'); };
-    request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const connection = request.result;
+      const invalidate = () => { if (database === pending) database = undefined; };
+      connection.onclose = invalidate;
+      connection.onversionchange = () => { invalidate(); connection.close(); };
+      resolve(connection);
+    };
+    request.onerror = () => { if (database === pending) database = undefined; reject(request.error); };
   });
+  database = pending;
+  return pending;
 }
-async function operation(store, mode, action) {
-  const database = await db();
+async function operation(store, mode, action, retry = true) {
+  const connection = await db();
+  let transaction;
+  try { transaction = connection.transaction(store, mode); }
+  catch (error) {
+    // A closing connection rejects before any read or write has started.
+    if (!retry || error.name !== 'InvalidStateError') throw error;
+    database = undefined;
+    connection.close();
+    return operation(store, mode, action, false);
+  }
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(store, mode);
     const request = action(transaction.objectStore(store));
     transaction.oncomplete = () => resolve(request.result);
     transaction.onerror = () => reject(transaction.error);

@@ -5,7 +5,7 @@ import {
   saveStudioProject,
   loadStudioProject,
   listStudioProjects,
-} from "./image-store.mjs?v=production-1";
+} from "./image-store.mjs?v=storage-2";
 
 const $ = (s) => document.querySelector(s),
   escape = (s) =>
