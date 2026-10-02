@@ -12,6 +12,26 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_retry_preserves_location_identity_and_user_reference_assets(self):
+        project = new_project()
+        detected = {"name": "Prison cell", "description": "A cold cell"}
+        first = analysis_location(project, detected, [])
+        retried = analysis_location(project, detected, [])
+        self.assertEqual(first["id"], retried["id"])
+        self.assertNotEqual(
+            first["id"], analysis_location(new_project(), detected, [])["id"]
+        )
+        first.update(id="user-location", references=[{"path": "my-cell.png"}])
+        project["locations"].append(first)
+        pending = []
+        kept = analysis_location(
+            project, {"name": " PRISON  CELL ", "description": "AI revision"}, pending
+        )
+        self.assertIs(kept, first)
+        self.assertEqual(kept["references"], [{"path": "my-cell.png"}])
+        self.assertEqual(kept["description"], "A cold cell")
+        self.assertEqual(pending, [])
+
     def test_heard_gunshot_does_not_reveal_an_unidentified_shooters_face(self):
         self.assertTrue(unidentified_gunshot("Bang. A loud gunshot was heard."))
         self.assertTrue(unidentified_gunshot("Three more gunshots were heard."))

@@ -34,6 +34,29 @@ def digest(value):
     ).hexdigest()
 
 
+def analysis_location(project, detected, pending):
+    name = " ".join(detected["name"].strip().split())
+    canonical = name.casefold()
+    existing = next(
+        (
+            item
+            for item in project["locations"] + pending
+            if " ".join(item["name"].strip().split()).casefold() == canonical
+        ),
+        None,
+    )
+    if existing:
+        return existing
+    location = {
+        "id": "loc-" + digest({"project": project["id"], "name": canonical})[:16],
+        "name": name,
+        "description": detected["description"],
+        "references": [],
+    }
+    pending.append(location)
+    return location
+
+
 def clean_narration(text, title="", include_title=False):
     lines = []
     for line in str(text).splitlines():
@@ -83,7 +106,9 @@ def text_groups(text, max_chars=8500):
 
 def unidentified_gunshot(text):
     return bool(re.search(r"\bgunshots?\b.+\bheard\b", text, re.I)) and not re.search(
-        r"\b(?:man|woman|boy|girl|he|she|they|people|crowd|fired|firing|shoots|shooting|aimed)\b", text, re.I
+        r"\b(?:man|woman|boy|girl|he|she|they|people|crowd|fired|firing|shoots|shooting|aimed)\b",
+        text,
+        re.I,
     )
 
 

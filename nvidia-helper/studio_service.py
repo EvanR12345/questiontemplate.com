@@ -1946,23 +1946,7 @@ class StudioService:
                 for x in people
             ]
             for loc in analysis["locations"]:
-                item = next(
-                    (
-                        l
-                        for l in p["locations"] + locations
-                        if l["name"].casefold() == loc["name"].casefold()
-                    ),
-                    None,
-                )
-                if not item:
-                    locations.append(
-                        {
-                            "id": uid("loc-"),
-                            "name": loc["name"],
-                            "description": loc["description"],
-                            "references": [],
-                        }
-                    )
+                analysis_location(p, loc, locations)
             plan = self.director.planChapter(
                 context | {"analysis": analysis, "people": cast}, self.gate
             )
