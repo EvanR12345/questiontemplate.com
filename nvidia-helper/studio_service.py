@@ -1436,9 +1436,22 @@ class StudioService:
                     # for every bystander or unnamed member of a crowd.
                     from director_provider import obj, short_text, IDENTITY, APPEARANCE
 
+                    quote = detected["evidence"].strip(" \"'")
+                    evidence = (
+                        next(
+                            (
+                                s
+                                for s in sentences(casting_text)
+                                if quote[:50].casefold() in s.casefold()
+                            ),
+                            "",
+                        )
+                        if len(quote) >= 50
+                        else ""
+                    )
                     profile = self.director.call(
-                        "Character bible. Extract ONLY explicitly stated identity traits and EARLIEST baseline appearance for the supplied person. Unknown fields MUST be empty strings. Do not borrow another person's clothing. Later injuries and clothing changes belong to scene continuity. Return permanentIdentity, defaultAppearance, gender, approximateAge.",
-                        {"person": detected, "chapterText": casting_text},
+                        "Character bible. Extract ONLY identity traits explicitly stated in sourceEvidence for this person. Include beard/facial hair in face. Unknown fields MUST be empty strings, never 'unknown'. Clothing is NOT permanent identity. Held weapons and tools are NOT permanent accessories. Do not borrow any other person's clothing. Return permanentIdentity, defaultAppearance, gender, approximateAge. Do not infer later events.",
+                        {"name": detected["name"], "sourceEvidence": evidence},
                         obj(
                             {
                                 "permanentIdentity": obj(
@@ -1456,7 +1469,24 @@ class StudioService:
                         ),
                         self.gate,
                     )
+                    for section in ("permanentIdentity", "defaultAppearance"):
+                        profile[section] = {
+                            k: (
+                                ""
+                                if str(v).strip().casefold()
+                                in ("unknown", "none", "not stated", "unspecified")
+                                else v
+                            )
+                            for k, v in profile[section].items()
+                        }
                     person.update(profile)
+                    if evidence:
+                        person["description"] = (
+                            "; ".join(
+                                v for v in profile["permanentIdentity"].values() if v
+                            )
+                            or evidence
+                        )
                     passes.append(
                         {
                             "pass": "character-bible",

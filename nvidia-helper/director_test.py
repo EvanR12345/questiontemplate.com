@@ -11,6 +11,20 @@ from director_provider import (
 
 
 class DirectorRecoveryTest(unittest.TestCase):
+    def test_continuity_without_objects_cannot_invent_repeated_held_objects(self):
+        director = DirectorProvider()
+        captured = []
+        director.call = (
+            lambda role, context, schema, gate: captured.append(schema) or {}
+        )
+        director.checkContinuity(
+            {"objects": [], "sentences": [{"text": "Help!"}]}, lambda *args: None
+        )
+        field = captured[0]["properties"]["objectChanges"]
+        validate_schema([], field)
+        with self.assertRaisesRegex(ValueError, "Array length"):
+            validate_schema([{}], field)
+
     def test_casting_evidence_cannot_grow_into_unbounded_sentence_numbers(self):
         director = DirectorProvider()
         captured = []

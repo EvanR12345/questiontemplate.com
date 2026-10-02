@@ -157,6 +157,8 @@ class DirectorProvider:
                 ),
             }
         )
+        for field in ("changes", "environmentChanges", "beats"):
+            schema["properties"][field]["maxItems"] = len(context["sentences"]) * 2
         if context.get("chapterCast"):
             schema["properties"]["people"]["maxItems"] = 0
             valid_ids = [person["id"] for person in context["chapterCast"]]
@@ -243,11 +245,11 @@ class DirectorProvider:
                 for x in context.get("objects", [])
                 if x.strip()
             )
-        ) or ["object"]
+        )
         change = obj(
             CHANGE["properties"]
             | {
-                "field": {"type": "string", "enum": fields},
+                "field": {"type": "string", "enum": fields or ["object"]},
                 "reason": {
                     "type": "string",
                     "enum": [s["text"] for s in context["sentences"]],
@@ -259,9 +261,11 @@ class DirectorProvider:
             context,
             obj(
                 {
-                    "issues": arr(STR),
-                    "intentionalChanges": arr(STR),
-                    "objectChanges": arr(change),
+                    "issues": arr(short_text(300)) | {"maxItems": 8},
+                    "intentionalChanges": arr(short_text(300))
+                    | {"maxItems": len(context["sentences"])},
+                    "objectChanges": arr(change)
+                    | {"maxItems": len(context["sentences"]) * 2 if fields else 0},
                 }
             ),
             gate,
