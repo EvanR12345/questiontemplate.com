@@ -16,6 +16,20 @@ Reference: [OpenAI quickstart](https://developers.openai.com/api/docs/quickstart
 
 ## 2. Create Runpod storage and rent the GPU
 
+### Requested setup: two separate accounts
+
+With separate accounts, reserve one for **71 GB standard network storage** and the other for compute. Do not merge their credits, create a team or put GPU charges on the storage account without changing that decision explicitly.
+
+An archive can be named `questiontemplate-studio-archive` in an **S3-compatible region**, such as US-IL-1. Standard 71 GB storage costs **$4.97/month** at the published rate. If Create returns **“Insufficient funds, please add funds to continue”**, resolve account funding before using the archive. A monthly price is not necessarily the service's creation threshold; do not guess the minimum required balance.
+
+For this split, use the storage account's S3-compatible API for explicit downloads/uploads. A direct cross-account filesystem mount has not been verified. A compute pod still needs its own working disk. Download/cache selected models there, run generation, and copy each completed result back to the archive. Persist job metadata before advancing the queue; verify the archived object before declaring an upload complete. Repeated cold starts can require downloading model weights again and incur paid setup time. Retaining a compute-side disk also costs money on the compute account. This cross-account transfer path is planned, **not connected or tested yet**.
+
+Do not pass storage credentials to the website, director model, project JSON or logs. Use the storage account's S3 credentials only in the helper/worker configuration. Any remote credential provisioning remains a separate setup step. Keep a local copy of original project data and completed assets. The existing audio `.venv` must remain intact.
+
+At the published standard rate, $5 funds approximately one month of a 71 GB volume. Storage must remain funded after GPU work stops. See [S3 access](https://docs.runpod.io/storage/s3-api) and [network volumes](https://docs.runpod.io/storage/network-volumes).
+
+### Simpler alternative: one account (not the user's current choice)
+
 1. Create an account at [Runpod Console](https://console.runpod.io/) and add billing.
 2. Check **Pods** for an available **RTX 5090, 32 GB VRAM**. Note its data center before creating storage.
 3. In **Storage**, create a **standard network volume**, name it `questiontemplate-studio`, choose **50 GB**, and choose that same data center. Network storage persists independently of the GPU pod.
@@ -35,6 +49,15 @@ First compare ten representative shots: a close-up, two characters, an action, a
 - **FLUX.2 Klein 4B, full precision on the remote GPU:** established reference/edit workflow, Apache 2.0; compare at larger native resolution against the existing low-memory Q4 workflow. This is the baseline, not a claim of maximum quality.
 - **Qwen-Image-Edit-2511, memory-compatible quantized/offloaded ComfyUI workflow:** candidate for stronger identity-preserving editing and multiple characters. Apache 2.0. Validate runtime and the exact quantization before selecting it.
 - **FLUX.2 Klein 9B:** candidate for stronger generation/reference quality and speed, but released under a non-commercial model license. Review the license and intended use before choosing this workflow for a monetized project.
+- **Qwen-Image-2.1:** newer unified generation/editing model with up to ten references. Released September 20, 2026, under a **research-only/non-commercial license**, unlike Qwen-Image-Edit-2511's Apache 2.0 license. Keep it as an evaluation candidate; do not enable it for commercial Studio production without the required license.
+
+The current first quality candidate is **Qwen-Image-Edit-2511 FP8 mixed**, using ComfyUI's maintained repack and model-specific natural-language instructions. The diffusion weights are approximately 20.5 GB on disk, the FP8 text encoder 9.38 GB, and VAE 254 MB. Disk size is not peak VRAM: profile the entire graph on the 32 GB 5090, including references, activations and decoding, and offload the encoder when necessary. Do not claim BF16 inference fits entirely in 32 GB: the diffusion weights alone are approximately 40.9 GB. Start at roughly one megapixel with two character references and 40 steps; compare a 4-step Lightning workflow separately for speed versus fidelity. Do not apply a Lightning LoRA blindly to an incompatible quantized model.
+
+Qwen-Image-Edit requires image input. Existing accepted character references can supply that input. For initial reference sheets and shots with no relevant image input, use a separate validated text-to-image workflow, such as Qwen-Image-2512, rather than pretending the edit graph works without references. Share compatible encoders and VAE files, and retain only required model variants on the 71 GB archive. The current laptop generator remains available until both cloud generation and editing pass actual tests.
+
+Every identity reference must be named by its image index and associated with the correct character. A repair uses image 1 as its source; identity references follow it. Scene appearance state overrides clothing in reference images. Reference capacity includes the repair source. The adapter now checks ComfyUI's reported GPU memory, not the laptop's, and rejects unbound references instead of uploading and ignoring them. These adapter checks passed automated tests; they are not a cloud quality benchmark.
+
+Sources: [Qwen editing workflow](https://docs.comfy.org/tutorials/image/qwen/qwen-image-edit-2511), [FP8 mixed weights](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/blob/main/split_files/diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors), [Qwen-Image-2.1 model](https://huggingface.co/Qwen/Qwen-Image-2.1), [2.1 license](https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE).
 
 Model references: [FLUX 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B), [Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image-Edit-2511), [FLUX 9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B).
 

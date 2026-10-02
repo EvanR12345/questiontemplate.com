@@ -11,6 +11,7 @@ from image_provider import (
     ComfyImageProvider,
     format_prompt,
     select_references,
+    reference_prompt,
     data_url,
 )
 from studio_render import VideoRenderer
@@ -2714,7 +2715,11 @@ class StudioService:
             "model": shot["imageModel"],
             "seed": seed,
         }
-        references, ref_metadata = select_references(p, shot, self.store, provider)
+        operation = options.get("operation", "generate")
+        references, ref_metadata = select_references(
+            p, shot, self.store, provider,
+            reserved_slots=1 if provider.id == "comfyui" and operation == "edit" else 0,
+        )
         if provider.id == "native-flux" and options.get("operation") == "edit":
             references = references[:1]
             ref_metadata = ref_metadata[:1]
@@ -2725,27 +2730,12 @@ class StudioService:
             "settings": settings,
             "operation": options.get("operation", "generate"),
         }
-        if provider.id == "native-flux" and references:
-            offset = 1 if request["operation"] == "edit" else 0
-            reference_notes = []
-            for index, ref in enumerate(ref_metadata, 1 + offset):
-                if ref.get("characterId"):
-                    person = next(
-                        c
-                        for c in p["characters"] + ch["people"]
-                        if c["id"] == ref["characterId"]
-                    )
-                    appearance = next(
-                        c for c in shot["characters"] if c["id"] == person["id"]
-                    )["appearanceState"]
-                    reference_notes.append(
-                        f'Use image {index} as the identity reference for {person["name"]}. Preserve face and permanent traits. Current appearance overrides reference clothing: {json.dumps(appearance)}.'
-                    )
-                elif ref.get("locationId"):
-                    reference_notes.append(
-                        f"Use image {index} for the location architecture and palette."
-                    )
-            request["prompt"] = " ".join(reference_notes) + " " + request["prompt"]
+        if provider.id in ("native-flux", "comfyui") and (
+            references or request["operation"] == "edit"
+        ):
+            request["prompt"] = reference_prompt(
+                p, shot, ref_metadata, request["operation"]
+            ) + " " + request["prompt"]
         if request["operation"] in ("edit", "inpaint"):
             source = shot.get("sourceImagePath") or shot.get("imagePath")
             if not source:

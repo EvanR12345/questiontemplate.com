@@ -559,7 +559,7 @@ function settings() {
     [
       ["existing", "Existing SD fallback / DreamShaper"],
       ["native-flux", "Quantized FLUX.2 Klein 4B"],
-      ["comfyui", "Local ComfyUI workflow"],
+      ["comfyui", "ComfyUI · local or cloud through SSH"],
     ],
     i.provider,
   )}</select></label><label>Image model<select id="settingImageModel">${options(models, i.model)}</select></label><label>Workflow<select id="settingImageWorkflow">${options(selected?.workflow || [i.workflow], i.workflow)}</select></label><label>SD reference strength<input ${i.provider === "native-flux" ? "disabled" : ""} id="settingReferenceStrength" type="number" min="0" max="1" step=".05" value="${i.referenceStrength}"></label></div><p class="muted">${selected?.installed ? "Installed" : "Unavailable: configure this local backend before generating."} ${selected?.validated === false ? "This native configuration has not passed laptop validation yet." : ""} ${escape(selected?.capabilities?.referenceLimitations || "")}</p><button id="showModelNotes">Model evaluation and diagnosis</button></div>
@@ -1557,7 +1557,7 @@ function wireSettings() {
     const ready = health?.directorProviders?.["openai-luna"]?.installed;
     formDialog(
       "Cloud setup",
-      `<p>Luna directs your story. Runpod runs the image workflow; its GPU and storage are billed separately.</p><ol><li><a href="https://platform.openai.com/" target="_blank" rel="noopener">Create your OpenAI API account</a>, add API billing, and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">create a project API key</a>.</li><li>Enter that key below to connect Luna. Your key stays in the local helper, outside project exports and browser storage.</li><li><a href="https://console.runpod.io/" target="_blank" rel="noopener">Create your Runpod account</a> and add billing. Use a 50 GB network volume in a region with an available RTX 5090. See the <a href="./CLOUD-SETUP.md" target="_blank" rel="noopener">step-by-step cloud guide</a> before deployment.</li></ol><label>OpenAI API key ${ready ? "(already saved; leave blank to retain)" : ""}<input id="cloudOpenAIKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label><p class="muted">Saving verifies Luna access and selects it for this project. Image generation remains on your current provider until a cloud image workflow is connected and tested.</p>`,
+      `<p>Luna directs your story. Runpod runs the image workflow; its GPU and storage are billed separately.</p><ol><li><a href="https://platform.openai.com/" target="_blank" rel="noopener">Create your OpenAI API account</a>, add API billing, and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">create a project API key</a>.</li><li>Enter that key below to connect Luna. Your key stays in the local helper, outside project exports and browser storage.</li><li><a href="https://console.runpod.io/" target="_blank" rel="noopener">Configure Runpod billing</a> and an RTX 5090 image worker. Storage on a separate account needs file transfers and a working disk on the GPU account. See the <a href="./CLOUD-SETUP.md" target="_blank" rel="noopener">cloud setup guide</a> before deployment.</li></ol><p><a href="./CLOUD-IMAGE-EVALUATION.md" target="_blank" rel="noopener">Image model comparison and character-reference tests</a>: Qwen-Image-Edit-2511 is the first character and repair candidate. The cloud workflow must pass generation and reference-edit tests before it becomes active.</p><label>OpenAI API key ${ready ? "(already saved; leave blank to retain)" : ""}<input id="cloudOpenAIKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label><p class="muted">Saving verifies Luna access and selects it for this project. Image generation remains on your current provider until a cloud image workflow is connected and tested.</p>`,
       async () => {
         const key = $("#cloudOpenAIKey").value.trim();
         if (key) health = await api("config", { openaiApiKey: key });
@@ -1796,7 +1796,7 @@ function editShot(shot) {
       [
         ["existing", "Existing SD fallback"],
         ["native-flux", "Quantized FLUX Klein"],
-        ["comfyui", "ComfyUI workflow"],
+        ["comfyui", "ComfyUI · local or cloud through SSH"],
       ],
       shot.imageProvider,
     )}</select></label><label>Image model<select id="shotModel">${options(health?.providers[shot.imageProvider]?.models || [shot.imageModel], shot.imageModel)}</select></label><label>Seed<input id="shotSeed" type="number" min="0" max="4294967295" value="${shot.generationSettings.seed}"></label><label>Workflow<input id="shotWorkflow" value="${escape(shot.workflow)}"></label></div><label>Image prompt<textarea id="shotPrompt" rows="5">${escape(shot.prompt)}</textarea></label><label>Negative prompt<textarea id="shotNegative" rows="2">${escape(shot.negativePrompt)}</textarea></label><details><summary>All shot fields and generation settings</summary><textarea id="shotAdvanced" class="json-editor">${escape(JSON.stringify(value, null, 2))}</textarea></details>`,

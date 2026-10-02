@@ -79,6 +79,9 @@ def visible_image(raw):
 class ImageProvider:
     id = "abstract"
 
+    def available_vram_gb(self):
+        return gpu_memory_gb()
+
     def getCapabilities(self):
         return dict(BASE_CAPS)
 
@@ -96,7 +99,7 @@ class ImageProvider:
     def validateSettings(self, s):
         caps = self.getCapabilities()
         result = copy.deepcopy(s)
-        memory = gpu_memory_gb()
+        memory = self.available_vram_gb()
         requirements = caps.get("hardwareRequirements", {})
         minimum = requirements.get("vramGB", 0)
         if (
@@ -526,6 +529,28 @@ class ComfyImageProvider(ImageProvider):
     def __init__(self, config):
         self.config = config
         self.url = local_url(config.get("comfyEndpoint", "http://127.0.0.1:8188"))
+        self._server_memory = (0, None)
+
+    def available_vram_gb(self):
+        # A localhost SSH tunnel can lead to a different computer's GPU.
+        # Always inspect ComfyUI's device rather than the helper's laptop.
+        if time.time() - self._server_memory[0] > 60:
+            try:
+                stats = request_json(self.url + "/system_stats", timeout=3)
+                devices = stats.get("devices", [])
+                memory = max(
+                    (float(d.get("vram_total", 0)) / 2**30 for d in devices),
+                    default=0,
+                )
+                if not math.isfinite(memory) or memory < 0:
+                    raise ValueError("Invalid GPU memory reported by ComfyUI")
+                self._server_memory = (time.time(), memory)
+            except Exception as e:
+                raise RuntimeError(
+                    "Cannot verify the image server's GPU memory. Check ComfyUI and the SSH tunnel: "
+                    + str(e)
+                ) from e
+        return self._server_memory[1]
 
     def template(self):
         path = self.config.get("comfyWorkflow")
@@ -628,9 +653,13 @@ class ComfyImageProvider(ImageProvider):
         refs = r.get("referenceImages", [])
         if r.get("operation") == "edit":
             refs = [r["sourceImage"]] + refs
-        for index, ref in enumerate(
-            refs[: self.getCapabilities().get("maxReferenceImages", 0)]
-        ):
+        if len(refs) > self.getCapabilities().get("maxReferenceImages", 0):
+            raise ValueError("Too many references for this ComfyUI workflow, including the edit source. No character references were silently dropped.")
+        for index in range(len(refs)):
+            if not t["bindings"].get("reference" + str(index)):
+                raise ValueError(f"ComfyUI workflow has no binding for reference {index + 1}. Configure character references before generating.")
+        for index, ref in enumerate(refs):
+            checkpoint(0, s["steps"], "Uploading character references")
             raw = base64.b64decode(ref.split(",", 1)[-1])
             boundary = "qt-" + secrets.token_hex(8)
             name = "qt-" + secrets.token_hex(8) + ".png"
@@ -749,9 +778,35 @@ def format_prompt(project, shot, provider):
     return prompt, negative
 
 
-def select_references(project, shot, store, provider):
+def reference_prompt(project, shot, metadata, operation="generate"):
+    """Name reference roles without locking a character to old reference clothing."""
+    chapter = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
+    people = {c["id"]: c for c in project["characters"] + chapter["people"]}
+    appearances = {c["id"]: c.get("appearanceState", {}) for c in shot["characters"]}
+    notes = []
+    offset = 1 if operation == "edit" else 0
+    if offset:
+        notes.append("Image 1 is the shot to edit. Preserve its unaffected people, objects and composition.")
+    for index, ref in enumerate(metadata, 1 + offset):
+        if ref.get("characterId"):
+            person = people.get(ref["characterId"], {})
+            notes.append(
+                f'Use image {index} as the identity reference for {person.get("name", ref["characterId"])}. '
+                "Preserve face and permanent traits. Current appearance overrides reference clothing: "
+                + json.dumps(appearances.get(ref["characterId"], {}), ensure_ascii=False) + "."
+            )
+        elif ref.get("locationId"):
+            notes.append(f"Use image {index} for the location architecture and palette, not character identity.")
+        elif ref.get("referenceType") == "style":
+            notes.append(f"Use image {index} for visual style only, not its characters or events.")
+        else:
+            notes.append(f"Use image {index} only for its user-selected reference role.")
+    return " ".join(notes)
+
+
+def select_references(project, shot, store, provider, reserved_slots=0):
     caps = provider.getCapabilities()
-    maximum = caps.get("maxReferenceImages", 0)
+    maximum = max(0, caps.get("maxReferenceImages", 0) - reserved_slots)
     refs = []
     metadata = []
     if shot.get("manual", {}).get("referenceImages"):
