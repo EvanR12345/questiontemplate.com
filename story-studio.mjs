@@ -562,7 +562,7 @@ function settings() {
       ["comfyui", "ComfyUI · local or cloud through SSH"],
     ],
     i.provider,
-  )}</select></label><label>Image model<select id="settingImageModel">${options(models, i.model)}</select></label><label>Workflow<select id="settingImageWorkflow">${options(selected?.workflow || [i.workflow], i.workflow)}</select></label><label>SD reference strength<input ${i.provider === "native-flux" ? "disabled" : ""} id="settingReferenceStrength" type="number" min="0" max="1" step=".05" value="${i.referenceStrength}"></label></div><p class="muted">${selected?.installed ? "Installed" : "Unavailable: configure this local backend before generating."} ${selected?.validated === false ? "This native configuration has not passed laptop validation yet." : ""} ${escape(selected?.capabilities?.referenceLimitations || "")}</p><button id="showModelNotes">Model evaluation and diagnosis</button></div>
+  )}</select></label><label>Image model<select id="settingImageModel">${options(models, i.model)}</select></label><label>Workflow<select id="settingImageWorkflow">${options(selected?.workflow || [i.workflow], i.workflow)}</select></label><label>SD reference strength<input ${i.provider === "native-flux" ? "disabled" : ""} id="settingReferenceStrength" type="number" min="0" max="1" step=".05" value="${i.referenceStrength}"></label></div><p class="muted">${selected?.installed ? "Installed" : "Unavailable: configure this local backend before generating."} ${selected?.validated === false ? "This native configuration has not passed laptop validation yet." : ""} ${escape(selected?.capabilities?.referenceLimitations || "")}</p><button id="showModelNotes">Model evaluation and diagnosis</button> <button id="connectCloudImages">Connect Qwen cloud images</button></div>
   <div class="section-box"><h3>Voice</h3><div class="two-col"><label>Existing Kokoro voice<select id="settingVoice">${options(["am_michael", "af_heart", "af_bella", "af_nicole", "am_fenrir", "am_puck", "bm_george", "bf_emma"], s.voice)}</select></label><label>Speaking speed<input id="settingSpeed" type="number" min=".5" max="2" step=".1" value="${s.speed}"></label></div></div>
   <div class="section-box"><h3>Optional intro</h3><label class="inline"><input id="introEnabled" type="checkbox" ${project.intro.enabled ? "checked" : ""}>Enable intro</label><div class="two-col"><label>Duration: <span id="introDurationValue">${project.intro.duration}</span> seconds<input id="introDuration" type="range" min="10" max="20" step="1" value="${project.intro.duration}"></label><label>Placement<select id="introPlacement">${options(
     [
@@ -584,6 +584,8 @@ function settings() {
       ["512x512", "512 × 512 · SD fallback"],
       ["768x512", "768 × 512"],
       ["512x768", "512 × 768"],
+      ["1344x768", "1344 × 768 · cloud landscape"],
+      ["1024x1024", "1024 × 1024 · cloud square"],
     ],
     i.width + "x" + i.height,
   )}</select></label><label>Steps<input id="settingSteps" type="number" min="1" max="50" value="${i.steps}"></label><label>Guidance<input id="settingGuidance" type="number" min="1" max="14" step=".5" value="${i.guidance}"></label><label>Sampler<input id="settingSampler" value="${escape(i.sampler)}"></label><label>Scheduler<input id="settingScheduler" value="${escape(i.scheduler)}"></label></div><label class="inline"><input id="settingVision" type="checkbox" ${s.visionQC ? "checked" : ""}>Vision QC (Luna vision or local Qwen projector)</label><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""}>Automatic repair within retry limit</label><label class="inline"><input id="settingFallback" type="checkbox" ${i.fallbackEnabled ? "checked" : ""}>Enable explicit SD 1.5 fallback when the chosen provider fails</label><button id="editCustomLayout">Edit custom pacing targets</button> <button id="editImageSettings">Edit conditioning / LoRA / full generation settings</button> <button id="configureCloud">Cloud setup · Luna + Runpod</button> <button id="configureRuntimes">Configure local runtime paths</button><p class="muted">Unsupported settings are rejected before jobs are queued. No silent model substitution.</p></details>
@@ -1553,6 +1555,13 @@ function wireSettings() {
         true,
       ),
     );
+  $("#connectCloudImages").onclick = () => action(async () => {
+    const result = await api("cloud-image-connect", {});
+    health = result.health;
+    await patch("project", project.id, {settings: {...project.settings,
+      image: {...project.settings.image, ...result.settings, fallbackEnabled: false}}}, true);
+    note("Qwen cloud images connected. Existing shots and completed videos are preserved. New shots use character references automatically; change an existing shot in its editor to regenerate it with Qwen.");
+  });
   $("#configureCloud").onclick = () => {
     const ready = health?.directorProviders?.["openai-luna"]?.installed;
     formDialog(

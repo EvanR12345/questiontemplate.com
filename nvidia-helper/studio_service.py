@@ -276,6 +276,15 @@ class StudioService:
                 saved = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
                 saved.update(secret_updates)
                 temporary = path.with_suffix(".json.tmp")
+                temporary.touch(exist_ok=True)
+                if os.name == "nt":
+                    import subprocess
+                    owner = subprocess.check_output(["whoami"], text=True, creationflags=subprocess.CREATE_NO_WINDOW).strip()
+                    subprocess.run(["icacls", str(temporary), "/inheritance:r", "/grant:r", owner + ":(F)",
+                                    "NT AUTHORITY\\SYSTEM:(F)", "BUILTIN\\Administrators:(F)"],
+                                   check=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                else:
+                    temporary.chmod(0o600)
                 temporary.write_text(json.dumps(saved), encoding="utf-8")
                 temporary.replace(path)
                 if "openaiApiKey" in saved:
@@ -297,7 +306,7 @@ class StudioService:
             rows = [
                 dict(r)
                 for r in self.db.execute(
-                    "SELECT id,project,chapter,shot,kind,status,message,priority,created,started,seconds,attempt,seed FROM jobs WHERE status IN ('QUEUED','RUNNING') OR id IN (SELECT id FROM jobs ORDER BY created DESC LIMIT 1100) ORDER BY created DESC"
+                    "SELECT id,project,chapter,shot,kind,status,message,priority,created,started,seconds,attempt,seed,payload FROM jobs WHERE status IN ('QUEUED','RUNNING') OR id IN (SELECT id FROM jobs ORDER BY created DESC LIMIT 1100) ORDER BY created DESC"
                 )
             ]
             counts = {
@@ -317,11 +326,21 @@ class StudioService:
                 if group["kind"] == "image":
                     project["image"][group["status"]] = group["total"]
             averages = {}
-            for kind in {j["kind"] for j in rows}:
+            for row in rows:
+                payload = json.loads(row.pop("payload"))
+                shot = payload.get("shotSnapshot", {})
+                settings = shot.get("generationSettings", {})
+                row["timingProfile"] = (
+                    json.dumps([row["kind"], shot.get("imageProvider"), shot.get("imageModel"), shot.get("workflow"),
+                        settings.get("width"), settings.get("height"), settings.get("steps"),
+                        payload.get("operation", "generate"), payload.get("qcTimingProfile", "legacy")])
+                    if row["kind"] == "image" else row["kind"]
+                )
+            for kind in {j["timingProfile"] for j in rows}:
                 durations = [
                     r["seconds"]
                     for r in rows
-                    if r["kind"] == kind
+                    if r["timingProfile"] == kind
                     and r["status"] == "COMPLETE"
                     and r["seconds"] > 0
                 ][:30]
@@ -331,7 +350,7 @@ class StudioService:
             estimate = sum(
                 max(
                     0,
-                    averages.get(r["kind"], 0)
+                    averages.get(r["timingProfile"], 0)
                     - (
                         time.time() - r["started"]
                         if r["status"] == "RUNNING" and r["started"]
@@ -348,7 +367,7 @@ class StudioService:
                 "etaSeconds": (
                     round(estimate)
                     if all(
-                        r["kind"] in averages and r["kind"] != "produce-story"
+                        r["timingProfile"] in averages and r["kind"] != "produce-story"
                         for r in pending
                     )
                     else None
@@ -440,7 +459,7 @@ class StudioService:
                     uid("job-"),
                     sid,
                     seed,
-                    options | ({"shotSnapshot": copy.deepcopy(shot)} if shot else {}),
+                    options | ({"shotSnapshot": copy.deepcopy(shot), "qcTimingProfile": [p["settings"]["visionQC"], p["settings"]["generationMode"], p["settings"]["director"]]} if shot else {}),
                 )
             )
         with self.cv:
@@ -1642,7 +1661,8 @@ class StudioService:
                 {
                     "path": name,
                     "kind": options.get("referenceKind", "face"),
-                    "metadata": result | {"prompt": prompt, "settings": settings},
+                    "metadata": result | {"prompt": prompt, "requestedSettings": settings,
+                                           "settings": result.get("settings", settings)},
                 }
             )
 
@@ -2742,6 +2762,7 @@ class StudioService:
             "referenceImages": references,
             "settings": settings,
             "operation": options.get("operation", "generate"),
+            "workflow": shot["workflow"],
         }
         if provider.id in ("native-flux", "comfyui") and (
             references or request["operation"] == "edit"
@@ -2822,23 +2843,27 @@ class StudioService:
             relative = str(path.relative_to(self.store.folder(p["id"]))).replace(
                 "\\", "/"
             )
+            effective_settings = result.get("settings", settings)
             metadata = {
                 "provider": provider.id,
-                "model": settings["model"],
-                "workflow": actual_workflow,
-                "sampler": settings.get("sampler"),
-                "scheduler": settings.get("scheduler"),
+                "model": result.get("model", settings["model"]),
+                "workflow": result.get("workflow", actual_workflow),
+                "requestedModel": settings["model"],
+                "requestedWorkflow": actual_workflow,
+                "sampler": effective_settings.get("sampler"),
+                "scheduler": effective_settings.get("scheduler"),
                 "seed": seed,
                 "resolution": [settings["width"], settings["height"]],
-                "loras": settings.get("loras", []),
+                "loras": effective_settings.get("loras", []),
                 "controlnets": settings.get("controlnets", []),
                 "ipAdapter": settings.get("ipAdapter", {}),
-                "denoisingStrength": settings.get("denoisingStrength"),
+                "denoisingStrength": effective_settings.get("denoisingStrength"),
                 "referenceImages": ref_metadata,
                 "sourceImagePath": shot.get("sourceImagePath"),
                 "prompt": request["prompt"],
                 "negativePrompt": request["negativePrompt"],
-                "settings": settings,
+                "settings": effective_settings,
+                "requestedSettings": settings,
                 "result": result,
                 "time": time.time(),
                 "attempt": attempt,

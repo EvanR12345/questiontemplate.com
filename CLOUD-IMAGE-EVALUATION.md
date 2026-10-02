@@ -62,7 +62,7 @@ Observed October 2, 2026 console quotes for 71 GB:
 | High-performance network volume | $9.94 in the sampled premium regions | Up to 3x throughput / 4x IOPS are Runpod's parallel-storage benchmarks, not image-generation speedups. The tier may reduce loading/transfer waits; profile disk bottlenecks before paying the premium. |
 | Global volume, beta | $6.39 for 71 GB stored, plus requests | Elastic and region-independent, optimized for read-heavy models. Limited file-locking/rename semantics make it unsuitable as an untested replacement for a transactional project store. |
 
-Check the current console quote before creating any resource. Include GPU, container/working disk, retained disk while stopped, archive storage, model transfers, loading, retries, and output transfers in the cost comparison. No paid GPU has been deployed by this evaluation.
+Check the current console quote before creating any resource. Include GPU, container/working disk, retained disk while stopped, archive storage, model transfers, loading, retries, and output transfers in the cost comparison. A single 96 GB RTX PRO 6000 was deployed for actual validation at the observed $2.11/hour checkout, using the same account's 71 GB US-NE-1 volume. Benchmark results must distinguish real inference from connection checks.
 
 The live catalog during this inspection showed RTX 5090 out of capacity under the checked filters. Available alternatives included 48 GB RTX 6000 Ada/L40S and 96 GB RTX PRO 6000. Availability and quoted host allocations change; these are alternatives to evaluate, capacity candidates, not a speed benchmark. Do not treat a two-GPU 24 GB offer as a single 48 GB GPU.
 

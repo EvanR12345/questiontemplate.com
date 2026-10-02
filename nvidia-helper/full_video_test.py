@@ -1,6 +1,7 @@
 """Exercise unattended orchestration with deterministic stage adapters."""
 
 import copy
+import json
 import tempfile
 import threading
 import unittest
@@ -191,6 +192,19 @@ class FullVideoTest(unittest.TestCase):
         calls = self.service.calls.copy()
         self.service.produce_story(self.project["id"], {})
         self.assertEqual(self.service.calls, calls)
+
+    def test_queue_eta_does_not_reuse_laptop_timing_for_cloud_workflow(self):
+        base = {"imageProvider": "existing", "imageModel": "sd15", "workflow": "text-to-image", "generationSettings": {"width": 512, "height": 512, "steps": 20}}
+        cloud = base | {"imageProvider": "comfyui", "imageModel": "qwen-studio-auto", "workflow": "qwen-studio-auto"}
+        for identity, snapshot, state, seconds in [("old", base, "COMPLETE", 90), ("new", cloud, "QUEUED", 0)]:
+            self.service.db.execute("INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (identity, self.project["id"], None, identity, "image", json.dumps({"shotSnapshot": snapshot}), state, "", 0, 0, 0, seconds, 0, 123))
+        self.service.db.commit()
+        self.assertIsNone(self.service.snapshot()["etaSeconds"])
+        self.service.db.execute("INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("cloud-complete", self.project["id"], None, "done", "image", json.dumps({"shotSnapshot": cloud}), "COMPLETE", "", 0, 0, 0, 12, 0, 123))
+        self.service.db.commit()
+        self.assertEqual(self.service.snapshot()["etaSeconds"], 12)
 
     def test_retry_preserves_completed_chapter_and_failed_image_seed(self):
         self.service.fail_chapter = 2

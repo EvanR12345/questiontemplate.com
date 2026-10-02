@@ -57,6 +57,12 @@ Model references: [FLUX 4B](https://huggingface.co/black-forest-labs/FLUX.2-klei
 
 ## Costs and shutdown
 
+The integrated Qwen workflow bundle uses Qwen-Image-2512 for new images and Qwen-Image-Edit-2511 for character references and repairs. Both share the encoder and VAE. The persistent model set is about 54 GB including compatible 4-step and 8-step Lightning adapters. No duplicate Torch installation is needed on the laptop.
+
+With the private ComfyUI SSH tunnel running, select **Settings → Connect Qwen cloud images**. The helper validates installed nodes, model files, and remote GPU memory. New shots use the explicit automatic workflow; Advanced Settings also offers separate fast and quality workflows. Existing completed shots retain their own model until individually changed. The exact resolved model, graph, adapter, steps and reference order are saved with each output.
+
+The October 2 deployment selected one available RTX PRO 6000 Blackwell Server Edition with 96 GB VRAM in US-NE-1. Its checkout was $2.09/hour for GPU plus $0.021/hour container disk, approximately **$2.11/hour**, and the 71 GB persistent network volume was **$4.97/month**. These are observed quotes, not guaranteed future rates. Both resources use the same account. Only SSH port 22 is exposed; ComfyUI connects through localhost forwarding.
+
 Rates checked October 2, 2026: Runpod lists a 5090 at **US$0.99/hour**, and standard network storage at **US$0.07/GB/month**: **US$3.50/month for 50 GB**. Verify live rates in the console; availability, taxes and extra storage can change the total. These rates do not predict generation duration.
 
 Start with a small benchmark rather than enqueueing 800 images immediately. Stop the GPU after the outputs have downloaded and the worker is idle. GPU rental stops when the pod is stopped, but retained storage continues billing. Do not delete the network volume while it holds needed assets.

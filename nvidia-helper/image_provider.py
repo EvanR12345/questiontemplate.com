@@ -1,6 +1,6 @@
 """Image backends are replaceable; no story facts or timeline logic lives here."""
 
-import base64, copy, io, json, math, secrets, subprocess, time, urllib.request
+import base64, copy, hashlib, io, json, math, secrets, subprocess, time, urllib.request
 from pathlib import Path
 from PIL import Image, ImageStat
 from director_provider import local_url, request_json
@@ -530,6 +530,8 @@ class ComfyImageProvider(ImageProvider):
         self.config = config
         self.url = local_url(config.get("comfyEndpoint", "http://127.0.0.1:8188"))
         self._server_memory = (0, None)
+        self._health = (0, None)
+        self._uploads = {}
 
     def available_vram_gb(self):
         # A localhost SSH tunnel can lead to a different computer's GPU.
@@ -588,17 +590,51 @@ class ComfyImageProvider(ImageProvider):
                 "hardwareRequirements": {"configuredWorkflowRequired": True},
             }
 
+    def resolve_template(self, request, settings):
+        root = self.template()
+        variants = root.get("variants")
+        if not variants:
+            return root, settings
+        model = settings.get("model", root["model"])
+        if model not in {root["model"], *(v["model"] for v in variants)}:
+            raise ValueError("Selected Comfy model is not installed in this workflow bundle.")
+        workflow = request.get("workflow") or settings.get("workflow") or root["name"]
+        references = bool(request.get("referenceImages")) or request.get("operation") == "edit"
+        if workflow == root["name"]:
+            kind = "reference" if references else "text"
+            candidates = [v for v in variants if v.get("kind") == kind and v.get("default")]
+            if model != root["model"]:
+                candidates = [v for v in candidates if v["model"] == model]
+        else:
+            candidates = [v for v in variants if v["name"] == workflow and model in (root["model"], v["model"])]
+        if len(candidates) != 1:
+            raise ValueError("Selected model/workflow is incompatible with the supplied references. Select the configured automatic workflow or a compatible explicit workflow.")
+        template = candidates[0]
+        if settings.get("loras") and settings["loras"] != template.get("presetSettings", {}).get("loras"):
+            raise ValueError("Custom LoRA settings do not match this exported workflow. Configure a workflow containing the requested adapters before generating.")
+        if template.get("kind") == "reference" and not references:
+            raise ValueError("Qwen Image Edit needs a source or character reference image. Use Qwen Image text-to-image for a new reference sheet.")
+        if template.get("kind") == "text" and references:
+            raise ValueError("This text-to-image workflow cannot condition on character references. Select a reference workflow; no references were discarded.")
+        # Lightning adapters are trained for a fixed step count and CFG.
+        # Their exact preset settings are stored with the resulting image.
+        return template, settings | template.get("presetSettings", {})
+
     def healthCheck(self):
         try:
             template = self.template()
-            nodes = request_json(self.url + "/object_info", timeout=2)
+            stamp = (self.config.get("comfyWorkflow"), Path(self.config["comfyWorkflow"]).stat().st_mtime_ns)
+            if self._health[1] and self._health[1][0] == stamp and time.time() - self._health[0] < 30:
+                return copy.deepcopy(self._health[1][1])
+            nodes = request_json(self.url + "/object_info", timeout=10)
+            templates = template.get("variants", [template])
             missing = [
                 v["class_type"]
-                for v in template["prompt"].values()
+                for t in templates for v in t["prompt"].values()
                 if v["class_type"] not in nodes
             ]
             missing_weights = []
-            for node in template["prompt"].values():
+            for node in (n for t in templates for n in t["prompt"].values()):
                 info = (
                     nodes.get(node["class_type"], {})
                     .get("input", {})
@@ -619,23 +655,26 @@ class ComfyImageProvider(ImageProvider):
                         and node["inputs"][field] not in choices
                     ):
                         missing_weights.append(node["inputs"][field])
-            return {
+            result = {
                 "installed": not missing and not missing_weights,
-                "models": [template["model"]],
-                "workflow": [template["name"]],
+                "models": list(dict.fromkeys([template["model"]] + [t["model"] for t in templates])),
+                "workflow": list(dict.fromkeys([template["name"]] + [t["name"] for t in templates])),
                 "missingNodes": missing,
                 "missingWeights": missing_weights,
             }
+            if result["installed"]:
+                self._health = (time.time(), (stamp, result))
+            return result
         except Exception as e:
             return {"installed": False, "error": str(e)}
 
     def generateImage(self, r, checkpoint):
         s = self.validateSettings(r["settings"])
-        t = self.template()
+        t, s = self.resolve_template(r, s)
         health = self.healthCheck()
         if not health["installed"]:
             raise RuntimeError("ComfyUI workflow unavailable: " + str(health))
-        if s.get("model") != t["model"]:
+        if not self.template().get("variants") and s.get("model") != t["model"]:
             raise ValueError(
                 "Selected Comfy model does not match the configured workflow."
             )
@@ -658,9 +697,17 @@ class ComfyImageProvider(ImageProvider):
         for index in range(len(refs)):
             if not t["bindings"].get("reference" + str(index)):
                 raise ValueError(f"ComfyUI workflow has no binding for reference {index + 1}. Configure character references before generating.")
+        for index, node in t.get("referenceNodes", {}).items():
+            if int(index) >= len(refs):
+                prompt.pop(str(node), None)
+                for value in prompt.values():
+                    value["inputs"] = {key: field for key, field in value["inputs"].items()
+                        if not (isinstance(field, list) and field and str(field[0]) == str(node))}
         for index, ref in enumerate(refs):
             checkpoint(0, s["steps"], "Uploading character references")
             raw = base64.b64decode(ref.split(",", 1)[-1])
+            fingerprint = hashlib.sha256(raw).hexdigest()
+            uploaded_name = self._uploads.get(fingerprint)
             boundary = "qt-" + secrets.token_hex(8)
             name = "qt-" + secrets.token_hex(8) + ".png"
             body = (
@@ -673,10 +720,13 @@ class ComfyImageProvider(ImageProvider):
                 data=body,
                 headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
             )
-            with urllib.request.urlopen(req) as response:
-                uploaded = json.load(response)
+            if not uploaded_name:
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    uploaded = json.load(response)
+                uploaded_name = uploaded["name"]
+                self._uploads[fingerprint] = uploaded_name
             for node, field in t["bindings"].get("reference" + str(index), []):
-                prompt[str(node)]["inputs"][field] = uploaded["name"]
+                prompt[str(node)]["inputs"][field] = uploaded_name
         job = request_json(
             self.url + "/prompt", {"prompt": prompt, "client_id": secrets.token_hex(16)}
         )

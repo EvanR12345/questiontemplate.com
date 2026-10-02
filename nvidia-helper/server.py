@@ -270,6 +270,17 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             if path=='/studio/cloud-test':
                 from openai_director import OpenAIDirector
                 return OpenAIDirector(studio.config,studio.store.root).verify_key()
+            if path=='/studio/cloud-image-connect':
+                from qwen_workflow import bundle
+                if studio.current:raise ValueError('Finish or cancel the active job before changing image workflows.')
+                workflow=Path(__file__).resolve().parent/'runtime'/'qwen-studio-workflows.json'
+                workflow.parent.mkdir(exist_ok=True)
+                workflow.write_text(json.dumps(bundle(),indent=2),encoding='utf-8')
+                health=studio.configure({'comfyWorkflow':str(workflow)})
+                provider=studio.providers['comfyui']
+                if not health['providers']['comfyui']['installed']:raise ValueError('Cloud workflow unavailable: '+str(health['providers']['comfyui']))
+                settings=provider.validateSettings(provider.getRecommendedSettings()|{'model':'qwen-studio-auto'})
+                return {'health':health,'settings':settings|{'provider':'comfyui','workflow':'qwen-studio-auto'}}
             if path=='/studio/control':return studio.control(body['action'],body.get('job'))
             if path=='/studio/jobs':return studio.enqueue(body['project'],body.get('chapter'),body['kind'],body.get('shots'),body.get('options'))
             pid=body['project']
