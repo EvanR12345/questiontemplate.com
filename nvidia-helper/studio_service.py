@@ -1730,13 +1730,14 @@ class StudioService:
                         ]
                         if len(matches) == 1:
                             s["sceneIndex"] = matches[0]
+                    normalized_details = []
                     for si, rs in enumerate(ranges):
-                        self.trim_shot_overlaps(
+                        items = self.trim_shot_overlaps(
                             [s for s in details if s["sceneIndex"] == si]
                         )
-                        self.validate_shot_ranges(
-                            [s for s in details if s["sceneIndex"] == si], rs
-                        )
+                        self.validate_shot_ranges(items, rs)
+                        normalized_details.extend(items)
+                    details = normalized_details
                     break
                 except ValueError as error:
                     if attempt == 2:
@@ -2102,6 +2103,8 @@ class StudioService:
                         "status": "READY_FOR_IMAGES",
                         "retryCount": 0,
                         "generationError": "",
+                        "planningRepairs": ds.get("timingRepair", {}),
+                        "alternateDirections": ds.get("alternateDirections", []),
                         "history": [],
                         "origin": "AI",
                         "manual": {},
@@ -2358,6 +2361,35 @@ class StudioService:
             raise ValueError("Director shots do not cover the scene narration.")
 
     def trim_shot_overlaps(self, items):
+        # The director can propose several camera views for one sentence range.
+        # Assign those views consecutive sentences, whose real TTS timings are
+        # already known; do not duplicate narration or divide audio evenly.
+        import itertools
+
+        normalized = []
+        for (start, end), views in itertools.groupby(
+            items, key=lambda s: (s["startSentence"], s["endSentence"])
+        ):
+            views = list(views)
+            length = end - start + 1
+            if len(views) > 1 and length > 0:
+                count = min(len(views), length)
+                for index, view in enumerate(views[:count]):
+                    view["startSentence"] = start + length * index // count
+                    view["endSentence"] = start + length * (index + 1) // count - 1
+                    view["timingRepair"] = {
+                        "originalStartSentence": start,
+                        "originalEndSentence": end,
+                        "reason": "Assigned overlapping camera views consecutive narration sentences",
+                    }
+                if len(views) > count:
+                    views[count - 1]["alternateDirections"] = [
+                        dict(v) for v in views[count:]
+                    ]
+                normalized.extend(views[:count])
+            else:
+                normalized.extend(views)
+        items = normalized
         for previous, current in zip(items, items[1:]):
             if (
                 previous["startSentence"]
@@ -2369,6 +2401,7 @@ class StudioService:
                     "reason": "Trimmed overlap at the next director-selected shot boundary",
                 }
                 previous["endSentence"] = current["startSentence"] - 1
+        return items
 
     def generate(self, p, chid, sid, seed, options):
         self.director.stop()

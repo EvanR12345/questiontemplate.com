@@ -12,6 +12,39 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_same_sentence_pair_camera_views_get_real_sentence_boundaries(self):
+        from studio_service import StudioService
+
+        service = object.__new__(StudioService)
+        shots = [
+            {"startSentence": 6, "endSentence": 7, "action": "Bodies fall"},
+            {"startSentence": 6, "endSentence": 7, "action": "Close-up on coats"},
+        ]
+        repaired = service.trim_shot_overlaps(shots)
+        service.validate_shot_ranges(repaired, {"startSentence": 6, "endSentence": 7})
+        self.assertEqual(
+            [(s["startSentence"], s["endSentence"]) for s in repaired], [(6, 6), (7, 7)]
+        )
+        self.assertEqual(
+            [s["action"] for s in repaired], ["Bodies fall", "Close-up on coats"]
+        )
+
+    def test_duplicate_views_of_one_sentence_keep_alternative_without_duplicated_audio(
+        self,
+    ):
+        from studio_service import StudioService
+
+        service = object.__new__(StudioService)
+        repaired = service.trim_shot_overlaps(
+            [
+                {"startSentence": 0, "endSentence": 0, "action": "Wide"},
+                {"startSentence": 0, "endSentence": 0, "action": "Close-up"},
+            ]
+        )
+        service.validate_shot_ranges(repaired, {"startSentence": 0, "endSentence": 0})
+        self.assertEqual(len(repaired), 1)
+        self.assertEqual(repaired[0]["alternateDirections"][0]["action"], "Close-up")
+
     def test_casting_input_groups_preserve_all_chapter_text(self):
         text = "A named character speaks.\n" * 1000
         groups = list(text_groups(text, 900))
