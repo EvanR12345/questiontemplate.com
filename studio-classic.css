@@ -6,6 +6,7 @@
   --accent: #bcaeff;
   font: inherit;
 }
+.production[hidden] { display: none; }
 .production-switch { margin: 10px 0 16px; }
 .production-switch button,
 .production button { border-radius: 10px; background: var(--panel2); }
@@ -42,7 +43,8 @@
   background: var(--panel); border: 1px solid var(--edge); border-radius: 14px;
   padding: 14px 18px; margin: 0 0 18px; gap: 18px;
 }
-.production .full-video-bar p { margin: 3px 0; max-width: 65ch; }
+.production .full-video-bar p { margin: 3px 0; max-width: 100ch; }
+.production .full-video-bar details { padding: 7px 0 0; }
 .production #fullVideoStatus { color: var(--accent); }
 .production .studio-grid {
   grid-template-columns: minmax(0, 1fr) 230px;

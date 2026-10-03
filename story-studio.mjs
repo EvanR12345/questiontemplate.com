@@ -732,10 +732,11 @@ function renderQueue() {
       );
     }
     if (run.timings?.length) {
+      let costSummary = "";
       if (run.costs) {
         const gpu = Number.isFinite(run.costs.gpuWindowEstimatedUSD)
           ? '$' + run.costs.gpuWindowEstimatedUSD.toFixed(4) : 'not recorded';
-        runStatus.insertAdjacentHTML('beforeend', `<p class="muted">Estimated run cost: OpenAI $${Number(run.costs.apiEstimatedUSD || 0).toFixed(4)} · GPU window ${gpu}. Storage and account billing are reported separately.</p>`);
+        costSummary = `<p class="muted">Estimated run cost: OpenAI $${Number(run.costs.apiEstimatedUSD || 0).toFixed(4)} · GPU window ${gpu}. Storage and account billing are reported separately.</p>`;
       }
       const entries = run.timings.filter((t) => !t.detail),
         totals = {};
@@ -743,7 +744,7 @@ function renderQueue() {
         totals[entry.stage] = (totals[entry.stage] || 0) + entry.seconds;
       runStatus.insertAdjacentHTML(
         "beforeend",
-        `<details data-ui="production-times"><summary>Measured production times</summary><p class="muted">Recorded wall time, including loading, retries and pauses. Reused assets take only their validation time.</p><table><thead><tr><th>Stage</th><th>Time</th></tr></thead><tbody>${Object.entries(
+        `<details data-ui="production-times"><summary>Costs and measured times</summary>${costSummary}<p class="muted">Recorded wall time, including loading, retries and pauses. Reused assets take only their validation time.</p><table><thead><tr><th>Stage</th><th>Time</th></tr></thead><tbody>${Object.entries(
           totals,
         )
           .map(
