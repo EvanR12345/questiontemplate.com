@@ -32,6 +32,12 @@ class MotionTest(unittest.TestCase):
         self.assertIn("1.06-0.06*on/47", zoom_out)
         self.assertIn("pad=", renderer.motion(self.shot(), video | {"imageFit": "contain"}, 48))
 
+    def test_prose_director_motion_receives_valid_gentle_fallback(self):
+        video={'motionMode':'gentle'}
+        self.assertEqual(effective_motion(self.shot(motion='A slow dramatic reaction'),video),'slow zoom in')
+        self.assertEqual(effective_motion(self.shot('close-up',motion='A held moment of shock'),video),'slow zoom out')
+        self.assertEqual(effective_motion(self.shot(motion='Unsupported action',manual={'motion':True}),video),'static')
+
 
 class IntroTest(unittest.TestCase):
     def test_thirty_second_intro_moves_and_never_cuts_long_narration(self):

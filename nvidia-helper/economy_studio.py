@@ -8,6 +8,7 @@ from studio_data import digest, get_chapter, get_shot, uid
 from director_provider import obj, arr, STR, short_text
 from image_provider import select_references, reference_prompt
 from panel_batch import panel_prompt, split_panels, validate_groups
+from studio_render import SUPPORTED_MOTIONS
 
 def pending_panels(shots, folder):
     """Resume partial canvases without replacing an already saved shot."""
@@ -54,7 +55,7 @@ def restyle_story(service, pid):
             current = shots[offset:offset+20]
             ids = [s['id'] for s in current]
             schema = obj({'shots':arr(obj({'id':{'type':'string','enum':ids},'action':short_text(300),
-                'expression':short_text(120),'pose':short_text(180),'lighting':short_text(160),'motion':short_text(60),
+                'expression':short_text(120),'pose':short_text(180),'lighting':short_text(160),'motion':{'type':'string','enum':sorted(SUPPORTED_MOTIONS)},
                 'transition':{'type':'string','enum':['cut','crossfade']},
                 'camera':obj({'shot':short_text(60),'angle':short_text(60),'composition':short_text(220)}),
                 'prompt':short_text(1000)})),

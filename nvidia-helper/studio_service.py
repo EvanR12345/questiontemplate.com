@@ -1040,6 +1040,11 @@ class StudioService:
             ch = get_chapter(p, chid)
             shots = [s for scene in ch["scenes"] for s in scene["shots"]]
             for shot_index, shot in enumerate(shots):
+                # Cached shots need no per-shot progress writes to the entire
+                # durable project. One chapter update below records completion.
+                if (shot.get('imagePath') and shot['status'] in ('COMPLETE','PASSED')
+                    and not shot.get('generationStale') and self.store.asset(pid,shot['imagePath']).is_file()):
+                    continue
                 self.production_progress(
                     pid,
                     f"Chapter {index+1} / {len(chapters)} · image {shot_index+1} / {len(shots)}",
@@ -1087,6 +1092,8 @@ class StudioService:
                 pid,
                 f"Chapter {index+1} / {len(chapters)} · render chapter",
                 shotId=None,
+                completedImages=len(shots),
+                totalImages=len(shots),
             )
             self.unload_models()
             self.providers["existing"].unload()

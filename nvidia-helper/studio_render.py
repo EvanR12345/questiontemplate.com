@@ -4,10 +4,13 @@ import json, math, subprocess, time, wave
 from pathlib import Path
 from studio_data import digest
 
+SUPPORTED_MOTIONS = {'static','slow zoom in','slow zoom out','pan left','pan right','pan up','pan down'}
 
 def effective_motion(shot, video):
     """Project motion adds movement to AI holds, preserving explicit shot edits."""
-    motion = shot.get("motion", "static").lower()
+    motion = str(shot.get("motion", "static")).strip().lower()
+    if motion not in SUPPORTED_MOTIONS:
+        motion = 'static'
     mode = video.get("motionMode", "director")
     if mode == "static":
         return "static"
@@ -186,7 +189,7 @@ class VideoRenderer:
         folder = self.store.folder(p["id"]) / ch["id"]
         folder.mkdir(exist_ok=True)
         signature = digest(
-            {"rendererVersion": 3, "shots": shots, "audio": ch["audio"], "video": v}
+            {"rendererVersion": 4, "shots": shots, "audio": ch["audio"], "video": v}
         )
         old = ch.get("render", {}).get("narrationRender", ch.get("render", {}))
         if (
@@ -201,7 +204,7 @@ class VideoRenderer:
             # Round absolute boundaries, avoiding accumulated per-shot rounding drift.
             frames = max(1, round(s["end"] * fps) - round(s["start"] * fps))
             duration = frames / fps
-            name = "clip-" + digest({"rendererVersion": 3, "shot": s, "video": v})[:24] + ".mp4"
+            name = "clip-" + digest({"rendererVersion": 4, "shot": s, "video": v})[:24] + ".mp4"
             clip = folder / name
             if not clip.exists():
                 temporary = clip.with_suffix(".partial.mp4")
