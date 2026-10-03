@@ -154,6 +154,24 @@ class Harness(StudioService):
 
 
 class FullVideoTest(unittest.TestCase):
+    def test_project_level_jobs_are_deduplicated_with_null_chapter(self):
+        for _ in range(2):
+            self.service.enqueue(self.project['id'], None, 'intro-audio')
+        self.assertEqual(self.service.snapshot()['counts']['QUEUED'], 1)
+
+    def test_one_projects_status_sync_does_not_rewrite_older_projects(self):
+        other = self.service.store.save(new_project('Old project'))
+        self.service.enqueue(other['id'], other['chapters'][0]['id'], 'narration')
+        self.service.enqueue(self.project['id'], self.project['chapters'][0]['id'], 'narration')
+        original = self.service.store.mutate
+        touched = []
+        def track(pid, callback):
+            touched.append(pid)
+            return original(pid, callback)
+        self.service.store.mutate = track
+        self.service.sync_queue_states(self.project['id'])
+        self.assertEqual(touched, [self.project['id']])
+
     def test_saved_image_review_queues_without_image_backend_online(self):
         self.service.prepare_story(self.project['id'], {})
         saved = self.service.store.load(self.project['id'])

@@ -91,13 +91,14 @@ class StudioService:
         )
         self.thread.start()
 
-    def sync_queue_states(self):
+    def sync_queue_states(self, project_id=None):
         """Restore persistent item states without touching completed image assets."""
         with self.cv:
             rows = [
                 dict(r)
                 for r in self.db.execute(
-                    "SELECT project,chapter,shot,status FROM jobs ORDER BY created"
+                    "SELECT project,chapter,shot,status FROM jobs" + (' WHERE project=?' if project_id else '') + ' ORDER BY created',
+                    (project_id,) if project_id else (),
                 )
             ]
         latest = {(r["project"], r["chapter"], r["shot"]): r for r in rows}
@@ -490,7 +491,7 @@ class StudioService:
                 )
             for id, sid, seed, payload in planned:
                 exists = self.db.execute(
-                    "SELECT id FROM jobs WHERE project=? AND chapter=? AND kind=? AND shot IS ? AND status IN ('QUEUED','RUNNING')",
+                    "SELECT id FROM jobs WHERE project=? AND chapter IS ? AND kind=? AND shot IS ? AND status IN ('QUEUED','RUNNING')",
                     (pid, chapter, kind, sid),
                 ).fetchone()
                 if exists:
@@ -527,7 +528,7 @@ class StudioService:
                     s["status"] = "QUEUED"
 
             self.store.mutate(pid, mark)
-        self.sync_queue_states()
+        self.sync_queue_states(pid)
         return self.snapshot()
 
     def provider(self, id):
@@ -827,7 +828,7 @@ class StudioService:
                     self.current = None
                     self.cancel = False
                     self.cv.notify_all()
-                self.sync_queue_states()
+                self.sync_queue_states(job['project'])
 
     def production_progress(self, pid, stage, **details):
         """Persist the current stage alongside assets, including between restarts."""
