@@ -72,6 +72,26 @@ class CudaEngine:
         self.prepare(voice)
         return self.render(phonemes, voice, speed)
 
+    def synthesize_timed(self, phonemes, voice, speed):
+        """Same loaded voice, plus model durations for connected sentence timing."""
+        self.prepare(voice)
+        torch = self.torch
+        if not phonemes or any(c not in self.model.vocab for c in phonemes):
+            raise ValueError('Speech sounds do not match the loaded model.')
+        if len(phonemes) + 2 > min(280, self.model.context_length):
+            raise ValueError('Section exceeds the model limit. No audio was truncated.')
+        with torch.inference_mode():
+            output = self.model(phonemes, self.voices[voice][len(phonemes)-1], speed, return_output=True)
+        if not torch.isfinite(output.audio).all():
+            raise RuntimeError('Model returned invalid audio.')
+        durations = output.pred_dur
+        if durations is None or durations.numel() != len(phonemes) + 2:
+            raise RuntimeError('Voice did not return valid timing for connected narration.')
+        weights = durations.float().cpu().numpy()
+        weights[1] += weights[0]
+        weights[-2] += weights[-1]
+        return output.audio.float().cpu().numpy().astype('<f4', copy=False).tobytes(), weights[1:-1].tolist()
+
 
 from image_engine import ImageEngine
 from image_queue import ImageQueue

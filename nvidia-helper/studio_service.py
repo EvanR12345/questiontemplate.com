@@ -16,7 +16,7 @@ from image_provider import (
     data_url,
 )
 from studio_render import VideoRenderer
-from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, audio_segments, effect_pcm
+from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, FLOW_VERSION, audio_segments, effect_pcm, create_connected_audio
 
 
 class JobCancelled(Exception):
@@ -1364,6 +1364,9 @@ class StudioService:
                 "speed": p["settings"]["speed"],
                 "deliveryVersion": AUDIO_DELIVERY_VERSION,
                 "soundEffects": p['settings'].get('soundEffects', 'subtle'),
+                "narrationDelivery": p['settings'].get('narrationDelivery', 'standard'),
+                "emphasisPhrases": p['settings'].get('emphasisPhrases', []),
+                "flowVersion": FLOW_VERSION,
             }
         )
         if (
@@ -1383,6 +1386,8 @@ class StudioService:
             p["settings"]["speed"],
             folder / f"chapter-{ch['number']:03d}-{signature[:12]}.wav",
             p['settings'].get('soundEffects', 'subtle'),
+            p['settings'].get('narrationDelivery', 'standard'),
+            p['settings'].get('emphasisPhrases', []),
         )
         result.update(
             signature=signature,
@@ -1411,12 +1416,15 @@ class StudioService:
         voice = options.get('voice', p['settings']['voice'])
         speed = options.get('speed', p['settings']['speed'])
         effects = options.get('soundEffects', p['settings'].get('soundEffects', 'subtle'))
+        delivery = options.get('narrationDelivery', p['settings'].get('narrationDelivery', 'standard'))
+        emphasis = options.get('emphasisPhrases', p['settings'].get('emphasisPhrases', []))
         signature = digest({'text':text, 'voice':voice, 'speed':speed,
-                            'effects':effects, 'delivery':AUDIO_DELIVERY_VERSION})
+                            'effects':effects, 'delivery':AUDIO_DELIVERY_VERSION,
+                            'narrationDelivery':delivery, 'emphasisPhrases':emphasis, 'flowVersion':FLOW_VERSION})
         name = f'voice-preview-{signature[:16]}.wav'
         if any(v.get('path') == name for v in p.get('voicePreviews', [])) and self.store.asset(p['id'], name).is_file():
             return
-        result = self.create_audio(text, voice, speed, self.store.folder(p['id']) / name, effects)
+        result = self.create_audio(text, voice, speed, self.store.folder(p['id']) / name, effects, delivery, emphasis)
         preview = {**result, 'path':name, 'text':text, 'voice':voice, 'speed':speed,
                    'soundEffects':effects}
         def saved(q):
@@ -1426,7 +1434,7 @@ class StudioService:
             previews[:] = previews[-12:]
         self.store.mutate(p['id'], saved)
 
-    def create_audio(self, text, voice, speed, target, effects='subtle'):
+    def create_audio(self, text, voice, speed, target, effects='subtle', delivery='standard', emphasis=()):
         import numpy as np
         from kokoro import KPipeline
 
@@ -1443,12 +1451,28 @@ class StudioService:
             raise ValueError("Unsupported voice.")
         if not 0.5 <= speed <= 2:
             raise ValueError("Voice speed must be 0.5–2.")
+        if delivery not in ('standard', 'cinematic'):
+            raise ValueError('Choose standard or cinematic delivery.')
+        if not isinstance(emphasis, (list, tuple)) or len(emphasis) > 12 or any(not isinstance(x,str) or not x.strip() or len(x)>100 for x in emphasis):
+            raise ValueError('Use up to 12 emphasis phrases of 1–100 characters.')
         # Existing KModel is shared; KPipeline here only prepares phonemes.
         pipeline = KPipeline(
             lang_code=voice[0], repo_id="hexgrad/Kokoro-82M", model=False
         )
         self.audio.prepare(voice)
         sections = sentences(text)
+        if delivery == 'cinematic':
+            if not callable(getattr(self.audio, 'synthesize_timed', None)):
+                raise ValueError('Connected narration needs the updated local helper. Existing audio is preserved.')
+            result = create_connected_audio(text,sections,pipeline,self.audio,self.gate,target,voice,speed,effects,emphasis)
+            cursor = 0
+            for paragraph in re.split(r'\n\s*\n', text):
+                count = len(sentences(paragraph))
+                if count:
+                    result['paragraphs'].append({'index':len(result['paragraphs']), 'text':paragraph,
+                        'start':result['sentences'][cursor]['start'], 'end':result['sentences'][cursor+count-1]['end']})
+                    cursor += count
+            return result
         offset = 0
         timings = []
         narration_rms = .035
@@ -1560,6 +1584,8 @@ class StudioService:
             p["settings"]["speed"],
             self.store.folder(p["id"]) / "intro.wav",
             p['settings'].get('soundEffects', 'subtle'),
+            p['settings'].get('narrationDelivery', 'standard'),
+            p['settings'].get('emphasisPhrases', []),
         )
         self.store.mutate(
             p["id"],

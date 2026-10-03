@@ -1,5 +1,5 @@
 import unittest
-from narration_audio import speech_text, audio_segments, effect_pcm, pronunciation_text
+from narration_audio import speech_text, audio_segments, effect_pcm, pronunciation_text, connected_units, create_connected_audio
 
 class NarrationDeliveryTest(unittest.TestCase):
     def test_shouts_and_contractions(self):
@@ -94,6 +94,54 @@ class NarrationDeliveryTest(unittest.TestCase):
                 self.assertEqual(len(jobs),2)
                 self.assertTrue(all(j['chapter'] is None for j in jobs))
             finally: service.close()
+
+class ConnectedDeliveryTest(unittest.TestCase):
+    def test_context_groups_keep_sentence_timing(self):
+        import tempfile, wave
+        from pathlib import Path
+        from types import SimpleNamespace
+        import numpy as np
+        calls=[]
+        class Engine:
+            model=SimpleNamespace(vocab={c:1 for c in 'ab. '})
+            def synthesize_timed(self,ps,voice,speed):
+                calls.append((ps,voice,speed))
+                return np.full(24000,.02,dtype='<f4').tobytes(),[4 if c=='b' else 1 for c in ps]
+        with tempfile.TemporaryDirectory() as folder:
+            result=create_connected_audio('a. b.',['a.','b.'],lambda t:[SimpleNamespace(phonemes=t)],
+                Engine(),lambda *_:None,Path(folder)/'voice.wav','am_michael',1,'subtle',[])
+            self.assertEqual(calls,[('a. b.','am_michael',1)])
+            self.assertAlmostEqual(result['sentences'][0]['end'],3/8)
+            self.assertAlmostEqual(result['sentences'][1]['start'],3/8)
+            self.assertAlmostEqual(result['duration'],1)
+            self.assertFalse(result['wordTimingAvailable'])
+            with wave.open(result['path']) as wav:self.assertEqual(wav.getnframes(),24000)
+
+    def test_cues_limits_and_emphasis(self):
+        from types import SimpleNamespace
+        pipeline=lambda t:[SimpleNamespace(phonemes=t)]
+        vocab={c:1 for c in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ .!'}
+        units=list(connected_units(['Ahhh!','Thud.','a '*400,'Already gone.','He returned.'],pipeline,vocab,'subtle',1,['already gone']))
+        self.assertEqual([u['kind'] for u in units[:2]],['pause','effect'])
+        speech=[u for u in units if u['kind']=='speech']
+        self.assertTrue(all(len(' '.join(p['phonemes'] for p in u['pieces']))<=250 for u in speech))
+        self.assertTrue(any(u['speed']==.96 for u in speech))
+        self.assertTrue(any(u['speed']==1 for u in speech))
+        self.assertEqual(sum(len(p['phonemes'].split()) for u in speech for p in u['pieces'] if p['index']==2),400)
+
+    def test_invalid_timing_preserves_existing_audio(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        import numpy as np
+        engine=SimpleNamespace(model=SimpleNamespace(vocab={'a':1}),
+            synthesize_timed=lambda *_:(np.ones(240,dtype='<f4').tobytes(),[float('nan')]))
+        with tempfile.TemporaryDirectory() as folder:
+            target=Path(folder)/'saved.wav';target.write_bytes(b'previous')
+            with self.assertRaisesRegex(RuntimeError,'invalid audio/timing'):
+                create_connected_audio('a',['a'],lambda *_:[SimpleNamespace(phonemes='a')],engine,
+                    lambda *_:None,target,'am_michael',1,'subtle',[])
+            self.assertEqual(target.read_bytes(),b'previous')
 
 if __name__ == '__main__':
     unittest.main()

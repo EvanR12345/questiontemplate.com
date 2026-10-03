@@ -1,6 +1,7 @@
 """Speech-safe story delivery and inexpensive local onomatopoeia effects.
 
-Source narration is retained unchanged for the director and exact sentence timing.
+Source narration is retained unchanged for the director. Standard mode records
+sentence durations; connected mode estimates boundaries from model durations.
 Only the text sent to the voice model is normalized. Recognized marked sound
 effects become PCM in the same chapter WAV instead of spoken letters.
 """
@@ -9,6 +10,111 @@ import re
 
 VERSION = 3
 EFFECTS = {'bang', 'bam', 'boom', 'thud', 'click', 'beep', 'slash', 'whoosh', 'crash'}
+FLOW_VERSION = 1
+
+def connected_units(sections, pipeline, vocab, effects, speed, emphasis=()):
+    """Bounded contextual speech, never truncating or changing source sentences.
+
+    Several short sentences share one inference. Effects and emphasized sentences
+    end a group; model duration estimates map their boundaries back to the source.
+    Local Kokoro has no acting-instructions input or guaranteed pitch control.
+    """
+    pending, length, rate = [], 0, speed
+    phrases = [p.strip().casefold() for p in emphasis if p.strip()]
+    for index, sentence in enumerate(sections):
+        weighted = any(p in sentence.casefold() for p in phrases)
+        desired_rate = max(.5, speed * .96) if weighted else speed
+        for segment in audio_segments(sentence, effects):
+            if segment['kind'] != 'speech':
+                if pending:
+                    yield {'kind':'speech', 'pieces':pending, 'speed':rate}
+                    pending, length = [], 0
+                yield {**segment, 'index':index}
+                continue
+            if pending and desired_rate != rate:
+                yield {'kind':'speech', 'pieces':pending, 'speed':rate}
+                pending, length = [], 0
+            rate = desired_rate
+            for result in pipeline(segment['ttsText']):
+                remaining = ''.join(c for c in result.phonemes if c in vocab)
+                if not remaining.strip():
+                    raise ValueError('Narration contains an unpronounceable section. Edit narration preview.')
+                while remaining:
+                    if len(remaining) > 250:
+                        punctuation = [m.end() for m in re.finditer(r'[,;:.!?](?: |$)', remaining[:251])]
+                        boundary = punctuation[-1] if punctuation else remaining.rfind(' ', 0, 251)
+                        if boundary <= 0:
+                            boundary = 250
+                    else:
+                        boundary = len(remaining)
+                    part, remaining = remaining[:boundary].strip(), remaining[boundary:].lstrip()
+                    if not part:
+                        continue
+                    if pending and length + 1 + len(part) > 250:
+                        yield {'kind':'speech', 'pieces':pending, 'speed':rate}
+                        pending, length = [], 0
+                    pending.append({'index':index, 'phonemes':part})
+                    length += len(part) + (1 if len(pending) > 1 else 0)
+        if weighted and pending:
+            yield {'kind':'speech', 'pieces':pending, 'speed':rate}
+            pending, length = [], 0
+        if not audio_segments(sentence, effects):
+            if pending:
+                yield {'kind':'speech', 'pieces':pending, 'speed':rate}
+                pending, length = [], 0
+            yield {'kind':'pause', 'duration':.1, 'index':index}
+    if pending:
+        yield {'kind':'speech', 'pieces':pending, 'speed':rate}
+
+
+def create_connected_audio(text, sections, pipeline, engine, gate, target, voice, speed, effects, emphasis):
+    import numpy as np
+    import time, wave
+    timings = [{'index':i,'text':s,'start':None,'end':None,
+                'timingSource':'model-phoneme-duration alignment', 'delivery':audio_segments(s,effects)}
+               for i,s in enumerate(sections)]
+    offset, narration_rms, calls = 0., .035, 0
+    def mark(index, begin, end):
+        item = timings[index]
+        if item['start'] is None: item['start'] = begin
+        item['end'] = end
+    tmp = target.with_suffix('.partial.wav')
+    with wave.open(str(tmp), 'wb') as wav:
+        wav.setparams((1,2,24000,0,'NONE','not compressed'))
+        for unit in connected_units(sections,pipeline,engine.model.vocab,effects,speed,emphasis):
+            gate('Connected narration')
+            if unit['kind'] == 'speech':
+                parts = unit['pieces']
+                ps = ' '.join(p['phonemes'] for p in parts)
+                raw, weights = engine.synthesize_timed(ps,voice,unit['speed'])
+                pcm = np.frombuffer(raw,dtype='<f4')
+                weights = np.asarray(weights,dtype=float)
+                if not len(pcm) or not np.isfinite(pcm).all() or weights.shape != (len(ps),) or not np.isfinite(weights).all() or (weights <= 0).any():
+                    raise RuntimeError('Connected voice returned invalid audio/timing; previous WAV preserved.')
+                elapsed = len(pcm)/24000
+                weights = weights/weights.sum()*elapsed
+                cursor, at = 0, offset
+                for n, part in enumerate(parts):
+                    size = len(part['phonemes']) + (1 if n < len(parts)-1 else 0)
+                    end = at + float(weights[cursor:cursor+size].sum())
+                    mark(part['index'],at,end)
+                    cursor, at = cursor+size, end
+                narration_rms = float(np.sqrt(np.mean(pcm**2)))
+                calls += 1
+            else:
+                pcm = effect_pcm(unit['effect'],narration_rms=narration_rms) if unit['kind']=='effect' else np.zeros(round(unit['duration']*24000),dtype='<f4')
+                elapsed = len(pcm)/24000
+                mark(unit['index'],offset,offset+elapsed)
+            wav.writeframes((np.clip(pcm,-1,1)*32767).astype('<i2').tobytes())
+            offset += elapsed
+    if not offset or any(t['start'] is None or t['end'] is None for t in timings):
+        raise RuntimeError('Narration timing is incomplete; previous WAV preserved.')
+    tmp.replace(target)
+    return {'path':str(target),'duration':offset,'sampleRate':24000,'sentences':timings,'paragraphs':[],
+            'wordTimingAvailable':False,'timingSource':'model-phoneme-duration alignment; exact total PCM duration',
+            'created':time.time(),'deliveryVersion':VERSION,'flowVersion':FLOW_VERSION,
+            'soundEffects':effects,'narrationDelivery':'cinematic','inferenceCalls':calls,
+            'emphasisPhrases':list(emphasis)}
 
 def effect_name(text):
     word = re.sub(r'[^a-z]', '', text.lower())

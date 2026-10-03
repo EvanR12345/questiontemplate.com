@@ -221,6 +221,8 @@ def new_project(name="My story"):
             "autoContinue": False,
             "voice": "am_michael",
             "speed": 1.0,
+            "narrationDelivery": "standard",
+            "emphasisPhrases": ["already gone", "only twelve days"],
             "director": {
                 "provider": "local-qwen",
                 "model": "Qwen3.5-4B Q4_K_M",
@@ -353,6 +355,11 @@ def validate_project(p):
         raise ValueError("Use 0–10 image retries.")
     if p['settings'].get('soundEffects', 'subtle') not in ('subtle', 'off'):
         raise ValueError('Sound effects must be subtle or off.')
+    if p['settings'].get('narrationDelivery', 'standard') not in ('standard', 'cinematic'):
+        raise ValueError('Choose standard or cinematic delivery.')
+    phrases = p['settings'].get('emphasisPhrases', [])
+    if not isinstance(phrases,list) or len(phrases)>12 or any(not isinstance(x,str) or not x.strip() or len(x)>100 for x in phrases):
+        raise ValueError('Use up to 12 emphasis phrases of 1–100 characters.')
     seen = set()
     cast_types = ("main", "supporting", "temporary", "background", "group")
 
