@@ -5,15 +5,17 @@ Implemented in the existing `studio.html` application. Audio and the original co
 ## Using the website
 
 1. Start the existing `QuestionTemplateHelper/start-windows.bat` and leave it open. Use its pairing link once; refresh reconnects with the saved connection.
-2. Open Studio, select **Story → video**, and create a project.
+2. Open Studio, select **Story → video**, then **Project actions → New project**.
 3. Add recurring main characters and their reference images. Supporting/temporary people can be detected during analysis.
 4. Paste Chapter 1. Review the cleaned narration, then select **Analyze chapter**.
 5. Review characters, scene cards, prompts and planned appearance changes. Select **Generate missing images**.
 6. Review images. Use **Edit shot**, **Visual QC**, **Repair**, or **Accept image** where appropriate.
-7. Open Timeline and select **Render chapter**. Add another chapter when ready.
+7. Open **Video** and select **Render chapter**. Add another chapter when ready.
 8. Select **Render full story**. Intro is off by default; project settings allow 10–20 seconds, once before the full story or before every chapter.
 
 Existing comic projects remain in their original browser database. The import action creates a story project while retaining the old comic snapshot; the original panel images/export tools remain accessible through **Comic & panel tools**.
+
+The familiar workspace now groups the editors under **Story, Narration, Characters, Layout, Video and Settings**. Chapters sit beside the editor on larger screens and above it on smaller screens. **Project actions** retains reconnect/import/export, **Chapter actions** retains duplicate/reorder/delete, and **Story tools** retains test-story loading and comic imports. Costs and measured stage times are expandable above the editor. Queue progress counts actual saved story images; previous failed attempts stay in Job history. Paused queues display a paused ETA, and images flagged for visual review remain visible even when all assets have been generated. Arrow keys and Home/End navigate the workflow tabs.
 
 **Generate full video** is available above the chapter editor after entering chapters. Its `produce-story` queue job processes narration, analysis, missing main-character references, shot images, cached chapter renders and final assembly sequentially. Project `production` metadata records the current chapter/image/stage across reloads and restarts. Retry restarts orchestration but reuses completed assets and saved shot seeds. Separate jobs for the same project are blocked while the full run is active. The explicit automatic action accepts detected main characters; supporting/temporary people remain in chapters. Strict appearance review, proposed manual-plan conflicts and unrepaired generation failures stop the run with a clear error. Audio use can yield the GPU and pause the run; Resume continues it.
 
