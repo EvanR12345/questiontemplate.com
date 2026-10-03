@@ -12,6 +12,24 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_direct_job_times_survive_retries_without_double_counting(self):
+        from studio_service import StudioService
+        p = new_project()
+        job = {'id':'job-one', 'kind':'image', 'started':100, 'seconds':3.25,
+               'status':'FAILED', 'chapter':p['chapters'][0]['id'], 'shot':'shot-one'}
+        StudioService.append_queue_timing(p, job)
+        StudioService.append_queue_timing(p, job)
+        StudioService.append_queue_timing(p, job | {'started':200, 'seconds':2, 'status':'COMPLETE'})
+        StudioService.append_queue_timing(p, job | {'kind':'produce-story', 'id':'parent'})
+        timings = p['production']['timings']
+        self.assertEqual(len(timings), 2)
+        self.assertEqual(sum(t['seconds'] for t in timings), 5.25)
+        self.assertEqual([t['status'] for t in timings], ['FAILED','COMPLETE'])
+        self.assertEqual(timings[0]['chapter'], 1)
+        StudioService.append_queue_timing(p, job | {'id':'full', 'kind':'render-full', 'chapter':None, 'shot':None})
+        self.assertEqual(timings[-1]['stage'], 'Assemble full video')
+        self.assertIsNone(timings[-1]['chapter'])
+
     def test_dialogue_evidence_wrapper_does_not_break_sentence_alignment(self):
         sentences = [{'text': '"I filled my stomach with the bomb.'},
                      {'text': 'You think threatening me would work?"'}]

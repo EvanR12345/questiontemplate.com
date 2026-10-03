@@ -74,6 +74,23 @@ Before deployment, verify one GPU's VRAM, assigned system RAM, CPU allocation, l
 
 ## Model and storage sources
 
+## Completed draft and measured efficiency follow-up
+
+The saved two-chapter draft completed its 30-second intro and full local video assembly. Image QC flags remain attached to the finished output; successful rendering does not establish visual correctness. No additional image generation or paid checks were used for the rendering continuation.
+
+Renderer cache keys now track actual image/audio bytes and rendering inputs. Editing QC notes, prompts or generation metadata does not re-encode unchanged visual clips. Replacing an image updates that clip and affected transitions. Legacy caches can be adopted without another copy on supported filesystems, but are rejected if an input was replaced after the old render. Direct queued operations now persist stage times once per attempt; the UI separates chapter totals and retains failed-attempt history. Director detail times and rental windows overlap other measurements and must not be added twice.
+
+85 relevant backend tests and real FFmpeg chapter/full-story integration checks passed. A local ten-second shot trial compared the existing x264 encoder with NVENC under the same zoom/pan filters: 3.12 versus 3.49 seconds. Both worked; that trial provides no evidence to change the default to GPU encoding. Actual chapter caches reused after a QC-note edit without encoding.
+
+The current cadence is retained. Daily-capacity projections are estimates, not verified production throughput. Follow-up experiments should compare accepted shots per dollar, reference-conditioned quality, batch size and peak memory. Three model instances on one GPU are not assumed to triple performance. Complete narration/planning before renting image compute, and stop rented compute before API review and local rendering. Keep failed/unchecked review status honest.
+
+Potential targeted repair and scale-to-zero workflows require bounded trials before deployment. Model downloads, service grants, rates, cold starts and licenses need validation; the existing working environment and project assets are preserved.
+
+- [Official FLUX.2 model family and licensing](https://github.com/black-forest-labs/flux2)
+- [Runpod flex and active workers](https://docs.runpod.io/serverless/workers/overview)
+- [Qwen Image Edit Lightning model card](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning)
+- [FFmpeg zoompan filter](https://ffmpeg.org/ffmpeg-filters.html#zoompan)
+
 ## Fresh Luna production after the rejected fantasy draft
 
 The rejected draft reused its original scene structure and some existing images. Its canonical protagonist profile also contained "black skin" despite the supplied chapters describing black hair and a beard rather than skin color. These are verified input and orchestration defects; they do not establish that the image model itself is adequate. Four-shot canvases introduce another composition and identity risk and are disabled for the fresh remake.

@@ -1,7 +1,7 @@
-import unittest, tempfile, wave
+import os, unittest, tempfile, wave
 from pathlib import Path
 from unittest.mock import patch
-from studio_data import ProjectStore,new_project
+from studio_data import ProjectStore,new_project,digest
 from studio_render import VideoRenderer, effective_motion
 
 
@@ -87,6 +87,97 @@ class IntroTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'gaps or overlaps'):
                 with patch.object(renderer,'run'):
                     renderer.intro(p,lambda *args:None)
+
+
+class RenderReuseTest(unittest.TestCase):
+    def setup_project(self, folder):
+        store = ProjectStore(folder)
+        p = store.save(new_project())
+        ch = p['chapters'][0]
+        for name in ('first.png', 'second.png', 'chapter.wav'):
+            (store.folder(p['id']) / name).write_bytes(name.encode())
+        ch['audio'] = {'path': 'chapter.wav', 'duration': 2}
+        ch['scenes'] = [{'shots': [
+            {'id': 'a', 'start': 0, 'end': 1, 'imagePath': 'first.png', 'motion': 'static'},
+            {'id': 'b', 'start': 1, 'end': 2, 'imagePath': 'second.png', 'motion': 'static'},
+        ]}]
+        return store, p, ch
+
+    @staticmethod
+    def save_output(args, *_):
+        Path(args[-1]).write_bytes(b'encoded fixture')
+
+    def test_review_and_prompt_changes_do_not_encode_unchanged_video(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store, p, ch = self.setup_project(folder)
+            renderer = VideoRenderer(store, {})
+            with patch.object(renderer, 'run', side_effect=self.save_output) as run:
+                ch['render'] = renderer.chapter(p, ch, lambda *_: None)
+                self.assertEqual(run.call_count, 4)
+                run.reset_mock()
+                ch['scenes'][0]['shots'][0].update(qc={'status':'REVIEW_REQUIRED', 'issues':['watch']}, prompt='Revised prompt', seed=123)
+                ch['audio']['reviewNotes'] = 'Reviewed'
+                renderer.chapter(p, ch, lambda *_: None)
+                self.assertEqual(run.call_count, 0)
+
+    def test_changing_one_image_only_encodes_that_shot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store, p, ch = self.setup_project(folder)
+            renderer = VideoRenderer(store, {})
+            with patch.object(renderer, 'run', side_effect=self.save_output) as run:
+                ch['render'] = renderer.chapter(p, ch, lambda *_: None)
+                run.reset_mock()
+                (store.folder(p['id']) / 'first.png').write_bytes(b'new image content')
+                renderer.chapter(p, ch, lambda *_: None)
+                encoding = [call for call in run.call_args_list if '-frames:v' in call.args[0]]
+                self.assertEqual(len(encoding), 1)
+                self.assertIn('first.png', ' '.join(encoding[0].args[0]))
+
+    def test_old_cache_is_adopted_without_reencoding(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store, p, ch = self.setup_project(folder)
+            renderer = VideoRenderer(store, {})
+            path = store.folder(p['id']) / 'old-chapter.mp4'
+            path.write_bytes(b'existing render')
+            ch['render'] = {'path':path.name, 'signature':digest({'rendererVersion':5,
+                'shots':ch['scenes'][0]['shots'], 'audio':ch['audio'], 'video':p['settings']['video']})}
+            with patch.object(renderer, 'run') as run:
+                ch['render'] = renderer.chapter(p, ch, lambda *_: None)
+                self.assertEqual(ch['render']['path'], path.name)
+                self.assertIn('renderIdentity', ch['render'])
+                ch['scenes'][0]['shots'][0]['qc'] = {'status':'PASSED'}
+                renderer.chapter(p, ch, lambda *_: None)
+                run.assert_not_called()
+
+    def test_legacy_cache_rejects_an_asset_replaced_at_the_same_path(self):
+        for name in ('first.png', 'chapter.wav'):
+            with self.subTest(asset=name), tempfile.TemporaryDirectory() as folder:
+                store, p, ch = self.setup_project(folder)
+                old = store.folder(p['id']) / 'old-chapter.mp4'
+                old.write_bytes(b'old render')
+                ch['render'] = {'path':old.name, 'signature':digest({'rendererVersion':5,
+                    'shots':ch['scenes'][0]['shots'], 'audio':ch['audio'], 'video':p['settings']['video']})}
+                asset = store.folder(p['id']) / name
+                asset.write_bytes(b'replaced contents')
+                newer = old.stat().st_mtime_ns + 1000000000
+                os.utime(asset, ns=(newer, newer))
+                renderer = VideoRenderer(store, {})
+                with patch.object(renderer, 'run', side_effect=self.save_output) as run:
+                    result = renderer.chapter(p, ch, lambda *_:None)
+                self.assertNotEqual(result['path'], old.name)
+                self.assertGreater(run.call_count, 0)
+
+    def test_stale_legacy_clip_and_empty_file_cannot_be_adopted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            old, current, asset = [Path(folder)/name for name in ('old.mp4','new.mp4','image.png')]
+            old.write_bytes(b'video'); asset.write_bytes(b'new image')
+            newer = old.stat().st_mtime_ns + 1000000000
+            os.utime(asset, ns=(newer,newer))
+            VideoRenderer.reuse_legacy_clip(old, current, [asset])
+            self.assertFalse(current.exists())
+            old.write_bytes(b'')
+            VideoRenderer.reuse_legacy_clip(old, current)
+            self.assertFalse(current.exists())
 
 if __name__ == "__main__":
     unittest.main()

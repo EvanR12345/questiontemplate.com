@@ -738,18 +738,26 @@ function renderQueue() {
           ? '$' + run.costs.gpuWindowEstimatedUSD.toFixed(4) : 'not recorded';
         costSummary = `<p class="muted">Estimated run cost: OpenAI $${Number(run.costs.apiEstimatedUSD || 0).toFixed(4)} · GPU window ${gpu}. Storage and account billing are reported separately.</p>`;
       }
+      const receipt = run.completionReceipt;
+      if (Number.isFinite(receipt?.balancePlusAPIEstimateUSD)) {
+        costSummary += `<p class="muted">Completion snapshot, including earlier rejected work and account storage/settlement: $${receipt.balancePlusAPIEstimateUSD.toFixed(2)}. Recorded ${escape(new Date(receipt.verifiedAt * 1000).toLocaleString())}. Retained storage continues billing while GPUs are stopped.</p>`;
+      }
       const entries = run.timings.filter((t) => !t.detail),
-        totals = {};
-      for (const entry of entries)
+        totals = {}, scopes = {};
+      for (const entry of entries) {
         totals[entry.stage] = (totals[entry.stage] || 0) + entry.seconds;
+        const scope = entry.chapter ? 'Chapter ' + entry.chapter : 'Project / intro';
+        const breakdown = scopes[entry.stage] ||= {};
+        breakdown[scope] = (breakdown[scope] || 0) + entry.seconds;
+      }
       runStatus.insertAdjacentHTML(
         "beforeend",
-        `<details data-ui="production-times"><summary>Costs and measured times</summary>${costSummary}<p class="muted">Recorded wall time, including loading, retries and pauses. Reused assets take only their validation time.</p><table><thead><tr><th>Stage</th><th>Time</th></tr></thead><tbody>${Object.entries(
+        `<details data-ui="production-times"><summary>Costs and measured times</summary>${costSummary}<p class="muted">Recorded stage wall time includes loading, retries and pauses. Reused assets take only their validation time. Director passes are details within directing; GPU rental overlaps generation. Do not add either to the stage totals again.</p><table><thead><tr><th>Stage</th><th>Total time</th><th>By chapter</th></tr></thead><tbody>${Object.entries(
           totals,
         )
           .map(
             ([stage, seconds]) =>
-              `<tr><td>${escape(stage)}</td><td>${time(seconds)}</td></tr>`,
+              `<tr><td>${escape(stage)}</td><td>${time(seconds)}</td><td>${Object.entries(scopes[stage]).map(([scope, value]) => escape(scope) + ': ' + time(value)).join('<br>')}</td></tr>`,
           )
           .join(
             "",

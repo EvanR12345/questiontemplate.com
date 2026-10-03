@@ -1,6 +1,6 @@
 """Bounded-memory FFmpeg assembly with cached chapters and separate intro."""
 
-import json, math, subprocess, time, wave
+import hashlib, json, math, os, shutil, subprocess, time, wave
 from pathlib import Path
 from studio_data import digest
 
@@ -31,6 +31,50 @@ class VideoRenderer:
     def __init__(self, store, config):
         self.store = store
         self.config = config
+        self._asset_digests = {}
+
+    def asset_identity(self, project_id, name):
+        """Hash the saved bytes once per file revision, not QC or prompt metadata."""
+        path = self.store.asset(project_id, name)
+        stat = path.stat()
+        stamp = (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        cached = self._asset_digests.get(str(path))
+        if cached and cached[0] == stamp:
+            return cached[1]
+        with path.open('rb') as asset:
+            checksum = hashlib.sha256()
+            for chunk in iter(lambda: asset.read(1024 * 1024), b''):
+                checksum.update(chunk)
+            checksum = checksum.hexdigest()
+        self._asset_digests[str(path)] = (stamp, checksum)
+        return checksum
+
+    def shot_identity(self, project, shot):
+        video = project['settings']['video']
+        return {
+            'start': shot['start'], 'end': shot['end'],
+            'image': self.asset_identity(project['id'], shot['imagePath']),
+            'motion': effective_motion(shot, video),
+            'zoomAmount': shot.get('motionSettings', {}).get('zoomAmount', video.get('zoomAmount', .06)),
+        }
+
+    @staticmethod
+    def legacy_is_current(legacy, inputs):
+        # Old cache keys did not hash asset bytes. An image or WAV replaced at
+        # the same path must not inherit a render of its previous contents.
+        return legacy.is_file() and legacy.stat().st_size > 0 and all(
+            asset.stat().st_mtime_ns <= legacy.stat().st_mtime_ns for asset in inputs
+        )
+
+    @staticmethod
+    def reuse_legacy_clip(legacy, current, inputs=()):
+        """Keep existing renders usable without consuming another clip's disk space."""
+        if current.exists() or not VideoRenderer.legacy_is_current(legacy, inputs):
+            return
+        try:
+            os.link(legacy, current)
+        except OSError:
+            shutil.copy2(legacy, current)
 
     def executable(self):
         path = Path(self.config.get("ffmpeg", ""))
@@ -196,15 +240,26 @@ class VideoRenderer:
         fps = v["fps"]
         folder = self.store.folder(p["id"]) / ch["id"]
         folder.mkdir(exist_ok=True)
-        signature = digest(
+        legacy_signature = digest(
             {"rendererVersion": 5, "shots": shots, "audio": ch["audio"], "video": v}
         )
+        visual_shots = [self.shot_identity(p, shot) for shot in shots]
+        signature = digest({
+            'rendererVersion': 6, 'shots': visual_shots,
+            'transitions': [shot.get('transition') for shot in shots],
+            'audio': self.asset_identity(p['id'], ch['audio']['path']),
+            'duration': ch['audio']['duration'], 'video': v,
+        })
         old = ch.get("render", {}).get("narrationRender", ch.get("render", {}))
+        old_path = self.store.asset(p['id'], old['path']) if old.get('path') else None
+        assets = [self.store.asset(p['id'], s['imagePath']) for s in shots]
+        assets.append(self.store.asset(p['id'], ch['audio']['path']))
         if (
-            old.get("signature") == signature
-            and self.store.asset(p["id"], old["path"]).is_file()
+            old_path and old_path.is_file() and old_path.stat().st_size > 0
+            and (old.get('renderIdentity') == signature or
+                 old.get('signature') == legacy_signature and self.legacy_is_current(old_path, assets))
         ):
-            return old
+            return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4"}
         clips = []
         durations = []
         for index, s in enumerate(shots):
@@ -212,8 +267,10 @@ class VideoRenderer:
             # Round absolute boundaries, avoiding accumulated per-shot rounding drift.
             frames = max(1, round(s["end"] * fps) - round(s["start"] * fps))
             duration = frames / fps
-            name = "clip-" + digest({"rendererVersion": 5, "shot": s, "video": v})[:24] + ".mp4"
+            name = "clip-" + digest({"rendererVersion": 6, "shot": visual_shots[index], "video": v})[:24] + ".mp4"
             clip = folder / name
+            legacy = folder / ('clip-' + digest({'rendererVersion': 5, 'shot': s, 'video': v})[:24] + '.mp4')
+            self.reuse_legacy_clip(legacy, clip, [assets[index]])
             if not clip.exists():
                 temporary = clip.with_suffix(".partial.mp4")
                 self.run(
@@ -242,7 +299,10 @@ class VideoRenderer:
         for index, clip in enumerate(clips):
             if index and shots[index].get("transition") == "crossfade":
                 fade = min(0.25, durations[index] / 2)
-                target = folder / f"fade-{signature[:12]}-{index}.mp4"
+                boundary = digest({'version': 1, 'previous': clips[index-1].name, 'incoming': clip.name,
+                                   'fade': fade, 'duration': durations[index], 'video': v})
+                target = folder / f"fade-{boundary[:24]}.mp4"
+                self.reuse_legacy_clip(folder / f"fade-{legacy_signature[:12]}-{index}.mp4", target, [clips[index-1], clip])
                 if not target.exists():
                     temporary = target.with_suffix(".partial.mp4")
                     filters = f"[0:v]trim=end_frame=1,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={fade},trim=duration={fade},settb=AVTB,fps={fps}[a];[1:v]setpts=PTS-STARTPTS,settb=AVTB,fps={fps}[b];[a][b]xfade=transition=fade:duration={fade}:offset=0[v]"
@@ -273,7 +333,8 @@ class VideoRenderer:
                 assembled.append(target)
             else:
                 assembled.append(clip)
-        visual = folder / f"visual-{signature[:12]}.mp4"
+        visual_identity = digest({'version': 1, 'clips': [clip.name for clip in assembled]})
+        visual = folder / f"visual-{visual_identity[:24]}.mp4"
         if not visual.exists():
             self.concat(assembled, visual, gate, folder / "render.log")
         destination = folder / f"chapter-{ch['number']:03d}-{signature[:12]}.mp4"
@@ -311,6 +372,7 @@ class VideoRenderer:
                 "\\", "/"
             ),
             "signature": signature,
+            "renderIdentity": signature,
             "duration": ch["audio"]["duration"],
             "created": time.time(),
             "downloadName": f"chapter-{ch['number']:03d}.mp4",

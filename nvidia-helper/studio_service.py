@@ -91,7 +91,27 @@ class StudioService:
         )
         self.thread.start()
 
-    def sync_queue_states(self, project_id=None):
+    @staticmethod
+    def append_queue_timing(project, job):
+        """Record direct jobs once per attempt; parent pipelines measure their stages."""
+        stages = {'image':'Image generation', 'qc':'Visual QC', 'qc-intro':'Intro visual QC',
+                  'intro-image':'Intro images', 'character-reference':'Character reference',
+                  'render-chapter':'Render chapter', 'render-full':'Assemble full video',
+                  'intro-render':'Render intro', 'narration':'Narration', 'intro-audio':'Intro narration',
+                  'analyze':'Chapter analysis (audio + directing)', 'scene-plan':'Chapter analysis (audio + directing)',
+                  'retarget-images':'Image prompt planning'}
+        if job['kind'] not in stages or job.get('seconds') is None:
+            return
+        timings = project.setdefault('production', {}).setdefault('timings', [])
+        if any(t.get('jobId') == job['id'] and t.get('attemptStarted') == job['started'] for t in timings):
+            return
+        chapter = next((c['number'] for c in project['chapters'] if c['id'] == job.get('chapter')), None)
+        timings.append({'stage':stages[job['kind']], 'seconds':round(job['seconds'], 3),
+                        'finished':job['started'] + job['seconds'], 'jobId':job['id'],
+                        'attemptStarted':job['started'], 'chapter':chapter, 'shot':job.get('shot'),
+                        'status':job['status'], 'timingSource':'queue-attempt'})
+
+    def sync_queue_states(self, project_id=None, completed_job=None):
         """Restore persistent item states without touching completed image assets."""
         with self.cv:
             rows = [
@@ -106,9 +126,13 @@ class StudioService:
         for r in latest.values():
             if r["chapter"]:
                 byproject.setdefault(r["project"], []).append(r)
+        if completed_job:
+            byproject.setdefault(completed_job['project'], [])
         for pid, items in byproject.items():
 
             def update(p):
+                if completed_job and completed_job['project'] == pid:
+                    self.append_queue_timing(p, completed_job)
                 affected = set()
                 for item in items:
                     try:
@@ -679,12 +703,12 @@ class StudioService:
                 self.current = job["id"]
                 self.cancel = False
                 self.yield_requested = False
+                started = time.time()
                 self.db.execute(
                     "UPDATE jobs SET status='RUNNING',started=?,attempt=attempt+1 WHERE id=?",
-                    (time.time(), job["id"]),
+                    (started, job["id"]),
                 )
                 self.db.commit()
-            started = time.time()
             state = "COMPLETE"
             message = "Complete"
             try:
@@ -769,6 +793,8 @@ class StudioService:
                                         q["render"]
                                     )
                                 q.update(render=result, renderStale=False)
+                                if q.get('production'):
+                                    q['production'].update(status='COMPLETE', stage='Full video ready', message='Full video ready', updated=time.time())
 
                             self.store.mutate(p["id"], full_saved)
                         else:
@@ -852,15 +878,16 @@ class StudioService:
                 if state in ("CANCELLED", "QUEUED", "FAILED"):
                     self.unload_models()
                 with self.cv:
+                    elapsed = time.time() - started
                     self.db.execute(
                         "UPDATE jobs SET status=?,message=?,seconds=? WHERE id=?",
-                        (state, message, time.time() - started, job["id"]),
+                        (state, message, elapsed, job["id"]),
                     )
                     self.db.commit()
                     self.current = None
                     self.cancel = False
                     self.cv.notify_all()
-                self.sync_queue_states(job['project'])
+                self.sync_queue_states(job['project'], job | {'started':started, 'seconds':elapsed, 'status':state})
 
     def production_progress(self, pid, stage, **details):
         """Persist the current stage alongside assets, including between restarts."""
