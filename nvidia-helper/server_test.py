@@ -6,6 +6,7 @@ import tempfile
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from server import make_handler
+from studio_data import new_project
 
 KEY = 'a' * 64
 ORIGIN = 'https://questiontemplate.com'
@@ -97,6 +98,20 @@ class BridgeTest(unittest.TestCase):
         finally:
             self.engine.lock.release()
         self.assertEqual(self.request('/prepare', {'voice': 'af_heart'})[0], 200)
+
+    def test_aac_audition_media_ticket_serves_saved_bytes(self):
+        store = self.server.RequestHandlerClass.studio_service.store
+        p = store.save(new_project())
+        store.asset(p['id'], 'audition.m4a').write_bytes(b'saved-aac-audition')
+        code, _, body = self.request('/studio/media-link', {'project':p['id'], 'path':'audition.m4a'})
+        self.assertEqual(code, 200)
+        ticket = json.loads(body)['url'].split('/studio/media?',1)[1]
+        code, headers, content = self.request('/studio/media?'+ticket)
+        self.assertEqual(code, 200)
+        self.assertTrue(headers['Content-Type'].startswith('audio/'))
+        self.assertEqual(content, b'saved-aac-audition')
+        self.assertEqual(self.request('/studio/media-link', {'project':p['id'], 'path':'../../private.m4a'})[0],400)
+        self.assertFalse(self.engine.calls)
 
 
 if __name__ == '__main__':

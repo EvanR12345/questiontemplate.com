@@ -472,6 +472,9 @@ class StudioDataTest(unittest.TestCase):
             p = store.save(new_project())
             with self.assertRaises(ValueError):
                 store.asset(p["id"], "../../private.wav")
+            self.assertEqual(store.asset(p['id'], 'audition.m4a').parent, store.folder(p['id']).resolve())
+            with self.assertRaises(ValueError):
+                store.asset(p['id'], '../../private.m4a')
 
     def test_native_does_not_enable_wrong_sampler_or_sd_guidance(self):
         provider = NativeFluxProvider({}, ".")

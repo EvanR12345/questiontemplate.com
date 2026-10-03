@@ -549,6 +549,7 @@ class ProjectStore:
             ".jpeg",
             ".webp",
             ".wav",
+            ".m4a",
             ".mp4",
             ".json",
         ):
