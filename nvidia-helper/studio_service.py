@@ -554,7 +554,37 @@ class StudioService:
                 if budget.get('openaiUSD') else None)
             self.director.max_output_tokens = project['settings']['director'].get('maxOutputTokens', 12000)
 
-    def control(self, action, job=None):
+    def control(self, action, job=None, project=None):
+        sync_project = project if action == 'retry-missing' else None
+        if action == 'retry-missing':
+            if not project:
+                raise ValueError('Choose a project before retrying missing images.')
+            p = self.store.load(project)
+            with self.cv:
+                # Requeue just the newest failed attempt for each missing shot.
+                # Historical failures and successful assets are never replayed.
+                rows = self.db.execute(
+                    "SELECT id,chapter,shot,status FROM jobs WHERE project=? AND kind='image' ORDER BY created DESC",
+                    (project,),
+                ).fetchall()
+                latest = {}
+                for row in rows:
+                    latest.setdefault((row['chapter'], row['shot']), row)
+                available = 1000 - self.db.execute(
+                    "SELECT count(*) FROM jobs WHERE status IN ('QUEUED','RUNNING')"
+                ).fetchone()[0]
+                for c in p['chapters']:
+                    for sc in c['scenes']:
+                        for s in sc['shots']:
+                            if s.get('imagePath') and self.store.asset(project, s['imagePath']).is_file():
+                                continue
+                            row = latest.get((c['id'], s['id']))
+                            if not row or row['status'] not in ('FAILED','CANCELLED') or available <= 0:
+                                continue
+                            self.db.execute("UPDATE jobs SET status='QUEUED',message='Retrying missing image with saved seed' WHERE id=?", (row['id'],))
+                            available -= 1
+                self.db.commit()
+            action = 'resume'
         with self.cv:
             if action == "pause":
                 self.paused = True
@@ -598,7 +628,7 @@ class StudioService:
             )
             self.db.commit()
             self.cv.notify_all()
-        self.sync_queue_states()
+        self.sync_queue_states(sync_project)
         return self.snapshot()
 
     def gate(self, message="", step=0, total=0, wait_paused=True):
@@ -607,11 +637,13 @@ class StudioService:
                 raise JobCancelled()
             if self.yield_requested:
                 raise AudioYield()
-            if message and self.current:
+            progress_key = (self.current, message)
+            if message and self.current and getattr(self, '_progress_key', None) != progress_key:
                 self.db.execute(
                     "UPDATE jobs SET message=? WHERE id=?", (message, self.current)
                 )
                 self.db.commit()
+                self._progress_key = progress_key
             while self.paused and wait_paused:
                 if self.closed or self.cancel:
                     raise JobCancelled()

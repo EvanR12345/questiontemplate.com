@@ -672,7 +672,7 @@ function renderQueue() {
     runStatus = $("#fullVideoStatus");
   if (runStatus && run) {
     const reviewCount = project.chapters.flatMap(c => c.scenes.flatMap(s => s.shots))
-      .filter(s => s.qc?.status === "REVIEW_REQUIRED").length;
+      .filter(s => ["REVIEW_REQUIRED", "FAILED"].includes(s.qc?.status)).length;
     const ready =
       run.status === "COMPLETE" && !!project.render?.path && !project.renderStale && !activeFullRun;
     const status =
@@ -760,24 +760,20 @@ function renderQueue() {
     pending =
       counts?.all.QUEUED ?? jobs.filter((j) => j.status === "QUEUED").length,
     current = jobs.find((j) => j.id === queue.current),
-    imageJobs = jobs.filter((j) => j.kind === "image"),
-    imageDone =
-      counts?.image.COMPLETE ??
-      imageJobs.filter((j) => j.status === "COMPLETE").length,
-    imageTotal = counts
-      ? Object.values(counts.image).reduce((a, b) => a + b, 0)
-      : imageJobs.length,
+    plannedImages = project.chapters.flatMap(c => c.scenes.flatMap(s => s.shots)),
+    imageDone = plannedImages.filter(s => !!s.imagePath).length,
+    imageTotal = plannedImages.length,
     total = counts
       ? Object.values(counts.all).reduce((a, b) => a + b, 0)
       : jobs.length,
-    failureCount = counts?.all.FAILED ?? failed.length,
+    failureCount = plannedImages.filter(s => s.status === "FAILED" || s.qc?.status === "FAILED").length,
     currentShot = shots(
       project.chapters.find((c) => c.id === current?.chapter),
     ).find((s) => s.id === current?.shot),
     currentScene = project.chapters
       .find((c) => c.id === current?.chapter)
       ?.scenes.find((s) => s.id === currentShot?.sceneId);
-  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images" : ""}</h3><span class="muted">${done} complete · ${pending} waiting · ${failureCount} failed · ETA ${queue.etaSeconds == null ? "—" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || "Ready"))}</p><progress max="${Math.max(1, total)}" value="${done}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel all queued</button><button data-control="retry">Retry failed / cancelled</button></div><div class="queue-jobs">${jobs
+  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting · ${failureCount} images need attention · ETA ${queue.etaSeconds == null ? "—" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || "Ready"))}</p><progress max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel all queued</button><button data-control="retry-missing">Retry missing images</button></div><details><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
     .filter(
       (j) =>
         j.status === "FAILED" ||
@@ -790,12 +786,12 @@ function renderQueue() {
       (j) =>
         `<div class="queue-job"><span>${escape(j.kind)} · ${escape(j.message)}</span><button data-job-priority="${j.id}">Prioritize</button>${["FAILED", "CANCELLED"].includes(j.status) ? `<button data-job-retry="${j.id}">Retry same seed</button>` : ""}</div>`,
     )
-    .join("")}</div>`;
+    .join("")}</div></details>`;
   el.querySelectorAll("[data-control]").forEach(
     (b) =>
       (b.onclick = () =>
         action(async () => {
-          queue = await api("control", { action: b.dataset.control });
+          queue = await api("control", { action: b.dataset.control, project: project.id });
           renderQueue();
         })),
   );

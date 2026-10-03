@@ -193,6 +193,42 @@ class FullVideoTest(unittest.TestCase):
         self.assertTrue(all(not shot.get('imagePath') for chapter in saved['chapters']
                             for scene in chapter['scenes'] for shot in scene['shots']))
 
+    def test_retry_missing_skips_saved_assets_older_attempts_and_other_projects(self):
+        self.service.prepare_story(self.project['id'], {})
+        p = self.service.store.load(self.project['id'])
+        first, second = [c['scenes'][0]['shots'][0] for c in p['chapters']]
+        first['imagePath'] = 'saved.png'
+        self.service.store.asset(p['id'], 'saved.png').write_bytes(b'saved')
+        self.service.store.save(p)
+        rows = [
+            ('saved-failed', p['id'], p['chapters'][0]['id'], first['id'], 'FAILED', 1, 10),
+            ('missing-old', p['id'], p['chapters'][1]['id'], second['id'], 'FAILED', 2, 20),
+            ('missing-latest', p['id'], p['chapters'][1]['id'], second['id'], 'CANCELLED', 3, 30),
+            ('other-project', 'other', 'other-chapter', 'other-shot', 'FAILED', 4, 40),
+        ]
+        for identity, project, chapter, shot, status, created, seed in rows:
+            self.service.db.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (identity, project, chapter, shot, 'image', '{}', status, '', 0, created, None, 0, 1, seed))
+        self.service.db.commit()
+        result = self.service.control('retry-missing', project=p['id'])
+        queued = [j for j in result['jobs'] if j['status'] == 'QUEUED']
+        self.assertEqual([j['id'] for j in queued], ['missing-latest'])
+        self.assertEqual(queued[0]['seed'], 30)
+        self.assertTrue(self.service.store.asset(p['id'], 'saved.png').exists())
+
+    def test_repeated_stream_progress_does_not_commit_for_every_token(self):
+        self.service.current = 'job-stream'
+        changes = []
+        self.service.db.set_trace_callback(changes.append)
+        for _ in range(100):
+            self.service.gate('Luna reviewing image')
+        self.service.gate('Luna review finished')
+        updates = [sql for sql in changes if sql.startswith('UPDATE jobs SET message=')]
+        self.assertEqual(len(updates), 2)
+        self.service.current = 'job-next'
+        self.service.gate('Luna reviewing image')
+        self.assertEqual(sum(sql.startswith('UPDATE jobs SET message=') for sql in changes), 3)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.service = Harness(

@@ -281,7 +281,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 if not health['providers']['comfyui']['installed']:raise ValueError('Cloud workflow unavailable: '+str(health['providers']['comfyui']))
                 settings=provider.validateSettings(provider.getRecommendedSettings()|{'model':'qwen-studio-auto'})
                 return {'health':health,'settings':settings|{'provider':'comfyui','workflow':'qwen-studio-auto'}}
-            if path=='/studio/control':return studio.control(body['action'],body.get('job'))
+            if path=='/studio/control':return studio.control(body['action'],body.get('job'),body.get('project'))
             if path=='/studio/jobs':return studio.enqueue(body['project'],body.get('chapter'),body['kind'],body.get('shots'),body.get('options'))
             pid=body['project']
             if path=='/studio/upload':
