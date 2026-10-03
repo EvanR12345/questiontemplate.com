@@ -341,6 +341,7 @@ function offlineProject() {
         crf: 21,
         imageFit: "cover",
         motionMode: "gentle",
+        zoomAmount: .06,
       },
     },
     intro: {
@@ -348,6 +349,8 @@ function offlineProject() {
       duration: 15,
       placement: "full_story_only",
       title: "My story",
+      showTitle: false,
+      shots: [],
       subtitle: "",
       voiceText: "",
       visualPath: "",
@@ -565,7 +568,7 @@ function settings() {
     ],
     i.provider,
   )}</select></label><label>Image model<select id="settingImageModel">${options(models, i.model)}</select></label><label>Workflow<select id="settingImageWorkflow">${options(selected?.workflow || [i.workflow], i.workflow)}</select></label><label>SD reference strength<input ${i.provider === "native-flux" ? "disabled" : ""} id="settingReferenceStrength" type="number" min="0" max="1" step=".05" value="${i.referenceStrength}"></label></div><p class="muted">${selected?.installed ? "Installed" : "Unavailable: configure this local backend before generating."} ${selected?.validated === false ? "This native configuration has not passed laptop validation yet." : ""} ${escape(selected?.capabilities?.referenceLimitations || "")}</p><button id="showModelNotes">Model evaluation and diagnosis</button> <button id="connectCloudImages">Connect Qwen cloud images</button></div>
-  <div class="section-box"><h3>Economy storyboard canvases</h3><label class="inline"><input id="settingEconomyPanels" type="checkbox" ${s.economyPanels ? 'checked' : ''}>Four independent shots per Qwen canvas</label><p class="muted">Luna groups the shots; each crop is saved separately as a 640×360 landscape image. This can reduce generation calls by about 75%, with less detail and a risk of composition mixing. Individual full-resolution regeneration remains available. The helper does not start or stop rented GPUs.</p><button id="prepareRestyle">Prepare narration and Luna direction</button></div>
+  <div class="section-box"><h3>Economy storyboard canvases</h3><label class="inline"><input id="settingEconomyPanels" type="checkbox" ${s.economyPanels ? 'checked' : ''}>Four independent shots per Qwen canvas</label><p class="muted">Luna groups the shots; each crop is saved separately as a 640×360 landscape image. This can reduce generation calls by about 75%, with less detail and a risk of composition mixing. Individual full-resolution regeneration remains available. The helper does not start or stop rented GPUs.</p><button id="prepareStory">Prepare complete narration and director plan</button> <button id="prepareRestyle">Restyle existing shots</button></div>
   <div class="section-box"><h3>Voice</h3><div class="two-col"><label>Existing Kokoro voice<select id="settingVoice">${options(["am_michael", "af_heart", "af_bella", "af_nicole", "am_puck", "bm_george", "bf_emma"], s.voice)}</select></label><label>Speaking speed<input id="settingSpeed" type="number" min=".5" max="2" step=".1" value="${s.speed}"></label></div></div>
   <div class="section-box"><h3>Optional intro</h3><label class="inline"><input id="introEnabled" type="checkbox" ${project.intro.enabled ? "checked" : ""}>Enable intro</label><div class="two-col"><label>Duration: <span id="introDurationValue">${project.intro.duration}</span> seconds<input id="introDuration" type="range" min="10" max="30" step="1" value="${project.intro.duration}"></label><label>Placement<select id="introPlacement">${options(
     [
@@ -573,7 +576,7 @@ function settings() {
       ["every_chapter", "Every chapter"],
     ],
     project.intro.placement,
-  )}</select></label><label>Title<input id="introTitle" value="${escape(project.intro.title)}"></label><label>Subtitle<input id="introSubtitle" value="${escape(project.intro.subtitle)}"></label></div><label>Intro visual description<textarea id="introVisualPrompt" rows="2">${escape(project.intro.visualPrompt || "")}</textarea></label><label>Optional explicit intro voice text<textarea id="introVoiceText" rows="2">${escape(project.intro.voiceText)}</textarea></label><div class="toolbar"><button id="introUpload">Choose background image</button><button id="introGenerate">Generate intro visual</button><button id="introAudio">Generate separate intro voice</button><button id="introPreview">Preview intro</button></div>${project.intro.visualPath ? `<img data-asset="${escape(project.intro.visualPath)}" alt="Intro background" style="max-width:260px;margin-top:12px">` : ""}</div>
+  )}</select></label><label class="inline"><input id="introShowTitle" type="checkbox" ${project.intro.showTitle ? "checked" : ""}>Show title text in video</label><label>Optional title<input id="introTitle" value="${escape(project.intro.title)}"></label><label>Subtitle<input id="introSubtitle" value="${escape(project.intro.subtitle)}"></label></div><label>Intro visual description<textarea id="introVisualPrompt" rows="2">${escape(project.intro.visualPrompt || "")}</textarea></label><label>Optional explicit intro voice text<textarea id="introVoiceText" rows="2">${escape(project.intro.voiceText)}</textarea></label><div class="toolbar"><button id="introUpload">Choose background image</button><button id="introGenerate">Generate intro visual</button><button id="introAudio">Generate separate intro voice</button><button id="introPreview">Preview intro</button><button id="editIntroShots">Edit intro shots and references</button></div>${project.intro.visualPath ? `<img data-asset="${escape(project.intro.visualPath)}" alt="Intro background" style="max-width:260px;margin-top:12px">` : ""}</div>
   <details><summary>Advanced AI settings</summary><div class="two-col"><label>Director provider<select id="settingDirectorProvider">${options(
     [
       ["local-qwen", "Local Qwen3.5-4B Q4_K_M"],
@@ -605,7 +608,7 @@ function settings() {
       ["cover", "Fill frame (crop edges)"],
     ],
     s.video.imageFit || "contain",
-  )}</select></label><label>Image motion<select id="settingMotionMode">${options(
+  )}</select></label><label>Zoom amount (%)<input id="settingZoomAmount" type="number" min="0" max="35" step="1" value="${Math.round((s.video.zoomAmount ?? .06)*100)}"></label><label>Image motion<select id="settingMotionMode">${options(
     [
       ["gentle", "Gentle zooms and pans"],
       ["director", "Use each shot’s motion"],
@@ -831,9 +834,14 @@ function wire() {
   $("#productionNewProject").onclick = () => action(newProject);
   $("#productionProject").onchange = (e) =>
     action(async () => {
-      project = connected
+      const selected = connected
         ? await api("project?id=" + e.target.value)
         : await loadStudioProject(e.target.value);
+      if (!selected?.chapters?.length) {
+        e.target.value = project.id;
+        throw new Error("This project is saved on the helper. Reconnect the helper, then select it again.");
+      }
+      project = selected;
       chapterId = project.chapters[0].id;
       scenePage = 0;
       await cache();
@@ -1505,7 +1513,9 @@ async function saveSettingsIfVisible() {
 }
 function wireSettings() {
   $("#productionSaveSettings").onclick = () => action(saveSettings);
+  $('#prepareStory').onclick = () => action(async () => { await saveSettings(); await submit('prepare-story'); });
   $('#prepareRestyle').onclick = () => action(async () => { await saveSettings(); await submit('restyle-story'); });
+  $('#editIntroShots').onclick = () => jsonDialog('Intro shots, timing and references', project.intro.shots || [], v => patch('project', project.id, {intro: {...project.intro, shots:v}}, true));
   $("#introDuration").oninput = (e) =>
     ($("#introDurationValue").textContent = e.target.value);
   $("#settingImageProvider").onchange = (e) =>
@@ -1679,10 +1689,12 @@ async function saveSettings() {
   s.video.fps = Number($("#settingVideoFps").value);
   s.video.imageFit = $("#settingImageFit").value;
   s.video.motionMode = $("#settingMotionMode").value;
+  s.video.zoomAmount = Number($("#settingZoomAmount").value) / 100;
   Object.assign(intro, {
     enabled: $("#introEnabled").checked,
     duration: Number($("#introDuration").value),
     placement: $("#introPlacement").value,
+    showTitle: $("#introShowTitle").checked,
     title: $("#introTitle").value,
     subtitle: $("#introSubtitle").value,
     voiceText: $("#introVoiceText").value,

@@ -1,5 +1,5 @@
 import unittest
-from narration_audio import speech_text, audio_segments, effect_pcm
+from narration_audio import speech_text, audio_segments, effect_pcm, pronunciation_text
 
 class NarrationDeliveryTest(unittest.TestCase):
     def test_shouts_and_contractions(self):
@@ -24,6 +24,18 @@ class NarrationDeliveryTest(unittest.TestCase):
             self.assertGreater(float(np.std(pcm)), .01)
             self.assertLessEqual(float(np.abs(pcm).max()), .5)
             self.assertEqual(pcm[-1], 0)
+
+    def test_mixed_screams_and_actual_g2p_do_not_spell_letters(self):
+        from kokoro import KPipeline
+        pipeline = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', model=False)
+        for spelling in ('ahhh!', 'Aaaaahhh!', 'Haaahh!', 'Aggghhhh!', 'Aaah!'):
+            prepared = audio_segments(spelling)[0]
+            self.assertEqual(prepared['text'], 'Ah!')
+            actual = ''.join(r.phonemes for r in pipeline(prepared['ttsText']))
+            self.assertIn('ɑ', actual)
+            self.assertNotIn('ˈA', actual)
+            self.assertNotIn('ˈH', actual)
+        self.assertEqual(pronunciation_text("Shah can't leave. NASA."), "Shah can't leave. NASA.")
 
 if __name__ == '__main__':
     unittest.main()

@@ -384,6 +384,7 @@ class StudioService:
         ch = get_chapter(p, chapter) if chapter else None
         if kind not in (
             "produce-story",
+            "prepare-story",
             "restyle-story",
             "economy-images",
             "analyze",
@@ -652,6 +653,8 @@ class StudioService:
                     elif job['kind'] == 'restyle-story':
                         from economy_studio import restyle_story
                         restyle_story(self,p['id'])
+                    elif job['kind'] == 'prepare-story':
+                        self.prepare_story(p['id'], options)
                     elif job['kind'] == 'economy-images':
                         from economy_studio import generate_panel_story
                         generate_panel_story(self,p['id'],options)
@@ -768,7 +771,7 @@ class StudioService:
                 except Exception:
                     pass
             finally:
-                if job["kind"] == "produce-story":
+                if job["kind"] in ("produce-story", "prepare-story"):
 
                     def run_finished(p):
                         run = p.setdefault("production", {})
@@ -845,9 +848,37 @@ class StudioService:
         )
         return result
 
+    def prepare_story(self, pid, options):
+        """Generate fresh narration and the selected director's complete plan.
+
+        Paid image workers can stay stopped. Existing manual plans use the
+        normal proposal/history protection; no restyling shortcut is used.
+        """
+        p = self.store.load(pid)
+        for chid in [c['id'] for c in p['chapters'] if c['sourceText'].strip()]:
+            p = self.store.load(pid)
+            chapter = get_chapter(p, chid)
+            self.production_progress(pid, f"Chapter {chapter['number']} · preparing narration", chapterId=chid)
+            self.before_audio()
+            self.measured_stage(pid, 'Narration', self.narration, p, chapter, chapter=chapter['number'])
+            p = self.store.load(pid)
+            self.production_progress(pid, f"Chapter {chapter['number']} · complete AI direction", chapterId=chid)
+            self.measured_stage(pid, 'AI directing', self.analyze, p, chid,
+                options | {'managedPipeline': True, 'offlinePlanning': True}, chapter=chapter['number'])
+        p = self.store.load(pid)
+        if p['intro']['enabled'] and p['intro'].get('voiceText'):
+            self.before_audio()
+            self.measured_stage(pid, 'Intro narration', self.intro_audio, p)
+            if p['intro'].get('sourceBrief'):
+                self.measured_stage(pid, 'Intro direction', self.plan_intro, self.store.load(pid))
+        self.store.mutate(pid, lambda q: q.setdefault('production', {}).update(
+            status='READY_FOR_IMAGES', stage='Fresh narration and direction prepared; connect the image worker'))
+
     def produce_story(self, pid, options):
         """One durable queue job; reuse completed stages and stop safely on errors."""
         p = self.store.load(pid)
+        if p['settings'].get('cloudImagesOnly') and p['settings']['image']['provider'] != 'comfyui':
+            raise ValueError('This project requires cloud images. Connect its ComfyUI worker; local image generation is disabled.')
         if p['settings'].get('economyPanels'):
             from economy_studio import restyle_story, generate_panel_story
             if not all(c.get('economyGroups') for c in p['chapters'] if c['sourceText'].strip()):
@@ -1134,8 +1165,8 @@ class StudioService:
         p = self.store.load(pid)
         if (
             p["intro"]["enabled"]
-            and p["intro"].get("visualPrompt", "").strip()
-            and not p["intro"].get("visualPath")
+            and (p['intro'].get('shots') or p['intro'].get('visualPrompt', '').strip())
+            and (any(not s.get('imagePath') for s in p['intro'].get('shots', [])) or not p['intro'].get('shots') and not p['intro'].get('visualPath'))
         ):
             self.production_progress(
                 pid, "Generating intro visual", chapterId=None, shotId=None
@@ -1264,7 +1295,7 @@ class StudioService:
                         if segment['kind'] == 'effect':
                             yield None, effect_pcm(segment['effect'])
                         else:
-                            for item in pipeline(segment['text']):
+                            for item in pipeline(segment.get('ttsText', segment['text'])):
                                 yield item, None
                 for result, effect in deliveries():
                     if effect is not None:
@@ -1358,14 +1389,92 @@ class StudioService:
         self.store.mutate(
             p["id"],
             lambda q: q["intro"].update(
-                audioPath="intro.wav", audioDuration=result["duration"]
+                audioPath="intro.wav", audioDuration=result["duration"], audioSentences=result['sentences']
             ),
         )
+
+    def plan_intro(self, p):
+        """The director visualizes a separately authored, verified recap script."""
+        from director_provider import obj, arr, STR
+        self.select_director(p)
+        self.director.timing_callback = lambda stage,seconds,details: self.record_timing(p['id'],stage,seconds,details | {'intro': True, 'detail': True})
+        number = {'type': 'number', 'minimum': 0, 'maximum': p['intro']['duration']}
+        camera = obj({k: STR for k in ('shot', 'angle', 'composition')})
+        schema = obj({'shots': arr(obj({'start': number, 'end': number,
+            'characters': arr({'type': 'string', 'enum': [c['id'] for c in p['characters']]}),
+            'action': STR, 'camera': camera, 'lighting': STR, 'prompt': STR,
+            'motion': {'enum': ['static', 'slow zoom in', 'slow zoom out', 'pan left', 'pan right', 'pan up', 'pan down']}}))})
+        context = {'script': p['intro']['voiceText'], 'duration': p['intro']['duration'],
+            'timing': p['intro'].get('audioSentences', []), 'verifiedSource': p['intro']['sourceBrief'],
+            'people': [{k:c.get(k) for k in ('id','name','description','permanentIdentity','defaultAppearance')} for c in p['characters']],
+            'style': p['settings']['style'], 'visualConstraints': p['settings'].get('visualConstraints', '')}
+        plan = self.director.call('Direct a 30-second fantasy recap teaser from the verified source ONLY. The script was authored by the user-appointed writer and must not change. Choose 4–6 individual landscape shots aligned with narration. Cover 0 to duration exactly, without gaps or overlaps. Attach only relevant supplied character IDs; Christopher before rebirth and Vaan after rebirth are DIFFERENT appearances. No title, labels, borders, collage or captions. Describe one simultaneous moment per prompt; make the illustrations expressive and intentionally composed. Do not include people or events beyond the verified chapter range.', context, schema, self.gate)
+        cursor = 0
+        shots = []
+        for item in plan['shots']:
+            if abs(item['start']-cursor) > .02 or item['end'] <= item['start']:
+                raise ValueError('Director intro shots do not cover the narration in order. Prior intro is preserved.')
+            cursor = item['end']
+            cast = [{ 'id': cid, 'type': 'main', 'appearanceState': next(c['defaultAppearance'] for c in p['characters'] if c['id']==cid)} for cid in item['characters']]
+            shots.append(item | {'id': uid('intro-shot-'), 'chapterId': p['chapters'][0]['id'],
+                'characters': cast, 'imagePath': '', 'manual': {}, 'status': 'READY_FOR_IMAGES',
+                'intentionalAppearanceChanges': [],
+                'generationSettings': copy.deepcopy(p['settings']['image']), 'imageProvider': p['settings']['image']['provider'],
+                'imageModel': p['settings']['image']['model'], 'workflow': p['settings']['image']['workflow']})
+        if abs(cursor-p['intro']['duration']) > .02:
+            raise ValueError('Director intro shots do not reach the end of the intro.')
+        self.store.mutate(p['id'], lambda q:q['intro'].update(shots=shots, directorProvider=p['settings']['director']['provider'], directorPlan=plan))
+
+    def check_cloud_budget(self, p, provider):
+        window = p['settings'].get('cloudWindow', {})
+        if provider.id == 'comfyui' and window.get('cloudStartedAt'):
+            from economy_studio import cloud_cost
+            estimate = cloud_cost(window['cloudStartedAt'], window['gpuHourlyUSD'],
+                                  window.get('gpuPreviouslySpentUSD', 0), window.get('imageReserveSeconds', 90)+25)
+            if estimate > window.get('gpuBudgetUSD', float('inf')):
+                raise ValueError('Cloud spend guard stopped generation. Saved images are safe. Stop the rented GPU to stop its billing.')
 
     def intro_image(self, p):
         self.unload_models()
         self.before_image()
         provider = self.provider(p["settings"]["image"]["provider"])
+        if p['settings'].get('cloudImagesOnly') and provider.id != 'comfyui':
+            raise ValueError('Local image generation is disabled for this project.')
+        if p['intro'].get('shots'):
+            for shot in p['intro']['shots']:
+                if shot.get('imagePath') and self.store.asset(p['id'], shot['imagePath']).is_file():
+                    continue
+                self.check_cloud_budget(p, provider)
+                references, metadata = select_references(p, shot, self.store, provider)
+                settings = provider.validateSettings(shot['generationSettings'])
+                prompt = reference_prompt(p, shot, metadata) + ' ' + shot['prompt'] if references else shot['prompt']
+                result = provider.generateImage({'prompt': prompt, 'negativePrompt': '', 'referenceImages': references,
+                    'settings': settings, 'workflow': shot['workflow'], 'operation': 'generate'}, self.checkpoint)
+                name = shot['id'] + '-' + uid() + '.png'
+                target = self.store.folder(p['id']) / name
+                partial = target.with_suffix('.partial.png')
+                result.pop('pil').save(partial, 'PNG'); partial.replace(target)
+                def save_intro(latest):
+                    item = next(s for s in latest['intro']['shots'] if s['id']==shot['id'])
+                    item.update(imagePath=name, status='COMPLETE', referenceImages=metadata,
+                        imageMetadata=result | {'prompt': prompt, 'referenceImages': metadata}, qc={'status': 'UNREVIEWED', 'pass': None})
+                    latest['renderStale'] = True
+                self.store.mutate(p['id'], save_intro)
+                if p['settings'].get('visionQC'):
+                    review_shot = shot | {'intentionalAppearanceChanges': shot.get('intentionalAppearanceChanges', [])}
+                    self.director.timing_callback = lambda stage,seconds,details: self.record_timing(p['id'], stage, seconds, details | {'intro': True, 'detail': True})
+                    qc = self.visual_check(self.store.load(p['id']), review_shot, target)
+                    qc['status'] = 'PASSED' if qc['pass'] else 'REVIEW_REQUIRED'
+                    def save_review(latest):
+                        item = next(s for s in latest['intro']['shots'] if s['id'] == shot['id'])
+                        item['qc'] = qc
+                        if not qc['pass'] and qc.get('action') != 'review':
+                            item['status'] = 'FAILED'
+                    self.store.mutate(p['id'], save_review)
+                    if not qc['pass'] and qc.get('action') != 'review':
+                        raise ValueError('Intro image failed Luna quality review. The image and review are saved; repair it before rendering.')
+            return
+        self.check_cloud_budget(p, provider)
         if provider.id != "existing":
             self.providers["existing"].unload()
         settings = provider.validateSettings(p["settings"]["image"])
@@ -1677,6 +1786,9 @@ class StudioService:
         self.unload_models()
         self.before_image()
         provider = self.provider(p["settings"]["image"]["provider"])
+        if p['settings'].get('cloudImagesOnly') and provider.id != 'comfyui':
+            raise ValueError('Local image generation is disabled for this project.')
+        self.check_cloud_budget(p, provider)
         if provider.id != "existing":
             self.providers["existing"].unload()
         person = next(c for c in p["characters"] if c["id"] == options["characterId"])
@@ -1907,6 +2019,7 @@ class StudioService:
                             )
                             for k, v in profile[section].items()
                         }
+                    profile['permanentIdentity'] = grounded_identity(profile['permanentIdentity'], evidence)
                     person.update(profile)
                     if evidence:
                         person["description"] = (
@@ -1942,8 +2055,10 @@ class StudioService:
         groups = []
         current = []
         size = 0
+        remote_director = isinstance(self.director, OpenAIDirector)
+        group_chars, group_sentences = (9000, 48) if remote_director else (2500, 12)
         for item in timings:
-            if current and (size + len(item["text"]) > 2500 or len(current) >= 12):
+            if current and (size + len(item["text"]) > group_chars or len(current) >= group_sentences):
                 groups.append(current)
                 current = []
                 size = 0
@@ -1952,8 +2067,9 @@ class StudioService:
         if current:
             groups.append(current)
         provider = self.provider(p["settings"]["image"]["provider"])
-        health = provider.healthCheck()
-        if not health["installed"]:
+        offline_planning = options.get('offlinePlanning') and provider.id == 'comfyui'
+        health = provider.planningCatalog() if offline_planning else provider.healthCheck()
+        if not health["installed"] and not (offline_planning and health.get('configured')):
             raise ValueError(
                 "Selected image workflow is unavailable. Choose an installed model before analyzing."
             )
@@ -1981,6 +2097,8 @@ class StudioService:
                 "layoutMode": p["settings"]["layoutMode"],
                 "customTargets": p["settings"]["customLayout"],
                 "chapterCast": chapter_cast,
+                "visualConstraints": p['settings'].get('visualConstraints', ''),
+                "productionDirection": p['settings'].get('productionDirection', ''),
             }
             self.gate(f"Analyzing group {group_index+1}/{len(groups)}")
             analysis = self.director.analyzeStory(context, self.gate)
@@ -2023,6 +2141,9 @@ class StudioService:
             byname = {c["name"].casefold(): c["id"] for c in p["characters"]}
             mapping = {}
             for detected in analysis["people"]:
+                if detected.get('permanentIdentity'):
+                    detected['permanentIdentity'] = grounded_identity(
+                        detected['permanentIdentity'], detected.get('evidence', ''))
                 match = byname.get(detected["name"].casefold())
                 existing = next(
                     (
@@ -2478,7 +2599,8 @@ class StudioService:
                         for c in p["characters"]
                     ):
                         shot_settings.update(width=384, height=384)
-                    settings = provider.validateSettings(shot_settings)
+                    settings = (provider.validateSettings(shot_settings, check_hardware=False)
+                                if offline_planning else provider.validateSettings(shot_settings))
                     shot = {
                         "id": uid("shot-"),
                         "sceneId": id,
@@ -2589,8 +2711,9 @@ class StudioService:
             # Summaries remain bounded, canonical state does not grow with full story text.
         if p["settings"]["generationMode"] != "QUICK":
             planned_shots = [s for scene in scenes for s in scene["shots"]]
-            for begin in range(0, len(planned_shots), 4):
-                group = planned_shots[begin : begin + 4]
+            prompt_batch = 12 if remote_director else 4
+            for begin in range(0, len(planned_shots), prompt_batch):
+                group = planned_shots[begin : begin + prompt_batch]
                 output = self.director.writeImagePrompt(
                     {
                         "model": p["settings"]["image"]["model"],
@@ -2824,6 +2947,8 @@ class StudioService:
         ch = get_chapter(p, chid)
         shot = options.get("shotSnapshot") or get_shot(p, chid, sid)
         provider = self.provider(shot["imageProvider"])
+        if p['settings'].get('cloudImagesOnly') and provider.id != 'comfyui':
+            raise ValueError('Local image generation is disabled for this project.')
         if provider.id != "native-flux":
             self.providers["native-flux"].unload()
         if provider.id != "existing":
@@ -2873,6 +2998,7 @@ class StudioService:
         )
         for attempt in range(max_attempts):
             self.gate(f'Generating {ch["name"]} · shot {sid} · attempt {attempt+1}')
+            self.check_cloud_budget(p, provider)
             try:
                 result = provider.generateImage(request, self.checkpoint)
             except (JobCancelled, AudioYield):
@@ -3076,6 +3202,8 @@ class StudioService:
             for c in p["characters"]
             if any(s["id"] == c["id"] for s in shot["characters"])
         ]
+        expected['visualStyle'] = p['settings']['style']
+        expected['visualConstraints'] = p['settings'].get('visualConstraints', '')
         qc_started = time.monotonic()
         result = self.director.inspectGeneratedImage(
             {

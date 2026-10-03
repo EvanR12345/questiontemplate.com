@@ -51,8 +51,8 @@ class IntroTest(unittest.TestCase):
                 renderer.intro(p,lambda *args:None)
                 filters=render.call_args.args[0]
                 self.assertIn("1+0.06*on/719",filters[filters.index('-vf')+1])
-                self.assertIn("boxcolor=black@0.60",filters[filters.index('-vf')+1])
-                self.assertIn("bordercolor=black",filters[filters.index('-vf')+1])
+                self.assertNotIn("drawtext",filters[filters.index('-vf')+1])
+                self.assertFalse((store.folder(p['id'])/'intro-title.txt').exists())
                 self.assertEqual(filters[filters.index('-t')+1],'30.0')
             audio=store.folder(p['id'])/'intro.wav'
             with wave.open(str(audio),'wb') as output:
@@ -61,6 +61,25 @@ class IntroTest(unittest.TestCase):
             p['intro']['audioPath']='intro.wav'
             with self.assertRaisesRegex(ValueError,'will not be cut off'):
                 renderer.intro(p,lambda *args:None)
+
+    def test_intro_montage_uses_each_asset_and_rejects_missing_coverage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=ProjectStore(folder); p=new_project('Never burn this title')
+            for name in ('a.png', 'b.png'):
+                store.folder(p['id']).mkdir(exist_ok=True)
+                (store.folder(p['id'])/name).write_bytes(b'fixture')
+            p['intro'].update(duration=30,shots=[
+                {'start':0,'end':12,'imagePath':'a.png','motion':'slow zoom in'},
+                {'start':12,'end':30,'imagePath':'b.png','motion':'pan right'}])
+            renderer=VideoRenderer(store,{})
+            with patch.object(renderer,'run') as run:
+                renderer.intro(p,lambda *args:None)
+                self.assertEqual(run.call_count,4)
+                self.assertTrue(all('drawtext' not in str(c) for c in run.call_args_list))
+            p['intro']['shots'][1]['start']=13
+            with self.assertRaisesRegex(ValueError,'gaps or overlaps'):
+                with patch.object(renderer,'run'):
+                    renderer.intro(p,lambda *args:None)
 
 if __name__ == "__main__":
     unittest.main()

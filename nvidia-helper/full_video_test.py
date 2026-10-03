@@ -154,6 +154,15 @@ class Harness(StudioService):
 
 
 class FullVideoTest(unittest.TestCase):
+    def test_preparation_directs_both_chapters_without_images_or_rendering(self):
+        self.service.prepare_story(self.project['id'], {})
+        saved = self.service.store.load(self.project['id'])
+        self.assertEqual(self.service.calls, [('audio', 1), ('analysis', 1), ('audio', 2), ('analysis', 2)])
+        self.assertEqual(saved['production']['status'], 'READY_FOR_IMAGES')
+        self.assertFalse(saved.get('render'))
+        self.assertTrue(all(not shot.get('imagePath') for chapter in saved['chapters']
+                            for scene in chapter['scenes'] for shot in scene['shots']))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.service = Harness(

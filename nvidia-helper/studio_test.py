@@ -12,6 +12,15 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_black_hair_does_not_authorize_invented_black_skin_or_height(self):
+        result = grounded_identity({'naturalHair':'black', 'skin':'black', 'height':'tall', 'face':'black beard'},
+            'A black-haired man with a black beard and a scar on the left cheek.')
+        self.assertEqual(result['naturalHair'], 'black')
+        self.assertEqual(result['skin'], '')
+        self.assertEqual(result['height'], '')
+        self.assertEqual(result['face'], 'black beard')
+        self.assertEqual(grounded_identity({'skin':'pale'}, 'His skin was pale.')['skin'], 'pale')
+
     def test_retry_preserves_location_identity_and_user_reference_assets(self):
         project = new_project()
         detected = {"name": "Prison cell", "description": "A cold cell"}

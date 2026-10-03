@@ -34,6 +34,26 @@ def digest(value):
     ).hexdigest()
 
 
+def grounded_identity(identity, evidence):
+    """A hair adjective is not evidence for skin, build or height.
+
+    Applies only to newly AI-extracted traits. User/reference-established
+    canonical profiles are preserved, including intentional appearance changes.
+    """
+    result = dict(identity)
+    required = {
+        'skin': r'\b(?:skin|complexion|pale|fair-skinned|dark-skinned|tanned)\b',
+        'naturalHair': r'\b(?:hair|haired|bald|balding)\b',
+        'eyes': r'\b(?:eyes?|eyed|iris|irises)\b',
+        'build': r'\b(?:build|muscular|muscled|lean|slim|stocky|broad|athletic|fat|thin)\b',
+        'height': r'\b(?:height|tall|short|feet|centimeters|cm)\b',
+    }
+    for field, pattern in required.items():
+        if result.get(field) and not re.search(pattern, evidence, re.I):
+            result[field] = ''
+    return result
+
+
 def analysis_location(project, detected, pending):
     name = " ".join(detected["name"].strip().split())
     canonical = name.casefold()
@@ -259,6 +279,8 @@ def new_project(name="My story"):
             "duration": 15,
             "placement": "full_story_only",
             "title": name,
+            "showTitle": False,
+            "shots": [],
             "subtitle": "",
             "voiceText": "",
             "visualPath": "",

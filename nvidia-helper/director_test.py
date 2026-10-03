@@ -12,6 +12,16 @@ from director_provider import (
 
 
 class DirectorRecoveryTest(unittest.TestCase):
+    def test_dialogue_quotes_are_data_not_strict_schema_enum_literals(self):
+        class Capture(DirectorProvider):
+            def call(self, role, context, schema, gate, **kwargs):
+                return schema
+        schema = Capture().analyzeStory({'sentences': [{'text': '"Ah!" he cried.'}],
+                                         'chapterCast': [{'id': 'hero'}]}, lambda _: None)
+        evidence = schema['properties']['changes']['items']['properties']['reason']
+        self.assertEqual(evidence['type'], 'string')
+        self.assertNotIn('enum', evidence)
+
     def test_oversized_evidence_is_referenced_without_losing_source_or_cached_passes(
         self,
     ):

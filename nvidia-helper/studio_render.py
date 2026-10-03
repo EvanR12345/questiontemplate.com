@@ -104,10 +104,16 @@ class VideoRenderer:
         zoom = "1"
         x = "iw/2-(iw/zoom/2)"
         y = "ih/2-(ih/zoom/2)"
+        amount = float(shot.get('motionSettings', {}).get('zoomAmount', v.get('zoomAmount', .06)))
+        if not math.isfinite(amount) or not 0 <= amount <= .35:
+            raise ValueError('Image zoom must be between 0 and 35 percent.')
+        progress = f"on/{interval}"
+        if v.get('motionEasing') == 'smooth':
+            progress = f"(3*pow(on/{interval},2)-2*pow(on/{interval},3))"
         if "zoom in" in motion:
-            zoom = f"1+0.06*on/{interval}"
+            zoom = f"1+{amount:g}*{progress}"
         elif "zoom out" in motion:
-            zoom = f"1.06-0.06*on/{interval}"
+            zoom = f"{1+amount:g}-{amount:g}*{progress}"
         elif "pan left" in motion:
             zoom = "1.08"
             x = f"(iw-iw/zoom)*(1-on/{interval})"
@@ -189,7 +195,7 @@ class VideoRenderer:
         folder = self.store.folder(p["id"]) / ch["id"]
         folder.mkdir(exist_ok=True)
         signature = digest(
-            {"rendererVersion": 4, "shots": shots, "audio": ch["audio"], "video": v}
+            {"rendererVersion": 5, "shots": shots, "audio": ch["audio"], "video": v}
         )
         old = ch.get("render", {}).get("narrationRender", ch.get("render", {}))
         if (
@@ -204,7 +210,7 @@ class VideoRenderer:
             # Round absolute boundaries, avoiding accumulated per-shot rounding drift.
             frames = max(1, round(s["end"] * fps) - round(s["start"] * fps))
             duration = frames / fps
-            name = "clip-" + digest({"rendererVersion": 4, "shot": s, "video": v})[:24] + ".mp4"
+            name = "clip-" + digest({"rendererVersion": 5, "shot": s, "video": v})[:24] + ".mp4"
             clip = folder / name
             if not clip.exists():
                 temporary = clip.with_suffix(".partial.mp4")
@@ -336,7 +342,7 @@ class VideoRenderer:
                 raise ValueError(f'Intro narration lasts {spoken_duration:.1f}s, longer than the {duration:g}s intro. Shorten its text or regenerate at a faster speaking speed; narration will not be cut off.')
         signature = digest(
             {
-                "introRendererVersion": 3,
+                "introRendererVersion": 4,
                 "intro": {
                     k: intro.get(k)
                     for k in (
@@ -346,6 +352,8 @@ class VideoRenderer:
                         "visualPath",
                         "audioPath",
                         "motion",
+                        "showTitle",
+                        "shots",
                     )
                 },
                 "video": v,
@@ -355,11 +363,39 @@ class VideoRenderer:
         destination = folder / f"intro-{signature[:12]}.mp4"
         if destination.exists():
             return destination
-        title = folder / "intro-title.txt"
-        title.write_text(
-            intro.get("title", p["name"]) + "\n" + intro.get("subtitle", ""),
-            encoding="utf-8",
-        )
+        montage = None
+        if intro.get('shots'):
+            clips, lengths = [], []
+            cursor = 0.0
+            for index, shot in enumerate(intro['shots']):
+                if shot.get('status') == 'FAILED':
+                    raise ValueError(f'Intro shot {index+1} failed quality review. Repair it before rendering.')
+                start, end = float(shot['start']), float(shot['end'])
+                if not all(math.isfinite(x) for x in (start, end)) or abs(start-cursor) > .02 or end <= start or end > duration+.02:
+                    raise ValueError('Intro shots must cover its duration in order without gaps or overlaps.')
+                image = self.store.asset(p['id'], shot.get('imagePath', ''))
+                if not image.is_file():
+                    raise ValueError(f'Generate intro shot {index+1} before rendering. No previous intro was replaced.')
+                seconds = end-start
+                clip = folder / ('intro-shot-' + digest({'version': 1, 'shot': shot, 'video': v})[:20] + '.mp4')
+                if not clip.is_file():
+                    visual = self.motion(shot | {'manual': {'motion': True}}, v | {'imageFit': 'cover'}, round(seconds*v['fps']))
+                    self.run(['-loop', '1', '-i', str(image), '-vf', visual, '-an', '-t', str(seconds), *self.encoding(p), str(clip)], gate, folder / f'intro-shot-{index+1}.log')
+                clips.append(clip)
+                lengths.append(seconds)
+                cursor = end
+            if abs(cursor-duration) > .02:
+                raise ValueError('Intro shots must reach the end of the intro narration timeline.')
+            montage = folder / ('intro-montage-' + signature[:12] + '.mp4')
+            if not montage.is_file():
+                self.concat(clips, montage, gate, folder / 'intro-montage.log', lengths, video_only=True)
+        title_filter = ''
+        if intro.get('showTitle', False):
+            title = folder / 'intro-title.txt'
+            title.write_text(intro.get('title', '') + '\n' + intro.get('subtitle', ''), encoding='utf-8')
+            textpath = str(title).replace('\\', '/').replace(':', '\\:').replace("'", "\\'")
+            font = self.config.get('font', 'C:/Windows/Fonts/arial.ttf').replace('\\', '/').replace(':', '\\:')
+            title_filter = f",drawtext=fontfile='{font}':textfile='{textpath}':fontcolor=white:fontsize=48:borderw=2:bordercolor=black:box=1:boxcolor=black@0.60:boxborderw=18:x=(w-text_w)/2:y=(h-text_h)/2"
         inputs = (
             ["-loop", "1", "-i", str(self.store.asset(p["id"], intro["visualPath"]))]
             if intro.get("visualPath")
@@ -370,20 +406,18 @@ class VideoRenderer:
                 f"color=c=0x171c23:s={v['width']}x{v['height']}:r={v['fps']}",
             ]
         )
+        if montage:
+            inputs = ['-i', str(montage)]
         inputs += (
             ["-i", str(self.store.asset(p["id"], intro["audioPath"]))]
             if intro.get("audioPath")
             else ["-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono"]
         )
-        textpath = str(title).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
-        font = (
-            self.config.get("font", "C:/Windows/Fonts/arial.ttf")
-            .replace("\\", "/")
-            .replace(":", "\\:")
-        )
         visual = self.motion({'start':0, 'end':duration, 'motion':intro.get('motion','static'),
             'camera':{'shot':'wide'}, 'manual':{'motion':True}}, v | {'imageFit':'cover'}, round(duration*v['fps']))
-        filters = visual + f",drawtext=fontfile='{font}':textfile='{textpath}':fontcolor=white:fontsize=48:borderw=2:bordercolor=black:box=1:boxcolor=black@0.60:boxborderw=18:x=(w-text_w)/2:y=(h-text_h)/2,fade=t=in:st=0:d=0.5,fade=t=out:st={duration-.5}:d=0.5"
+        if montage:
+            visual = f"fps={v['fps']},setsar=1"
+        filters = visual + title_filter + f",fade=t=in:st=0:d=0.5,fade=t=out:st={duration-.5}:d=0.5"
         self.run(
             [
                 *inputs,

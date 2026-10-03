@@ -153,8 +153,8 @@ SHOT = obj(
         "expression": STR,
         "pose": STR,
         "lighting": STR,
-        "motion": STR,
-        "transition": STR,
+        "motion": {"enum": ["static", "slow zoom in", "slow zoom out", "pan left", "pan right", "pan up", "pan down"]},
+        "transition": {"enum": ["cut", "crossfade"]},
     }
 )
 CAMERA = obj({"shotIndex": INT, "shot": STR, "angle": STR, "composition": STR})
@@ -182,7 +182,9 @@ class DirectorProvider:
         )
 
     def analyzeStory(self, context, gate):
-        evidence = {"type": "string", "enum": [s["text"] for s in context["sentences"]]}
+        # Dialogue quotes can be rejected as literals by a provider's strict
+        # output grammar. Validate exact source evidence in the application.
+        evidence = STR
         schema = obj(
             ANALYSIS["properties"]
             | {
@@ -251,7 +253,7 @@ class DirectorProvider:
 
     def planLayout(self, context, gate):
         return self.call(
-            "Cinematographer: choose meaningful camera shots and positions, never rotate angles randomly. One camera per supplied shot.",
+            "Cinematographer: choose meaningful camera shots and positions, never rotate angles randomly. One camera per supplied shot. Use expressive full-color fantasy/manhwa compositions when requested. Never invent a character's ethnicity or remove clothing without story evidence. Preserve separate identities and staged appearances.",
             context,
             obj({"cameras": arr(CAMERA)}),
             gate,
@@ -287,7 +289,6 @@ class DirectorProvider:
                 "field": {"type": "string", "enum": fields or ["object"]},
                 "reason": {
                     "type": "string",
-                    "enum": [s["text"] for s in context["sentences"]],
                 },
             }
         )

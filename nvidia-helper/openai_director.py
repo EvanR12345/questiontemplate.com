@@ -132,7 +132,13 @@ class OpenAIDirector(DirectorProvider):
             except urllib.error.HTTPError as error:
                 if ledger:
                     ledger.settle(uncharged=True)
-                raise RuntimeError(f"Luna request failed (HTTP {error.code}). Check API billing, model access and structured-output settings.") from None
+                detail = ''
+                try:
+                    detail = json.loads(error.read(8192)).get('error', {}).get('message', '')[:1200]
+                    detail = str(detail).replace(self.key(), '[redacted]') if self.key() else str(detail)
+                except Exception:
+                    pass
+                raise RuntimeError(f"Luna request failed (HTTP {error.code}). " + (detail or 'Check API billing, model access and structured-output settings.')) from None
             finally:
                 if ledger and ledger.load().get('pending'):
                     ledger.settle()

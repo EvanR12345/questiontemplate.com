@@ -74,6 +74,20 @@ Before deployment, verify one GPU's VRAM, assigned system RAM, CPU allocation, l
 
 ## Model and storage sources
 
+## Fresh Luna production after the rejected fantasy draft
+
+The rejected draft reused its original scene structure and some existing images. Its canonical protagonist profile also contained "black skin" despite the supplied chapters describing black hair and a beard rather than skin color. These are verified input and orchestration defects; they do not establish that the image model itself is adequate. Four-shot canvases introduce another composition and identity risk and are disabled for the fresh remake.
+
+The fresh project preserves only source narration scripts and user-downloaded reference inputs. It discards old generated references, images, audio, plans and rendered videos. Christopher and Jonathan have distinct identities; Christopher remains clothed until the chapter's explicit stripping event. The user's appearance override is recorded separately from extracted story facts. Unsupported skin, eye, hair, build and height traits are filtered when extracting new identities. Every visual prompt includes the project illustration style and current appearance.
+
+The candidate first trial is one landscape image per shot using Qwen-Image-Edit-2511 FP8 with the eight-step reference workflow. Qwen-Image-2512 remains available for unreferenced images. Neither this new configuration nor a replacement model is accepted until fresh single-character, multiple-character and intentional clothing-change samples pass visual inspection. No new weights are downloaded merely to change a model name. A poor sample stops bulk production; model or workflow changes require another sample.
+
+The prepare-story queue performs fresh narration and the full selected director pipeline with the GPU worker stopped. Declared workflow configuration permits planning; live installation, capabilities and VRAM are validated before generation. Luna chooses new scene boundaries, shots, camera, motion, prompts and workflows. Strict schemas use strings for quoted source evidence; the application verifies the evidence rather than embedding arbitrary dialogue as enum literals. The separately authored first-15-chapter intro script is supplied with verified facts and narration timing for a new Luna-directed montage. Intro and chapter images receive the configured vision review. Title overlays are off by default.
+
+The speech delivery version invalidates old narration signatures and normalizes extended interjections before supplying explicit vowel pronunciations to the existing Kokoro engine. Real synthesis and a real full-frame FFmpeg motion render were exercised without local image generation. Motion choices use valid enum values, and the fresh project uses 16% eased zooms; this is not a claim of exact motion matching to the reference channels.
+
+The existing 50-cent combined spending cap still applies. Approximately 42.24 cents were estimated for the rejected production. Fresh preparation has its own bounded API ledger. A new cloud run needs an explicitly revised cap if its projected cumulative spend exceeds the remaining allowance. Cloud queue guards preserve outputs but do not stop infrastructure billing; stop the Runpod pod separately before local rendering. Storage continues accruing while the pod is stopped.
+
 - [Runpod network volumes and standard pricing](https://docs.runpod.io/storage/network-volumes)
 - [Runpod S3-compatible access](https://docs.runpod.io/storage/s3-api)
 - [Qwen-Image-Edit-2511 model and Apache 2.0 license](https://huggingface.co/Qwen/Qwen-Image-Edit-2511)

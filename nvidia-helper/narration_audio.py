@@ -7,7 +7,7 @@ effects become PCM in the same chapter WAV instead of spoken letters.
 import hashlib
 import re
 
-VERSION = 1
+VERSION = 2
 EFFECTS = {'bang', 'bam', 'boom', 'thud', 'click', 'beep', 'slash', 'whoosh', 'crash'}
 
 def effect_name(text):
@@ -25,13 +25,27 @@ def speech_text(text):
         compact = re.sub(r'(.)\1+', r'\1', word.lower())
         known = {'no': 'No', 'yes': 'Yes', 'stop': 'Stop', 'help': 'Help',
                  'ah': 'Ah', 'a': 'Ah', 'ack': 'Ah', 'ak': 'Ah', 'ag': 'Ah',
-                 'agh': 'Ah', 'ugh': 'Ugh', 'ug': 'Ugh', 'ha': 'Ah', 'oh': 'Oh'}
+                 'agh': 'Ah', 'ugh': 'Ugh', 'ug': 'Ugh', 'ha': 'Ah', 'hah': 'Ah', 'oh': 'Oh'}
+        if compact in ('ah', 'ha', 'hah', 'agh', 'ag', 'ak', 'ack', 'ugh', 'ug', 'oh') and re.search(r'([a-z])\1+', word, re.I):
+            return known[compact]
         if re.search(r'([a-z])\1{2,}', word, re.I):
             return known.get(compact, re.sub(r'([a-z])\1{2,}', r'\1', word, flags=re.I).capitalize())
         return word
     text = re.sub(r'[A-Za-z]+', stretched, text)
     text = re.sub(r'!{2,}', '!', text).replace('*', '')
     return text.strip()
+
+
+def pronunciation_text(text):
+    """Known vocal interjections use Kokoro/Misaki's explicit IPA override.
+
+    Keep the visible script clean. Never spell a scream as an acronym, and do
+    not apply this to names, contractions, or words merely containing 'ah'.
+    """
+    phonemes = {'ah': 'ɑ', 'ugh': 'ʌh', 'oh': 'O', 'huh': 'hʌ', 'hah': 'hɑ'}
+    return re.sub(r'\b(Ah|Ugh|Oh|Huh|Hah)\b',
+                  lambda m: '[' + m.group() + '](/' + phonemes[m.group().lower()] + '/)',
+                  text, flags=re.I)
 
 def audio_segments(text):
     """Only known onomatopoeia inside stars is an effect, never arbitrary emphasis."""
@@ -43,12 +57,12 @@ def audio_segments(text):
             continue
         before = speech_text(text[cursor:match.start()])
         if re.search(r'\w', before):
-            result.append({'kind': 'speech', 'text': before})
+            result.append({'kind': 'speech', 'text': before, 'ttsText': pronunciation_text(before)})
         result.append({'kind': 'effect', 'effect': name, 'source': match.group()})
         cursor = match.end()
     after = speech_text(text[cursor:])
     if re.search(r'\w', after):
-        result.append({'kind': 'speech', 'text': after})
+        result.append({'kind': 'speech', 'text': after, 'ttsText': pronunciation_text(after)})
     return result
 
 def effect_pcm(name, sample_rate=24000):

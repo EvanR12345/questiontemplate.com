@@ -96,10 +96,10 @@ class ImageProvider:
             "denoisingStrength": 0.65,
         }
 
-    def validateSettings(self, s):
+    def validateSettings(self, s, check_hardware=True):
         caps = self.getCapabilities()
         result = copy.deepcopy(s)
-        memory = self.available_vram_gb()
+        memory = self.available_vram_gb() if check_hardware else None
         requirements = caps.get("hardwareRequirements", {})
         minimum = requirements.get("vramGB", 0)
         if (
@@ -590,6 +590,18 @@ class ComfyImageProvider(ImageProvider):
                 "hardwareRequirements": {"configuredWorkflowRequired": True},
             }
 
+    def planningCatalog(self):
+        """Declared workflows for planning while a paid worker is stopped.
+
+        This is not a health check or proof that weights are installed. Every
+        generation still performs the live backend/memory/model validation.
+        """
+        template = self.template()
+        templates = template.get('variants', [template])
+        return {'installed': False, 'configured': True, 'requiresLiveValidation': True,
+                'models': list(dict.fromkeys([template['model']] + [t['model'] for t in templates])),
+                'workflow': list(dict.fromkeys([template['name']] + [t['name'] for t in templates]))}
+
     def resolve_template(self, request, settings):
         root = self.template()
         variants = root.get("variants")
@@ -813,6 +825,9 @@ def format_prompt(project, shot, provider):
         "Lighting: " + shot.get("lighting", ""),
         "Style: " + project["settings"]["style"],
     ]
+    if project['settings'].get('visualConstraints'):
+        parts.append('Production constraints: ' + project['settings']['visualConstraints'])
+    parts.append('One continuous landscape composition depicting one simultaneous moment. No collage, split panels, borders, labels or title text. Preserve the specified identities and current clothing; do not remove clothing without a stated story change.')
     if shot.get("continuity"):
         parts.append("Keep: " + json.dumps(shot["continuity"], ensure_ascii=False))
     caps = provider.getCapabilities()

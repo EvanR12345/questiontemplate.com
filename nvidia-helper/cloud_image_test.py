@@ -10,6 +10,15 @@ from studio_data import ProjectStore, character, new_project
 
 
 class CloudImageTest(unittest.TestCase):
+    def test_offline_planning_defers_hardware_check_but_generation_validation_does_not(self):
+        provider = self.provider()
+        with patch('image_provider.request_json', side_effect=OSError('worker stopped')) as network:
+            settings = provider.validateSettings({'width':1344,'height':768,'steps':8,'seed':42}, check_hardware=False)
+            self.assertEqual(settings['seed'],42)
+            network.assert_not_called()
+            with self.assertRaisesRegex(RuntimeError,'worker stopped'):
+                provider.validateSettings(settings)
+
     def provider(self):
         provider = ComfyImageProvider({})
         provider.getCapabilities = lambda: {
