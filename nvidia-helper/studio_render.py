@@ -326,6 +326,11 @@ class VideoRenderer:
         duration = float(intro["duration"])
         if not 10 <= duration <= 30:
             raise ValueError("Intro duration must be 10–30 seconds.")
+        if intro.get('audioPath'):
+            with wave.open(str(self.store.asset(p['id'],intro['audioPath'])), 'rb') as narration:
+                spoken_duration = narration.getnframes()/narration.getframerate()
+            if spoken_duration > duration + .02:
+                raise ValueError(f'Intro narration lasts {spoken_duration:.1f}s, longer than the {duration:g}s intro. Shorten its text or regenerate at a faster speaking speed; narration will not be cut off.')
         signature = digest(
             {
                 "intro": {
@@ -372,7 +377,9 @@ class VideoRenderer:
             .replace("\\", "/")
             .replace(":", "\\:")
         )
-        filters = f"scale={v['width']}:{v['height']}:force_original_aspect_ratio=increase,crop={v['width']}:{v['height']},drawtext=fontfile='{font}':textfile='{textpath}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2,fade=t=in:st=0:d=0.5,fade=t=out:st={duration-.5}:d=0.5"
+        visual = self.motion({'start':0, 'end':duration, 'motion':intro.get('motion','static'),
+            'camera':{'shot':'wide'}, 'manual':{'motion':True}}, v | {'imageFit':'cover'}, round(duration*v['fps']))
+        filters = visual + f",drawtext=fontfile='{font}':textfile='{textpath}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2,fade=t=in:st=0:d=0.5,fade=t=out:st={duration-.5}:d=0.5"
         self.run(
             [
                 *inputs,

@@ -1028,7 +1028,8 @@ class StudioService:
                             and has_refs
                             and not shot.get("manual", {}).get("generationSettings")
                         ):
-                            settings["width"] = settings["height"] = 384
+                            settings["width"] = min(settings.get("width", 384), 384)
+                            settings["height"] = min(settings.get("height", 384), 384)
                         validated = provider.validateSettings(
                             settings | {"model": shot["imageModel"]}
                         )
@@ -1684,6 +1685,15 @@ class StudioService:
                 : provider.getCapabilities().get("maxReferenceImages", 0)
             ]
         ]
+        reference_roles = [{'path':r['path'],'role':'identity'} for r in person['references'][:len(refs)]]
+        maximum = provider.getCapabilities().get('maxReferenceImages',0)
+        if maximum > 1 and provider.getCapabilities().get('supportsStyleReference') and p.get('styleReferences'):
+            refs = refs[:maximum-1]
+            reference_roles = reference_roles[:maximum-1]
+            style_ref = p['styleReferences'][0]
+            refs.append(data_url(self.store.asset(p['id'],style_ref['path'])))
+            reference_roles.append({'path':style_ref['path'],'role':'style'})
+            prompt += f' Use image {len(refs)} for illustration linework and palette only, not its people or objects. Earlier images establish identity.'
         if refs and provider.id == "native-flux":
             settings.update(width=384, height=384)
         result = provider.generateImage(
@@ -1708,11 +1718,11 @@ class StudioService:
         def save(latest):
             next(c for c in latest["characters"] if c["id"] == person["id"])[
                 "references"
-            ].append(
+            ].insert(0,
                 {
                     "path": name,
                     "kind": options.get("referenceKind", "face"),
-                    "metadata": result | {"prompt": prompt, "requestedSettings": settings,
+                    "metadata": result | {"prompt": prompt, "referenceRoles":reference_roles, "requestedSettings": settings,
                                            "settings": result.get("settings", settings)},
                 }
             )

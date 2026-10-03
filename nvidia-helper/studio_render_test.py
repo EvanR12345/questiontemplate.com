@@ -1,4 +1,7 @@
-import unittest
+import unittest, tempfile, wave
+from pathlib import Path
+from unittest.mock import patch
+from studio_data import ProjectStore,new_project
 from studio_render import VideoRenderer, effective_motion
 
 
@@ -29,6 +32,27 @@ class MotionTest(unittest.TestCase):
         self.assertIn("1.06-0.06*on/47", zoom_out)
         self.assertIn("pad=", renderer.motion(self.shot(), video | {"imageFit": "contain"}, 48))
 
+
+class IntroTest(unittest.TestCase):
+    def test_thirty_second_intro_moves_and_never_cuts_long_narration(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=ProjectStore(folder)
+            p=new_project('Opening')
+            p['intro'].update(enabled=True,duration=30,motion='slow zoom in')
+            p=store.save(p)
+            renderer=VideoRenderer(store,{})
+            with patch.object(renderer,'run') as render:
+                renderer.intro(p,lambda *args:None)
+                filters=render.call_args.args[0]
+                self.assertIn("1+0.06*on/719",filters[filters.index('-vf')+1])
+                self.assertEqual(filters[filters.index('-t')+1],'30.0')
+            audio=store.folder(p['id'])/'intro.wav'
+            with wave.open(str(audio),'wb') as output:
+                output.setnchannels(1);output.setsampwidth(2);output.setframerate(24000)
+                output.writeframes(b'\0'*(31*24000*2))
+            p['intro']['audioPath']='intro.wav'
+            with self.assertRaisesRegex(ValueError,'will not be cut off'):
+                renderer.intro(p,lambda *args:None)
 
 if __name__ == "__main__":
     unittest.main()
