@@ -809,9 +809,26 @@ def visible_appearance(shot, selected):
     # current director decision, rather than blindly reenacting prior combat.
     context = ' '.join(str(shot.get(k, '')) for k in ('action', 'narrationSegment', 'pose'))
     context += ' ' + str(shot.get('camera', {}).get('composition', ''))
-    return {k:v for k,v in selected.get('appearanceState', {}).items()
-            if k not in ('gun', 'hammer', 'knife', 'sword', 'bomb')
-            or re.search(r'\b'+re.escape(k)+r's?\b', context, re.IGNORECASE)}
+    appearance = selected.get('appearanceState', {})
+    weapons = ('gun', 'hammer', 'knife', 'sword', 'bomb')
+    named = {k for k in weapons if re.search(r'\b'+k+r's?\b', context, re.IGNORECASE)}
+    # A director can write "weapon raised" while the canonical scene state
+    # says "gun in his hand". Do not erase that unambiguous visible prop, or
+    # the generator is left to invent a blade. Carried/stowed inventory and
+    # multiple held weapons remain insufficient evidence to choose a prop.
+    if not named and re.search(r'\bweapons?\b', context, re.IGNORECASE) and not re.search(
+        r'\bunarmed\b|\bempty[- ]handed\b|\b(?:no|without)\s+(?:(?:a|any|his|her|their)\s+)?weapons?\b', context, re.IGNORECASE
+    ):
+        held = []
+        for kind in weapons:
+            state = str(appearance.get(kind, '')).lower().replace('_', ' ')
+            if not re.search(r'\b(?:dropped|removed|holstered|stowed)\b|on (?:the )?floor|not holding|no longer', state) and re.search(
+                r'\b(?:holding|held|wielding|aiming|raised|firing)\b|\b(?:right|left) hand\b|\bin (?:(?:his|her|their|the) )?hand\b', state
+            ):
+                held.append(kind)
+        if len(held) == 1:
+            named.add(held[0])
+    return {k:v for k,v in appearance.items() if k not in weapons or k in named}
 
 
 def format_prompt(project, shot, provider):

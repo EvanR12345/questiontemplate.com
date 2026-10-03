@@ -10,6 +10,21 @@ from studio_data import ProjectStore, character, new_project
 
 
 class CloudImageTest(unittest.TestCase):
+    def test_generic_raised_weapon_retains_one_known_held_prop(self):
+        shot = {'action':'Christopher remains ready to fight.', 'narrationSegment':'He was still fighting.',
+                'pose':'Weapon raised toward his opponents.', 'camera':{}}
+        selected = {'appearanceState':{'outfit':'dark jacket','gun':'Holding a gun in his hand','hammer':'carried'}}
+        self.assertEqual(visible_appearance(shot, selected), {'outfit':'dark jacket','gun':'Holding a gun in his hand'})
+        self.assertEqual(selected['appearanceState']['hammer'], 'carried')
+        selected['appearanceState']['hammer'] = 'held in right hand'
+        self.assertEqual(visible_appearance(shot, selected), {'outfit':'dark jacket'})
+        selected['appearanceState']['hammer'] = 'carried'
+        shot['pose'] = 'Unarmed, without any weapon.'
+        self.assertEqual(visible_appearance(shot, selected), {'outfit':'dark jacket'})
+        shot['pose'] = 'Weapon raised toward his opponents.'
+        selected['appearanceState']['gun'] = 'No longer holding it; dropped on the floor'
+        self.assertEqual(visible_appearance(shot, selected), {'outfit':'dark jacket'})
+
     def test_historical_weapons_do_not_override_current_shot_or_erase_story_state(self):
         project, shot, metadata = self.project_and_shot()
         selected = shot['characters'][0]

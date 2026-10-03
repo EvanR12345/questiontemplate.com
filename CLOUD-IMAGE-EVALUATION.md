@@ -86,6 +86,8 @@ The current cadence is retained. Daily-capacity projections are estimates, not v
 
 Potential targeted repair and scale-to-zero workflows require bounded trials before deployment. Model downloads, service grants, rates, cold starts and licenses need validation; the existing working environment and project assets are preserved.
 
+A recorded failed shot exposed a concrete prompt omission: "weapon raised" lost a known held gun from the structured character state, and the image contained a blade. The visibility filter now preserves exactly one unambiguously held weapon in that case, without restoring stowed inventory or guessing between multiple weapons. A regression test also covers unarmed instructions and dropped props. This corrects input ambiguity; the saved failed image/flag remains, and improved visual output has not been claimed without another generation test. Including this follow-up, 86 distinct relevant backend tests passed.
+
 - [Official FLUX.2 model family and licensing](https://github.com/black-forest-labs/flux2)
 - [Runpod flex and active workers](https://docs.runpod.io/serverless/workers/overview)
 - [Qwen Image Edit Lightning model card](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning)
