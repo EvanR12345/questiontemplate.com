@@ -9,6 +9,14 @@ from director_provider import obj, arr, STR, short_text
 from image_provider import select_references, reference_prompt
 from panel_batch import panel_prompt, split_panels, validate_groups
 
+def pending_panels(shots, folder):
+    """Resume partial canvases without replacing an already saved shot."""
+    return [s for s in shots if not (s.get('imagePath') and not s.get('generationStale')
+        and s['status'] in ('COMPLETE','PASSED') and (folder / s['imagePath']).is_file())]
+
+def cloud_cost(started, rate, previous=0, reserve_seconds=0):
+    return previous + max(0, time.time()-started+reserve_seconds)*rate/3600
+
 def restyle_story(service, pid):
     p = service.store.load(pid)
     for chapter in p['chapters']:
@@ -100,6 +108,8 @@ def generate_panel_story(service, pid, options):
     service.providers['existing'].unload()
     started = options.get('cloudStartedAt')
     rate = float(options.get('gpuHourlyUSD',0))
+    previous = float(options.get('previousGPUUSD',0))
+    previous_seconds = float(options.get('previousGPUSeconds',0))
     cap = p['settings'].get('budget',{}).get('runpodUSD')
     if cap and (not started or not rate):
         raise ValueError('Cloud budget needs the actual worker start time and hourly rate before generation.')
@@ -110,11 +120,11 @@ def generate_panel_story(service, pid, options):
         for index, ids in enumerate(groups):
             p = service.store.load(pid)
             chapter = get_chapter(p,chapter['id'])
-            current = [get_shot(p,chapter['id'],sid) for sid in ids]
-            if all(s.get('imagePath') and not s.get('generationStale') and s['status'] in ('COMPLETE','PASSED') for s in current):
+            current = pending_panels([get_shot(p,chapter['id'],sid) for sid in ids], service.store.folder(pid))
+            if not current:
                 continue
             predicted = max(15, max(completed_batches[-3:],default=15))
-            if cap and (time.time()-started+predicted+12)*rate/3600 > cap:
+            if cap and cloud_cost(started,rate,previous,predicted+25) > cap:
                 raise RuntimeError('Cloud budget reached. Stop the rented GPU; all completed panels are saved. Finish remaining shots locally or explicitly raise the budget.')
             service.production_progress(pid,f"Chapter {chapter['number']} · economy canvas {index+1}/{len(groups)}",chapterId=chapter['id'],totalImages=len(shots))
             aggregate = copy.deepcopy(current[0])
@@ -138,7 +148,7 @@ def generate_panel_story(service, pid, options):
             shared = {'model':result['model'],'workflow':result['workflow'],'provider':'comfyui',
                 'seed':result['seed'],'settings':result['settings'],'result':result,'prompt':prompt,'referenceImages':metadata,
                 'batch':{'sourcePath':str(canvas_path.relative_to(service.store.folder(pid))).replace('\\','/'),
-                    'shots':ids,'prompts':[{'id':s['id'],'prompt':s['prompt']} for s in current],
+                    'shots':[s['id'] for s in current],'originalGroup':ids,'prompts':[{'id':s['id'],'prompt':s['prompt']} for s in current],
                     'qualityTradeoff':'Four shots share a 1344x768 canvas. Each extracted landscape is 640x360.'},'time':time.time()}
             saved = []
             for shot,tile in zip(current,split):
@@ -159,12 +169,12 @@ def generate_panel_story(service, pid, options):
             service.store.mutate(pid,commit)
             seconds = time.monotonic()-began
             completed_batches.append(seconds)
-            service.record_timing(pid,'Economy image canvas',seconds,{'chapter':chapter['number'],'shots':ids,'images':len(ids),
+            service.record_timing(pid,'Economy image canvas',seconds,{'chapter':chapter['number'],'shots':[s['id'] for s in current],'images':len(current),
                 'generationSeconds':result['seconds'],'estimatedGPUUSD':seconds*rate/3600})
             if started:
                 service.store.mutate(pid,lambda q:q.setdefault('production',{}).setdefault('costs',{}).update(
-                    gpuWindowEstimatedUSD=(time.time()-started)*rate/3600,gpuHourlyUSD=rate,
-                    gpuWindowSeconds=time.time()-started))
+                    gpuWindowEstimatedUSD=cloud_cost(started,rate,previous),gpuHourlyUSD=rate,
+                    gpuWindowSeconds=previous_seconds+time.time()-started,gpuStopped=False))
             if options.get('maxBatches') and len(completed_batches) >= int(options['maxBatches']):
                 return
     service.store.mutate(pid,lambda q:q.setdefault('production',{}).update(status='READY_TO_RENDER',stage='All economy images saved'))
