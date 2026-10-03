@@ -63,6 +63,8 @@ class IntroTest(unittest.TestCase):
                 self.assertNotIn("drawtext",filters[filters.index('-vf')+1])
                 self.assertFalse((store.folder(p['id'])/'intro-title.txt').exists())
                 self.assertEqual(filters[filters.index('-t')+1],'30.0')
+                self.assertEqual(filters[filters.index('-c:a')+1],'aac')
+                self.assertEqual(filters[filters.index('-b:a')+1],'128k')
             audio=store.folder(p['id'])/'intro.wav'
             with wave.open(str(audio),'wb') as output:
                 output.setnchannels(1);output.setsampwidth(2);output.setframerate(24000)
@@ -134,6 +136,50 @@ class RenderReuseTest(unittest.TestCase):
                 encoding = [call for call in run.call_args_list if '-frames:v' in call.args[0]]
                 self.assertEqual(len(encoding), 1)
                 self.assertIn('first.png', ' '.join(encoding[0].args[0]))
+
+    def test_retiming_keeps_unchanged_motion_clip(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store, p, ch = self.setup_project(folder)
+            ch['scenes'][0]['shots'][1]['motion'] = 'slow zoom in'
+            renderer = VideoRenderer(store, {})
+            with patch.object(renderer, 'run', side_effect=self.save_output) as run:
+                ch['render'] = renderer.chapter(p, ch, lambda *_:None)
+                run.reset_mock()
+                ch['scenes'][0]['shots'][0]['end'] = 2
+                ch['scenes'][0]['shots'][1].update(start=2,end=3)
+                ch['audio']['duration'] = 3
+                renderer.chapter(p, ch, lambda *_:None)
+                encodes = [c for c in run.call_args_list if '-frames:v' in c.args[0]]
+                self.assertEqual(len(encodes),1)
+                self.assertIn('first.png', ' '.join(encodes[0].args[0]))
+
+    def test_frame_rounding_still_invalidates_motion(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store, p, ch = self.setup_project(folder)
+            renderer = VideoRenderer(store,{})
+            shot = ch['scenes'][0]['shots'][0]
+            a = renderer.shot_identity(p,shot)
+            b = renderer.shot_identity(p,shot | {'start':0.01,'end':1.01})
+            c = renderer.shot_identity(p,shot | {'end':1.05})
+            self.assertEqual(a,b)
+            self.assertNotEqual(a,c)
+
+    def test_aac_audition_reuses_bytes_and_refreshes_changed_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store, p, ch = self.setup_project(folder)
+            renderer = VideoRenderer(store,{})
+            with patch.object(renderer,'run',side_effect=self.save_output) as run:
+                first = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None)
+                second = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None)
+                self.assertEqual(first,second)
+                self.assertEqual(run.call_count,1)
+                args = run.call_args.args[0]
+                self.assertEqual(args[args.index('-b:a')+1],'128k')
+                self.assertEqual(first['exportBitrate'],128000)
+                (store.folder(p['id'])/'chapter.wav').write_bytes(b'new source')
+                third = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None)
+                self.assertNotEqual(first['exportPath'],third['exportPath'])
+                self.assertEqual(run.call_count,2)
 
     def test_old_cache_is_adopted_without_reencoding(self):
         with tempfile.TemporaryDirectory() as folder:

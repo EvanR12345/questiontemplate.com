@@ -52,7 +52,9 @@ class VideoRenderer:
     def shot_identity(self, project, shot):
         video = project['settings']['video']
         identity = {
-            'start': shot['start'], 'end': shot['end'],
+            # A clip's pixels depend on its frame count, not where it sits in
+            # narration. Moving an unchanged shot must not encode it again.
+            'frames': max(1, round(shot['end']*video['fps']) - round(shot['start']*video['fps'])),
             'image': self.asset_identity(project['id'], shot['imagePath']),
             'motion': effective_motion(shot, video),
             'zoomAmount': shot.get('motionSettings', {}).get('zoomAmount', video.get('zoomAmount', .06)),
@@ -86,6 +88,17 @@ class VideoRenderer:
                 "FFmpeg is unavailable. Set its existing installation path in Advanced settings. No chapter assets were changed."
             )
         return str(path)
+
+    def audio_preview(self, project_id, source, gate):
+        """Cache a 128 kbps audition; retain its lossless synthesis master."""
+        signature = digest({'audio':self.asset_identity(project_id, source),
+                            'codec':'aac', 'bitrate':128000, 'version':1})
+        destination = self.store.folder(project_id) / f'audition-{signature[:24]}.m4a'
+        if not destination.is_file() or destination.stat().st_size == 0:
+            self.run(['-i', str(self.store.asset(project_id, source)), '-vn',
+                      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', str(destination)],
+                     gate, self.store.folder(project_id) / 'audition-export.log')
+        return {'exportPath':destination.name, 'exportCodec':'AAC', 'exportBitrate':128000}
 
     def run(self, args, gate, log):
         # Cache names become visible only after FFmpeg succeeds. A cancelled
@@ -257,8 +270,17 @@ class VideoRenderer:
             {"rendererVersion": 5, "shots": shots, "audio": ch["audio"], "video": v}
         )
         visual_shots = [self.shot_identity(p, shot) for shot in shots]
+        previous_visual_shots = [{k:value for k,value in visual.items() if k != 'frames'} |
+                                 {'start':shot['start'], 'end':shot['end']}
+                                 for shot,visual in zip(shots,visual_shots)]
+        previous_signature = digest({
+            'rendererVersion': 6, 'shots': previous_visual_shots,
+            'transitions': [shot.get('transition') for shot in shots],
+            'audio': self.asset_identity(p['id'], ch['audio']['path']),
+            'duration': ch['audio']['duration'], 'video': v,
+        })
         signature = digest({
-            'rendererVersion': 6, 'shots': visual_shots,
+            'rendererVersion': 7, 'shots': visual_shots,
             'transitions': [shot.get('transition') for shot in shots],
             'audio': self.asset_identity(p['id'], ch['audio']['path']),
             'duration': ch['audio']['duration'], 'video': v,
@@ -269,7 +291,7 @@ class VideoRenderer:
         assets.append(self.store.asset(p['id'], ch['audio']['path']))
         if (
             old_path and old_path.is_file() and old_path.stat().st_size > 0
-            and (old.get('renderIdentity') == signature or
+            and (old.get('renderIdentity') in (signature, previous_signature) or
                  old.get('signature') == legacy_signature and all(s['motion'] == 'static' for s in visual_shots) and self.legacy_is_current(old_path, assets))
         ):
             return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4"}
@@ -280,8 +302,10 @@ class VideoRenderer:
             # Round absolute boundaries, avoiding accumulated per-shot rounding drift.
             frames = max(1, round(s["end"] * fps) - round(s["start"] * fps))
             duration = frames / fps
-            name = "clip-" + digest({"rendererVersion": 6, "shot": visual_shots[index], "video": v})[:24] + ".mp4"
+            name = "clip-" + digest({"rendererVersion": 7, "shot": visual_shots[index], "video": v})[:24] + ".mp4"
             clip = folder / name
+            previous = folder / ('clip-' + digest({'rendererVersion':6, 'shot':previous_visual_shots[index], 'video':v})[:24] + '.mp4')
+            self.reuse_legacy_clip(previous, clip, [assets[index]])
             legacy = folder / ('clip-' + digest({'rendererVersion': 5, 'shot': s, 'video': v})[:24] + '.mp4')
             if visual_shots[index]['motion'] == 'static':
                 self.reuse_legacy_clip(legacy, clip, [assets[index]])
@@ -420,7 +444,7 @@ class VideoRenderer:
                 raise ValueError(f'Intro narration lasts {spoken_duration:.1f}s, longer than the {duration:g}s intro. Shorten its text or regenerate at a faster speaking speed; narration will not be cut off.')
         signature = digest(
             {
-                "introRendererVersion": 5,
+                "introRendererVersion": 6,
                 "intro": {
                     k: intro.get(k)
                     for k in (
@@ -514,6 +538,8 @@ class VideoRenderer:
                 *self.encoding(p),
                 "-c:a",
                 "aac",
+                "-b:a",
+                "128k",
                 "-ar",
                 "24000",
                 "-ac",

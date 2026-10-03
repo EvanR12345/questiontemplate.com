@@ -16,7 +16,10 @@ storage continues billing even while workers are stopped.
 
 Ten YouTube videos, two per channel, using their visible transcripts. The review
 covered the openings, a passage around five minutes and a passage halfway through
-the captured transcript. It was **not** a complete viewing or listening of all
+the captured transcript. A follow-up now compares passages near the **actual
+video midpoint** with identified original works where readable. The earlier
+halfway-through-capture samples are not treated as actual midpoints for truncated
+transcripts. It was **not** a complete viewing or listening of all
 ten videos. Automatically generated captions can misspell names. Two captures
 hit the browser's 2,000-segment limit; those are explicitly partial. The other
 captures also are not proof that every second or chapter was inspected.
@@ -53,8 +56,36 @@ For You samples. Counts are approximate: caption segments can cross the minute
 boundary, and are not audio-derived speech-rate measurements.
 
 Do not conclude that every channel shortens the same source by the same ratio.
-Original chapter coverage is unknown for the other nine samples. KAI's samples
+Exact original passage verification varies, as recorded below. KAI's samples
 show that a channel called a recap can retain substantial novel-like detail.
+
+### Actual midpoint versus original work: follow-up
+
+The comparison uses narration transcripts, not an audio-quality assessment.
+Comic adaptations can already shorten their source novels. A recap-versus-novel
+difference therefore does not prove that the YouTuber performed all the cuts.
+Approximate midpoints marked with ~ use the last captured caption when the
+player duration was not independently established. No unread chapter is counted
+as a direct passage comparison.
+
+| Channel / video | Midpoint / passage | Original and verification | Finding |
+| --- | --- | --- | --- |
+| Manhwa For You / 6nYQgJxSDeE | 1:03:20; training-room wait and Elara | **Magic's Return: I Can See The Spirits**, SleepDeprivedSloth. Original [chapter 27](https://www.webnovel.com/book/26598950706863805/72036702327202134) and [chapter 28](https://www.webnovel.com/book/26598950706863805/72060422357828297) read. | Converts several separate taunts into a short narrated exchange and trims explanation of servants and status. Retains the waiting times, fairy feeding and Elara's exceptional magic rank. Clear condensation, without a measured universal ratio. |
+| Manhwa For You / kQjjmvgbSc4 | ~1:03; Stoneback fortress boss | **Reborn with Infinity Skill Points, I Enslaved All Universes**. Original [chapter 26](https://www.webnovel.com/ru/book/32632987108683905/87851759669663196) read; next chapter continues the fight. | Retains the shield strategy and enormous boss health, while reducing the rival's family background, complete stat/skill tables and repeated hesitation. A condensed gameplay recap. |
+| Junkie's / ZxAmjvUiA94 | 33:50; plumbing and soap | **Reborn as the Genius Son of the Richest Family**, KangarooCruz. Original [chapter 10](https://www.lightreader.com/story/31308974208228005/84185158571314708) read. | Indirect narration shortens conversations and reactions but keeps multiple invention details. Video also mentions additional plumbing details; an edition/adaptation difference remains possible. Less aggressively condensed than a short highlight recap. |
+| Junkie's / uppXQTUGedA | ~1:11:50; sister's wager and duel | **I Was Called Inept at Home, but Turns Out I'm Super Adept Compared to the Rest of the World**. [Publisher edition](https://www.penguinrandomhouse.com/books/748175/i-was-called-inept-at-home-but-turns-out-im-super-adept-compared-to-the-rest-of-the-world-007-by-kimimaro-masashi-suzuki-mokyu/) and character/plot match identified. | Exact corresponding comic pages were not read. The transcript paraphrases the duel; compression against those pages is **unverified**. |
+| Manhwa Fresh / AxnmJZXPQL0 | 1:34:58; dark priest's battle | **Demonic Beast Hunter Survival Guide**, Bactrian Camel. Channel identifies comic chapters 1–35. Read the novel translation's [chapter 39](https://beastnovels.com/series/demonic-beast-hunter-survival-guide/39) and [chapter 40](https://beastnovels.com/series/demonic-beast-hunter-survival-guide/40): spider swarm, destructive lightning and dark priest. | Shared encounter but substantial battle-detail differences: the novel has a captured mage, interrogation and a curse-triggered transformation; video has an extended transformed-priest fight. Without corresponding comic pages, this cannot be explained as simple summarization or certified as a recap error. |
+| Manhwa Fresh / 7NwVJmuRAtc | 4:03:31; clone reward and next floor | **Boundless Ascension / Boundless Necromancer**. [Official comic](https://www.webtoons.com/en/action/boundless-ascension/list?title_no=5228); [novel translation near chapter 112](https://wuxiaworld.eu/chapter/boundless-necromancer-113) matches newly acquired divinity. | Adjacent novel story beat located, but full matching comic episode was not readable in the website preview. No reliable comic-to-recap compression ratio. |
+| Tobs / cgQuVO6OeSQ | 42:54; encirclement and city bomb threat | **Leveling Up: Reshaping the World / I Use a Top-Tier System to Reshape the World**. [Official comic](https://www.webtoons.com/en/action/leveling-up-reshaping-the-world/list?title_no=10229) confirms Wei Yi and premise. | Title/premise verified; the corresponding later comic episode requires access beyond the browser preview. Direct middle-passage comparison remains unavailable. |
+| Tobs / uMCO00dP9Hs | ~45:00; battle aftermath and looting | **Became a Medieval Fantasy Wizard / The Absurd Adventures of a Medieval Mage**. Matching [novel translation chapter 49](https://www.pyg-kit.com/en/books/became-a-medieval-fantasy-wizard/chapters/175868) read. | Battle outcome matches; lengthy reflections on warfare, ownership and payment become brief narration. One necromancy detail differs; this may come from the comic adaptation and is not certified as a recap error. |
+| KAI / nqZgKu8IMGU | ~2:12:30; demon koi and new equipment | **全民觉醒：开局十连sss级天赋**, 缘分90度. Matching original publisher [chapter 28](https://wap.faloo.com/1017327_28.html) inspected. | Closely follows the sequence, experience totals, tactics and equipment statistics. This passage is detailed retelling rather than strong summarization. |
+| KAI / 37xvsC562XQ | 3:14:15; insect queen and burrow worms | **全民抽奖我全金，说我召唤师弱？**, 圆滚滚的苏小年. [Original publisher](https://fanqienovel.com/page/7408433725156887577) chapters 32–33 match the chapter headings. | Publisher's web reader displays only a short preview and asks for app access or membership. Full corresponding passage was **not read**; apparent transcript detail alone does not establish fidelity. |
+
+This identifies all ten source works, but does not certify ten full original-page
+comparisons. The strongest verified result for the requested reference is that
+it condenses dialogue and explanation while preserving the important plot and
+progression. The correct application change is an optional reviewed recap script,
+not making the narrator speak four times faster.
 
 ### Recommended script format
 
@@ -100,6 +131,22 @@ Four real, free auditions were generated: Michael and Fenrir, each in standard
 and connected modes. Connected versions used four inference calls for seven
 sentences. Duration was 21.875 seconds for Michael and 19.700 for Fenrir at 1×.
 Neither subjective similarity nor superior acting has been certified.
+
+### 128 kbps encoding and speech joins
+
+Chapter and full-story exports already requested **AAC at 128 kbps**. Intro
+encoding now explicitly requests that same rate. Voice auditions now also offer
+a cached 128 kbps AAC/M4A, retaining their lossless WAV masters. Encoder output
+bitrate can vary around its requested target; this is separate from choosing a
+narrator, delivery style or improving synthesis quality.
+
+Five-millisecond fades protect the start and end of synthesized speech pieces,
+without removing samples, changing the interior speech or altering the timeline.
+Empty or nonfinite PCM fails clearly instead of becoming a corrupt audio asset.
+Inspection of both saved chapter WAVs, the intro and four auditions found no
+full-scale clipping. A waveform jump alone does not establish audible static.
+Interior artifacts and perceived robotic delivery still require listening; the
+encoding and join safeguards do not justify claiming every noise was removed.
 
 For stronger instruction-driven delivery, [Qwen3-TTS's official documentation](https://github.com/QwenLM/Qwen3-TTS/blob/main/README.md)
 lists instruction control for **1.7B CustomVoice** and **1.7B VoiceDesign**.
@@ -193,7 +240,12 @@ attach this regional volume. No infrastructure was moved for this study.
    quality tradeoff and requires an explicit mode; it is not silently assumed in
    the same-quality cost scenario.
 7. Preserve smooth fractional camera motion and render caching. Unchanged shots
-   and chapters should not rerender. The previous small NVENC benchmark was
+   and chapters should not rerender. Implemented a frame-count-based clip cache:
+   changing an unchanged shot's position on the timeline no longer encodes its
+   pixels again. A changed frame count, image, effective motion, zoom or video
+   settings still invalidates it. Previous valid cached clips remain reusable.
+   This saves repeated editing work; it does not speed up a completely fresh
+   image generation. The previous small NVENC benchmark was
    slower for this filter chain, so switching encoders is not a proven speedup.
 8. Compare a bounded representative pilot on a cheaper worker only with a new
    paid allowance. Include multi-character, action, quiet scene, reference and

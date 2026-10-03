@@ -16,7 +16,7 @@ from image_provider import (
     data_url,
 )
 from studio_render import VideoRenderer
-from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, FLOW_VERSION, audio_segments, effect_pcm, create_connected_audio
+from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, FLOW_VERSION, audio_segments, effect_pcm, create_connected_audio, speech_pcm
 
 
 class JobCancelled(Exception):
@@ -1422,11 +1422,16 @@ class StudioService:
                             'effects':effects, 'delivery':AUDIO_DELIVERY_VERSION,
                             'narrationDelivery':delivery, 'emphasisPhrases':emphasis, 'flowVersion':FLOW_VERSION})
         name = f'voice-preview-{signature[:16]}.wav'
-        if any(v.get('path') == name for v in p.get('voicePreviews', [])) and self.store.asset(p['id'], name).is_file():
-            return
-        result = self.create_audio(text, voice, speed, self.store.folder(p['id']) / name, effects, delivery, emphasis)
-        preview = {**result, 'path':name, 'text':text, 'voice':voice, 'speed':speed,
-                   'soundEffects':effects}
+        existing = next((v for v in p.get('voicePreviews', []) if v.get('path') == name), None)
+        if existing and self.store.asset(p['id'], name).is_file():
+            preview = dict(existing)
+        else:
+            result = self.create_audio(text, voice, speed, self.store.folder(p['id']) / name, effects, delivery, emphasis)
+            preview = {**result, 'path':name, 'text':text, 'voice':voice, 'speed':speed,
+                       'soundEffects':effects}
+        renderer = getattr(self, 'renderer', None)
+        if renderer and renderer.config.get('ffmpeg'):
+            preview.update(renderer.audio_preview(p['id'], name, self.gate))
         def saved(q):
             previews = q.setdefault('voicePreviews', [])
             previews[:] = [item for item in previews if item['path'] != name]
@@ -1520,9 +1525,7 @@ class StudioService:
                         if not section:
                             continue
                         raw = self.audio.synthesize(section, voice, speed)
-                        pcm = np.frombuffer(raw, dtype="<f4")
-                        if not np.isfinite(pcm).all():
-                            raise RuntimeError('Voice returned invalid audio; the previous WAV is preserved.')
+                        pcm = speech_pcm(raw)
                         narration_rms = float(np.sqrt(np.mean(pcm**2))) if len(pcm) else narration_rms
                         wav.writeframes(
                             (np.clip(pcm, -1, 1) * 32767).astype("<i2").tobytes()

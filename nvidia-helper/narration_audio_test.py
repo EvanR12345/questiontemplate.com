@@ -1,7 +1,22 @@
 import unittest
-from narration_audio import speech_text, audio_segments, effect_pcm, pronunciation_text, connected_units, create_connected_audio
+from narration_audio import speech_text, audio_segments, effect_pcm, pronunciation_text, connected_units, create_connected_audio, speech_pcm
 
 class NarrationDeliveryTest(unittest.TestCase):
+    def test_join_protection_keeps_duration_and_phrase_interior(self):
+        import numpy as np
+        raw = np.full(2400, .2, dtype='<f4')
+        original = raw.copy()
+        pcm = speech_pcm(raw.tobytes())
+        self.assertEqual(len(pcm), len(raw))
+        self.assertEqual(pcm[0], 0)
+        self.assertEqual(pcm[-1], 0)
+        np.testing.assert_array_equal(pcm[120:-120], original[120:-120])
+        np.testing.assert_array_equal(raw, original)
+        self.assertLess(abs(float(pcm[1]-pcm[0])), .002)
+        for bad in (np.array([],dtype='<f4'), np.array([np.nan],dtype='<f4')):
+            with self.assertRaisesRegex(RuntimeError,'invalid audio'):
+                speech_pcm(bad.tobytes())
+
     def test_shouts_and_contractions(self):
         self.assertEqual(speech_text('"NOOOOO!!!!"'), 'No!')
         self.assertEqual(speech_text('"Aaaaacckkkkkkk!!"'), 'Ah!')

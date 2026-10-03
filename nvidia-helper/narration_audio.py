@@ -8,9 +8,27 @@ effects become PCM in the same chapter WAV instead of spoken letters.
 import hashlib
 import re
 
-VERSION = 3
+VERSION = 4
 EFFECTS = {'bang', 'bam', 'boom', 'thud', 'click', 'beep', 'slash', 'whoosh', 'crash'}
 FLOW_VERSION = 1
+
+def speech_pcm(raw, sample_rate=24000):
+    """Protect joins without removing samples or filtering speech internally.
+
+    Independent model calls can start/end away from zero. A five millisecond
+    ramp prevents a discontinuity at their join. It is not a denoiser: a noise
+    generated inside a phrase must be evaluated separately.
+    """
+    import numpy as np
+    pcm = np.frombuffer(raw, dtype='<f4').copy()
+    if not len(pcm) or not np.isfinite(pcm).all():
+        raise RuntimeError('Voice returned invalid audio; the previous WAV is preserved.')
+    edge = min(round(sample_rate * .005), len(pcm) // 2)
+    if edge > 1:
+        ramp = np.linspace(0, 1, edge, dtype=np.float32)
+        pcm[:edge] *= ramp
+        pcm[-edge:] *= ramp[::-1]
+    return pcm
 
 def connected_units(sections, pipeline, vocab, effects, speed, emphasis=()):
     """Bounded contextual speech, never truncating or changing source sentences.
@@ -87,7 +105,7 @@ def create_connected_audio(text, sections, pipeline, engine, gate, target, voice
                 parts = unit['pieces']
                 ps = ' '.join(p['phonemes'] for p in parts)
                 raw, weights = engine.synthesize_timed(ps,voice,unit['speed'])
-                pcm = np.frombuffer(raw,dtype='<f4')
+                pcm = speech_pcm(raw)
                 weights = np.asarray(weights,dtype=float)
                 if not len(pcm) or not np.isfinite(pcm).all() or weights.shape != (len(ps),) or not np.isfinite(weights).all() or (weights <= 0).any():
                     raise RuntimeError('Connected voice returned invalid audio/timing; previous WAV preserved.')
