@@ -37,6 +37,13 @@ class QwenWorkflowTest(unittest.TestCase):
     def test_edit_source_selects_reference_workflow(self):
         template, actual = self.provider.resolve_template({"operation": "edit", "sourceImage": "source"}, self.settings)
         self.assertEqual(template["kind"], "reference")
+        self.assertEqual(actual["steps"], 40)
+
+    def test_character_reference_uses_quality_portrait_without_changing_shot_resolution(self):
+        template, actual = self.provider.resolve_template({"purpose": "character-reference"}, self.settings)
+        self.assertEqual(template["name"], "qwen-text-quality-40")
+        self.assertEqual((actual["width"], actual["height"]), (1024, 1024))
+        self.assertEqual(self.settings["width"], 1344)
 
     def test_explicit_quality_has_no_lightning_adapter(self):
         template, actual = self.provider.resolve_template({"workflow": "qwen-reference-quality-40", "referenceImages": ["face"]}, self.settings)

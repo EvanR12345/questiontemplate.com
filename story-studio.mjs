@@ -386,6 +386,8 @@ function offlineChapter(n) {
   };
 }
 function options(values, selected) {
+  if (selected && !values.some((v) => (Array.isArray(v) ? v[0] : v) === selected))
+    values = [...values, selected];
   return values
     .map((v) => {
       const [value, label] = Array.isArray(v) ? v : [v, v];
@@ -563,8 +565,9 @@ function settings() {
     ],
     i.provider,
   )}</select></label><label>Image model<select id="settingImageModel">${options(models, i.model)}</select></label><label>Workflow<select id="settingImageWorkflow">${options(selected?.workflow || [i.workflow], i.workflow)}</select></label><label>SD reference strength<input ${i.provider === "native-flux" ? "disabled" : ""} id="settingReferenceStrength" type="number" min="0" max="1" step=".05" value="${i.referenceStrength}"></label></div><p class="muted">${selected?.installed ? "Installed" : "Unavailable: configure this local backend before generating."} ${selected?.validated === false ? "This native configuration has not passed laptop validation yet." : ""} ${escape(selected?.capabilities?.referenceLimitations || "")}</p><button id="showModelNotes">Model evaluation and diagnosis</button> <button id="connectCloudImages">Connect Qwen cloud images</button></div>
-  <div class="section-box"><h3>Voice</h3><div class="two-col"><label>Existing Kokoro voice<select id="settingVoice">${options(["am_michael", "af_heart", "af_bella", "af_nicole", "am_fenrir", "am_puck", "bm_george", "bf_emma"], s.voice)}</select></label><label>Speaking speed<input id="settingSpeed" type="number" min=".5" max="2" step=".1" value="${s.speed}"></label></div></div>
-  <div class="section-box"><h3>Optional intro</h3><label class="inline"><input id="introEnabled" type="checkbox" ${project.intro.enabled ? "checked" : ""}>Enable intro</label><div class="two-col"><label>Duration: <span id="introDurationValue">${project.intro.duration}</span> seconds<input id="introDuration" type="range" min="10" max="20" step="1" value="${project.intro.duration}"></label><label>Placement<select id="introPlacement">${options(
+  <div class="section-box"><h3>Economy storyboard canvases</h3><label class="inline"><input id="settingEconomyPanels" type="checkbox" ${s.economyPanels ? 'checked' : ''}>Four independent shots per Qwen canvas</label><p class="muted">Luna groups the shots; each crop is saved separately as a 640×360 landscape image. This can reduce generation calls by about 75%, with less detail and a risk of composition mixing. Individual full-resolution regeneration remains available. The helper does not start or stop rented GPUs.</p><button id="prepareRestyle">Prepare narration and Luna direction</button></div>
+  <div class="section-box"><h3>Voice</h3><div class="two-col"><label>Existing Kokoro voice<select id="settingVoice">${options(["am_michael", "af_heart", "af_bella", "af_nicole", "am_puck", "bm_george", "bf_emma"], s.voice)}</select></label><label>Speaking speed<input id="settingSpeed" type="number" min=".5" max="2" step=".1" value="${s.speed}"></label></div></div>
+  <div class="section-box"><h3>Optional intro</h3><label class="inline"><input id="introEnabled" type="checkbox" ${project.intro.enabled ? "checked" : ""}>Enable intro</label><div class="two-col"><label>Duration: <span id="introDurationValue">${project.intro.duration}</span> seconds<input id="introDuration" type="range" min="10" max="30" step="1" value="${project.intro.duration}"></label><label>Placement<select id="introPlacement">${options(
     [
       ["full_story_only", "Full story only"],
       ["every_chapter", "Every chapter"],
@@ -665,13 +668,15 @@ function renderQueue() {
   const run = project.production,
     runStatus = $("#fullVideoStatus");
   if (runStatus && run) {
+    const reviewCount = project.chapters.flatMap(c => c.scenes.flatMap(s => s.shots))
+      .filter(s => s.qc?.status === "REVIEW_REQUIRED").length;
     const ready =
       run.status === "COMPLETE" && !project.renderStale && !activeFullRun;
     const status =
       activeFullRun?.kind === "render-full"
         ? activeFullRun.message || "Rendering full story"
         : ready
-          ? "Full video ready"
+          ? "Full video ready" + (reviewCount ? ` · ${reviewCount} shots need review` : "")
           : run.status === "COMPLETE" && project.renderStale
             ? "Video settings changed · render the full story to apply"
             : ["FAILED", "CANCELLED"].includes(run.status)
@@ -717,6 +722,7 @@ function renderQueue() {
       );
     }
     if (run.timings?.length) {
+      if (run.costs) runStatus.insertAdjacentHTML('beforeend', `<p class="muted">Estimated run cost: OpenAI $${Number(run.costs.apiEstimatedUSD || 0).toFixed(4)} · GPU window $${Number(run.costs.gpuWindowEstimatedUSD || 0).toFixed(4)}. Storage and account billing are reported separately.</p>`);
       const entries = run.timings.filter((t) => !t.detail),
         totals = {};
       for (const entry of entries)
@@ -1499,6 +1505,7 @@ async function saveSettingsIfVisible() {
 }
 function wireSettings() {
   $("#productionSaveSettings").onclick = () => action(saveSettings);
+  $('#prepareRestyle').onclick = () => action(async () => { await saveSettings(); await submit('restyle-story'); });
   $("#introDuration").oninput = (e) =>
     ($("#introDurationValue").textContent = e.target.value);
   $("#settingImageProvider").onchange = (e) =>
@@ -1650,6 +1657,7 @@ async function saveSettings() {
   s.maxImageRetries = Number($("#settingRetries").value);
   s.visionQC = $("#settingVision").checked;
   s.automaticRepair = $("#settingRepair").checked;
+  s.economyPanels = $('#settingEconomyPanels').checked;
   Object.assign(s.image, {
     provider: $("#settingImageProvider").value,
     model: $("#settingImageModel").value,

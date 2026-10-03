@@ -324,8 +324,8 @@ class VideoRenderer:
         intro = p["intro"]
         v = p["settings"]["video"]
         duration = float(intro["duration"])
-        if not 10 <= duration <= 20:
-            raise ValueError("Intro duration must be 10â€“20 seconds.")
+        if not 10 <= duration <= 30:
+            raise ValueError("Intro duration must be 10–30 seconds.")
         signature = digest(
             {
                 "intro": {

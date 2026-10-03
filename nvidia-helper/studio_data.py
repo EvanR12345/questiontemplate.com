@@ -322,9 +322,9 @@ def validate_project(p):
     if (
         not isinstance(p["intro"].get("duration"), (int, float))
         or not math.isfinite(p["intro"]["duration"])
-        or not 10 <= p["intro"]["duration"] <= 20
+        or not 10 <= p["intro"]["duration"] <= 30
     ):
-        raise ValueError("Intro duration must be 10–20 seconds.")
+        raise ValueError("Intro duration must be 10–30 seconds.")
     if p["intro"]["placement"] not in ("full_story_only", "every_chapter"):
         raise ValueError("Invalid intro placement.")
     if not 0 <= int(p["settings"].get("maxImageRetries", 2)) <= 10:

@@ -600,6 +600,11 @@ class ComfyImageProvider(ImageProvider):
             raise ValueError("Selected Comfy model is not installed in this workflow bundle.")
         workflow = request.get("workflow") or settings.get("workflow") or root["name"]
         references = bool(request.get("referenceImages")) or request.get("operation") == "edit"
+        if request.get("purpose") == "character-reference" and not references and root.get("referenceCreationWorkflow"):
+            workflow = root["referenceCreationWorkflow"]
+            settings = settings | dict(zip(("width", "height"), root.get("referenceResolution", (1024, 1024))))
+        elif workflow == root["name"] and request.get("operation") == "edit" and root.get("repairWorkflow"):
+            workflow = root["repairWorkflow"]
         if workflow == root["name"]:
             kind = "reference" if references else "text"
             candidates = [v for v in variants if v.get("kind") == kind and v.get("default")]

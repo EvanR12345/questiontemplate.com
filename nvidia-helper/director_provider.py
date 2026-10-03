@@ -324,7 +324,7 @@ class DirectorProvider:
                 ],
             }
         result = self.call(
-            "Visual quality reviewer: compare image to expected canonical identity and current appearance. Planned clothing changes are allowed. Anatomical left/right belong to the CHARACTER, not the viewer. Report only visible evidence, flag uncertainty for review. pass can be true ONLY if issues is empty and action is pass. Return targeted repair only if needed.",
+            "Visual quality reviewer: compare image to expected canonical identity and current appearance. Planned clothing changes are allowed. Anatomical left/right belong to the CHARACTER, not the viewer. Report only visible evidence. Do not demand a tiny facial mark, eye color, wrist accessory or object to be resolvable when framing, occlusion or lighting hides it. An unclear detail is not evidence it changed. For Low/Medium strictness, minor framing differences and uncertain details use action=review, not image_edit/regenerate. Reserve repairs for clearly visible wrong identity, wrong planned clothing, missing important people, contradictory action/objects, severe anatomy or serious artifacts. High strictness may require closer review of composition. pass can be true ONLY if issues is empty and action is pass. Never mark a review as passed. Return targeted repair only for a confirmed defect; otherwise leave repairPrompt empty.",
             context,
             obj(
                 {

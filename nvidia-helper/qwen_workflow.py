@@ -53,6 +53,9 @@ def variant(name, reference, steps, lightning, default=False):
 
 def bundle():
     return {"model": "qwen-studio-auto", "name": "qwen-studio-auto", "version": 1,
+        "repairWorkflow": "qwen-reference-quality-40",
+        "referenceCreationWorkflow": "qwen-text-quality-40",
+        "referenceResolution": [1024, 1024],
         "selection": "Configured text-to-image for shots without references; configured 8-step image-edit conditioning for shots with references. Explicit workflows remain selectable.",
         "capabilities": {"supportsMultipleReferences": True, "supportsImageEditing": True, "supportsNegativePrompt": True,
             "supportsSeed": True, "supportsLoRA": True, "supportsStyleReference": True, "maxReferenceImages": 3, "maxResolution": 2048,

@@ -8,6 +8,11 @@ import { pronunciationRules, speechText } from './pronunciation.mjs';
 import { prepareBatches, splitText } from './audio-core.mjs';
 const dictionaries = Object.fromEntries(['a', 'b'].map(language => [language,
   JSON.parse(gunzipSync(readFileSync(new URL(`./vendor/english-${language === 'a' ? 'us' : 'gb'}.json.gz`, import.meta.url))))]));
+test('elongated dialogue stays pronounceable while acronyms and contractions remain', () => {
+  assert.equal(speechText('"NOOOOO!!!!"'), '"No!"');
+  assert.equal(speechText('**BOOOOOOOOOOOOOOOOOOOM**'), 'Boom.');
+  assert.equal(speechText("NASA can't leave."), "NASA can't leave.");
+});
 test('single quoted lines, curly quotes and punctuation never become words', async () => {
   const fail = () => { throw new Error('Punctuation must not be pronounced'); };
   for (const source of ["'boss'", "'Boss'\n", '‘boss’', "\n'\n", '**', '*']) {

@@ -15,6 +15,7 @@ from image_provider import (
     data_url,
 )
 from studio_render import VideoRenderer
+from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, audio_segments, effect_pcm
 
 
 class JobCancelled(Exception):
@@ -383,6 +384,8 @@ class StudioService:
         ch = get_chapter(p, chapter) if chapter else None
         if kind not in (
             "produce-story",
+            "restyle-story",
+            "economy-images",
             "analyze",
             "scene-plan",
             "narration",
@@ -528,6 +531,12 @@ class StudioService:
             self.director.stop()
             self.director = LocalQwenDirector(self.config, self.store.root)
         self.director.reasoning = project["settings"]["director"].get("reasoning", "Balanced")
+        if isinstance(self.director, OpenAIDirector):
+            from cost_control import SpendLedger
+            budget = project['settings'].get('budget', {})
+            self.director.spend_ledger = (SpendLedger(self.store.folder(project['id']) / 'api-cost-ledger.json', budget['openaiUSD'])
+                if budget.get('openaiUSD') else None)
+            self.director.max_output_tokens = project['settings']['director'].get('maxOutputTokens', 12000)
 
     def control(self, action, job=None):
         with self.cv:
@@ -640,6 +649,12 @@ class StudioService:
                     options = json.loads(job["payload"])
                     if job["kind"] == "produce-story":
                         self.produce_story(p["id"], options)
+                    elif job['kind'] == 'restyle-story':
+                        from economy_studio import restyle_story
+                        restyle_story(self,p['id'])
+                    elif job['kind'] == 'economy-images':
+                        from economy_studio import generate_panel_story
+                        generate_panel_story(self,p['id'],options)
                     elif job["kind"] in (
                         "analyze",
                         "scene-plan",
@@ -801,6 +816,9 @@ class StudioService:
     def record_timing(self, pid, stage, seconds, details=None):
         def save(p):
             production = p.setdefault("production", {})
+            if (details or {}).get('provider') == 'openai-luna' and (details or {}).get('estimatedUSD'):
+                costs = production.setdefault('costs',{})
+                costs['apiEstimatedUSD'] = costs.get('apiEstimatedUSD',0) + details['estimatedUSD']
             timings = production.setdefault("timings", [])
             timings.append(
                 {
@@ -830,6 +848,14 @@ class StudioService:
     def produce_story(self, pid, options):
         """One durable queue job; reuse completed stages and stop safely on errors."""
         p = self.store.load(pid)
+        if p['settings'].get('economyPanels'):
+            from economy_studio import restyle_story, generate_panel_story
+            if not all(c.get('economyGroups') for c in p['chapters'] if c['sourceText'].strip()):
+                restyle_story(self,pid)
+                p = self.store.load(pid)
+            if any(not s.get('imagePath') or s.get('generationStale') for c in p['chapters'] for sc in c['scenes'] for s in sc['shots']):
+                generate_panel_story(self,pid,options | p['settings'].get('cloudWindow',{}))
+                p = self.store.load(pid)
         chapters = [c["id"] for c in p["chapters"] if c["sourceText"].strip()]
         self.production_progress(
             pid,
@@ -988,6 +1014,8 @@ class StudioService:
                 chapter = get_chapter(latest, chid)
                 for scene in chapter["scenes"]:
                     for shot in scene["shots"]:
+                        if shot.get('imagePath') and shot['status'] in ('COMPLETE','PASSED') and not shot.get('generationStale'):
+                            continue
                         provider = self.provider(shot["imageProvider"])
                         settings = shot["generationSettings"]
                         has_refs = any(
@@ -1153,6 +1181,7 @@ class StudioService:
                 "text": text,
                 "voice": p["settings"]["voice"],
                 "speed": p["settings"]["speed"],
+                "deliveryVersion": AUDIO_DELIVERY_VERSION,
             }
         )
         if (
@@ -1222,7 +1251,18 @@ class StudioService:
             for index, sentence in enumerate(sections):
                 self.gate(f"Narration sentence {index+1}/{len(sections)}")
                 begin = offset
-                for result in pipeline(sentence.replace("*", "")):
+                def deliveries():
+                    for segment in audio_segments(sentence):
+                        if segment['kind'] == 'effect':
+                            yield None, effect_pcm(segment['effect'])
+                        else:
+                            for item in pipeline(segment['text']):
+                                yield item, None
+                for result, effect in deliveries():
+                    if effect is not None:
+                        wav.writeframes((effect * 32767).astype('<i2').tobytes())
+                        offset += len(effect) / 24000
+                        continue
                     phonemes = "".join(
                         c for c in result.phonemes if c in self.audio.model.vocab
                     )
@@ -1252,6 +1292,10 @@ class StudioService:
                             (np.clip(pcm, -1, 1) * 32767).astype("<i2").tobytes()
                         )
                         offset += len(pcm) / 24000
+                if offset == begin:
+                    # Ellipses / isolated punctuation are pauses, not failed words.
+                    wav.writeframes(np.zeros(2400, dtype='<i2').tobytes())
+                    offset += .1
                 timings.append(
                     {
                         "index": index,
@@ -1259,6 +1303,7 @@ class StudioService:
                         "start": begin,
                         "end": offset,
                         "timingSource": "synthesized-sentence-duration",
+                        "delivery": audio_segments(sentence),
                     }
                 )
         if offset <= 0:
@@ -1287,6 +1332,7 @@ class StudioService:
             "wordTimingAvailable": False,
             "timingSource": "exact sentence synthesis boundaries",
             "created": time.time(),
+            "deliveryVersion": AUDIO_DELIVERY_VERSION,
         }
 
     def intro_audio(self, p):
@@ -1419,7 +1465,7 @@ class StudioService:
                 {"project": pid, "chapter": chid, "role": "unidentified-opening-person"}
             )[:16]
         )
-        if not any(c["id"] == temporary["id"] for c in ch["people"]):
+        if (affected or sound_only) and not any(c["id"] == temporary["id"] for c in ch["people"]):
             ch["people"].append(temporary)
         people = {c["id"]: c for c in p["characters"] + ch["people"]}
         corrections = {}
@@ -1627,7 +1673,11 @@ class StudioService:
             self.providers["existing"].unload()
         person = next(c for c in p["characters"] if c["id"] == options["characterId"])
         settings = provider.validateSettings(p["settings"]["image"])
-        prompt = f"A clear single-character {options.get('referenceKind','face')} reference portrait of {person['name']}. {person['description']}. Permanent identity: {json.dumps(person['permanentIdentity'])}. Appearance: {json.dumps(person['defaultAppearance'])}. {p['settings']['style']}. Neutral plain background, no other people, no text."
+        identity = "; ".join(f"{field}: {value}" for field, value in person["permanentIdentity"].items() if value)
+        appearance = "; ".join(f"{field}: {value}" for field, value in person["defaultAppearance"].items() if value)
+        portrait_kind = options.get("referenceKind", "face")
+        framing = "Head and shoulders only; hands and wrists outside the frame." if portrait_kind == "face" else "Show the requested reference angle clearly."
+        prompt = f"One single-character {portrait_kind} identity reference portrait of {person['name']}. {person['description']}. Exact permanent traits: {identity}. Default appearance: {appearance}. {framing} Show only the specified distinguishing marks; do not add extra wounds, blood, scars or tattoos. A stated scar is a healed identity mark, not a fresh injury. {p['settings']['style']}. Neutral plain background, no other people, no text."
         refs = [
             data_url(self.store.asset(p["id"], r["path"]))
             for r in person["references"][
@@ -1646,6 +1696,7 @@ class StudioService:
                 ),
                 "referenceImages": refs,
                 "settings": settings,
+                "purpose": "character-reference",
             },
             self.checkpoint,
         )
@@ -2913,10 +2964,12 @@ class StudioService:
                 qc["status"] = (
                     "PASSED"
                     if qc.get("pass") is True
+                    else "REVIEW_REQUIRED" if qc.get("action") == "review"
                     else "FAILED" if qc.get("pass") is False else "UNREVIEWED"
                 )
             if (
                 qc.get("pass") is False
+                and qc.get("action") != "review"
                 and p["settings"]["automaticRepair"]
                 and attempt < retries
             ):
@@ -2929,6 +2982,8 @@ class StudioService:
                     request.update(operation="edit", sourceImage=data_url(path))
                 if request.get("operation") == "edit":
                     shot["sourceImagePath"] = relative
+                    if provider.id in ("native-flux", "comfyui"):
+                        request["prompt"] = reference_prompt(p, shot, ref_metadata, "edit") + " Edit only the confirmed defects and preserve the scene: " + request["prompt"]
                 continue
             break
 
@@ -2939,7 +2994,7 @@ class StudioService:
                 status=(
                     "PASSED"
                     if qc.get("pass") is True
-                    else "FAILED" if qc.get("pass") is False else "COMPLETE"
+                    else "FAILED" if qc.get("pass") is False and qc.get("action") != "review" else "COMPLETE"
                 ),
                 retryHistory=attempts,
             )
@@ -2955,13 +3010,16 @@ class StudioService:
             )
 
         self.store.mutate(p["id"], complete)
-        if qc.get("pass") is False:
+        if qc.get("pass") is False and qc.get("action") != "review":
             raise RuntimeError(
                 "Visual QC still found problems after the retry limit. The last image was saved for manual review."
             )
 
     def visual_check(self, p, shot, path):
         self.select_director(p)
+        self.director.reasoning = p["settings"]["director"].get("qcReasoning") or (
+            "High" if p["settings"]["generationMode"] == "MAX QUALITY" else "Fast"
+        )
         references, _ = select_references(
             p, shot, self.store, self.provider(shot["imageProvider"])
         )
@@ -2984,6 +3042,7 @@ class StudioService:
             for c in p["characters"]
             if any(s["id"] == c["id"] for s in shot["characters"])
         ]
+        qc_started = time.monotonic()
         result = self.director.inspectGeneratedImage(
             {
                 "expectedShot": expected,
@@ -2994,6 +3053,9 @@ class StudioService:
             },
             self.gate,
         )
+        result["seconds"] = round(time.monotonic() - qc_started, 3)
+        result["provider"] = p["settings"]["director"].get("provider", "local-qwen")
+        result["reasoning"] = self.director.reasoning
         self.director.stop()
         return result
 
@@ -3009,6 +3071,7 @@ class StudioService:
         qc["status"] = (
             "PASSED"
             if qc.get("pass") is True
+            else "REVIEW_REQUIRED" if qc.get("action") == "review"
             else "FAILED" if qc.get("pass") is False else "UNREVIEWED"
         )
         self.store.mutate(
@@ -3018,7 +3081,7 @@ class StudioService:
                 status=(
                     "PASSED"
                     if qc.get("pass") is True
-                    else "FAILED" if qc.get("pass") is False else "COMPLETE"
+                    else "FAILED" if qc.get("pass") is False and qc.get("action") != "review" else "COMPLETE"
                 ),
             ),
         )

@@ -206,6 +206,24 @@ class FullVideoTest(unittest.TestCase):
         self.service.db.commit()
         self.assertEqual(self.service.snapshot()["etaSeconds"], 12)
 
+    def test_visual_review_is_preserved_without_falsely_passing_or_losing_image(self):
+        self.service.produce_story(self.project["id"], {})
+        p = self.service.store.load(self.project["id"])
+        chapter = p["chapters"][0]
+        shot = chapter["scenes"][0]["shots"][0]
+        self.service.visual_check = lambda *args: {"pass": False, "issues": ["Small eyebrow scar is unclear at wide framing"], "action": "review", "repairPrompt": ""}
+        self.service.inspect_shot(p, chapter["id"], shot["id"])
+        saved = get_shot(self.service.store.load(p["id"]), chapter["id"], shot["id"])
+        self.assertEqual(saved["qc"]["status"], "REVIEW_REQUIRED")
+        self.assertFalse(saved["qc"]["pass"])
+        self.assertEqual(saved["status"], "COMPLETE")
+        self.assertEqual(saved["imagePath"], shot["imagePath"])
+        self.service.visual_check = lambda *args: {"pass": False, "issues": ["Wrong character identity"], "action": "regenerate", "repairPrompt": "Restore identity"}
+        self.service.inspect_shot(p, chapter["id"], shot["id"])
+        saved = get_shot(self.service.store.load(p["id"]), chapter["id"], shot["id"])
+        self.assertEqual(saved["status"], "FAILED")
+        self.assertEqual(saved["imagePath"], shot["imagePath"])
+
     def test_retry_preserves_completed_chapter_and_failed_image_seed(self):
         self.service.fail_chapter = 2
         with self.assertRaisesRegex(ValueError, "unavailable"):
