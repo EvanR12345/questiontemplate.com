@@ -24,6 +24,33 @@ class CloudImageTest(unittest.TestCase):
         self.assertEqual(visible_appearance(shot, selected)['sword'], 'carried')
         self.assertNotIn('gun', visible_appearance(shot, selected))
 
+    def test_visual_qc_distinguishes_offscreen_inventory_from_composition(self):
+        from studio_service import StudioService
+        project, shot, _ = self.project_and_shot()
+        shot.update(action='Michael groans and clutches his shoulder.', narrationSegment='He groaned in pain.',
+                    imageProvider='comfyui', intentionalAppearanceChanges=[])
+        shot['characters'][0]['appearanceState'].update(gun='carried', hammer='carried')
+        class Director:
+            def inspectGeneratedImage(self, context, gate):
+                self.context = context
+                return {'pass':True,'issues':[],'action':'accept','repairPrompt':''}
+            def stop(self): pass
+        with tempfile.TemporaryDirectory() as root:
+            service = StudioService.__new__(StudioService)
+            service.store = ProjectStore(root)
+            service.store.save(project)
+            image = service.store.asset(project['id'],'shot.png')
+            image.write_bytes(b'png')
+            service.director = Director()
+            service.select_director = lambda p:None
+            service.provider = lambda _:type('Provider',(),{'getCapabilities':lambda _: {'maxReferenceImages':0}})()
+            service.gate = lambda *args:None
+            service.visual_check(project, shot, image)
+            expected = service.director.context['expectedShot']
+            self.assertNotIn('gun', expected['characters'][0]['appearanceState'])
+            self.assertEqual(expected['inventoryContext'][shot['characters'][0]['id']]['hammer'], 'carried')
+            self.assertIn('close-up',expected['propVisibilityPolicy'])
+
     def test_offline_planning_defers_hardware_check_but_generation_validation_does_not(self):
         provider = self.provider()
         with patch('image_provider.request_json', side_effect=OSError('worker stopped')) as network:

@@ -12,6 +12,7 @@ from image_provider import (
     format_prompt,
     select_references,
     reference_prompt,
+    visible_appearance,
     data_url,
 )
 from studio_render import VideoRenderer
@@ -3296,6 +3297,14 @@ class StudioService:
             for c in p["characters"]
             if any(s["id"] == c["id"] for s in shot["characters"])
         ]
+        expected['characters'] = [copy.deepcopy(c) | {'appearanceState': visible_appearance(shot, c)}
+                                  for c in shot['characters']]
+        expected['narrationSegment'] = shot.get('narrationSegment', '')
+        expected['inventoryContext'] = {c['id']: {k:v for k,v in c.get('appearanceState', {}).items()
+            if k in ('gun','hammer','knife','sword','bomb')} for c in shot['characters']}
+        expected['propVisibilityPolicy'] = ('Inventory context preserves possessions, not visible framing requirements. '
+            'Only the current action, narration, pose and composition require an object to appear. '
+            'A close-up may omit carried objects. Do not demand every inventory item in every frame or add an unrelated weapon to an action.')
         expected['visualStyle'] = p['settings']['style']
         expected['visualConstraints'] = p['settings'].get('imageVisualConstraints', p['settings'].get('visualConstraints', ''))
         qc_started = time.monotonic()
