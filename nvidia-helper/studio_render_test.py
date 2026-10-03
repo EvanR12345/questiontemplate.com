@@ -51,6 +51,8 @@ class IntroTest(unittest.TestCase):
                 renderer.intro(p,lambda *args:None)
                 filters=render.call_args.args[0]
                 self.assertIn("1+0.06*on/719",filters[filters.index('-vf')+1])
+                self.assertIn("boxcolor=black@0.60",filters[filters.index('-vf')+1])
+                self.assertIn("bordercolor=black",filters[filters.index('-vf')+1])
                 self.assertEqual(filters[filters.index('-t')+1],'30.0')
             audio=store.folder(p['id'])/'intro.wav'
             with wave.open(str(audio),'wb') as output:

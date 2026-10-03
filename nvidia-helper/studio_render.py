@@ -336,6 +336,7 @@ class VideoRenderer:
                 raise ValueError(f'Intro narration lasts {spoken_duration:.1f}s, longer than the {duration:g}s intro. Shorten its text or regenerate at a faster speaking speed; narration will not be cut off.')
         signature = digest(
             {
+                "introRendererVersion": 3,
                 "intro": {
                     k: intro.get(k)
                     for k in (
@@ -382,7 +383,7 @@ class VideoRenderer:
         )
         visual = self.motion({'start':0, 'end':duration, 'motion':intro.get('motion','static'),
             'camera':{'shot':'wide'}, 'manual':{'motion':True}}, v | {'imageFit':'cover'}, round(duration*v['fps']))
-        filters = visual + f",drawtext=fontfile='{font}':textfile='{textpath}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2,fade=t=in:st=0:d=0.5,fade=t=out:st={duration-.5}:d=0.5"
+        filters = visual + f",drawtext=fontfile='{font}':textfile='{textpath}':fontcolor=white:fontsize=48:borderw=2:bordercolor=black:box=1:boxcolor=black@0.60:boxborderw=18:x=(w-text_w)/2:y=(h-text_h)/2,fade=t=in:st=0:d=0.5,fade=t=out:st={duration-.5}:d=0.5"
         self.run(
             [
                 *inputs,
