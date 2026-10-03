@@ -663,7 +663,7 @@ function renderQueue() {
       ["QUEUED", "RUNNING"].includes(j.status),
   );
   if (fullButton) {
-    fullButton.disabled = !connected || !!activeFullRun;
+    fullButton.disabled = !connected || !!activeFullRun || !!project.production?.budgetBlocked;
     fullButton.textContent = activeFullRun
       ? "Full video in progress"
       : "Generate full video";
@@ -674,13 +674,15 @@ function renderQueue() {
     const reviewCount = project.chapters.flatMap(c => c.scenes.flatMap(s => s.shots))
       .filter(s => s.qc?.status === "REVIEW_REQUIRED").length;
     const ready =
-      run.status === "COMPLETE" && !project.renderStale && !activeFullRun;
+      run.status === "COMPLETE" && !!project.render?.path && !project.renderStale && !activeFullRun;
     const status =
-      activeFullRun?.kind === "render-full"
+      run.budgetBlocked
+        ? run.message || "Cloud budget reached · queue paused · stop the Runpod pod"
+        : activeFullRun?.kind === "render-full"
         ? activeFullRun.message || "Rendering full story"
         : ready
           ? "Full video ready" + (reviewCount ? ` · ${reviewCount} shots need review` : "")
-          : run.status === "COMPLETE" && project.renderStale
+          : run.status === "COMPLETE" && project.render?.path && project.renderStale
             ? "Video settings changed · render the full story to apply"
             : ["FAILED", "CANCELLED"].includes(run.status)
               ? run.status + " · " + run.message
@@ -725,7 +727,11 @@ function renderQueue() {
       );
     }
     if (run.timings?.length) {
-      if (run.costs) runStatus.insertAdjacentHTML('beforeend', `<p class="muted">Estimated run cost: OpenAI $${Number(run.costs.apiEstimatedUSD || 0).toFixed(4)} · GPU window $${Number(run.costs.gpuWindowEstimatedUSD || 0).toFixed(4)}. Storage and account billing are reported separately.</p>`);
+      if (run.costs) {
+        const gpu = Number.isFinite(run.costs.gpuWindowEstimatedUSD)
+          ? '$' + run.costs.gpuWindowEstimatedUSD.toFixed(4) : 'not recorded';
+        runStatus.insertAdjacentHTML('beforeend', `<p class="muted">Estimated run cost: OpenAI $${Number(run.costs.apiEstimatedUSD || 0).toFixed(4)} · GPU window ${gpu}. Storage and account billing are reported separately.</p>`);
+      }
       const entries = run.timings.filter((t) => !t.detail),
         totals = {};
       for (const entry of entries)

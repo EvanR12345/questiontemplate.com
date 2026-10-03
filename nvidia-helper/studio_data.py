@@ -711,12 +711,22 @@ def grounded_object_changes(events, objects, people):
 def align_evidence(events, sentence_records):
     """Correct an AI's sentence index only when its quote has one exact source."""
     for event in events:
+        reason = event.get("reason", "")
         matches = [
             i
             for i, s in enumerate(sentence_records)
             if event.get("reason")
             and event["reason"].casefold() in s["text"].casefold()
         ]
+        # A dialogue turn can span several sentences. Models sometimes wrap a
+        # quoted first sentence in closing quotation marks absent from that
+        # sentence. Remove only the wrapper, never words or internal punctuation.
+        if not matches and isinstance(reason, str):
+            unwrapped = reason.strip().strip('"\u201c\u201d').strip()
+            matches = [i for i, s in enumerate(sentence_records)
+                       if unwrapped and unwrapped.casefold() in s["text"].casefold()]
+            if len(matches) == 1:
+                event["reason"] = unwrapped
         if len(matches) == 1:
             event["sentence"] = matches[0]
     return events

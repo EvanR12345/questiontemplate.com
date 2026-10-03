@@ -12,6 +12,17 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_dialogue_evidence_wrapper_does_not_break_sentence_alignment(self):
+        sentences = [{'text': '"I filled my stomach with the bomb.'},
+                     {'text': 'You think threatening me would work?"'}]
+        event = {'sentence': 8, 'reason': '"I filled my stomach with the bomb."'}
+        align_evidence([event], sentences)
+        self.assertEqual(event['sentence'], 0)
+        self.assertIn(event['reason'], sentences[0]['text'])
+        invented = {'sentence': 8, 'reason': 'He picked up a sword.'}
+        align_evidence([invented], sentences)
+        self.assertEqual(invented['sentence'], 8)
+
     def test_black_hair_does_not_authorize_invented_black_skin_or_height(self):
         result = grounded_identity({'naturalHair':'black', 'skin':'black', 'height':'tall', 'face':'black beard'},
             'A black-haired man with a black beard and a scar on the left cheek.')

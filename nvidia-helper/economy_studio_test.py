@@ -1,10 +1,30 @@
 import tempfile
 import unittest
+import threading
 from pathlib import Path
 from unittest.mock import patch
 from economy_studio import pending_panels, cloud_cost
+from studio_service import StudioService, CloudBudgetPaused
+from studio_data import ProjectStore, new_project
 
 class EconomyResumeTest(unittest.TestCase):
+    def test_cloud_guard_pauses_queue_and_persists_actionable_billing_warning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = StudioService.__new__(StudioService)
+            service.cv = threading.Condition()
+            service.paused = False
+            service.store = ProjectStore(directory)
+            p = new_project()
+            p['settings']['cloudWindow'] = {'cloudStartedAt':1000, 'gpuHourlyUSD':2,
+                                           'gpuBudgetUSD':.01, 'imageReserveSeconds':15}
+            service.store.save(p)
+            provider = type('Provider', (), {'id':'comfyui'})()
+            with patch('economy_studio.time.time', return_value=1100):
+                with self.assertRaisesRegex(CloudBudgetPaused, 'does not stop rental billing'):
+                    service.check_cloud_budget(p, provider)
+            self.assertTrue(service.paused)
+            self.assertTrue(service.store.load(p['id'])['production']['budgetBlocked'])
+
     def test_partial_group_preserves_only_valid_saved_images(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

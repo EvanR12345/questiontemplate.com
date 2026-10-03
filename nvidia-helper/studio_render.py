@@ -175,6 +175,8 @@ class VideoRenderer:
             raise ValueError("Generate every shot before rendering this chapter.")
         if not ch.get("audio", {}).get("path"):
             raise ValueError("Generate chapter narration first.")
+        if any(s.get('qc', {}).get('status') == 'PENDING' for s in shots):
+            raise ValueError('Finish pending image quality checks before rendering.')
         if ch["audio"].get("textDigest") and ch["audio"]["textDigest"] != digest(
             ch["cleanNarrationText"]
         ):
@@ -368,6 +370,8 @@ class VideoRenderer:
             clips, lengths = [], []
             cursor = 0.0
             for index, shot in enumerate(intro['shots']):
+                if shot.get('qc', {}).get('status') == 'PENDING':
+                    raise ValueError('Finish pending intro image quality checks before rendering.')
                 if shot.get('status') == 'FAILED':
                     raise ValueError(f'Intro shot {index+1} failed quality review. Repair it before rendering.')
                 start, end = float(shot['start']), float(shot['end'])

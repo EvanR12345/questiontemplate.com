@@ -26,6 +26,10 @@ class AudioYield(Exception):
     pass
 
 
+class CloudBudgetPaused(ValueError):
+    """Preserve the current seed and waiting jobs when rented time runs out."""
+
+
 class StudioService:
     def __init__(
         self,
@@ -398,6 +402,8 @@ class StudioService:
             "intro-audio",
             "intro-image",
             "intro-render",
+            "qc-intro",
+            "retarget-images",
         ):
             raise ValueError("Unknown studio operation.")
         if kind == "produce-story":
@@ -655,6 +661,8 @@ class StudioService:
                         restyle_story(self,p['id'])
                     elif job['kind'] == 'prepare-story':
                         self.prepare_story(p['id'], options)
+                    elif job['kind'] == 'retarget-images':
+                        self.retarget_images(p)
                     elif job['kind'] == 'economy-images':
                         from economy_studio import generate_panel_story
                         generate_panel_story(self,p['id'],options)
@@ -694,7 +702,9 @@ class StudioService:
                     elif job["kind"] == "qc":
                         self.inspect_shot(p, job["chapter"], job["shot"])
                     elif job["kind"] == "intro-image":
-                        self.intro_image(p)
+                        self.intro_image(p, options)
+                    elif job['kind'] == 'qc-intro':
+                        self.inspect_intro(p)
                     elif job["kind"] == "character-reference":
                         self.character_reference(p, options)
                     else:
@@ -745,6 +755,11 @@ class StudioService:
                 state = "QUEUED"
                 message = "Paused to free models for Audio"
                 self.paused = True
+            except CloudBudgetPaused as error:
+                state = "QUEUED"
+                message = str(error)
+                self.paused = True
+                self.status(job['project'], job['chapter'], 'PAUSED')
             except JobCancelled:
                 state = "CANCELLED"
                 message = "Cancelled; completed assets preserved"
@@ -862,6 +877,12 @@ class StudioService:
             self.before_audio()
             self.measured_stage(pid, 'Narration', self.narration, p, chapter, chapter=chapter['number'])
             p = self.store.load(pid)
+            chapter = get_chapter(p, chid)
+            if (not options.get('forceAnalysis') and chapter.get('scenes')
+                    and chapter.get('handoff', {}).get('sourceSignature') == digest(chapter['sourceText'])
+                    and chapter.get('inputState') == state_before(p, chid)[0]
+                    and chapter.get('status') in ('READY_FOR_IMAGES', 'COMPLETE')):
+                continue
             self.production_progress(pid, f"Chapter {chapter['number']} · complete AI direction", chapterId=chid)
             self.measured_stage(pid, 'AI directing', self.analyze, p, chid,
                 options | {'managedPipeline': True, 'offlinePlanning': True}, chapter=chapter['number'])
@@ -873,6 +894,51 @@ class StudioService:
                 self.measured_stage(pid, 'Intro direction', self.plan_intro, self.store.load(pid))
         self.store.mutate(pid, lambda q: q.setdefault('production', {}).update(
             status='READY_FOR_IMAGES', stage='Fresh narration and direction prepared; connect the image worker'))
+
+    def retarget_images(self, p):
+        """Luna adapts an existing reviewed plan to a newly selected provider.
+
+        Preserve story, timing and manually authored prompts; save each completed
+        group immediately. The runtime resolves reference count at generation.
+        """
+        self.select_director(p)
+        provider = self.provider(p['settings']['image']['provider'])
+        selected = p['settings']['image']
+        catalog = provider.planningCatalog() if provider.id == 'comfyui' else provider.healthCheck()
+        if selected['model'] not in catalog['models'] or selected['workflow'] not in catalog['workflow']:
+            raise ValueError('Selected image model/workflow is not configured.')
+        caps = provider.getModelCapabilities(selected['model']) if hasattr(provider, 'getModelCapabilities') else provider.getCapabilities()
+        for chapter in p['chapters']:
+            self.director.timing_callback = lambda stage, seconds, details, number=chapter['number']: self.record_timing(
+                p['id'], stage, seconds, details | {'chapter': number, 'detail': True})
+            shots = [s for sc in chapter['scenes'] for s in sc['shots'] if not s.get('manual', {}).get('prompt')]
+            for offset in range(0, len(shots), 12):
+                group = copy.deepcopy(shots[offset:offset+12])
+                for shot in group:
+                    shot.update(imageProvider=provider.id, imageModel=selected['model'], workflow=selected['workflow'],
+                        generationSettings=shot['generationSettings'] | selected | {'loras': []})
+                    shot['prompt'], shot['negativePrompt'] = format_prompt(p, shot, provider)
+                result = self.director.writeImagePrompt({'model': selected['model'], 'promptFormat': caps['promptFormat'],
+                    'capabilities': caps, 'shots': [{'shotIndex': i, 'narration': s['narrationSegment'],
+                        'draftPrompt': s['prompt']} for i,s in enumerate(group)],
+                    'instruction': 'Adapt each supplied grounded draft into a concise natural-language prompt for the selected model. '
+                        'Keep only its own story action, selected people and current clothing. Render as drawn 2D fantasy manhwa, never photography. '
+                        'References preserve identity, not old outfits. No invented events, unrelated rooms, captions, borders or title text.'}, self.gate)
+                indexes = [x['shotIndex'] for x in result['prompts']]
+                if sorted(indexes) != list(range(len(group))):
+                    raise ValueError('Director omitted or duplicated model-specific prompts; prior prompts retained.')
+                for item in result['prompts']:
+                    shot = group[item['shotIndex']]
+                    shot['directorPrompt'] = item['prompt']
+                    shot['prompt'] += ' Visual direction: ' + item['prompt']
+                def save(latest):
+                    for shot in group:
+                        current = get_shot(latest, chapter['id'], shot['id'])
+                        current.update({k:shot[k] for k in ('imageProvider','imageModel','workflow','generationSettings','prompt','negativePrompt','directorPrompt')})
+                        current['generationStale'] = bool(current.get('imagePath'))
+                    get_chapter(latest, chapter['id'])['renderStale'] = True
+                    latest['renderStale'] = True
+                self.store.mutate(p['id'], save)
 
     def produce_story(self, pid, options):
         """One durable queue job; reuse completed stages and stop safely on errors."""
@@ -1432,9 +1498,29 @@ class StudioService:
             estimate = cloud_cost(window['cloudStartedAt'], window['gpuHourlyUSD'],
                                   window.get('gpuPreviouslySpentUSD', 0), window.get('imageReserveSeconds', 90)+25)
             if estimate > window.get('gpuBudgetUSD', float('inf')):
-                raise ValueError('Cloud spend guard stopped generation. Saved images are safe. Stop the rented GPU to stop its billing.')
+                message = 'Cloud budget reached: queue paused with completed images and seeds preserved. Stop the Runpod pod now; pausing this queue does not stop rental billing.'
+                with self.cv:
+                    self.paused = True
+                self.store.mutate(p['id'], lambda latest: latest.setdefault('production', {}).update(
+                    status='PAUSED', stage='Cloud budget reached — stop the rented GPU',
+                    message=message, budgetBlocked=True, updated=time.time()))
+                raise CloudBudgetPaused(message)
 
-    def intro_image(self, p):
+    def inspect_intro(self, p):
+        for shot in p['intro'].get('shots', []):
+            if not shot.get('imagePath'):
+                raise ValueError('Generate every intro shot before visual review.')
+            if shot.get('qc', {}).get('status') == 'PASSED':
+                continue
+            qc = self.visual_check(p, shot | {'intentionalAppearanceChanges': shot.get('intentionalAppearanceChanges', [])}, self.store.asset(p['id'], shot['imagePath']))
+            qc['status'] = 'PASSED' if qc['pass'] else 'REVIEW_REQUIRED' if qc.get('action') == 'review' else 'FAILED'
+            def save(latest):
+                item = next(s for s in latest['intro']['shots'] if s['id'] == shot['id'])
+                item.update(qc=qc, status='PASSED' if qc['pass'] else 'COMPLETE' if qc.get('action') == 'review' else 'FAILED')
+            self.store.mutate(p['id'], save)
+
+    def intro_image(self, p, options=None):
+        options = options or {}
         self.unload_models()
         self.before_image()
         provider = self.provider(p["settings"]["image"]["provider"])
@@ -1457,10 +1543,10 @@ class StudioService:
                 def save_intro(latest):
                     item = next(s for s in latest['intro']['shots'] if s['id']==shot['id'])
                     item.update(imagePath=name, status='COMPLETE', referenceImages=metadata,
-                        imageMetadata=result | {'prompt': prompt, 'referenceImages': metadata}, qc={'status': 'UNREVIEWED', 'pass': None})
+                        imageMetadata=result | {'prompt': prompt, 'referenceImages': metadata}, qc={'status': 'PENDING' if options.get('deferQC') else 'UNREVIEWED', 'pass': None})
                     latest['renderStale'] = True
                 self.store.mutate(p['id'], save_intro)
-                if p['settings'].get('visionQC'):
+                if p['settings'].get('visionQC') and not options.get('deferQC'):
                     review_shot = shot | {'intentionalAppearanceChanges': shot.get('intentionalAppearanceChanges', [])}
                     self.director.timing_callback = lambda stage,seconds,details: self.record_timing(p['id'], stage, seconds, details | {'intro': True, 'detail': True})
                     qc = self.visual_check(self.store.load(p['id']), review_shot, target)
@@ -2411,9 +2497,9 @@ class StudioService:
                     "available": [
                         {
                             "provider": provider.id,
-                            "models": health["models"],
-                            "workflows": health["workflow"],
-                            "capabilities": provider.getCapabilities(),
+                            "models": [p['settings']['image']['model']] if p['settings'].get('lockImageModel') else health["models"],
+                            "workflows": [p['settings']['image']['workflow']] if p['settings'].get('lockImageModel') else health["workflow"],
+                            "capabilities": provider.getModelCapabilities(p['settings']['image']['model']) if hasattr(provider, 'getModelCapabilities') else provider.getCapabilities(),
                         }
                     ],
                     "selected": p["settings"]["image"],
@@ -2483,6 +2569,7 @@ class StudioService:
                     obj({"changes": arr(CHANGE)}),
                     self.gate,
                 )["changes"]
+                object_changes = align_evidence(object_changes, text)
                 if any(
                     not 0 <= e["sentence"] < len(group)
                     or not e["reason"]
@@ -2989,7 +3076,7 @@ class StudioService:
             request["sourceImage"] = data_url(self.store.asset(p["id"], source))
             request["mask"] = options.get("mask")
         retries = int(p["settings"]["maxImageRetries"])
-        qc = {"status": "UNREVIEWED", "pass": None}
+        qc = {"status": "PENDING" if options.get('deferQC') else "UNREVIEWED", "pass": None}
         attempts = []
         fallback_used = False
         actual_workflow = shot["workflow"]
@@ -3113,7 +3200,7 @@ class StudioService:
             path.with_suffix(".json").write_text(
                 json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
             )
-            if (
+            if not options.get('deferQC') and (
                 p["settings"]["visionQC"]
                 or p["settings"]["generationMode"] == "MAX QUALITY"
             ):
@@ -3203,7 +3290,7 @@ class StudioService:
             if any(s["id"] == c["id"] for s in shot["characters"])
         ]
         expected['visualStyle'] = p['settings']['style']
-        expected['visualConstraints'] = p['settings'].get('visualConstraints', '')
+        expected['visualConstraints'] = p['settings'].get('imageVisualConstraints', p['settings'].get('visualConstraints', ''))
         qc_started = time.monotonic()
         result = self.director.inspectGeneratedImage(
             {
@@ -3229,6 +3316,8 @@ class StudioService:
         self.before_image()
         self.providers["existing"].unload()
         self.status(p["id"], chid, "QC")
+        self.director.timing_callback = lambda stage, seconds, details: self.record_timing(
+            p['id'], stage, seconds, details | {'chapter': get_chapter(p, chid)['number'], 'shot': sid, 'detail': True})
         qc = self.visual_check(p, shot, self.store.asset(p["id"], shot["imagePath"]))
         qc["status"] = (
             "PASSED"

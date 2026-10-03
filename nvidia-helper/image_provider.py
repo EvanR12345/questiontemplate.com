@@ -1,6 +1,6 @@
 """Image backends are replaceable; no story facts or timeline logic lives here."""
 
-import base64, copy, hashlib, io, json, math, secrets, subprocess, time, urllib.request
+import base64, copy, hashlib, io, json, math, re, secrets, subprocess, time, urllib.request
 from pathlib import Path
 from PIL import Image, ImageStat
 from director_provider import local_url, request_json
@@ -97,7 +97,7 @@ class ImageProvider:
         }
 
     def validateSettings(self, s, check_hardware=True):
-        caps = self.getCapabilities()
+        caps = self.getModelCapabilities(s.get('model', '')) if hasattr(self, 'getModelCapabilities') else self.getCapabilities()
         result = copy.deepcopy(s)
         memory = self.available_vram_gb() if check_hardware else None
         requirements = caps.get("hardwareRequirements", {})
@@ -600,7 +600,10 @@ class ComfyImageProvider(ImageProvider):
         templates = template.get('variants', [template])
         return {'installed': False, 'configured': True, 'requiresLiveValidation': True,
                 'models': list(dict.fromkeys([template['model']] + [t['model'] for t in templates])),
-                'workflow': list(dict.fromkeys([template['name']] + [t['name'] for t in templates]))}
+                'workflow': list(dict.fromkeys([template['name']] + [t['name'] for t in templates] + list(template.get('automaticWorkflows', {}))))}
+
+    def getModelCapabilities(self, model):
+        return self.getCapabilities() | self.template().get('modelCapabilities', {}).get(model, {})
 
     def resolve_template(self, request, settings):
         root = self.template()
@@ -612,16 +615,26 @@ class ComfyImageProvider(ImageProvider):
             raise ValueError("Selected Comfy model is not installed in this workflow bundle.")
         workflow = request.get("workflow") or settings.get("workflow") or root["name"]
         references = bool(request.get("referenceImages")) or request.get("operation") == "edit"
-        if request.get("purpose") == "character-reference" and not references and root.get("referenceCreationWorkflow"):
-            workflow = root["referenceCreationWorkflow"]
-            settings = settings | dict(zip(("width", "height"), root.get("referenceResolution", (1024, 1024))))
+        automatic = root.get('automaticWorkflows', {}).get(workflow, {})
+        defaults = automatic or root
+        if automatic and model not in (root['model'], automatic['model']):
+            raise ValueError('Selected automatic workflow belongs to another model.')
+        if request.get("purpose") == "character-reference" and not references and defaults.get("referenceCreationWorkflow"):
+            workflow = defaults["referenceCreationWorkflow"]
+            settings = settings | dict(zip(("width", "height"), defaults.get("referenceResolution", (1024, 1024))))
         elif workflow == root["name"] and request.get("operation") == "edit" and root.get("repairWorkflow"):
             workflow = root["repairWorkflow"]
-        if workflow == root["name"]:
+        if workflow == root["name"] or workflow in root.get('automaticWorkflows', {}):
             kind = "reference" if references else "text"
             candidates = [v for v in variants if v.get("kind") == kind and v.get("default")]
-            if model != root["model"]:
+            if automatic:
+                candidates = [v for v in candidates if v['model'] == automatic['model']]
+            elif model != root["model"]:
                 candidates = [v for v in candidates if v["model"] == model]
+            else:
+                candidates = [v for v in candidates if v['model'] not in root.get('modelCapabilities', {})]
+            reference_count = len(request.get('referenceImages', [])) + int(request.get('operation') == 'edit')
+            candidates = [v for v in candidates if v.get('referenceCount', reference_count) == reference_count]
         else:
             candidates = [v for v in variants if v["name"] == workflow and model in (root["model"], v["model"])]
         if len(candidates) != 1:
@@ -630,7 +643,10 @@ class ComfyImageProvider(ImageProvider):
         if settings.get("loras") and settings["loras"] != template.get("presetSettings", {}).get("loras"):
             raise ValueError("Custom LoRA settings do not match this exported workflow. Configure a workflow containing the requested adapters before generating.")
         if template.get("kind") == "reference" and not references:
-            raise ValueError("Qwen Image Edit needs a source or character reference image. Use Qwen Image text-to-image for a new reference sheet.")
+            raise ValueError("This image-edit workflow needs a source or character reference image. Use text-to-image for a new reference sheet.")
+        reference_count = len(request.get('referenceImages', [])) + int(request.get('operation') == 'edit')
+        if 'referenceCount' in template and template['referenceCount'] != reference_count:
+            raise ValueError('Selected workflow requires exactly ' + str(template['referenceCount']) + ' references. Use the automatic workflow for this shot.')
         if template.get("kind") == "text" and references:
             raise ValueError("This text-to-image workflow cannot condition on character references. Select a reference workflow; no references were discarded.")
         # Lightning adapters are trained for a fixed step count and CFG.
@@ -675,7 +691,7 @@ class ComfyImageProvider(ImageProvider):
             result = {
                 "installed": not missing and not missing_weights,
                 "models": list(dict.fromkeys([template["model"]] + [t["model"] for t in templates])),
-                "workflow": list(dict.fromkeys([template["name"]] + [t["name"] for t in templates])),
+                "workflow": list(dict.fromkeys([template["name"]] + [t["name"] for t in templates] + list(template.get('automaticWorkflows', {})))),
                 "missingNodes": missing,
                 "missingWeights": missing_weights,
             }
@@ -788,6 +804,16 @@ class ComfyImageProvider(ImageProvider):
         }
 
 
+def visible_appearance(shot, selected):
+    # Persistent possessions remain in story state. A visible prop needs a
+    # current director decision, rather than blindly reenacting prior combat.
+    context = ' '.join(str(shot.get(k, '')) for k in ('action', 'narrationSegment', 'pose'))
+    context += ' ' + str(shot.get('camera', {}).get('composition', ''))
+    return {k:v for k,v in selected.get('appearanceState', {}).items()
+            if k not in ('gun', 'hammer', 'knife', 'sword', 'bomb')
+            or re.search(r'\b'+re.escape(k)+r's?\b', context, re.IGNORECASE)}
+
+
 def format_prompt(project, shot, provider):
     people = {c["id"]: c for c in project["characters"]}
     ch = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
@@ -800,7 +826,7 @@ def format_prompt(project, shot, provider):
             [p.get("name", selected["id"])]
             + ([p.get("description", "")] if not any(identity.values()) else [])
             + [f"{k}: {v}" for k, v in identity.items() if v]
-            + [f"{k}: {v}" for k, v in selected.get("appearanceState", {}).items() if v]
+            + [f"{k}: {v}" for k, v in visible_appearance(shot, selected).items() if v]
         )
         descriptions.append("; ".join(details))
     camera = shot["camera"]
@@ -825,12 +851,19 @@ def format_prompt(project, shot, provider):
         "Lighting: " + shot.get("lighting", ""),
         "Style: " + project["settings"]["style"],
     ]
-    if project['settings'].get('visualConstraints'):
-        parts.append('Production constraints: ' + project['settings']['visualConstraints'])
+    visual_constraints = project['settings'].get('imageVisualConstraints', project['settings'].get('visualConstraints', ''))
+    if visual_constraints:
+        parts.append('Production constraints: ' + visual_constraints)
     parts.append('One continuous landscape composition depicting one simultaneous moment. No collage, split panels, borders, labels or title text. Preserve the specified identities and current clothing; do not remove clothing without a stated story change.')
     if shot.get("continuity"):
-        parts.append("Keep: " + json.dumps(shot["continuity"], ensure_ascii=False))
-    caps = provider.getCapabilities()
+        # Persistent environmental history is not an instruction to reenact an
+        # earlier battle. Only stable scene conditions belong in this prompt.
+        continuity = {k:v for k,v in shot['continuity'].items()
+                      if k not in ('mood','gunfire','elapsedTime','condition')}
+        if continuity:
+            parts.append("Keep: " + json.dumps(continuity, ensure_ascii=False))
+    caps = (provider.getModelCapabilities(shot.get('imageModel', ''))
+            if hasattr(provider, 'getModelCapabilities') else provider.getCapabilities())
     prompt = (
         ". ".join(p for p in parts if p)
         + ". No rendered text, captions, or additional important people."
@@ -852,7 +885,7 @@ def reference_prompt(project, shot, metadata, operation="generate"):
     """Name reference roles without locking a character to old reference clothing."""
     chapter = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
     people = {c["id"]: c for c in project["characters"] + chapter["people"]}
-    appearances = {c["id"]: c.get("appearanceState", {}) for c in shot["characters"]}
+    appearances = {c['id']: visible_appearance(shot, c) for c in shot['characters']}
     notes = []
     offset = 1 if operation == "edit" else 0
     if offset:

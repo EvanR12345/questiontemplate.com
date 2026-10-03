@@ -5,11 +5,25 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from image_provider import ComfyImageProvider, reference_prompt, select_references
+from image_provider import ComfyImageProvider, reference_prompt, select_references, visible_appearance
 from studio_data import ProjectStore, character, new_project
 
 
 class CloudImageTest(unittest.TestCase):
+    def test_historical_weapons_do_not_override_current_shot_or_erase_story_state(self):
+        project, shot, metadata = self.project_and_shot()
+        selected = shot['characters'][0]
+        selected['appearanceState'].update(gun='right hand', sword='carried')
+        shot.update(action='Michael comforts Sarah after hearing distant gunfire.',
+                    narrationSegment='The room finally fell silent.')
+        prompt = reference_prompt(project, shot, metadata)
+        self.assertNotIn('"gun"', prompt)
+        self.assertNotIn('"sword"', prompt)
+        self.assertEqual(selected['appearanceState']['gun'], 'right hand')
+        shot['camera']['composition'] = 'Sword visible at his belt; Sarah beside him.'
+        self.assertEqual(visible_appearance(shot, selected)['sword'], 'carried')
+        self.assertNotIn('gun', visible_appearance(shot, selected))
+
     def test_offline_planning_defers_hardware_check_but_generation_validation_does_not(self):
         provider = self.provider()
         with patch('image_provider.request_json', side_effect=OSError('worker stopped')) as network:
@@ -21,6 +35,7 @@ class CloudImageTest(unittest.TestCase):
 
     def provider(self):
         provider = ComfyImageProvider({})
+        provider.template = lambda: {'modelCapabilities': {}}
         provider.getCapabilities = lambda: {
             "hardwareRequirements": {"vramGB": 24},
             "maxResolution": 2048,
@@ -30,6 +45,13 @@ class CloudImageTest(unittest.TestCase):
             "supportsIPAdapter": False,
         }
         return provider
+
+    def test_selected_klein_hardware_requirement_does_not_inherit_qwen_40gb(self):
+        provider = self.provider()
+        provider.template = lambda: {'modelCapabilities': {'flux2-klein-4b': {'hardwareRequirements': {'vramGB':16}}}}
+        with patch('image_provider.request_json', return_value={'devices':[{'type':'cuda','vram_total':24*2**30}]}):
+            settings = provider.validateSettings({'model':'flux2-klein-4b','width':1344,'height':768,'steps':4,'seed':7})
+            self.assertEqual(settings['model'], 'flux2-klein-4b')
 
     def test_remote_32gb_is_valid_even_when_laptop_has_4gb(self):
         provider = self.provider()

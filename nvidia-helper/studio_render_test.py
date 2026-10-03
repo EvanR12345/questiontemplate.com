@@ -40,6 +40,13 @@ class MotionTest(unittest.TestCase):
 
 
 class IntroTest(unittest.TestCase):
+    def test_pending_cloud_quality_check_blocks_intro_render(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = ProjectStore(folder); p = store.save(new_project())
+            p['intro']['shots'] = [{'start':0, 'end':15, 'qc': {'status':'PENDING'}}]
+            with self.assertRaisesRegex(ValueError, 'pending intro'):
+                VideoRenderer(store, {}).intro(p, lambda *args:None)
+
     def test_thirty_second_intro_moves_and_never_cuts_long_narration(self):
         with tempfile.TemporaryDirectory() as folder:
             store=ProjectStore(folder)

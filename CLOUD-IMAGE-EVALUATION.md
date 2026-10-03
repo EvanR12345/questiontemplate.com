@@ -86,7 +86,30 @@ The prepare-story queue performs fresh narration and the full selected director 
 
 The speech delivery version invalidates old narration signatures and normalizes extended interjections before supplying explicit vowel pronunciations to the existing Kokoro engine. Real synthesis and a real full-frame FFmpeg motion render were exercised without local image generation. Motion choices use valid enum values, and the fresh project uses 16% eased zooms; this is not a claim of exact motion matching to the reference channels.
 
-The existing 50-cent combined spending cap still applies. Approximately 42.24 cents were estimated for the rejected production. Fresh preparation has its own bounded API ledger. A new cloud run needs an explicitly revised cap if its projected cumulative spend exceeds the remaining allowance. Cloud queue guards preserve outputs but do not stop infrastructure billing; stop the Runpod pod separately before local rendering. Storage continues accruing while the pod is stopped.
+The user subsequently approved a $1 cumulative cap including the rejected production and requested a FLUX.2 Klein 4B trial. Fresh preparation has its own bounded API ledger. Cloud queue guards preserve outputs but do not stop infrastructure billing; stop the Runpod pod separately before local rendering. Storage continues accruing while the pod is stopped.
+
+## October 3: actual FLUX trial and unresolved acceptance
+
+The installed cloud trial uses the official distilled **FLUX.2 Klein 4B FP8** checkpoint, full Qwen3 4B text encoder and FLUX.2 VAE. All three downloads were revision pinned and SHA-256 checked on the existing network volume. They total 12.45 GB and took 86.66 seconds concurrently. No laptop Torch/CUDA install or local environment replacement occurred.
+
+The modular workflow bundle preserves Qwen workflows and adds automatic FLUX selection for zero through three references. Editing reserves the first reference slot for the source image. It uses four steps, CFG 1, Euler and Flux2Scheduler; no SD-style negative prompt is sent. Normal shots are 1344 × 768; initial identity portraits are 1024 × 1024. Model-specific hardware validation avoids applying Qwen's memory requirement to Klein.
+
+Measured on one RTX PRO 6000 Blackwell, not a 5090: 18 story shots took 70.24 seconds through the Studio queue (3.17–6.46 seconds each, mean 3.90). ComfyUI execution/download took 1.30–2.39 seconds each. Two identity jobs took 12.42 seconds combined through the queue. These measurements exclude model downloads, setup, idle rental and visual QC. Warm inference is fast; using three concurrent model copies has not been benchmarked and is not needed to explain the setup bottleneck.
+
+Sample outputs are drawn manhwa rather than photography, but acceptance is incomplete. One Christopher portrait has extra scars and one combat sample has a stale gun. Historical weapon possessions and battle mood were being blindly included in later prompts. The prompt adapters now retain those facts in the continuity database while showing weapons only when the current narration/action/pose/composition requires them. This distinction does not erase possessions or disable later object continuity. Location adherence and visual checks still require review.
+
+Luna freshly planned 103 chapter shots and five intro shots; all chapter prompts were retargeted to Klein in focused batches. Fresh audio is 7:19.155 and 10:17.130, with a separate 30-second intro. The original full text is retained. Only 18 story images and two portraits were completed before the budget guard blocked requests. No intro images, full visual QC or finished fresh video exist yet. Saved outputs, seeds, metadata and source projects remain intact.
+
+The rental was stopped at 05:53:12 UTC and verified EXITED with $0/hour compute. The queue guard initially blocked requests without pausing the remaining queue or stopping the rental. It now pauses and retains the blocked job and future jobs with an explicit warning to stop Runpod. The existing read-only management credential cannot perform an automatic stop; the UI must not claim that a request guard caps infrastructure billing. Do not resume paid work until cumulative settled costs and remaining authorization are reconciled.
+
+## Specific reference-video comparison
+
+The requested [Manhwa For You episode](https://www.youtube.com/watch?v=6nYQgJxSDeE) is 2:06:41 overall. Its hook occupies approximately 0:00–1:10, and the user's first two chapters correspond to approximately 1:10–5:13 (4:03). The visible transcript for that section contains about 711 words versus 2,611 words in the complete original chapters. The channel speaks about 176 words/minute versus about 148 for this production. Condensing dialogue and descriptive details explains most of the difference; increasing speech speed alone does not turn the complete text into a six-minute recap.
+
+The inspected channel frame uses colored 2D comic ink, expressive faces, cel shading and a full-frame casino composition. Its exact generator cannot be identified from that frame or its generic AI disclosure. A roughly six-minute recap would require an explicit narration adaptation, separate from the complete chapter reading.
+
+- [Official ComfyUI Klein workflows and model files](https://docs.comfy.org/tutorials/flux/flux-2-klein)
+- [Official BFL Klein 4B model and license](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)
 
 - [Runpod network volumes and standard pricing](https://docs.runpod.io/storage/network-volumes)
 - [Runpod S3-compatible access](https://docs.runpod.io/storage/s3-api)
