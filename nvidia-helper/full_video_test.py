@@ -154,6 +154,18 @@ class Harness(StudioService):
 
 
 class FullVideoTest(unittest.TestCase):
+    def test_saved_image_review_queues_without_image_backend_online(self):
+        self.service.prepare_story(self.project['id'], {})
+        saved = self.service.store.load(self.project['id'])
+        c = saved['chapters'][0]
+        shot = c['scenes'][0]['shots'][0]
+        provider = self.service.provider('existing')
+        def unavailable(settings):
+            raise RuntimeError('image worker stopped')
+        provider.validateSettings = unavailable
+        queue = self.service.enqueue(saved['id'], c['id'], 'qc', [shot['id']])
+        self.assertEqual(queue['counts']['QUEUED'], 1)
+
     def test_preparation_directs_both_chapters_without_images_or_rendering(self):
         self.service.prepare_story(self.project['id'], {})
         saved = self.service.store.load(self.project['id'])

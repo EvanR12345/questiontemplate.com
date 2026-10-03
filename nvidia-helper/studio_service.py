@@ -457,9 +457,16 @@ class StudioService:
                 provider = self.provider(
                     shot.get("imageProvider") or p["settings"]["image"]["provider"]
                 )
-                settings = provider.validateSettings(
-                    shot["generationSettings"] | {"model": shot["imageModel"]}
-                )
+                requested = shot['generationSettings'] | {'model': shot['imageModel']}
+                if kind == 'qc':
+                    # Reviewing a saved PNG does not need the image GPU online.
+                    settings = copy.deepcopy(requested)
+                elif provider.id == 'comfyui':
+                    # Validate structure while preparing the queue. Actual
+                    # generation still checks the live worker, VRAM and weights.
+                    settings = provider.validateSettings(requested, check_hardware=False)
+                else:
+                    settings = provider.validateSettings(requested)
                 shot["generationSettings"] = settings
                 seed = settings["seed"]
             else:
