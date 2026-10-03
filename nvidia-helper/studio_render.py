@@ -51,12 +51,15 @@ class VideoRenderer:
 
     def shot_identity(self, project, shot):
         video = project['settings']['video']
-        return {
+        identity = {
             'start': shot['start'], 'end': shot['end'],
             'image': self.asset_identity(project['id'], shot['imagePath']),
             'motion': effective_motion(shot, video),
             'zoomAmount': shot.get('motionSettings', {}).get('zoomAmount', video.get('zoomAmount', .06)),
         }
+        if identity['motion'] != 'static':
+            identity['subpixelMotionVersion'] = 1
+        return identity
 
     @staticmethod
     def legacy_is_current(legacy, inputs):
@@ -146,8 +149,8 @@ class VideoRenderer:
         motion = effective_motion(shot, v)
         interval = max(1, frames - 1)
         zoom = "1"
-        x = "iw/2-(iw/zoom/2)"
-        y = "ih/2-(ih/zoom/2)"
+        x = None
+        y = None
         amount = float(shot.get('motionSettings', {}).get('zoomAmount', v.get('zoomAmount', .06)))
         if not math.isfinite(amount) or not 0 <= amount <= .35:
             raise ValueError('Image zoom must be between 0 and 35 percent.')
@@ -160,22 +163,32 @@ class VideoRenderer:
             zoom = f"{1+amount:g}-{amount:g}*{progress}"
         elif "pan left" in motion:
             zoom = "1.08"
-            x = f"(iw-iw/zoom)*(1-on/{interval})"
+            x = f"(W-W/({zoom}))*(1-{progress})"
         elif "pan right" in motion:
             zoom = "1.08"
-            x = f"(iw-iw/zoom)*on/{interval}"
+            x = f"(W-W/({zoom}))*{progress}"
         elif "pan up" in motion:
             zoom = "1.08"
-            y = f"(ih-ih/zoom)*(1-on/{interval})"
+            y = f"(H-H/({zoom}))*(1-{progress})"
         elif "pan down" in motion:
             zoom = "1.08"
-            y = f"(ih-ih/zoom)*on/{interval}"
+            y = f"(H-H/({zoom}))*{progress}"
         fitting = (
-            f"scale={w*2}:{h*2}:force_original_aspect_ratio=increase,crop={w*2}:{h*2}"
+            f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
             if v.get("imageFit") == "cover"
-            else f"scale={w*2}:{h*2}:force_original_aspect_ratio=decrease,pad={w*2}:{h*2}:(ow-iw)/2:(oh-ih)/2:color=0x101720"
+            else f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x101720"
         )
-        return f"{fitting},zoompan=z='{zoom}':x='{x}':y='{y}':d={frames}:s={w}x{h}:fps={v['fps']},setsar=1"
+        repeat = f"zoompan=z=1:x=0:y=0:d={frames}:s={w}x{h}:fps={v['fps']}"
+        if motion == 'static' or frames <= 1:
+            return f'{fitting},{repeat},setsar=1'
+        x = x or f'(W-W/({zoom}))/2'
+        y = y or f'(H-H/({zoom}))/2'
+        # Floating source corners avoid zoompan's integer crop-position jumps.
+        corners = [x, y, f'({x})+W/({zoom})', y,
+                   x, f'({y})+H/({zoom})', f'({x})+W/({zoom})', f'({y})+H/({zoom})']
+        transform = ':'.join(f'{key}=\'{value}\'' for key, value in zip(
+            ('x0','y0','x1','y1','x2','y2','x3','y3'), corners))
+        return f'{fitting},{repeat},format=yuv444p,perspective={transform}:sense=source:eval=frame:interpolation=cubic,format=yuv420p,setsar=1'
 
     def concat(self, files, target, gate, log, durations=None, video_only=False):
         listing = target.with_suffix(".concat.txt")
@@ -257,7 +270,7 @@ class VideoRenderer:
         if (
             old_path and old_path.is_file() and old_path.stat().st_size > 0
             and (old.get('renderIdentity') == signature or
-                 old.get('signature') == legacy_signature and self.legacy_is_current(old_path, assets))
+                 old.get('signature') == legacy_signature and all(s['motion'] == 'static' for s in visual_shots) and self.legacy_is_current(old_path, assets))
         ):
             return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4"}
         clips = []
@@ -270,7 +283,8 @@ class VideoRenderer:
             name = "clip-" + digest({"rendererVersion": 6, "shot": visual_shots[index], "video": v})[:24] + ".mp4"
             clip = folder / name
             legacy = folder / ('clip-' + digest({'rendererVersion': 5, 'shot': s, 'video': v})[:24] + '.mp4')
-            self.reuse_legacy_clip(legacy, clip, [assets[index]])
+            if visual_shots[index]['motion'] == 'static':
+                self.reuse_legacy_clip(legacy, clip, [assets[index]])
             if not clip.exists():
                 temporary = clip.with_suffix(".partial.mp4")
                 self.run(
@@ -406,7 +420,7 @@ class VideoRenderer:
                 raise ValueError(f'Intro narration lasts {spoken_duration:.1f}s, longer than the {duration:g}s intro. Shorten its text or regenerate at a faster speaking speed; narration will not be cut off.')
         signature = digest(
             {
-                "introRendererVersion": 4,
+                "introRendererVersion": 5,
                 "intro": {
                     k: intro.get(k)
                     for k in (
@@ -443,7 +457,7 @@ class VideoRenderer:
                 if not image.is_file():
                     raise ValueError(f'Generate intro shot {index+1} before rendering. No previous intro was replaced.')
                 seconds = end-start
-                clip = folder / ('intro-shot-' + digest({'version': 1, 'shot': shot, 'video': v})[:20] + '.mp4')
+                clip = folder / ('intro-shot-' + digest({'version': 2, 'shot': shot, 'video': v})[:20] + '.mp4')
                 if not clip.is_file():
                     visual = self.motion(shot | {'manual': {'motion': True}}, v | {'imageFit': 'cover'}, round(seconds*v['fps']))
                     self.run(['-loop', '1', '-i', str(image), '-vf', visual, '-an', '-t', str(seconds), *self.encoding(p), str(clip)], gate, folder / f'intro-shot-{index+1}.log')

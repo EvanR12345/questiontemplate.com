@@ -99,7 +99,7 @@ class StudioService:
                   'render-chapter':'Render chapter', 'render-full':'Assemble full video',
                   'intro-render':'Render intro', 'narration':'Narration', 'intro-audio':'Intro narration',
                   'analyze':'Chapter analysis (audio + directing)', 'scene-plan':'Chapter analysis (audio + directing)',
-                  'retarget-images':'Image prompt planning'}
+                  'retarget-images':'Image prompt planning', 'voice-preview':'Voice preview'}
         if job['kind'] not in stages or job.get('seconds') is None:
             return
         timings = project.setdefault('production', {}).setdefault('timings', [])
@@ -412,6 +412,9 @@ class StudioService:
         p = self.store.load(pid)
         options = options or {}
         ch = get_chapter(p, chapter) if chapter else None
+        if kind == 'voice-preview':
+            chapter = None
+            ch = None
         if kind not in (
             "produce-story",
             "prepare-story",
@@ -420,6 +423,7 @@ class StudioService:
             "analyze",
             "scene-plan",
             "narration",
+            "voice-preview",
             "image",
             "qc",
             "character-reference",
@@ -515,8 +519,9 @@ class StudioService:
                 )
             for id, sid, seed, payload in planned:
                 exists = self.db.execute(
-                    "SELECT id FROM jobs WHERE project=? AND chapter IS ? AND kind=? AND shot IS ? AND status IN ('QUEUED','RUNNING')",
-                    (pid, chapter, kind, sid),
+                    "SELECT id FROM jobs WHERE project=? AND chapter IS ? AND kind=? AND shot IS ? AND status IN ('QUEUED','RUNNING')" +
+                    (' AND payload=?' if kind == 'voice-preview' else ''),
+                    (pid, chapter, kind, sid) + ((json.dumps(payload),) if kind == 'voice-preview' else ()),
                 ).fetchone()
                 if exists:
                     continue
@@ -736,10 +741,13 @@ class StudioService:
                         "scene-plan",
                         "narration",
                         "intro-audio",
+                        "voice-preview",
                     ):
                         self.unload_models()
                         self.before_audio()
-                        if job["kind"] == "intro-audio":
+                        if job["kind"] == "voice-preview":
+                            self.voice_preview(p, options)
+                        elif job["kind"] == "intro-audio":
                             self.intro_audio(p)
                         else:
                             ch = get_chapter(p, job["chapter"])
@@ -1355,6 +1363,7 @@ class StudioService:
                 "voice": p["settings"]["voice"],
                 "speed": p["settings"]["speed"],
                 "deliveryVersion": AUDIO_DELIVERY_VERSION,
+                "soundEffects": p['settings'].get('soundEffects', 'subtle'),
             }
         )
         if (
@@ -1373,6 +1382,7 @@ class StudioService:
             p["settings"]["voice"],
             p["settings"]["speed"],
             folder / f"chapter-{ch['number']:03d}-{signature[:12]}.wav",
+            p['settings'].get('soundEffects', 'subtle'),
         )
         result.update(
             signature=signature,
@@ -1393,7 +1403,30 @@ class StudioService:
 
         self.store.mutate(p["id"], audio_saved)
 
-    def create_audio(self, text, voice, speed, target):
+    def voice_preview(self, p, options):
+        """A bounded local audition never replaces narration or the timeline."""
+        text = str(options.get('text', '')).strip()
+        if not text or len(text) > 1800:
+            raise ValueError('Voice preview needs 1–1800 characters.')
+        voice = options.get('voice', p['settings']['voice'])
+        speed = options.get('speed', p['settings']['speed'])
+        effects = options.get('soundEffects', p['settings'].get('soundEffects', 'subtle'))
+        signature = digest({'text':text, 'voice':voice, 'speed':speed,
+                            'effects':effects, 'delivery':AUDIO_DELIVERY_VERSION})
+        name = f'voice-preview-{signature[:16]}.wav'
+        if any(v.get('path') == name for v in p.get('voicePreviews', [])) and self.store.asset(p['id'], name).is_file():
+            return
+        result = self.create_audio(text, voice, speed, self.store.folder(p['id']) / name, effects)
+        preview = {**result, 'path':name, 'text':text, 'voice':voice, 'speed':speed,
+                   'soundEffects':effects}
+        def saved(q):
+            previews = q.setdefault('voicePreviews', [])
+            previews[:] = [item for item in previews if item['path'] != name]
+            previews.append(preview)
+            previews[:] = previews[-12:]
+        self.store.mutate(p['id'], saved)
+
+    def create_audio(self, text, voice, speed, target, effects='subtle'):
         import numpy as np
         from kokoro import KPipeline
 
@@ -1418,6 +1451,7 @@ class StudioService:
         sections = sentences(text)
         offset = 0
         timings = []
+        narration_rms = .035
         tmp = target.with_suffix(".partial.wav")
         with wave.open(str(tmp), "wb") as wav:
             wav.setparams((1, 2, 24000, 0, "NONE", "not compressed"))
@@ -1425,9 +1459,11 @@ class StudioService:
                 self.gate(f"Narration sentence {index+1}/{len(sections)}")
                 begin = offset
                 def deliveries():
-                    for segment in audio_segments(sentence):
+                    for segment in audio_segments(sentence, effects):
                         if segment['kind'] == 'effect':
-                            yield None, effect_pcm(segment['effect'])
+                            yield None, effect_pcm(segment['effect'], narration_rms=narration_rms)
+                        elif segment['kind'] == 'pause':
+                            yield None, np.zeros(round(segment['duration'] * 24000), dtype='<f4')
                         else:
                             for item in pipeline(segment.get('ttsText', segment['text'])):
                                 yield item, None
@@ -1461,6 +1497,9 @@ class StudioService:
                             continue
                         raw = self.audio.synthesize(section, voice, speed)
                         pcm = np.frombuffer(raw, dtype="<f4")
+                        if not np.isfinite(pcm).all():
+                            raise RuntimeError('Voice returned invalid audio; the previous WAV is preserved.')
+                        narration_rms = float(np.sqrt(np.mean(pcm**2))) if len(pcm) else narration_rms
                         wav.writeframes(
                             (np.clip(pcm, -1, 1) * 32767).astype("<i2").tobytes()
                         )
@@ -1476,7 +1515,7 @@ class StudioService:
                         "start": begin,
                         "end": offset,
                         "timingSource": "synthesized-sentence-duration",
-                        "delivery": audio_segments(sentence),
+                        "delivery": audio_segments(sentence, effects),
                     }
                 )
         if offset <= 0:
@@ -1506,6 +1545,7 @@ class StudioService:
             "timingSource": "exact sentence synthesis boundaries",
             "created": time.time(),
             "deliveryVersion": AUDIO_DELIVERY_VERSION,
+            "soundEffects": effects,
         }
 
     def intro_audio(self, p):
@@ -1519,6 +1559,7 @@ class StudioService:
             p["settings"]["voice"],
             p["settings"]["speed"],
             self.store.folder(p["id"]) / "intro.wav",
+            p['settings'].get('soundEffects', 'subtle'),
         )
         self.store.mutate(
             p["id"],

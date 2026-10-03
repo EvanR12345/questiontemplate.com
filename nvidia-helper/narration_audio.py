@@ -7,7 +7,7 @@ effects become PCM in the same chapter WAV instead of spoken letters.
 import hashlib
 import re
 
-VERSION = 2
+VERSION = 3
 EFFECTS = {'bang', 'bam', 'boom', 'thud', 'click', 'beep', 'slash', 'whoosh', 'crash'}
 
 def effect_name(text):
@@ -47,25 +47,46 @@ def pronunciation_text(text):
                   lambda m: '[' + m.group() + '](/' + phonemes[m.group().lower()] + '/)',
                   text, flags=re.I)
 
-def audio_segments(text):
-    """Only known onomatopoeia inside stars is an effect, never arbitrary emphasis."""
+def audio_segments(text, effects='subtle'):
+    """Keep unsupported cries out of TTS, retaining their source and timing.
+
+    A plain cue is an effect only on its own line. Ordinary prose ("a thud",
+    "slash the rope") remains speech. Stars still mark recognized effects.
+    """
+    if effects not in ('subtle', 'off'):
+        raise ValueError('Sound effects must be subtle or off.')
+    # Normalize stretched cries before finding whole interjection tokens.
+    cry = re.compile(r'\b(?:a+h+|a+g+h*|a+c+k+|u+g+h+|h+a+h*)\b', re.I)
+    def append_speech(source):
+        prepared = speech_text(source)
+        pos = 0
+        for match in cry.finditer(prepared):
+            before = prepared[pos:match.start()].strip()
+            if re.search(r'\w', before):
+                result.append({'kind': 'speech', 'text': before, 'ttsText': before})
+            result.append({'kind': 'pause', 'duration': .18, 'source': match.group(),
+                           'reason': 'Unsupported vocal cry; safe pause instead of spelling or synthesized scream'})
+            pos = match.end()
+        after = prepared[pos:].strip()
+        if re.search(r'\w', after):
+            result.append({'kind': 'speech', 'text': after, 'ttsText': after})
+    def append_effect(name, source):
+        result.append({'kind': 'effect', 'effect': name, 'source': source} if effects == 'subtle'
+                      else {'kind': 'pause', 'duration': .18, 'source': source, 'reason': 'Sound effects disabled'})
     cursor = 0
     result = []
-    for match in re.finditer(r'\*{1,2}([^*\n]+)\*{1,2}', text):
-        name = effect_name(match[1])
+    cue = r'\*{1,2}([^*\n]+)\*{1,2}|^[ \t]*[\"\']?([A-Za-z]+)[!?. \t]*[\"\']?[!?. \t]*$'
+    for match in re.finditer(cue, text, re.M):
+        name = effect_name(match[1] or match[2])
         if not name:
             continue
-        before = speech_text(text[cursor:match.start()])
-        if re.search(r'\w', before):
-            result.append({'kind': 'speech', 'text': before, 'ttsText': pronunciation_text(before)})
-        result.append({'kind': 'effect', 'effect': name, 'source': match.group()})
+        append_speech(text[cursor:match.start()])
+        append_effect(name, match.group())
         cursor = match.end()
-    after = speech_text(text[cursor:])
-    if re.search(r'\w', after):
-        result.append({'kind': 'speech', 'text': after, 'ttsText': pronunciation_text(after)})
+    append_speech(text[cursor:])
     return result
 
-def effect_pcm(name, sample_rate=24000):
+def effect_pcm(name, sample_rate=24000, narration_rms=None):
     """Deterministic synthesized effects; no downloads or paid sound API."""
     import numpy as np
     durations = {'bang': .27, 'bam': .35, 'boom': 1.1, 'thud': .25,
@@ -84,7 +105,14 @@ def effect_pcm(name, sample_rate=24000):
         envelope = np.exp(-t * (4 if name == 'boom' else 17))
         sound = (.55 * bass + .7 * low_noise + .25 * noise * np.exp(-t * 90)) * envelope
         sound[:min(24, len(sound))] *= np.linspace(0, 1, min(24, len(sound)))
-    sound = sound / max(1.0, float(np.max(np.abs(sound)))) * .5
+    # Effects must not suddenly dominate the narrator. They used to peak at
+    # .5 regardless of speech level. Keep a conservative cap and adapt down.
+    peak = .08 if name in ('slash', 'whoosh') else .12
+    sound = sound / max(1.0, float(np.max(np.abs(sound)))) * peak
+    if narration_rms is not None:
+        desired = max(.003, min(.04, float(narration_rms) * .6))
+        rms = float(np.sqrt(np.mean(sound**2)))
+        sound *= min(1.0, desired / max(rms, 1e-9))
     # A short tail separates consecutive impacts and avoids edit clicks.
     sound[-min(240, len(sound)):] *= np.linspace(1, 0, min(240, len(sound)))
     return np.concatenate([sound, np.zeros(round(.08 * sample_rate))]).astype('<f4')

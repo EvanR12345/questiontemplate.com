@@ -26,10 +26,12 @@ class MotionTest(unittest.TestCase):
         video = {"width": 1280, "height": 720, "fps": 24, "imageFit": "cover", "motionMode": "gentle"}
         zoom_in = renderer.motion(self.shot(), video, 48)
         zoom_out = renderer.motion(self.shot("close-up"), video, 48)
-        self.assertIn("force_original_aspect_ratio=increase,crop=2560:1440", zoom_in)
+        self.assertIn("force_original_aspect_ratio=increase,crop=1280:720", zoom_in)
         self.assertNotIn("pad=", zoom_in)
         self.assertIn("1+0.06*on/47", zoom_in)
         self.assertIn("1.06-0.06*on/47", zoom_out)
+        self.assertIn('interpolation=cubic', zoom_in)
+        self.assertIn('eval=frame', zoom_in)
         self.assertIn("pad=", renderer.motion(self.shot(), video | {"imageFit": "contain"}, 48))
 
     def test_prose_director_motion_receives_valid_gentle_fallback(self):

@@ -351,6 +351,8 @@ def validate_project(p):
         raise ValueError("Invalid intro placement.")
     if not 0 <= int(p["settings"].get("maxImageRetries", 2)) <= 10:
         raise ValueError("Use 0–10 image retries.")
+    if p['settings'].get('soundEffects', 'subtle') not in ('subtle', 'off'):
+        raise ValueError('Sound effects must be subtle or off.')
     seen = set()
     cast_types = ("main", "supporting", "temporary", "background", "group")
 

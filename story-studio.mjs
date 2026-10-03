@@ -571,7 +571,7 @@ function settings() {
     i.provider,
   )}</select></label><label>Image model<select id="settingImageModel">${options(models, i.model)}</select></label><label>Workflow<select id="settingImageWorkflow">${options(selected?.workflow || [i.workflow], i.workflow)}</select></label><label>SD reference strength<input ${i.provider === "native-flux" ? "disabled" : ""} id="settingReferenceStrength" type="number" min="0" max="1" step=".05" value="${i.referenceStrength}"></label></div><p class="muted">${selected?.installed ? "Installed" : "Unavailable: configure this local backend before generating."} ${selected?.validated === false ? "This native configuration has not passed laptop validation yet." : ""} ${escape(selected?.capabilities?.referenceLimitations || "")}</p><button id="showModelNotes">Model evaluation and diagnosis</button> <button id="connectCloudImages">Connect Qwen cloud images</button></div>
   <div class="section-box"><h3>Economy storyboard canvases</h3><label class="inline"><input id="settingEconomyPanels" type="checkbox" ${s.economyPanels ? 'checked' : ''}>Four independent shots per Qwen canvas</label><p class="muted">Luna groups the shots; each crop is saved separately as a 640×360 landscape image. This can reduce generation calls by about 75%, with less detail and a risk of composition mixing. Individual full-resolution regeneration remains available. The helper does not start or stop rented GPUs.</p><button id="prepareStory">Prepare complete narration and director plan</button> <button id="prepareRestyle">Restyle existing shots</button></div>
-  <div class="section-box"><h3>Voice</h3><div class="two-col"><label>Existing Kokoro voice<select id="settingVoice">${options(["am_michael", "af_heart", "af_bella", "af_nicole", "am_puck", "bm_george", "bf_emma"], s.voice)}</select></label><label>Speaking speed<input id="settingSpeed" type="number" min=".5" max="2" step=".1" value="${s.speed}"></label></div></div>
+  <div class="section-box"><h3>Voice</h3><div class="two-col"><label>Existing Kokoro voice<select id="settingVoice">${options(["am_michael", "am_fenrir", "am_puck", "bm_george", "af_heart", "af_bella", "af_nicole", "bf_emma"], s.voice)}</select></label><label>Speaking speed<input id="settingSpeed" type="number" min=".5" max="2" step=".05" value="${s.speed}"></label><label>Sound effects<select id="settingSoundEffects">${options([["subtle", "Subtle · quieter than narration"], ["off", "Off · brief pauses"]], s.soundEffects || "subtle")}</select></label></div><p class="muted">Unsupported cries such as Ahhh and Aaagghhh become brief pauses. Marked effects and isolated cues such as Thud are never spelled as letters. The source story stays intact.</p><label>Voice audition text<textarea id="voicePreviewText" rows="3">${escape(project.introHookProposal?.text || project.intro.voiceText || "He had already lost everything. This time, he would fight for a second chance.\nAhhh!\n*Slash*\nThud.\nNo! I can't leave you here.")}</textarea></label><div class="toolbar"><button id="voicePreviewGenerate">Preview selected voice</button><button id="voicePreviewRefresh">Refresh auditions</button></div><p class="muted">Local audition only; chapter audio and shot timings stay saved. Listen before regenerating a chapter.</p><div id="voicePreviewResults">${voicePreviewResults()}</div></div>
   <div class="section-box"><h3>Optional intro</h3><label class="inline"><input id="introEnabled" type="checkbox" ${project.intro.enabled ? "checked" : ""}>Enable intro</label><div class="two-col"><label>Duration: <span id="introDurationValue">${project.intro.duration}</span> seconds<input id="introDuration" type="range" min="10" max="30" step="1" value="${project.intro.duration}"></label><label>Placement<select id="introPlacement">${options(
     [
       ["full_story_only", "Full story only"],
@@ -1547,7 +1547,25 @@ async function newProject() {
 async function saveSettingsIfVisible() {
   if (tab === "settings") await saveSettings();
 }
+function voicePreviewResults() {
+  return (project.voicePreviews || []).slice().reverse().map(p => `<p>${escape(p.voice)} · ${p.speed}× · ${time(p.duration)} · ${escape(p.soundEffects || 'subtle')}</p><audio controls data-asset="${escape(p.path)}"></audio>`).join('');
+}
 function wireSettings() {
+  $('#voicePreviewGenerate').onclick = () => action(async () => {
+    const text = $('#voicePreviewText').value.trim();
+    if (!text || text.length > 1800) throw new Error('Enter 1–1800 characters for the audition.');
+    queue = await api('jobs', {project:project.id, kind:'voice-preview', options:{
+      text, voice:$('#settingVoice').value, speed:Number($('#settingSpeed').value),
+      soundEffects:$('#settingSoundEffects').value}});
+    renderQueue();
+    note('Local voice audition queued. Refresh auditions when it finishes. Existing chapter audio is preserved.');
+  });
+  $('#voicePreviewRefresh').onclick = () => action(async () => {
+    const latest = await api('project?id=' + project.id);
+    project.voicePreviews = latest.voicePreviews || [];
+    $('#voicePreviewResults').innerHTML = voicePreviewResults();
+    await fillMedia();
+  });
   $("#productionSaveSettings").onclick = () => action(saveSettings);
   $('#prepareStory').onclick = () => action(async () => { await saveSettings(); await submit('prepare-story'); });
   $('#prepareRestyle').onclick = () => action(async () => { await saveSettings(); await submit('restyle-story'); });
@@ -1696,6 +1714,7 @@ async function saveSettings() {
   s.generationMode = $("#settingGenerationMode").value;
   s.voice = $("#settingVoice").value;
   s.speed = Number($("#settingSpeed").value);
+  s.soundEffects = $('#settingSoundEffects').value;
   s.director.provider = $("#settingDirectorProvider").value;
   s.director.reasoning = $("#settingReasoning").value;
   s.continuityStrictness = $("#settingContinuity").value;
