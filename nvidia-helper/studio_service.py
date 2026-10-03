@@ -1696,6 +1696,21 @@ class StudioService:
             prompt += f' Use image {len(refs)} for illustration linework and palette only, not its people or objects. Earlier images establish identity.'
         if refs and provider.id == "native-flux":
             settings.update(width=384, height=384)
+        operation = 'generate'
+        repair_source = options.get('repairReferencePath')
+        if repair_source:
+            known_paths = {r['path'] for r in person['references']}
+            identity_path = options.get('identityReferencePath')
+            if repair_source not in known_paths or identity_path not in known_paths:
+                raise ValueError('Reference repairs must use this character’s saved source and identity references.')
+            if not provider.getCapabilities().get('supportsImageEditing'):
+                raise ValueError('Select a provider that supports reference image editing.')
+            prompt = str(options.get('repairPrompt','')).strip()
+            if not prompt:
+                raise ValueError('A targeted reference repair prompt is required.')
+            operation = 'edit'
+            refs = [data_url(self.store.asset(p['id'],identity_path))]
+            reference_roles = [{'path':repair_source,'role':'edit-source'}, {'path':identity_path,'role':'identity'}]
         result = provider.generateImage(
             {
                 "prompt": prompt,
@@ -1707,6 +1722,8 @@ class StudioService:
                 "referenceImages": refs,
                 "settings": settings,
                 "purpose": "character-reference",
+                "operation": operation,
+                **({'sourceImage':data_url(self.store.asset(p['id'],repair_source))} if repair_source else {}),
             },
             self.checkpoint,
         )
