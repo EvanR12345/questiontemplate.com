@@ -1,0 +1,140 @@
+/* Familiar comic workspace styling, with the full chapter workflow retained. */
+.production {
+  --ink: var(--text);
+  --sub: var(--muted);
+  --edge: var(--line);
+  --accent: #bcaeff;
+  font: inherit;
+}
+.production-switch { margin: 10px 0 16px; }
+.production-switch button,
+.production button { border-radius: 10px; background: var(--panel2); }
+.production-switch button[aria-pressed="true"] {
+  background: #251c48; border-color: #6757b9; color: var(--text);
+}
+.production button { transition: background .16s, border-color .16s; }
+.production button:hover { background: #232c40; border-color: #506080; }
+.production button:active:not(:disabled) { transform: translateY(1px); }
+.production button.primary {
+  color: white; background: var(--violet); border-color: var(--violet);
+}
+.production button:focus-visible,
+.production summary:focus-visible,
+.production-switch button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px;
+}
+.production input,
+.production textarea,
+.production select { background: #090d16; border-radius: 10px; }
+.production input:focus-visible,
+.production textarea:focus-visible,
+.production select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+.production .project-bar { padding: 8px 0 16px; border: 0; }
+.production .project-controls { justify-content: flex-end; align-items: flex-start; }
+.production .project-controls select { max-width: 280px; }
+.production .kicker { text-transform: none; letter-spacing: 0; color: var(--sub); }
+.production .connection-line { display: flex; align-items: center; gap: 7px; margin-top: 5px; }
+.production .connection-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); flex: none; }
+.production .connection-dot.connected { background: var(--green); }
+.production .full-video-bar {
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 14px;
+  padding: 14px 18px; margin: 0 0 18px; gap: 18px;
+}
+.production .full-video-bar p { margin: 3px 0; max-width: 65ch; }
+.production #fullVideoStatus { color: var(--accent); }
+.production .studio-grid {
+  grid-template-columns: minmax(0, 1fr) 230px;
+  grid-template-areas: "work chapters"; gap: 18px; margin-top: 0;
+}
+.production .production-main {
+  grid-area: work; min-width: 0; background: var(--panel);
+  border: 1px solid var(--edge); border-radius: 18px; padding: 20px;
+}
+.production .chapter-rail {
+  grid-area: chapters; border: 1px solid var(--edge); border-radius: 18px;
+  padding: 16px; background: var(--panel); top: 16px;
+}
+.production .chapter-rail h2 { font-size: 14px; margin: 0 0 14px; }
+.production .chapter-button { border: 1px solid transparent; padding: 10px; }
+.production .chapter-button.selected { background: #211a3d; border-color: #6757b9; }
+.production .chapter-button strong { overflow-wrap: anywhere; }
+.production .chapter-button span { color: var(--sub); }
+.production .chapter-heading h2 { margin-bottom: 0; }
+.production .chapter-heading .subtitle { margin-top: 3px; }
+.production .workspace-tabs {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px; margin: 16px 0 20px; border: 0; overflow: visible;
+}
+.production .workspace-tabs button {
+  padding: 10px; text-align: left; border: 1px solid var(--edge);
+  border-radius: 10px; background: #0c101a; color: var(--sub); min-width: 0;
+}
+.production .workspace-tabs button strong { display: block; font-size: 13px; color: var(--ink); }
+.production .workspace-tabs button small { display: block; font-size: 10px; margin-top: 3px; white-space: normal; }
+.production .workspace-tabs button[aria-selected="true"] {
+  background: #211a3d; border-color: var(--violet); box-shadow: inset 0 0 0 1px var(--violet);
+}
+.production .story-editor { min-height: 320px; margin-top: 6px; }
+.production .story-actions { margin-top: 12px; }
+.production .story-actions #wordCount { margin-right: auto; font-variant-numeric: tabular-nums; }
+.production .stats { gap: 18px; padding: 12px 0; margin: 18px 0 0; }
+.production .stats strong { font-size: 18px; }
+.production .queue-panel { border-bottom: 0; padding-bottom: 0; margin-top: 18px; }
+.production .queue-panel h3 { font-size: 14px; }
+.production .queue-panel details { border: 0; padding-bottom: 0; }
+.production .scene-item { border: 1px solid var(--edge); border-radius: 14px; padding: 16px; margin: 16px 0; }
+.production .shot-card { background: #0c101a; border: 1px solid var(--edge); border-radius: 12px; }
+.production .shot-card img,
+.production .shot-empty { border-radius: 8px; }
+.production .person-row { border: 1px solid var(--edge); border-radius: 14px; padding: 16px; margin-top: 12px; }
+.production .reference-strip img { border-radius: 8px; }
+.production .dialog-content { background: var(--panel); border-radius: 16px; }
+.production .timeline button { background: #211a3d; border-radius: 8px; }
+.production .timeline small { color: var(--sub); }
+.production .action-menu { position: relative; border: 0; margin: 0; padding: 0; }
+.production .action-menu > summary {
+  list-style: none; min-height: 36px; padding: 8px 10px; font-size: 12px;
+  border: 1px solid var(--edge); border-radius: 10px; color: var(--sub); white-space: nowrap;
+}
+.production .action-menu > summary::-webkit-details-marker { display: none; }
+.production .action-menu > summary::after { content: " ▾"; }
+.production .action-menu[open] > summary { color: var(--ink); border-color: #6757b9; }
+.production .action-menu > .toolbar {
+  position: absolute; z-index: 25; right: 0; top: calc(100% + 6px);
+  min-width: 210px; padding: 10px; background: var(--panel2);
+  border: 1px solid var(--edge); border-radius: 12px; box-shadow: 0 8px 24px #0006;
+}
+.production .action-menu > .toolbar button { width: 100%; text-align: left; }
+.production .action-menu .import-control { margin: 0; width: 100%; }
+.production .past-errors { margin-top: 18px; font-size: 12px; }
+.production .past-errors summary { color: var(--sub); }
+.production .notice { border-radius: 8px; }
+.production .error { border-color: var(--danger); }
+.production [role="tabpanel"] { scroll-margin-top: 16px; }
+@media (max-width: 1100px) {
+  .production .studio-grid { grid-template-columns: minmax(0, 1fr) 200px; }
+  .production .workspace-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 850px) {
+  .production .studio-grid { grid-template-columns: 1fr; grid-template-areas: "chapters" "work"; }
+  .production .chapter-rail { position: static; display: flex; gap: 6px; overflow: auto; padding: 10px; }
+  .production .chapter-rail h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .production .chapter-button { min-width: 145px; max-width: 200px; margin: 0; }
+  .production .chapter-add { width: auto; min-width: 140px; margin: 0; }
+  .production .project-bar { gap: 12px; }
+}
+@media (max-width: 520px) {
+  .production .production-main { padding: 14px; }
+  .production .project-controls { justify-content: flex-start; width: 100%; }
+  .production .project-controls select { flex: 1; min-width: 0; }
+  .production .full-video-bar { padding: 14px; }
+  .production .workspace-tabs { gap: 5px; }
+  .production .workspace-tabs button { padding: 8px; }
+  .production .workspace-tabs button small { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .production button { transition: none; }
+  .production button:active:not(:disabled) { transform: none; }
+}

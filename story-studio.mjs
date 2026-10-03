@@ -433,12 +433,13 @@ function render() {
     chapterId = project.chapters[0].id;
     return render();
   }
-  root.innerHTML = `<div class="project-bar"><div><div class="kicker">Story production studio</div><h1>${escape(project.name)}</h1><div class="connection-line">${connected ? `${escape(health.hardware.gpu)} · ${health.hardware.vramGB} GB VRAM · ${health.hardware.ramGB} GB RAM · shared Audio + Studio helper` : "Helper offline · your text is saved in this browser"}</div></div><div class="toolbar"><select id="productionProject" aria-label="Project">${options(
+  const openControls = [...root.querySelectorAll('details[data-ui][open]')].map(el => el.dataset.ui);
+  root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · your text is saved in this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${options(
     projects.map((p) => [p.id, p.name]),
     project.id,
-  )}</select><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label style="margin:0"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></div>
+  )}</select><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
   <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
-  <div class="full-video-bar"><div><strong>Finished entering your chapters?</strong><p class="muted">Generate narration, direct every chapter, create missing character references and images, then render one full video. Detected main characters are confirmed automatically. Your review settings and manual edits are preserved.</p><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div>
+  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong><p class="muted">Add your chapters below, then start the full workflow. Saved results and manual edits are preserved.</p><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div>
   ${project._unsynced ? '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>' : ""}
   ${project.warnings
     .filter((w) => !w.resolved)
@@ -447,34 +448,35 @@ function render() {
         `<div class="notice"><strong>${escape(w.message)}</strong><p>${escape(w.categories.join(", "))}</p><button data-warning="${w.id}" data-choice="update">Update affected chapters</button> <button data-warning="${w.id}" data-choice="keep">Keep existing chapters</button></div>`,
     )
     .join("")}
-  <div class="studio-grid"><aside class="chapter-rail">${project.chapters.map((x) => `<button class="chapter-button ${x.id === c.id ? "selected" : ""}" data-chapter="${x.id}"><span>${x.number.toString().padStart(2, "0")}</span><strong>${escape(x.name)}</strong><small>${escape(x.status.replaceAll("_", " "))}${x.continuityNeedsReview ? " · review continuity" : ""}</small></button>`).join("")}<button class="chapter-add" id="productionAddChapter">+ New chapter</button></aside>
-  <div class="production-main"><div class="chapter-heading"><div><h2>${escape(c.name)}</h2><div class="subtitle">${escape(c.status.replaceAll("_", " "))} · ${escape(project.settings.image.model)} · ${escape(project.settings.image.workflow)}</div></div><div class="toolbar"><button id="productionDuplicate">Duplicate</button><button id="productionMoveUp" aria-label="Move chapter earlier">↑</button><button id="productionMoveDown" aria-label="Move chapter later">↓</button><button class="danger" id="productionDelete">Delete chapter</button></div></div>
-  <nav class="workspace-tabs" role="tablist">${[
-    ["write", "1 · Story"],
-    ["narration", "2 · Narration"],
-    ["cast", "3 · Characters"],
-    ["review", "4 · Review & layout"],
-    ["timeline", "5 · Timeline & video"],
-    ["settings", "Settings"],
+  <div class="studio-grid"><aside class="chapter-rail" aria-label="Chapters"><h2>Chapters</h2>${project.chapters.map((x) => `<button class="chapter-button ${x.id === c.id ? "selected" : ""}" data-chapter="${x.id}" ${x.id === c.id ? 'aria-current="true"' : ''}><span>${x.number.toString().padStart(2, "0")}</span><strong>${escape(x.name)}</strong><small>${escape(x.status.replaceAll("_", " "))}${x.continuityNeedsReview ? " · review continuity" : ""}</small></button>`).join("")}<button class="chapter-add" id="productionAddChapter">+ New chapter</button></aside>
+  <div class="production-main"><div class="chapter-heading"><div><h2>${escape(c.name)}</h2><div class="subtitle">${escape(c.status.replaceAll("_", " "))} · ${escape(project.settings.image.model)}</div></div><details class="action-menu" data-ui="chapter-actions"><summary>Chapter actions</summary><div class="toolbar"><button id="productionDuplicate">Duplicate</button><button id="productionMoveUp" aria-label="Move chapter earlier">↑</button><button id="productionMoveDown" aria-label="Move chapter later">↓</button><button class="danger" id="productionDelete">Delete chapter</button></div></details></div>
+  <nav class="workspace-tabs" role="tablist" aria-label="Chapter workflow">${[
+    ["write", "Story", "Paste your chapter"],
+    ["narration", "Narration", "Review & listen"],
+    ["cast", "Characters", "People & references"],
+    ["review", "Layout", "Scenes & images"],
+    ["timeline", "Video", "Timeline & export"],
+    ["settings", "Settings", "Style & AI options"],
   ]
     .map(
-      ([v, label]) =>
-        `<button role="tab" aria-selected="${tab === v}" data-tab="${v}">${label}</button>`,
+      ([v, label, hint], index) =>
+        `<button role="tab" id="studio-tab-${v}" aria-controls="productionContent" aria-selected="${tab === v}" tabindex="${tab === v ? 0 : -1}" data-tab="${v}"><strong>${index < 5 ? index + 1 + ' · ' : ''}${label}</strong><small>${hint}</small></button>`,
     )
     .join("")}</nav>
-  <section id="productionContent">${content()}</section><div class="queue-panel" id="productionQueue"></div><p class="save-state" id="productionSaveState">Saved assets stay in the helper output folder. Refresh restores this project.</p></div></div>`;
+  <section id="productionContent" role="tabpanel" aria-labelledby="studio-tab-${tab}">${content()}</section><div class="queue-panel" id="productionQueue"></div><p class="save-state" id="productionSaveState">Saved assets stay in the helper output folder. Refresh restores this project.</p></div></div>`;
   wire();
   renderQueue();
+  for (const detail of root.querySelectorAll('details[data-ui]')) detail.open = openControls.includes(detail.dataset.ui);
   void fillMedia();
 }
 function content() {
   const c = ch();
   switch (tab) {
     case "write":
-      return `<label>Chapter name<input id="chapterName" value="${escape(c.name)}"></label><label>Story<textarea class="story-editor" id="chapterStory" placeholder="Paste this chapter’s story. Characters and continuity carry forward from earlier chapters.">${escape(c.sourceText)}</textarea></label><div class="toolbar"><span id="wordCount" class="muted">${wordStats(c.sourceText)}</span><button id="productionReviewNarration">Review clean narration</button><button class="primary" id="productionAnalyze">Analyze chapter</button><button id="productionExample">Load two-chapter test story</button><button id="productionLegacy">Import existing comic story</button></div><div class="steps"><span>Clean narration</span><span>Continuous audio</span><span>AI direction</span><span>Review</span><span>Images</span><span>Video</span></div><p class="muted">Analyze prepares audio and a scene plan. Review it before generating images. Existing chapter assets remain saved when you reanalyze.</p>${stats()}${c.errors
+      return `<label>Chapter name<input id="chapterName" value="${escape(c.name)}"></label><label>Story<textarea class="story-editor" id="chapterStory" placeholder="Paste this chapter’s story. Characters and continuity carry forward from earlier chapters.">${escape(c.sourceText)}</textarea></label><div class="toolbar story-actions"><span id="wordCount" class="muted">${wordStats(c.sourceText)}</span><button id="productionReviewNarration">Review narration</button><button class="primary" id="productionAnalyze">Analyze chapter</button><details class="action-menu" data-ui="story-tools"><summary>Story tools</summary><div class="toolbar"><button id="productionExample">Load two-chapter test story</button><button id="productionLegacy">Import existing comic story</button></div></details></div><p class="muted">Analyze creates narration and a scene plan. Review the layout before generating images.</p>${stats()}${c.errors.length ? '<details class="past-errors" data-ui="chapter-errors"><summary>Recent generation errors · ' + c.errors.length + '</summary>' : ''}${c.errors
         .slice(-2)
         .map((e) => `<div class="notice error">${escape(e.message)}</div>`)
-        .join("")}`;
+        .join("")}${c.errors.length ? '</details>' : ''}`;
     case "narration":
       return `<h2>Exactly what the narrator will say</h2><div class="two-col"><label>Narration source<select id="narrationMode">${options(
         [
@@ -650,6 +652,7 @@ function shotMotionLabel(shot) {
 function renderQueue() {
   const el = $("#productionQueue");
   if (!el) return;
+  const openDetails = new Set([...root.querySelectorAll('details[data-ui][open]')].map(detail => detail.dataset.ui));
   if (!queue) {
     el.innerHTML =
       '<p class="muted">Connect the helper to see production jobs. Completed assets stay saved after refresh.</p>';
@@ -665,7 +668,7 @@ function renderQueue() {
   if (fullButton) {
     fullButton.disabled = !connected || !!activeFullRun || !!project.production?.budgetBlocked;
     fullButton.textContent = activeFullRun
-      ? "Full video in progress"
+      ? queue.paused ? "Full video paused" : "Full video in progress"
       : "Generate full video";
   }
   const run = project.production,
@@ -678,6 +681,8 @@ function renderQueue() {
     const status =
       run.budgetBlocked
         ? run.message || "Cloud budget reached · queue paused · stop the Runpod pod"
+        : queue.paused && activeFullRun
+        ? "Paused · saved results preserved"
         : activeFullRun?.kind === "render-full"
         ? activeFullRun.message || "Rendering full story"
         : ready
@@ -738,7 +743,7 @@ function renderQueue() {
         totals[entry.stage] = (totals[entry.stage] || 0) + entry.seconds;
       runStatus.insertAdjacentHTML(
         "beforeend",
-        `<details><summary>Measured production times</summary><p class="muted">Recorded wall time, including loading, retries and pauses. Reused assets take only their validation time.</p><table><thead><tr><th>Stage</th><th>Time</th></tr></thead><tbody>${Object.entries(
+        `<details data-ui="production-times"><summary>Measured production times</summary><p class="muted">Recorded wall time, including loading, retries and pauses. Reused assets take only their validation time.</p><table><thead><tr><th>Stage</th><th>Time</th></tr></thead><tbody>${Object.entries(
           totals,
         )
           .map(
@@ -747,7 +752,7 @@ function renderQueue() {
           )
           .join(
             "",
-          )}</tbody></table><details><summary>Every stage and director pass</summary>${run.timings.map((t) => `<p class="muted">${t.chapter ? "Chapter " + t.chapter + " · " : ""}${escape(t.stage)}${t.shot ? " · " + escape(t.shot) : ""} · ${t.seconds.toFixed(1)} s${t.reused ? " · reused" : ""}${t.status === "FAILED" ? " · failed attempt" : ""}</p>`).join("")}</details></details>`,
+          )}</tbody></table><details data-ui="production-passes"><summary>Every stage and director pass</summary>${run.timings.map((t) => `<p class="muted">${t.chapter ? "Chapter " + t.chapter + " · " : ""}${escape(t.stage)}${t.shot ? " · " + escape(t.shot) : ""} · ${t.seconds.toFixed(1)} s${t.reused ? " · reused" : ""}${t.status === "FAILED" ? " · failed attempt" : ""}</p>`).join("")}</details></details>`,
       );
     }
   }
@@ -766,14 +771,14 @@ function renderQueue() {
     total = counts
       ? Object.values(counts.all).reduce((a, b) => a + b, 0)
       : jobs.length,
-    failureCount = plannedImages.filter(s => s.status === "FAILED" || s.qc?.status === "FAILED").length,
+    failureCount = plannedImages.filter(s => s.status === "FAILED" || ["FAILED", "REVIEW_REQUIRED"].includes(s.qc?.status)).length,
     currentShot = shots(
       project.chapters.find((c) => c.id === current?.chapter),
     ).find((s) => s.id === current?.shot),
     currentScene = project.chapters
       .find((c) => c.id === current?.chapter)
       ?.scenes.find((s) => s.id === currentShot?.sceneId);
-  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting · ${failureCount} images need attention · ETA ${queue.etaSeconds == null ? "—" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || "Ready"))}</p><progress max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel all queued</button><button data-control="retry-missing">Retry missing images</button></div><details><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
+  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting · ${failureCount} images need attention · ETA ${queue.paused ? "Paused" : queue.etaSeconds == null ? "—" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || "Ready"))}</p><progress max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel all queued</button><button data-control="retry-missing" ${imageDone === imageTotal ? "disabled" : ""}>Retry missing images</button></div><details data-ui="job-history"><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
     .filter(
       (j) =>
         j.status === "FAILED" ||
@@ -787,6 +792,9 @@ function renderQueue() {
         `<div class="queue-job"><span>${escape(j.kind)} · ${escape(j.message)}</span><button data-job-priority="${j.id}">Prioritize</button>${["FAILED", "CANCELLED"].includes(j.status) ? `<button data-job-retry="${j.id}">Retry same seed</button>` : ""}</div>`,
     )
     .join("")}</div></details>`;
+  for (const detail of root.querySelectorAll('details[data-ui]')) {
+    if (openDetails.has(detail.dataset.ui)) detail.open = true;
+  }
   el.querySelectorAll("[data-control]").forEach(
     (b) =>
       (b.onclick = () =>
@@ -864,8 +872,25 @@ function wire() {
         action(async () => {
           tab = b.dataset.tab || b.dataset.go;
           render();
+          root.querySelector('[role="tab"][aria-selected="true"]')?.focus({preventScroll:true});
         })),
   );
+  root.querySelectorAll('[role="tab"]').forEach(button => {
+    button.onkeydown = event => {
+      const buttons = [...root.querySelectorAll('[role="tab"]')];
+      const index = buttons.indexOf(button);
+      const target = event.key === 'ArrowRight' ? (index + 1) % buttons.length
+        : event.key === 'ArrowLeft' ? (index + buttons.length - 1) % buttons.length
+        : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : null;
+      if (target === null) return;
+      event.preventDefault();
+      void action(async () => {
+        tab = buttons[target].dataset.tab;
+        render();
+        root.querySelector('[role="tab"][aria-selected="true"]').focus();
+      });
+    };
+  });
   $("#productionAddChapter").onclick = () =>
     action(async () => {
       if (connected) {
