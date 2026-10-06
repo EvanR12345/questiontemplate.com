@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Production Planner · QuestionTemplate Studio</title>
+  <meta name="description" content="Plan story-video production across Luna, local narration, cloud images and rendering. Compare GPU concurrency and rearrange a dependency-aware timeline.">
+  <meta name="theme-color" content="#fafaf8">
+  <link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./pipeline.css">
+</head>
+<body>
+  <a class="skip-link" href="#plannerWorkspace">Skip to planner</a>
+  <header class="appbar"><a class="brand" href="./studio.html"><img src="./favicon.svg" width="28" height="28" alt="">QuestionTemplate <span>Studio</span></a><span class="breadcrumb">/ &nbsp; Production planner</span><nav><a href="./studio.html">Back to Studio</a><button id="export" class="button">Export plan</button><button id="import" class="button">Import</button></nav></header>
+  <main>
+    <div class="heading"><div><div class="eyebrow">PRODUCTION LAB <span class="badge">LOCAL SIMULATION</span></div><h1>Find the fastest path.</h1><p>Arrange the work. See what can overlap, what must wait, and what the GPU costs while it waits.</p></div><div class="saved"><span id="saved">Saved on this device</span><small>No paid jobs · no project changes</small></div></div>
+    <div class="metrics" aria-live="polite"><div><span>Estimated finish</span><strong id="metricTime">—</strong><small id="metricRange">Building schedule…</small></div><div><span>Compared with serial</span><strong id="metricSaved">—</strong><small id="metricSerial">Same work, different order</small></div><div><span>Estimated total cost</span><strong id="metricCost">—</strong><small id="metricCostParts">GPU + API + storage allowance</small></div><div><span id="metricBusyLabel">GPU work / rented</span><strong id="metricBusy">—</strong><small id="metricImages">Preparing image count…</small></div></div>
+    <div class="lab">
+      <aside class="settings" aria-label="Production settings">
+        <h2>Production setup</h2><p class="caption">Same model. Same image frequency.</p>
+        <label>Final video length <span>minutes</span><input id="minutes" type="number" min="1" max="360" value="120"></label>
+        <div class="fieldpair"><label>Chapters<input id="chapters" type="number" min="1" max="40" value="14"></label><label>Images / min<input id="cadence" type="number" min="1" max="20" step="0.1" value="5.884"></label></div>
+        <label>Cloud GPU<select id="gpu"></select></label><label>Image timing profile<select id="resolution"><option value="legacy">Earlier 1344 × 768 · serial</option><option value="720p">Measured 720p</option><option value="1080p">Measured 1080p</option></select></label><label>Conditioning timing<select id="encodingProfile"><option value="fresh">Fresh prompt + reference encoding</option><option value="cached">Reused conditioning · control</option></select></label><label>Image execution<select id="executionMode"><option value="resident">Independent workers</option><option value="pipeline">One worker · pipelined requests</option><option value="hybrid">Multiple workers · buffered requests</option></select></label><label id="workerField" hidden>Worker count / request slots<select id="imageWorkers"><option value="best">Best tested count</option><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option></select><small>Only completed two-round results can calibrate the schedule.</small></label>
+        <label>Scheduling mode<select id="policy"><option value="proposed">Proposed streaming overlap</option><option value="current">Installed cloud overlap</option><option value="serial">Fully sequential baseline</option></select></label>
+        <div id="modeNote" class="inline-note"></div>
+        <label>Image visual checks<select id="qc"><option value="off">Off · technical checks remain</option><option value="sampled">Sample images</option><option value="practical">Practical · every image</option><option value="strict">Strict · every image</option></select></label>
+        <label id="sampleField" hidden>Sample percentage<input id="sample" type="number" min="1" max="100" value="20"></label>
+        <label class="check"><input id="intro" type="checkbox" checked> Include intro once</label>
+        <div id="introFields" class="fieldpair"><label>Intro seconds<input id="introSeconds" type="number" min="10" max="60" value="30"></label><label>Intro images<input id="introImages" type="number" min="1" max="20" value="5"></label></div>
+        <details open><summary>Capacity & uncertainty</summary>
+          <label>Shared Luna API slots<select id="apiSlots"><option>1</option><option>2</option><option selected>3</option></select></label>
+          <label>Images per scheduling group<input id="batch" type="number" min="1" max="100" value="24"><small>Sequential images grouped for readability; this is not multi-image inference.</small></label>
+          <label>Extra image attempts <span>%</span><input id="retries" type="number" min="0" max="100" value="0"><small>An allowance, not a measured error rate.</small></label>
+          <label>Timing sensitivity <span>±%</span><input id="uncertainty" type="number" min="0" max="100" value="20"><small>Assumed range. Not statistical confidence.</small></label>
+          <label class="check"><input id="warmCache" type="checkbox"> Existing model cache</label>
+          <label>Ready chapters before GPU boot<input id="readyChapters" type="number" min="1" max="40" value="1"><small>Wait for these ordered chapter plans. More can reduce rented idle time while delaying first images.</small></label>
+          <label class="check"><input id="earlyGpu" type="checkbox"> Start GPU immediately</label>
+          <label class="check"><input id="cpuOverlap" type="checkbox"> Experiment: audio + render</label>
+          <label class="check"><input id="exhaustive" type="checkbox"> Decode every video frame</label>
+        </details>
+        <details><summary>Cost assumptions</summary><label>Director API / 2 hours <span>USD</span><input id="directorCost" type="number" min="0" max="100" step="0.01" value="0.38798"></label><label>Vision QC / image <span>USD</span><input id="qcCost" type="number" min="0" max="1" step="0.0001" value="0.0003"></label><label>Daily retained storage <span>USD</span><input id="storageDaily" type="number" min="0" max="10" step="0.01" value="0.168"></label><p class="caption">Historical receipt estimates. No free-token eligibility assumed. An existing volume can bill on days without production.</p></details>
+        <button id="reset" class="button full">Reset setup and moves</button>
+      </aside>
+      <section class="workspace" id="plannerWorkspace">
+        <div class="tabs" role="tablist" aria-label="Planner views"><button role="tab" id="tab-schedule" aria-selected="true" aria-controls="scheduleView" data-view="schedule">Schedule</button><button role="tab" id="tab-processes" aria-selected="false" aria-controls="processesView" data-view="processes">Every process <span id="processCount"></span></button><button role="tab" id="tab-gpus" aria-selected="false" aria-controls="gpusView" data-view="gpus">GPU benchmarks</button><button role="tab" id="tab-observed" aria-selected="false" aria-controls="observedView" data-view="observed">Recorded runs</button><button role="tab" id="tab-evidence" aria-selected="false" aria-controls="evidenceView" data-view="evidence">Evidence & limits</button></div>
+        <div id="error" class="error" role="alert" hidden></div>
+        <section id="scheduleView" class="view" role="tabpanel" aria-labelledby="tab-schedule">
+          <div class="schedulebar"><div><h2>My proposed schedule</h2><p class="caption" id="scheduleDescription">Dependency-aware simulation.</p></div><div class="toolbar"><button id="undo" class="button" disabled>Undo</button><button id="optimize" class="button dark">Repack earliest</button><button id="play" class="button">Play simulation</button></div></div>
+          <div class="timeline-controls"><label>Focus chapter<select id="chapterFocus"><option value="all">All chapters</option></select></label><label>Zoom<select id="zoom"><option value="1">Fit</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option><option value="24">24×</option><option value="60">60× · seconds</option></select></label><span id="taskCount"></span><span class="key"><i></i> Proposed <i class="measured"></i> Timing based on receipts</span></div>
+          <div id="timeline" class="timeline" aria-label="Draggable production timeline"></div>
+          <div class="timeline-help"><span>Drag a task left or right. Dependencies and shared resources stay enforced.</span><span><kbd>←</kbd> <kbd>→</kbd> move 1s · <kbd>Shift</kbd> 30s</span></div>
+          <div id="moveFeedback" class="feedback" role="status">Select a task to inspect its exact inputs, resources, timing and blockers.</div>
+          <section class="panel" id="startTradeoffs"></section>
+          <div class="bottom-grid"><section class="panel"><div class="section-head"><h3>Where time goes</h3><span>Work ≠ elapsed time</span></div><div id="workBreakdown"></div></section><section class="panel"><div class="section-head"><h3>Overlapping right now</h3><span id="playTime">Simulation not running</span></div><div id="activeWork"><p class="caption">Play the schedule to watch independent tasks run together.</p></div><div id="costBreakdown"></div></section></div>
+        </section>
+        <section id="processesView" class="view" role="tabpanel" aria-labelledby="tab-processes" hidden><div class="schedulebar"><div><h2>Every production process</h2><p class="caption">Nested steps are documented without adding their parent timing twice.</p></div><label class="search">Find a process<input id="processSearch" type="search" placeholder="References, VAE, audio, retry…"></label></div><div id="processList"></div><section id="functionIndex" class="panel"></section><div id="pairTest" class="pair-test"><h3>Can these two run together?</h3><div class="fieldpair"><label>First task<select id="pairA"></select></label><label>Second task<select id="pairB"></select></label></div><div id="pairResult" class="inline-note" aria-live="polite"></div></div></section>
+        <section id="gpusView" class="view" role="tabpanel" aria-labelledby="tab-gpus" hidden><div id="concurrencyLab"></div><hr class="lab-divider"><div class="schedulebar"><div><h2>Earlier serial reference profiles</h2><p class="caption">Four matched trials, two historical profiles. Choose a GPU to compare the complete schedule.</p></div></div><div id="gpuCards" class="gpu-grid"></div><div class="panel comparison"><h3>Complete schedule comparison</h3><p class="caption">Same chapter count, checks, intro, model and scheduling rules. Different historical hardware timings.</p><div id="gpuComparison"></div></div><div class="inline-note">More VRAM can fit more models. It does not establish faster simultaneous inference. Measured worker groups preserve the tested model-copy and request-slot counts. Untested counts have no timing estimate.</div></section>
+        <section id="observedView" class="view" role="tabpanel" aria-labelledby="tab-observed" hidden><div id="observedRuns"></div></section>
+        <section id="evidenceView" class="view" role="tabpanel" aria-labelledby="tab-evidence" hidden><div class="schedulebar"><div><h2>Evidence before promises.</h2><p class="caption">Measured totals, component assumptions and unsupported overlaps stay separate.</p></div></div><div id="evidence"></div></section>
+      </section>
+      <aside class="inspector" aria-label="Task details"><div class="section-head"><h2>Task inspector</h2><span class="badge" id="inspectorLabel">SELECT A BLOCK</span></div><div id="taskInspector"><p class="caption">Choose a timeline block or a process from the catalog. Dependencies show why a task waits.</p></div><div class="inspector-foot"><strong>Your schedule is portable.</strong><p>Export the plan, or send a screenshot with the task IDs visible. We can use the exact same timing and resource rules in the production code.</p><p>The export is a planning document. It does not deploy or run the backend.</p></div></aside>
+    </div>
+    <footer><span>QuestionTemplate Studio / Production lab</span><span id="profileScope">FLUX.2 Klein 4B · renderer 720p / 24fps</span><span>Local plan · no API keys</span></footer>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <input id="importFile" type="file" accept="application/json,.json" hidden>
+  <script type="module" src="./pipeline-ui.mjs"></script>
+</body></html>
