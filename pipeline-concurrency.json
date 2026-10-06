@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "generatedAt": 1791302939.639946,
-  "catalogSurveyAt": 1791302913.4900997,
+  "generatedAt": 1791305130.1431465,
+  "catalogSurveyAt": 1791304093.6134098,
   "model": "FLUX.2 Klein 4B FP8 / BF16 encoder",
   "settings": "4 steps, Euler/Flux2, CFG 1.0, identical frozen story prompts, character references and seeds",
   "resolutions": {
@@ -19,7 +19,7 @@
     ]
   },
   "capUSD": 5,
-  "rentalUpperUSD": 4.475236438796809,
+  "rentalUpperUSD": 4.566981812861784,
   "gpus": [
     {
       "profiles": [
@@ -13338,7 +13338,7 @@
         "stock": "Low",
         "availableRegions": [
           {
-            "dataCenterId": "EUR-IS-2",
+            "dataCenterId": "EUR-IS-1",
             "stockStatus": "Low"
           },
           {
@@ -13347,10 +13347,6 @@
           },
           {
             "dataCenterId": "US-NC-2",
-            "stockStatus": "Low"
-          },
-          {
-            "dataCenterId": "US-NE-1",
             "stockStatus": "Low"
           }
         ],
@@ -43569,7 +43565,7 @@
             "stockStatus": "Low"
           },
           {
-            "dataCenterId": "EUR-IS-2",
+            "dataCenterId": "EUR-NO-1",
             "stockStatus": "Low"
           }
         ],
@@ -51025,10 +51021,6 @@
         "stock": "Low",
         "availableRegions": [
           {
-            "dataCenterId": "EUR-IS-2",
-            "stockStatus": "Low"
-          },
-          {
             "dataCenterId": "US-NE-1",
             "stockStatus": "Low"
           }
@@ -56815,6 +56807,10 @@
             "stockStatus": "Low"
           },
           {
+            "dataCenterId": "EU-RO-1",
+            "stockStatus": "Low"
+          },
+          {
             "dataCenterId": "EUR-IS-1",
             "stockStatus": "Low"
           },
@@ -56909,15 +56905,10 @@
         "vramGB": 24,
         "secureHourlyUSD": 0.27,
         "communityHourlyUSD": 0.16,
-        "stock": "Low",
-        "availableRegions": [
-          {
-            "dataCenterId": "CA-MTL-1",
-            "stockStatus": "Low"
-          }
-        ],
-        "eligibleForCurrentProtocol": true,
-        "reason": "Candidate, CUDA/model compatibility still requires hardware verification",
+        "stock": null,
+        "availableRegions": [],
+        "eligibleForCurrentProtocol": false,
+        "reason": "Not admitted: stock, minimum 16 GB VRAM or current $3/hour conservative rental ceiling",
         "timing": "not measured by catalog",
         "parallelism": "not inferred from VRAM"
       }
@@ -63618,6 +63609,10 @@
           {
             "dataCenterId": "EU-RO-1",
             "stockStatus": "Low"
+          },
+          {
+            "dataCenterId": "EUR-IS-1",
+            "stockStatus": "Low"
           }
         ],
         "eligibleForCurrentProtocol": true,
@@ -66633,23 +66628,10 @@
         "vramGB": 48,
         "secureHourlyUSD": 1.09,
         "communityHourlyUSD": 0.79,
-        "stock": "Low",
-        "availableRegions": [
-          {
-            "dataCenterId": "EUR-IS-2",
-            "stockStatus": "Low"
-          },
-          {
-            "dataCenterId": "OC-AU-1",
-            "stockStatus": "Low"
-          },
-          {
-            "dataCenterId": "US-TX-3",
-            "stockStatus": "Low"
-          }
-        ],
-        "eligibleForCurrentProtocol": true,
-        "reason": "Candidate, CUDA/model compatibility still requires hardware verification",
+        "stock": null,
+        "availableRegions": [],
+        "eligibleForCurrentProtocol": false,
+        "reason": "Not admitted: stock, minimum 16 GB VRAM or current $3/hour conservative rental ceiling",
         "timing": "not measured by catalog",
         "parallelism": "not inferred from VRAM"
       },
@@ -71821,7 +71803,7 @@
         "stock": "Low",
         "availableRegions": [
           {
-            "dataCenterId": "EU-SE-1",
+            "dataCenterId": "US-KS-2",
             "stockStatus": "Low"
           }
         ],
@@ -81319,19 +81301,10 @@
         "vramGB": 48,
         "secureHourlyUSD": 0.49,
         "communityHourlyUSD": null,
-        "stock": "Low",
-        "availableRegions": [
-          {
-            "dataCenterId": "CA-MTL-1",
-            "stockStatus": "Low"
-          },
-          {
-            "dataCenterId": "EU-SE-1",
-            "stockStatus": "Low"
-          }
-        ],
-        "eligibleForCurrentProtocol": true,
-        "reason": "Candidate, CUDA/model compatibility still requires hardware verification",
+        "stock": null,
+        "availableRegions": [],
+        "eligibleForCurrentProtocol": false,
+        "reason": "Not admitted: stock, minimum 16 GB VRAM or current $3/hour conservative rental ceiling",
         "timing": "not measured by catalog",
         "parallelism": "not inferred from VRAM"
       },
@@ -81372,10 +81345,15 @@
         "vramGB": 80,
         "secureHourlyUSD": 1.59,
         "communityHourlyUSD": 1.19,
-        "stock": null,
-        "availableRegions": [],
-        "eligibleForCurrentProtocol": false,
-        "reason": "Not admitted: stock, minimum 16 GB VRAM or current $3/hour conservative rental ceiling",
+        "stock": "Low",
+        "availableRegions": [
+          {
+            "dataCenterId": "CA-MTL-3",
+            "stockStatus": "Low"
+          }
+        ],
+        "eligibleForCurrentProtocol": true,
+        "reason": "Candidate, CUDA/model compatibility still requires hardware verification",
         "timing": "not measured by catalog",
         "parallelism": "not inferred from VRAM"
       }
@@ -81410,10 +81388,6 @@
           },
           {
             "dataCenterId": "US-MD-1",
-            "stockStatus": "Low"
-          },
-          {
-            "dataCenterId": "US-MO-1",
             "stockStatus": "Low"
           },
           {
@@ -88213,10 +88187,6 @@
         "stock": "Low",
         "availableRegions": [
           {
-            "dataCenterId": "EUR-IS-2",
-            "stockStatus": "Low"
-          },
-          {
             "dataCenterId": "US-NE-1",
             "stockStatus": "Low"
           },
@@ -88240,20 +88210,2941 @@
       }
     },
     {
-      "profiles": [],
-      "productionProfiles": [],
-      "pipelineProfiles": [],
+      "profiles": [
+        {
+          "resolution": "720p",
+          "workers": 1,
+          "clientSlots": 1,
+          "executionMode": "resident",
+          "postControl": false,
+          "attempt": "ada4000-attempt-1",
+          "encodingProfile": "cached",
+          "runStartedAt": 1791304157.6066365,
+          "region": "EUR-IS-1",
+          "regionEvidence": "Explicit creation region; provider did not return confirmation",
+          "batchSize": 1,
+          "validDeliveredImages": 12,
+          "creativeQCPerformed": false,
+          "workload": {
+            "cases": 6,
+            "referenceCounts": [
+              1
+            ],
+            "promptWordCounts": [
+              230,
+              236
+            ]
+          },
+          "traces": [
+            {
+              "label": "720p-n1-r1",
+              "wallSeconds": 52.83086538314819,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.909675121307373,
+                    "parts": {
+                      "preparationSeconds": 1.3910000000032596,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.4529999999795109,
+                      "waitAndPollingSeconds": 5.5,
+                      "retrievalAndValidationSeconds": 0.9530000000377186,
+                      "pngEncodeAndDurableSaveSeconds": 0.1818993091583252,
+                      "historyAndMetadataReceiptSeconds": 0.39969611167907715
+                    },
+                    "unattributedWrapperSeconds": 0.015079700446221977,
+                    "serverExecutionSecondsNestedInWait": 5.414999961853027,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007533290063893354,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.414999961853027,
+                  "clientStart": 0.0396275520324707,
+                  "clientSaved": 8.549606561660767,
+                  "clientCommitted": 8.949302673339844,
+                  "saveStart": 8.367707252502441,
+                  "saveEnd": 8.549606561660767
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.806456327438354,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.03200000000651926,
+                      "submissionSeconds": 0.5780000000377186,
+                      "waitAndPollingSeconds": 6.25,
+                      "retrievalAndValidationSeconds": 1.0469999999622814,
+                      "pngEncodeAndDurableSaveSeconds": 0.1967780590057373,
+                      "historyAndMetadataReceiptSeconds": 0.6758568286895752
+                    },
+                    "unattributedWrapperSeconds": 0.026821439736522734,
+                    "serverExecutionSecondsNestedInWait": 5.773000001907349,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007533290063893354,
+                  "serverStart": 7.700999975204468,
+                  "serverEnd": 13.473999977111816,
+                  "clientStart": 8.99756407737732,
+                  "clientSaved": 17.1281635761261,
+                  "clientCommitted": 17.804020404815674,
+                  "saveStart": 16.93138551712036,
+                  "saveEnd": 17.1281635761261
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.091024160385132,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.014999999955762178,
+                      "submissionSeconds": 0.4690000000409782,
+                      "waitAndPollingSeconds": 6.046999999962281,
+                      "retrievalAndValidationSeconds": 0.9839999999967404,
+                      "pngEncodeAndDurableSaveSeconds": 0.17594504356384277,
+                      "historyAndMetadataReceiptSeconds": 0.37299561500549316
+                    },
+                    "unattributedWrapperSeconds": 0.02708350186003372,
+                    "serverExecutionSecondsNestedInWait": 5.778000116348267,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007533290063893354,
+                  "serverStart": 16.41099977493286,
+                  "serverEnd": 22.188999891281128,
+                  "clientStart": 17.84582757949829,
+                  "clientSaved": 25.56385612487793,
+                  "clientCommitted": 25.936851739883423,
+                  "saveStart": 25.387911081314087,
+                  "saveEnd": 25.56385612487793
+                },
+                {
+                  "index": 4,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.673736572265625,
+                    "parts": {
+                      "preparationSeconds": 0.375,
+                      "referenceUploadSeconds": 0.03200000000651926,
+                      "submissionSeconds": 0.6720000000204891,
+                      "waitAndPollingSeconds": 5.51500000001397,
+                      "retrievalAndValidationSeconds": 1.5,
+                      "pngEncodeAndDurableSaveSeconds": 0.17714405059814453,
+                      "historyAndMetadataReceiptSeconds": 0.36647891998291016
+                    },
+                    "unattributedWrapperSeconds": 0.03611360164359212,
+                    "serverExecutionSecondsNestedInWait": 5.440000057220459,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007533290063893354,
+                  "serverStart": 24.988999843597412,
+                  "serverEnd": 30.42899990081787,
+                  "clientStart": 25.988916158676147,
+                  "clientSaved": 34.29617381095886,
+                  "clientCommitted": 34.66265273094177,
+                  "saveStart": 34.11902976036072,
+                  "saveEnd": 34.29617381095886
+                },
+                {
+                  "index": 5,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.460129976272583,
+                    "parts": {
+                      "preparationSeconds": 1.0929999999934807,
+                      "referenceUploadSeconds": 0.03200000000651926,
+                      "submissionSeconds": 0.5150000000139698,
+                      "waitAndPollingSeconds": 6.155999999959022,
+                      "retrievalAndValidationSeconds": 0.7970000000204891,
+                      "pngEncodeAndDurableSaveSeconds": 0.1910228729248047,
+                      "historyAndMetadataReceiptSeconds": 0.6448087692260742
+                    },
+                    "unattributedWrapperSeconds": 0.03129833412822336,
+                    "serverExecutionSecondsNestedInWait": 5.805000066757202,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007533290063893354,
+                  "serverStart": 34.388999938964844,
+                  "serverEnd": 40.194000005722046,
+                  "clientStart": 34.69650840759277,
+                  "clientSaved": 43.51182961463928,
+                  "clientCommitted": 44.156638383865356,
+                  "saveStart": 43.32080674171448,
+                  "saveEnd": 43.51182961463928
+                },
+                {
+                  "index": 6,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.630974292755127,
+                    "parts": {
+                      "preparationSeconds": 0.015000000013969839,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.9839999999967404,
+                      "waitAndPollingSeconds": 6.25,
+                      "retrievalAndValidationSeconds": 0.7809999999590218,
+                      "pngEncodeAndDurableSaveSeconds": 0.139204740524292,
+                      "historyAndMetadataReceiptSeconds": 0.4196627140045166
+                    },
+                    "unattributedWrapperSeconds": 0.026106838253326714,
+                    "serverExecutionSecondsNestedInWait": 5.789000034332275,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007533290063893354,
+                  "serverStart": 43.27799987792969,
+                  "serverEnd": 49.06699991226196,
+                  "clientStart": 44.198845624923706,
+                  "clientSaved": 52.410157203674316,
+                  "clientCommitted": 52.82981991767883,
+                  "saveStart": 52.270952463150024,
+                  "saveEnd": 52.410157203674316
+                }
+              ]
+            },
+            {
+              "label": "720p-n1-r2",
+              "wallSeconds": 50.75557732582092,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 7.338326454162598,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.5310000000172295,
+                      "waitAndPollingSeconds": 5.375,
+                      "retrievalAndValidationSeconds": 0.6869999999762513,
+                      "pngEncodeAndDurableSaveSeconds": 0.1409015655517578,
+                      "historyAndMetadataReceiptSeconds": 0.5529935359954834
+                    },
+                    "unattributedWrapperSeconds": 0.035431352618616074,
+                    "serverExecutionSecondsNestedInWait": 4.877999782562256,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007237369359422613,
+                  "serverStart": 0.0,
+                  "serverEnd": 4.877999782562256,
+                  "clientStart": 0.047512054443359375,
+                  "clientSaved": 6.832844972610474,
+                  "clientCommitted": 7.385838508605957,
+                  "saveStart": 6.691943407058716,
+                  "saveEnd": 6.832844972610474
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.2544105052948,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.5939999999827705,
+                      "waitAndPollingSeconds": 6.10899999999674,
+                      "retrievalAndValidationSeconds": 0.9070000000065193,
+                      "pngEncodeAndDurableSaveSeconds": 0.19919610023498535,
+                      "historyAndMetadataReceiptSeconds": 0.38920140266418457
+                    },
+                    "unattributedWrapperSeconds": 0.025013002392370254,
+                    "serverExecutionSecondsNestedInWait": 5.868000030517578,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007237369359422613,
+                  "serverStart": 7.436999797821045,
+                  "serverEnd": 13.304999828338623,
+                  "clientStart": 7.432413339614868,
+                  "clientSaved": 15.297622442245483,
+                  "clientCommitted": 15.686823844909668,
+                  "saveStart": 15.098426342010498,
+                  "saveEnd": 15.297622442245483
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.439320087432861,
+                    "parts": {
+                      "preparationSeconds": 1.0309999999590218,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.5630000000237487,
+                      "waitAndPollingSeconds": 6.030999999959022,
+                      "retrievalAndValidationSeconds": 1.1880000000237487,
+                      "pngEncodeAndDurableSaveSeconds": 0.22484207153320312,
+                      "historyAndMetadataReceiptSeconds": 0.34693145751953125
+                    },
+                    "unattributedWrapperSeconds": 0.02354655839735642,
+                    "serverExecutionSecondsNestedInWait": 5.746999979019165,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007237369359422613,
+                  "serverStart": 16.758999824523926,
+                  "serverEnd": 22.50599980354309,
+                  "clientStart": 15.726983070373535,
+                  "clientSaved": 24.819371700286865,
+                  "clientCommitted": 25.166303157806396,
+                  "saveStart": 24.594529628753662,
+                  "saveEnd": 24.819371700286865
+                },
+                {
+                  "index": 4,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.083620071411133,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.5779999999795109,
+                      "waitAndPollingSeconds": 5.797000000020489,
+                      "retrievalAndValidationSeconds": 1.1099999999860302,
+                      "pngEncodeAndDurableSaveSeconds": 0.17537212371826172,
+                      "historyAndMetadataReceiptSeconds": 0.3842747211456299
+                    },
+                    "unattributedWrapperSeconds": 0.02397322654724121,
+                    "serverExecutionSecondsNestedInWait": 5.44100022315979,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007237369359422613,
+                  "serverStart": 25.1969997882843,
+                  "serverEnd": 30.638000011444092,
+                  "clientStart": 25.197349071502686,
+                  "clientSaved": 32.89669442176819,
+                  "clientCommitted": 33.28096914291382,
+                  "saveStart": 32.72132229804993,
+                  "saveEnd": 32.89669442176819
+                },
+                {
+                  "index": 5,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.575598001480103,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.7029999999795109,
+                      "waitAndPollingSeconds": 5.952999999979511,
+                      "retrievalAndValidationSeconds": 1.047000000020489,
+                      "pngEncodeAndDurableSaveSeconds": 0.19649243354797363,
+                      "historyAndMetadataReceiptSeconds": 0.631356954574585
+                    },
+                    "unattributedWrapperSeconds": 0.029748613364063203,
+                    "serverExecutionSecondsNestedInWait": 5.759000062942505,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007237369359422613,
+                  "serverStart": 33.59699988365173,
+                  "serverEnd": 39.35599994659424,
+                  "clientStart": 33.31967782974243,
+                  "clientSaved": 41.26391887664795,
+                  "clientCommitted": 41.895275831222534,
+                  "saveStart": 41.067426443099976,
+                  "saveEnd": 41.26391887664795
+                },
+                {
+                  "index": 6,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.825548648834229,
+                    "parts": {
+                      "preparationSeconds": 0.6410000000032596,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.7189999999827705,
+                      "waitAndPollingSeconds": 6.01600000000326,
+                      "retrievalAndValidationSeconds": 0.9060000000172295,
+                      "pngEncodeAndDurableSaveSeconds": 0.24295377731323242,
+                      "historyAndMetadataReceiptSeconds": 0.24995136260986328
+                    },
+                    "unattributedWrapperSeconds": 0.035643508890643716,
+                    "serverExecutionSecondsNestedInWait": 5.7900002002716064,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007237369359422613,
+                  "serverStart": 42.686999797821045,
+                  "serverEnd": 48.47699999809265,
+                  "clientStart": 41.928685665130615,
+                  "clientSaved": 50.50428295135498,
+                  "clientCommitted": 50.754234313964844,
+                  "saveStart": 50.26132917404175,
+                  "saveEnd": 50.50428295135498
+                }
+              ]
+            }
+          ],
+          "rounds": 2,
+          "images": 12,
+          "wallSeconds": 103.58644270896912,
+          "imagesPerSecond": 0.1158452755609588,
+          "secondsPerDeliveredImage": 8.632203559080759,
+          "observedRateRange": [
+            0.11356997384929945,
+            0.11821360954055418
+          ],
+          "meanClientLatencySeconds": 8.137884318828583,
+          "meanServerLatencySeconds": 5.623583376407623,
+          "meanSaveSeconds": 0.18681267897288004,
+          "meanHistoryAndReceiptSeconds": 0.45285069942474365,
+          "physicalPNGReuseFraction": 0.75,
+          "meanProviderStages": {
+            "preparationSeconds": 0.37883333333108266,
+            "referenceUploadSeconds": 0.022166666671788942,
+            "submissionSeconds": 0.613250000004579,
+            "waitAndPollingSeconds": 5.916583333324525,
+            "retrievalAndValidationSeconds": 0.9922500000005433,
+            "totalClientSeconds": 7.923083333332518
+          },
+          "warmUSDPerImage": 0.0007385329711657984,
+          "maxOverlappingServerOperations": 1,
+          "exactPNGRepeatabilityCases": 6,
+          "repeatabilityCases": 6,
+          "freshSamplerAndDecode": true,
+          "freshEncodingVerified": false,
+          "deviceTelemetry": {
+            "samples": 122,
+            "scope": "nvidia-smi device samples during server intervals. MIG may report its physical parent; CUDA partition VRAM is recorded separately.",
+            "metrics": {
+              "memoryUsedMiB": {
+                "samples": 122,
+                "mean": 13092.983606557376,
+                "min": 12096.0,
+                "max": 14560.0
+              },
+              "utilizationPercent": {
+                "samples": 122,
+                "mean": 83.19672131147541,
+                "min": 0.0,
+                "max": 100.0
+              },
+              "powerWatts": {
+                "samples": 122,
+                "mean": 107.19967213114754,
+                "min": 41.84,
+                "max": 126.71
+              },
+              "smClockMHz": {
+                "samples": 122,
+                "mean": 1921.1065573770493,
+                "min": 1635.0,
+                "max": 2295.0
+              }
+            }
+          },
+          "storagePolicies": [
+            "exact-PNG dedup"
+          ],
+          "speedupOverOneWorker": 1.0
+        },
+        {
+          "resolution": "720p",
+          "workers": 1,
+          "clientSlots": 1,
+          "executionMode": "resident",
+          "postControl": true,
+          "attempt": "ada4000-attempt-1",
+          "encodingProfile": "cached",
+          "runStartedAt": 1791304157.6066365,
+          "region": "EUR-IS-1",
+          "regionEvidence": "Explicit creation region; provider did not return confirmation",
+          "batchSize": 1,
+          "validDeliveredImages": 12,
+          "creativeQCPerformed": false,
+          "workload": {
+            "cases": 6,
+            "referenceCounts": [
+              1
+            ],
+            "promptWordCounts": [
+              230,
+              236
+            ]
+          },
+          "traces": [
+            {
+              "label": "720p-n1-after-r1",
+              "wallSeconds": 51.49508476257324,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 7.334227561950684,
+                    "parts": {
+                      "preparationSeconds": 0.4220000000204891,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.5619999999762513,
+                      "waitAndPollingSeconds": 5.032000000006519,
+                      "retrievalAndValidationSeconds": 0.7339999999967404,
+                      "pngEncodeAndDurableSaveSeconds": 0.1814420223236084,
+                      "historyAndMetadataReceiptSeconds": 0.38515281677246094
+                    },
+                    "unattributedWrapperSeconds": 0.0016327228513546288,
+                    "serverExecutionSecondsNestedInWait": 4.885999917984009,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000734281764207063,
+                  "serverStart": 0.0,
+                  "serverEnd": 4.885999917984009,
+                  "clientStart": 0.03170919418334961,
+                  "clientSaved": 6.980783939361572,
+                  "clientCommitted": 7.365936756134033,
+                  "saveStart": 6.799341917037964,
+                  "saveEnd": 6.980783939361572
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.140586137771606,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.03200000000651926,
+                      "submissionSeconds": 0.43700000003445894,
+                      "waitAndPollingSeconds": 6.062999999965541,
+                      "retrievalAndValidationSeconds": 1.8429999999934807,
+                      "pngEncodeAndDurableSaveSeconds": 0.20199227333068848,
+                      "historyAndMetadataReceiptSeconds": 0.5516357421875
+                    },
+                    "unattributedWrapperSeconds": 0.011958122253417969,
+                    "serverExecutionSecondsNestedInWait": 5.811000108718872,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000734281764207063,
+                  "serverStart": 6.853999853134155,
+                  "serverEnd": 12.664999961853027,
+                  "clientStart": 7.400378465652466,
+                  "clientSaved": 15.989328861236572,
+                  "clientCommitted": 16.540964603424072,
+                  "saveStart": 15.787336587905884,
+                  "saveEnd": 15.989328861236572
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.981869459152222,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.48399999999674037,
+                      "waitAndPollingSeconds": 6.2189999999827705,
+                      "retrievalAndValidationSeconds": 1.6560000000172295,
+                      "pngEncodeAndDurableSaveSeconds": 0.17624425888061523,
+                      "historyAndMetadataReceiptSeconds": 0.3983147144317627
+                    },
+                    "unattributedWrapperSeconds": 0.03231048583984375,
+                    "serverExecutionSecondsNestedInWait": 5.871999979019165,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000734281764207063,
+                  "serverStart": 16.036999940872192,
+                  "serverEnd": 21.908999919891357,
+                  "clientStart": 16.564969301223755,
+                  "clientSaved": 25.148524045944214,
+                  "clientCommitted": 25.546838760375977,
+                  "saveStart": 24.9722797870636,
+                  "saveEnd": 25.148524045944214
+                },
+                {
+                  "index": 4,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.435762643814087,
+                    "parts": {
+                      "preparationSeconds": 1.5780000000377186,
+                      "referenceUploadSeconds": 0.030999999959021807,
+                      "submissionSeconds": 0.625,
+                      "waitAndPollingSeconds": 5.39100000000326,
+                      "retrievalAndValidationSeconds": 1.2030000000377186,
+                      "pngEncodeAndDurableSaveSeconds": 0.1849372386932373,
+                      "historyAndMetadataReceiptSeconds": 0.40991806983947754
+                    },
+                    "unattributedWrapperSeconds": 0.012907335243653506,
+                    "serverExecutionSecondsNestedInWait": 5.3999998569488525,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000734281764207063,
+                  "serverStart": 26.83299994468689,
+                  "serverEnd": 32.23299980163574,
+                  "clientStart": 25.563989639282227,
+                  "clientSaved": 34.589834213256836,
+                  "clientCommitted": 34.99975228309631,
+                  "saveStart": 34.4048969745636,
+                  "saveEnd": 34.589834213256836
+                },
+                {
+                  "index": 5,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.219298839569092,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.4380000000237487,
+                      "waitAndPollingSeconds": 6.077999999979511,
+                      "retrievalAndValidationSeconds": 1.0,
+                      "pngEncodeAndDurableSaveSeconds": 0.29273509979248047,
+                      "historyAndMetadataReceiptSeconds": 0.23922514915466309
+                    },
+                    "unattributedWrapperSeconds": 0.14033859060145915,
+                    "serverExecutionSecondsNestedInWait": 5.748000144958496,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000734281764207063,
+                  "serverStart": 34.495999813079834,
+                  "serverEnd": 40.24399995803833,
+                  "clientStart": 35.033244371414185,
+                  "clientSaved": 43.01331806182861,
+                  "clientCommitted": 43.252543210983276,
+                  "saveStart": 42.72058296203613,
+                  "saveEnd": 43.01331806182861
+                },
+                {
+                  "index": 6,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.199493169784546,
+                    "parts": {
+                      "preparationSeconds": 0.01600000000325963,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.5630000000237487,
+                      "waitAndPollingSeconds": 6.280999999959022,
+                      "retrievalAndValidationSeconds": 0.7660000000032596,
+                      "pngEncodeAndDurableSaveSeconds": 0.14141035079956055,
+                      "historyAndMetadataReceiptSeconds": 0.40050506591796875
+                    },
+                    "unattributedWrapperSeconds": 0.016577753063756973,
+                    "serverExecutionSecondsNestedInWait": 5.769000053405762,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000734281764207063,
+                  "serverStart": 42.960999965667725,
+                  "serverEnd": 48.730000019073486,
+                  "clientStart": 43.295591592788696,
+                  "clientSaved": 51.09457969665527,
+                  "clientCommitted": 51.49508476257324,
+                  "saveStart": 50.95316934585571,
+                  "saveEnd": 51.09457969665527
+                }
+              ]
+            },
+            {
+              "label": "720p-n1-after-r2",
+              "wallSeconds": 52.589394330978394,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.34063982963562,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.0,
+                      "submissionSeconds": 0.5,
+                      "waitAndPollingSeconds": 6.047000000020489,
+                      "retrievalAndValidationSeconds": 0.9529999999795109,
+                      "pngEncodeAndDurableSaveSeconds": 0.1469261646270752,
+                      "historyAndMetadataReceiptSeconds": 0.6664328575134277
+                    },
+                    "unattributedWrapperSeconds": 0.027280807495117188,
+                    "serverExecutionSecondsNestedInWait": 5.684000015258789,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007498858080528401,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.684000015258789,
+                  "clientStart": 0.037018775939941406,
+                  "clientSaved": 7.711225748062134,
+                  "clientCommitted": 8.377658605575562,
+                  "saveStart": 7.564299583435059,
+                  "saveEnd": 7.711225748062134
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.457351446151733,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.48399999999674037,
+                      "waitAndPollingSeconds": 6.311999999976251,
+                      "retrievalAndValidationSeconds": 1.0320000000065193,
+                      "pngEncodeAndDurableSaveSeconds": 0.19336605072021484,
+                      "historyAndMetadataReceiptSeconds": 0.39204978942871094
+                    },
+                    "unattributedWrapperSeconds": 0.027935606020037085,
+                    "serverExecutionSecondsNestedInWait": 5.836999893188477,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007498858080528401,
+                  "serverStart": 8.402000188827515,
+                  "serverEnd": 14.239000082015991,
+                  "clientStart": 8.428032636642456,
+                  "clientSaved": 16.49333429336548,
+                  "clientCommitted": 16.88538408279419,
+                  "saveStart": 16.299968242645264,
+                  "saveEnd": 16.49333429336548
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.712613105773926,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.5309999999590218,
+                      "waitAndPollingSeconds": 6.204000000027008,
+                      "retrievalAndValidationSeconds": 1.327999999979511,
+                      "pngEncodeAndDurableSaveSeconds": 0.1664588451385498,
+                      "historyAndMetadataReceiptSeconds": 0.4158358573913574
+                    },
+                    "unattributedWrapperSeconds": 0.03631840326124802,
+                    "serverExecutionSecondsNestedInWait": 5.813999891281128,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007498858080528401,
+                  "serverStart": 16.969000101089478,
+                  "serverEnd": 22.782999992370605,
+                  "clientStart": 16.928847312927246,
+                  "clientSaved": 25.225624561309814,
+                  "clientCommitted": 25.641460418701172,
+                  "saveStart": 25.059165716171265,
+                  "saveEnd": 25.225624561309814
+                },
+                {
+                  "index": 4,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.861390829086304,
+                    "parts": {
+                      "preparationSeconds": 1.8119999999762513,
+                      "referenceUploadSeconds": 0.03200000000651926,
+                      "submissionSeconds": 0.46799999999348074,
+                      "waitAndPollingSeconds": 5.969000000040978,
+                      "retrievalAndValidationSeconds": 0.9849999999860302,
+                      "pngEncodeAndDurableSaveSeconds": 0.18726086616516113,
+                      "historyAndMetadataReceiptSeconds": 0.3871333599090576
+                    },
+                    "unattributedWrapperSeconds": 0.020996603008825332,
+                    "serverExecutionSecondsNestedInWait": 5.483999967575073,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007498858080528401,
+                  "serverStart": 27.45800018310547,
+                  "serverEnd": 32.94200015068054,
+                  "clientStart": 25.67991042137146,
+                  "clientSaved": 35.154167890548706,
+                  "clientCommitted": 35.541301250457764,
+                  "saveStart": 34.966907024383545,
+                  "saveEnd": 35.154167890548706
+                },
+                {
+                  "index": 5,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.591782569885254,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.030999999959021807,
+                      "submissionSeconds": 0.4690000000409782,
+                      "waitAndPollingSeconds": 6.26600000000326,
+                      "retrievalAndValidationSeconds": 1.2339999999967404,
+                      "pngEncodeAndDurableSaveSeconds": 0.20025229454040527,
+                      "historyAndMetadataReceiptSeconds": 0.32175707817077637
+                    },
+                    "unattributedWrapperSeconds": 0.06977319717407227,
+                    "serverExecutionSecondsNestedInWait": 5.926999807357788,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007498858080528401,
+                  "serverStart": 35.53000020980835,
+                  "serverEnd": 41.45700001716614,
+                  "clientStart": 35.58710813522339,
+                  "clientSaved": 43.857133626937866,
+                  "clientCommitted": 44.17889070510864,
+                  "saveStart": 43.65688133239746,
+                  "saveEnd": 43.857133626937866
+                },
+                {
+                  "index": 6,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.349003314971924,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.03200000000651926,
+                      "submissionSeconds": 0.5470000000204891,
+                      "waitAndPollingSeconds": 6.0,
+                      "retrievalAndValidationSeconds": 1.1869999999762513,
+                      "pngEncodeAndDurableSaveSeconds": 0.16260027885437012,
+                      "historyAndMetadataReceiptSeconds": 0.40017008781433105
+                    },
+                    "unattributedWrapperSeconds": 0.020232948299963027,
+                    "serverExecutionSecondsNestedInWait": 5.730999946594238,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007498858080528401,
+                  "serverStart": 44.2810001373291,
+                  "serverEnd": 50.01200008392334,
+                  "clientStart": 44.24039101600647,
+                  "clientSaved": 52.18922424316406,
+                  "clientCommitted": 52.589394330978394,
+                  "saveStart": 52.02662396430969,
+                  "saveEnd": 52.18922424316406
+                }
+              ]
+            }
+          ],
+          "rounds": 2,
+          "images": 12,
+          "wallSeconds": 104.08447909355164,
+          "imagesPerSecond": 0.11529096465203367,
+          "secondsPerDeliveredImage": 8.673706591129303,
+          "observedRateRange": [
+            0.11409144517311222,
+            0.11651597482874357
+          ],
+          "meanClientLatencySeconds": 8.221324026584625,
+          "meanServerLatencySeconds": 5.6635832985242205,
+          "meanSaveSeconds": 0.1863021453221639,
+          "meanHistoryAndReceiptSeconds": 0.4140108823776245,
+          "physicalPNGReuseFraction": 1.0,
+          "meanProviderStages": {
+            "preparationSeconds": 0.3190000000031432,
+            "referenceUploadSeconds": 0.023583333332984086,
+            "submissionSeconds": 0.5090000000054715,
+            "waitAndPollingSeconds": 5.9884999999970505,
+            "retrievalAndValidationSeconds": 1.1600833333310827,
+            "totalClientSeconds": 8.000166666669733
+          },
+          "warmUSDPerImage": 0.0007420837861299515,
+          "maxOverlappingServerOperations": 1,
+          "exactPNGRepeatabilityCases": 6,
+          "repeatabilityCases": 6,
+          "freshSamplerAndDecode": true,
+          "freshEncodingVerified": false,
+          "deviceTelemetry": {
+            "samples": 122,
+            "scope": "nvidia-smi device samples during server intervals. MIG may report its physical parent; CUDA partition VRAM is recorded separately.",
+            "metrics": {
+              "memoryUsedMiB": {
+                "samples": 122,
+                "mean": 13161.967213114754,
+                "min": 12096.0,
+                "max": 14560.0
+              },
+              "utilizationPercent": {
+                "samples": 122,
+                "mean": 85.72950819672131,
+                "min": 0.0,
+                "max": 100.0
+              },
+              "powerWatts": {
+                "samples": 122,
+                "mean": 106.75409836065573,
+                "min": 41.08,
+                "max": 127.54
+              },
+              "smClockMHz": {
+                "samples": 122,
+                "mean": 1907.5819672131147,
+                "min": 1605.0,
+                "max": 2295.0
+              }
+            }
+          },
+          "storagePolicies": [
+            "exact-PNG dedup"
+          ],
+          "speedupOverOneWorker": 0.9952150753991392
+        }
+      ],
+      "productionProfiles": [
+        {
+          "resolution": "720p",
+          "workers": 1,
+          "clientSlots": 1,
+          "executionMode": "resident",
+          "postControl": false,
+          "attempt": "ada4000-attempt-1",
+          "encodingProfile": "fresh",
+          "runStartedAt": 1791304157.6066365,
+          "region": "EUR-IS-1",
+          "regionEvidence": "Explicit creation region; provider did not return confirmation",
+          "batchSize": 1,
+          "validDeliveredImages": 12,
+          "creativeQCPerformed": false,
+          "workload": {
+            "cases": 6,
+            "referenceCounts": [
+              1
+            ],
+            "promptWordCounts": [
+              230,
+              236
+            ]
+          },
+          "traces": [
+            {
+              "label": "fresh-720p-n1-r1",
+              "wallSeconds": 54.685473680496216,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 11.037875652313232,
+                    "parts": {
+                      "preparationSeconds": 0.9839999999967404,
+                      "referenceUploadSeconds": 0.03200000000651926,
+                      "submissionSeconds": 0.5780000000377186,
+                      "waitAndPollingSeconds": 5.98399999999674,
+                      "retrievalAndValidationSeconds": 3.0,
+                      "pngEncodeAndDurableSaveSeconds": 0.16889715194702148,
+                      "historyAndMetadataReceiptSeconds": 0.2612142562866211
+                    },
+                    "unattributedWrapperSeconds": 0.02976424404187128,
+                    "serverExecutionSecondsNestedInWait": 5.7820000648498535,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007797743469255943,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.7820000648498535,
+                  "clientStart": 0.03050541877746582,
+                  "clientSaved": 10.807166814804077,
+                  "clientCommitted": 11.068381071090698,
+                  "saveStart": 10.638269662857056,
+                  "saveEnd": 10.807166814804077
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.940728425979614,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.046999999962281436,
+                      "submissionSeconds": 0.5630000000237487,
+                      "waitAndPollingSeconds": 6.092999999993481,
+                      "retrievalAndValidationSeconds": 1.672000000020489,
+                      "pngEncodeAndDurableSaveSeconds": 0.19428396224975586,
+                      "historyAndMetadataReceiptSeconds": 0.34161925315856934
+                    },
+                    "unattributedWrapperSeconds": 0.029825210571289062,
+                    "serverExecutionSecondsNestedInWait": 5.853999853134155,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007797743469255943,
+                  "serverStart": 10.249000072479248,
+                  "serverEnd": 16.102999925613403,
+                  "clientStart": 11.231871843338013,
+                  "clientSaved": 19.830981016159058,
+                  "clientCommitted": 20.172600269317627,
+                  "saveStart": 19.6366970539093,
+                  "saveEnd": 19.830981016159058
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.71379566192627,
+                    "parts": {
+                      "preparationSeconds": 0.015000000013969839,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.5619999999762513,
+                      "waitAndPollingSeconds": 6.2189999999827705,
+                      "retrievalAndValidationSeconds": 1.2810000000172295,
+                      "pngEncodeAndDurableSaveSeconds": 0.16920828819274902,
+                      "historyAndMetadataReceiptSeconds": 0.4277489185333252
+                    },
+                    "unattributedWrapperSeconds": 0.02383845520671457,
+                    "serverExecutionSecondsNestedInWait": 5.799000024795532,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007797743469255943,
+                  "serverStart": 19.183000087738037,
+                  "serverEnd": 24.98200011253357,
+                  "clientStart": 20.218894243240356,
+                  "clientSaved": 28.5049409866333,
+                  "clientCommitted": 28.932689905166626,
+                  "saveStart": 28.33573269844055,
+                  "saveEnd": 28.5049409866333
+                },
+                {
+                  "index": 4,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.292040348052979,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.5309999999590218,
+                      "waitAndPollingSeconds": 5.75,
+                      "retrievalAndValidationSeconds": 1.25,
+                      "pngEncodeAndDurableSaveSeconds": 0.17172503471374512,
+                      "historyAndMetadataReceiptSeconds": 0.5542113780975342
+                    },
+                    "unattributedWrapperSeconds": 0.004103935265447944,
+                    "serverExecutionSecondsNestedInWait": 5.667999982833862,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007797743469255943,
+                  "serverStart": 27.89800000190735,
+                  "serverEnd": 33.56599998474121,
+                  "clientStart": 28.971537351608276,
+                  "clientSaved": 36.70936632156372,
+                  "clientCommitted": 37.263577699661255,
+                  "saveStart": 36.537641286849976,
+                  "saveEnd": 36.70936632156372
+                },
+                {
+                  "index": 5,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.584745407104492,
+                    "parts": {
+                      "preparationSeconds": 1.25,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.5619999999762513,
+                      "waitAndPollingSeconds": 6.282000000006519,
+                      "retrievalAndValidationSeconds": 0.875,
+                      "pngEncodeAndDurableSaveSeconds": 0.21438884735107422,
+                      "historyAndMetadataReceiptSeconds": 0.3539395332336426
+                    },
+                    "unattributedWrapperSeconds": 0.01641702651977539,
+                    "serverExecutionSecondsNestedInWait": 5.786999940872192,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007797743469255943,
+                  "serverStart": 37.51200008392334,
+                  "serverEnd": 43.29900002479553,
+                  "clientStart": 37.28880500793457,
+                  "clientSaved": 46.51961088180542,
+                  "clientCommitted": 46.87355041503906,
+                  "saveStart": 46.305222034454346,
+                  "saveEnd": 46.51961088180542
+                },
+                {
+                  "index": 6,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 7.783669948577881,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.4529999999795109,
+                      "waitAndPollingSeconds": 5.985000000044238,
+                      "retrievalAndValidationSeconds": 0.7649999999557622,
+                      "pngEncodeAndDurableSaveSeconds": 0.14360809326171875,
+                      "historyAndMetadataReceiptSeconds": 0.38336634635925293
+                    },
+                    "unattributedWrapperSeconds": 0.02269550896016881,
+                    "serverExecutionSecondsNestedInWait": 5.752999782562256,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007797743469255943,
+                  "serverStart": 45.74500012397766,
+                  "serverEnd": 51.49799990653992,
+                  "clientStart": 46.901803731918335,
+                  "clientSaved": 54.30210733413696,
+                  "clientCommitted": 54.685473680496216,
+                  "saveStart": 54.158499240875244,
+                  "saveEnd": 54.30210733413696
+                }
+              ]
+            },
+            {
+              "label": "fresh-720p-n1-r2",
+              "wallSeconds": 52.80223035812378,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.073994636535645,
+                    "parts": {
+                      "preparationSeconds": 0.40600000001722947,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.5310000000172295,
+                      "waitAndPollingSeconds": 5.7189999999827705,
+                      "retrievalAndValidationSeconds": 0.7339999999967404,
+                      "pngEncodeAndDurableSaveSeconds": 0.14721345901489258,
+                      "historyAndMetadataReceiptSeconds": 0.5167531967163086
+                    },
+                    "unattributedWrapperSeconds": 0.004027980787213892,
+                    "serverExecutionSecondsNestedInWait": 5.749000072479248,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007529206921436171,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.749000072479248,
+                  "clientStart": 0.022573232650756836,
+                  "clientSaved": 7.579814672470093,
+                  "clientCommitted": 8.096567869186401,
+                  "saveStart": 7.4326012134552,
+                  "saveEnd": 7.579814672470093
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.721622467041016,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.48499999998603016,
+                      "waitAndPollingSeconds": 6.812000000034459,
+                      "retrievalAndValidationSeconds": 0.75,
+                      "pngEncodeAndDurableSaveSeconds": 0.24405193328857422,
+                      "historyAndMetadataReceiptSeconds": 0.37554144859313965
+                    },
+                    "unattributedWrapperSeconds": 0.024029085121583194,
+                    "serverExecutionSecondsNestedInWait": 5.78600001335144,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007529206921436171,
+                  "serverStart": 7.666000127792358,
+                  "serverEnd": 13.452000141143799,
+                  "clientStart": 8.129872798919678,
+                  "clientSaved": 16.475953817367554,
+                  "clientCommitted": 16.851495265960693,
+                  "saveStart": 16.23190188407898,
+                  "saveEnd": 16.475953817367554
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 10.931299686431885,
+                    "parts": {
+                      "preparationSeconds": 1.047000000020489,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.5469999999622814,
+                      "waitAndPollingSeconds": 6.23399999999674,
+                      "retrievalAndValidationSeconds": 2.5630000000237487,
+                      "pngEncodeAndDurableSaveSeconds": 0.18773961067199707,
+                      "historyAndMetadataReceiptSeconds": 0.2841305732727051
+                    },
+                    "unattributedWrapperSeconds": 0.03742950246669352,
+                    "serverExecutionSecondsNestedInWait": 5.75,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007529206921436171,
+                  "serverStart": 17.669000148773193,
+                  "serverEnd": 23.419000148773193,
+                  "clientStart": 16.887182474136353,
+                  "clientSaved": 27.534351587295532,
+                  "clientCommitted": 27.818482160568237,
+                  "saveStart": 27.346611976623535,
+                  "saveEnd": 27.534351587295532
+                },
+                {
+                  "index": 4,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.470044136047363,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.014999999955762178,
+                      "submissionSeconds": 0.4850000000442378,
+                      "waitAndPollingSeconds": 5.921999999962281,
+                      "retrievalAndValidationSeconds": 1.437000000034459,
+                      "pngEncodeAndDurableSaveSeconds": 0.17583441734313965,
+                      "historyAndMetadataReceiptSeconds": 0.4064927101135254
+                    },
+                    "unattributedWrapperSeconds": 0.02871700859395787,
+                    "serverExecutionSecondsNestedInWait": 5.751000165939331,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007529206921436171,
+                  "serverStart": 27.361999988555908,
+                  "serverEnd": 33.11300015449524,
+                  "clientStart": 27.84985375404358,
+                  "clientSaved": 35.91340517997742,
+                  "clientCommitted": 36.31989789009094,
+                  "saveStart": 35.73757076263428,
+                  "saveEnd": 35.91340517997742
+                },
+                {
+                  "index": 5,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.331658840179443,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.5470000000204891,
+                      "waitAndPollingSeconds": 6.01600000000326,
+                      "retrievalAndValidationSeconds": 1.1399999999557622,
+                      "pngEncodeAndDurableSaveSeconds": 0.1994316577911377,
+                      "historyAndMetadataReceiptSeconds": 0.3670980930328369
+                    },
+                    "unattributedWrapperSeconds": 0.03112908935872838,
+                    "serverExecutionSecondsNestedInWait": 5.7799999713897705,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007529206921436171,
+                  "serverStart": 35.94700002670288,
+                  "serverEnd": 41.72699999809265,
+                  "clientStart": 36.377655029296875,
+                  "clientSaved": 44.34221577644348,
+                  "clientCommitted": 44.70931386947632,
+                  "saveStart": 44.142784118652344,
+                  "saveEnd": 44.34221577644348
+                },
+                {
+                  "index": 6,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.048795700073242,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.5780000000377186,
+                      "waitAndPollingSeconds": 5.827999999979511,
+                      "retrievalAndValidationSeconds": 1.0,
+                      "pngEncodeAndDurableSaveSeconds": 0.17499732971191406,
+                      "historyAndMetadataReceiptSeconds": 0.42599058151245117
+                    },
+                    "unattributedWrapperSeconds": 0.025807788828387856,
+                    "serverExecutionSecondsNestedInWait": 5.752000093460083,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007529206921436171,
+                  "serverStart": 44.354000091552734,
+                  "serverEnd": 50.10600018501282,
+                  "clientStart": 44.75198197364807,
+                  "clientSaved": 52.37478709220886,
+                  "clientCommitted": 52.80077767372131,
+                  "saveStart": 52.19978976249695,
+                  "saveEnd": 52.37478709220886
+                }
+              ]
+            }
+          ],
+          "rounds": 2,
+          "images": 12,
+          "wallSeconds": 107.48770403862,
+          "imagesPerSecond": 0.11164067655299845,
+          "secondsPerDeliveredImage": 8.957308669885,
+          "observedRateRange": [
+            0.1097183510753775,
+            0.1136315636537668
+          ],
+          "meanClientLatencySeconds": 8.519347051779429,
+          "meanServerLatencySeconds": 5.76758333047231,
+          "meanSaveSeconds": 0.1826149821281433,
+          "meanHistoryAndReceiptSeconds": 0.39150885740915936,
+          "physicalPNGReuseFraction": 1.0,
+          "meanProviderStages": {
+            "preparationSeconds": 0.3085000000040357,
+            "referenceUploadSeconds": 0.027333333336476546,
+            "submissionSeconds": 0.5351666666683741,
+            "waitAndPollingSeconds": 6.070333333331898,
+            "retrievalAndValidationSeconds": 1.3722500000003492,
+            "totalClientSeconds": 8.313583333341134
+          },
+          "warmUSDPerImage": 0.0007663475195346057,
+          "maxOverlappingServerOperations": 1,
+          "exactPNGRepeatabilityCases": 6,
+          "repeatabilityCases": 6,
+          "freshSamplerAndDecode": true,
+          "freshEncodingVerified": true,
+          "deviceTelemetry": {
+            "samples": 126,
+            "scope": "nvidia-smi device samples during server intervals. MIG may report its physical parent; CUDA partition VRAM is recorded separately.",
+            "metrics": {
+              "memoryUsedMiB": {
+                "samples": 126,
+                "mean": 13063.873015873016,
+                "min": 12096.0,
+                "max": 14560.0
+              },
+              "utilizationPercent": {
+                "samples": 126,
+                "mean": 84.33333333333333,
+                "min": 0.0,
+                "max": 100.0
+              },
+              "powerWatts": {
+                "samples": 126,
+                "mean": 107.97087301587301,
+                "min": 41.06,
+                "max": 125.65
+              },
+              "smClockMHz": {
+                "samples": 126,
+                "mean": 1904.2857142857142,
+                "min": 1620.0,
+                "max": 2295.0
+              }
+            }
+          },
+          "storagePolicies": [
+            "exact-PNG dedup"
+          ],
+          "speedupOverOneWorker": 1.0
+        },
+        {
+          "resolution": "720p",
+          "workers": 1,
+          "clientSlots": 1,
+          "executionMode": "resident",
+          "postControl": true,
+          "attempt": "ada4000-attempt-1",
+          "encodingProfile": "fresh",
+          "runStartedAt": 1791304157.6066365,
+          "region": "EUR-IS-1",
+          "regionEvidence": "Explicit creation region; provider did not return confirmation",
+          "batchSize": 1,
+          "validDeliveredImages": 12,
+          "creativeQCPerformed": false,
+          "workload": {
+            "cases": 6,
+            "referenceCounts": [
+              1
+            ],
+            "promptWordCounts": [
+              230,
+              236
+            ]
+          },
+          "traces": [
+            {
+              "label": "fresh-720p-n1-after-r1",
+              "wallSeconds": 52.69442820549011,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 7.781846761703491,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.48399999999674037,
+                      "waitAndPollingSeconds": 5.907000000006519,
+                      "retrievalAndValidationSeconds": 0.7650000000139698,
+                      "pngEncodeAndDurableSaveSeconds": 0.19159770011901855,
+                      "historyAndMetadataReceiptSeconds": 0.38040924072265625
+                    },
+                    "unattributedWrapperSeconds": 0.03783982084132731,
+                    "serverExecutionSecondsNestedInWait": 5.738999843597412,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007513835133005072,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.738999843597412,
+                  "clientStart": 0.05076909065246582,
+                  "clientSaved": 7.452206611633301,
+                  "clientCommitted": 7.832615852355957,
+                  "saveStart": 7.260608911514282,
+                  "saveEnd": 7.452206611633301
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.90341067314148,
+                    "parts": {
+                      "preparationSeconds": 1.9209999999729916,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.48399999999674037,
+                      "waitAndPollingSeconds": 6.219000000040978,
+                      "retrievalAndValidationSeconds": 0.7029999999795109,
+                      "pngEncodeAndDurableSaveSeconds": 0.2830533981323242,
+                      "historyAndMetadataReceiptSeconds": 0.23982715606689453
+                    },
+                    "unattributedWrapperSeconds": 0.03753011894878,
+                    "serverExecutionSecondsNestedInWait": 5.833999872207642,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007513835133005072,
+                  "serverStart": 9.750999927520752,
+                  "serverEnd": 15.584999799728394,
+                  "clientStart": 7.884390354156494,
+                  "clientSaved": 17.54797387123108,
+                  "clientCommitted": 17.787801027297974,
+                  "saveStart": 17.264920473098755,
+                  "saveEnd": 17.54797387123108
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.615088701248169,
+                    "parts": {
+                      "preparationSeconds": 0.39000000001396984,
+                      "referenceUploadSeconds": 0.03200000000651926,
+                      "submissionSeconds": 0.5310000000172295,
+                      "waitAndPollingSeconds": 6.014999999955762,
+                      "retrievalAndValidationSeconds": 0.875,
+                      "pngEncodeAndDurableSaveSeconds": 0.20354652404785156,
+                      "historyAndMetadataReceiptSeconds": 0.5289437770843506
+                    },
+                    "unattributedWrapperSeconds": 0.039598400122486055,
+                    "serverExecutionSecondsNestedInWait": 5.797999858856201,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007513835133005072,
+                  "serverStart": 18.25,
+                  "serverEnd": 24.0479998588562,
+                  "clientStart": 17.831193923950195,
+                  "clientSaved": 25.917338848114014,
+                  "clientCommitted": 26.446282625198364,
+                  "saveStart": 25.713792324066162,
+                  "saveEnd": 25.917338848114014
+                },
+                {
+                  "index": 4,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.071358919143677,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.46799999999348074,
+                      "waitAndPollingSeconds": 5.98499999998603,
+                      "retrievalAndValidationSeconds": 1.0,
+                      "pngEncodeAndDurableSaveSeconds": 0.16895222663879395,
+                      "historyAndMetadataReceiptSeconds": 0.39992308616638184
+                    },
+                    "unattributedWrapperSeconds": 0.033483606355730444,
+                    "serverExecutionSecondsNestedInWait": 5.7170000076293945,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007513835133005072,
+                  "serverStart": 26.430999994277954,
+                  "serverEnd": 32.14800000190735,
+                  "clientStart": 26.491437673568726,
+                  "clientSaved": 34.16287350654602,
+                  "clientCommitted": 34.5627965927124,
+                  "saveStart": 33.99392127990723,
+                  "saveEnd": 34.16287350654602
+                },
+                {
+                  "index": 5,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.6041100025177,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.5619999999762513,
+                      "waitAndPollingSeconds": 6.219000000040978,
+                      "retrievalAndValidationSeconds": 1.2189999999827705,
+                      "pngEncodeAndDurableSaveSeconds": 0.2122941017150879,
+                      "historyAndMetadataReceiptSeconds": 0.2583765983581543
+                    },
+                    "unattributedWrapperSeconds": 0.11743930244119838,
+                    "serverExecutionSecondsNestedInWait": 5.796000003814697,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007513835133005072,
+                  "serverStart": 34.64800000190735,
+                  "serverEnd": 40.444000005722046,
+                  "clientStart": 34.61668133735657,
+                  "clientSaved": 42.96241474151611,
+                  "clientCommitted": 43.22079133987427,
+                  "saveStart": 42.750120639801025,
+                  "saveEnd": 42.96241474151611
+                },
+                {
+                  "index": 6,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.326830625534058,
+                    "parts": {
+                      "preparationSeconds": 1.2339999999967404,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.4529999999795109,
+                      "waitAndPollingSeconds": 6.25,
+                      "retrievalAndValidationSeconds": 0.8130000000237487,
+                      "pngEncodeAndDurableSaveSeconds": 0.13791632652282715,
+                      "historyAndMetadataReceiptSeconds": 0.40007615089416504
+                    },
+                    "unattributedWrapperSeconds": 0.0228381481138058,
+                    "serverExecutionSecondsNestedInWait": 5.7769999504089355,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007513835133005072,
+                  "serverStart": 44.53099989891052,
+                  "serverEnd": 50.30799984931946,
+                  "clientStart": 43.367597579956055,
+                  "clientSaved": 52.29435205459595,
+                  "clientCommitted": 52.69442820549011,
+                  "saveStart": 52.15643572807312,
+                  "saveEnd": 52.29435205459595
+                }
+              ]
+            },
+            {
+              "label": "fresh-720p-n1-after-r2",
+              "wallSeconds": 52.50548434257507,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 7.805606365203857,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.4690000000409782,
+                      "waitAndPollingSeconds": 5.875,
+                      "retrievalAndValidationSeconds": 0.875,
+                      "pngEncodeAndDurableSaveSeconds": 0.16004610061645508,
+                      "historyAndMetadataReceiptSeconds": 0.39521241188049316
+                    },
+                    "unattributedWrapperSeconds": 0.015347852662671357,
+                    "serverExecutionSecondsNestedInWait": 5.697000026702881,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007486893137737559,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.697000026702881,
+                  "clientStart": 0.04942440986633301,
+                  "clientSaved": 7.459818363189697,
+                  "clientCommitted": 7.85503077507019,
+                  "saveStart": 7.299772262573242,
+                  "saveEnd": 7.459818363189697
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 10.40116834640503,
+                    "parts": {
+                      "preparationSeconds": 0.8279999999795109,
+                      "referenceUploadSeconds": 0.03200000000651926,
+                      "submissionSeconds": 0.35899999999674037,
+                      "waitAndPollingSeconds": 6.375,
+                      "retrievalAndValidationSeconds": 2.25,
+                      "pngEncodeAndDurableSaveSeconds": 0.27977681159973145,
+                      "historyAndMetadataReceiptSeconds": 0.2504160404205322
+                    },
+                    "unattributedWrapperSeconds": 0.026975494401995093,
+                    "serverExecutionSecondsNestedInWait": 5.879000186920166,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007486893137737559,
+                  "serverStart": 8.726999998092651,
+                  "serverEnd": 14.606000185012817,
+                  "clientStart": 7.897223711013794,
+                  "clientSaved": 18.04797601699829,
+                  "clientCommitted": 18.298392057418823,
+                  "saveStart": 17.76819920539856,
+                  "saveEnd": 18.04797601699829
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.384561777114868,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.5779999999795109,
+                      "waitAndPollingSeconds": 5.954000000027008,
+                      "retrievalAndValidationSeconds": 1.2339999999967404,
+                      "pngEncodeAndDurableSaveSeconds": 0.17065691947937012,
+                      "historyAndMetadataReceiptSeconds": 0.3967571258544922
+                    },
+                    "unattributedWrapperSeconds": 0.03614773176377639,
+                    "serverExecutionSecondsNestedInWait": 5.745000123977661,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007486893137737559,
+                  "serverStart": 18.41100001335144,
+                  "serverEnd": 24.1560001373291,
+                  "clientStart": 18.331274032592773,
+                  "clientSaved": 26.31907868385315,
+                  "clientCommitted": 26.71583580970764,
+                  "saveStart": 26.14842176437378,
+                  "saveEnd": 26.31907868385315
+                },
+                {
+                  "index": 4,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 7.792675733566284,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.4529999999795109,
+                      "waitAndPollingSeconds": 5.76600000000326,
+                      "retrievalAndValidationSeconds": 0.9060000000172295,
+                      "pngEncodeAndDurableSaveSeconds": 0.23579049110412598,
+                      "historyAndMetadataReceiptSeconds": 0.38096046447753906
+                    },
+                    "unattributedWrapperSeconds": 0.0359247779706493,
+                    "serverExecutionSecondsNestedInWait": 5.631999969482422,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007486893137737559,
+                  "serverStart": 26.693000078201294,
+                  "serverEnd": 32.325000047683716,
+                  "clientStart": 26.753621816635132,
+                  "clientSaved": 34.16533708572388,
+                  "clientCommitted": 34.546297550201416,
+                  "saveStart": 33.92954659461975,
+                  "saveEnd": 34.16533708572388
+                },
+                {
+                  "index": 5,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.551759243011475,
+                    "parts": {
+                      "preparationSeconds": 0.4220000000204891,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.5309999999590218,
+                      "waitAndPollingSeconds": 6.10899999999674,
+                      "retrievalAndValidationSeconds": 0.9070000000065193,
+                      "pngEncodeAndDurableSaveSeconds": 0.2600381374359131,
+                      "historyAndMetadataReceiptSeconds": 0.251600980758667
+                    },
+                    "unattributedWrapperSeconds": 0.05512012483086437,
+                    "serverExecutionSecondsNestedInWait": 5.7190001010894775,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007486893137737559,
+                  "serverStart": 35.03200006484985,
+                  "serverEnd": 40.75100016593933,
+                  "clientStart": 34.59505820274353,
+                  "clientSaved": 42.89521646499634,
+                  "clientCommitted": 43.146817445755005,
+                  "saveStart": 42.635178327560425,
+                  "saveEnd": 42.89521646499634
+                },
+                {
+                  "index": 6,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.309293746948242,
+                    "parts": {
+                      "preparationSeconds": 1.5310000000172295,
+                      "referenceUploadSeconds": 0.0,
+                      "submissionSeconds": 0.5320000000065193,
+                      "waitAndPollingSeconds": 5.702999999979511,
+                      "retrievalAndValidationSeconds": 0.9220000000204891,
+                      "pngEncodeAndDurableSaveSeconds": 0.19219040870666504,
+                      "historyAndMetadataReceiptSeconds": 0.4043116569519043
+                    },
+                    "unattributedWrapperSeconds": 0.024791681265924126,
+                    "serverExecutionSecondsNestedInWait": 5.700999975204468,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0007486893137737559,
+                  "serverStart": 44.70800018310547,
+                  "serverEnd": 50.40900015830994,
+                  "clientStart": 43.19518995285034,
+                  "clientSaved": 52.10017204284668,
+                  "clientCommitted": 52.504483699798584,
+                  "saveStart": 51.907981634140015,
+                  "saveEnd": 52.10017204284668
+                }
+              ]
+            }
+          ],
+          "rounds": 2,
+          "images": 12,
+          "wallSeconds": 105.19991254806519,
+          "imagesPerSecond": 0.11406853588891792,
+          "secondsPerDeliveredImage": 8.766659379005432,
+          "observedRateRange": [
+            0.11386403087252542,
+            0.1142737768278196
+          ],
+          "meanClientLatencySeconds": 8.355074683825174,
+          "meanServerLatencySeconds": 5.752833326657613,
+          "meanSaveSeconds": 0.20798826217651367,
+          "meanHistoryAndReceiptSeconds": 0.35723455746968585,
+          "physicalPNGReuseFraction": 1.0,
+          "meanProviderStages": {
+            "preparationSeconds": 0.5271666666667443,
+            "referenceUploadSeconds": 0.017166666671982966,
+            "submissionSeconds": 0.49199999999351957,
+            "waitAndPollingSeconds": 6.031416666669732,
+            "retrievalAndValidationSeconds": 1.0390833333367482,
+            "totalClientSeconds": 8.106833333338727
+          },
+          "warmUSDPerImage": 0.0007500364135371316,
+          "maxOverlappingServerOperations": 1,
+          "exactPNGRepeatabilityCases": 6,
+          "repeatabilityCases": 6,
+          "freshSamplerAndDecode": true,
+          "freshEncodingVerified": true,
+          "deviceTelemetry": {
+            "samples": 125,
+            "scope": "nvidia-smi device samples during server intervals. MIG may report its physical parent; CUDA partition VRAM is recorded separately.",
+            "metrics": {
+              "memoryUsedMiB": {
+                "samples": 125,
+                "mean": 13129.984,
+                "min": 12096.0,
+                "max": 14560.0
+              },
+              "utilizationPercent": {
+                "samples": 125,
+                "mean": 84.104,
+                "min": 0.0,
+                "max": 100.0
+              },
+              "powerWatts": {
+                "samples": 125,
+                "mean": 108.17704,
+                "min": 41.62,
+                "max": 125.5
+              },
+              "smClockMHz": {
+                "samples": 125,
+                "mean": 1900.56,
+                "min": 1605.0,
+                "max": 2295.0
+              }
+            }
+          },
+          "storagePolicies": [
+            "exact-PNG dedup"
+          ],
+          "speedupOverOneWorker": 1.0217470854788928
+        }
+      ],
+      "pipelineProfiles": [
+        {
+          "resolution": "720p",
+          "workers": 1,
+          "clientSlots": 2,
+          "executionMode": "pipeline",
+          "postControl": false,
+          "attempt": "ada4000-attempt-1",
+          "encodingProfile": "cached",
+          "runStartedAt": 1791304157.6066365,
+          "region": "EUR-IS-1",
+          "regionEvidence": "Explicit creation region; provider did not return confirmation",
+          "batchSize": 1,
+          "validDeliveredImages": 12,
+          "creativeQCPerformed": false,
+          "workload": {
+            "cases": 6,
+            "referenceCounts": [
+              1
+            ],
+            "promptWordCounts": [
+              230,
+              236
+            ]
+          },
+          "traces": [
+            {
+              "label": "pipeline-720p-n1-d2-r1",
+              "wallSeconds": 36.880488872528076,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 14.511289119720459,
+                    "parts": {
+                      "preparationSeconds": 1.6100000000442378,
+                      "referenceUploadSeconds": 0.014999999955762178,
+                      "submissionSeconds": 0.4690000000409782,
+                      "waitAndPollingSeconds": 10.48499999998603,
+                      "retrievalAndValidationSeconds": 1.1089999999967404,
+                      "pngEncodeAndDurableSaveSeconds": 0.19405555725097656,
+                      "historyAndMetadataReceiptSeconds": 0.6133508682250977
+                    },
+                    "unattributedWrapperSeconds": 0.01588269422063604,
+                    "serverExecutionSecondsNestedInWait": 5.769000053405762,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005258884524416041,
+                  "serverStart": 5.900000095367432,
+                  "serverEnd": 11.669000148773193,
+                  "clientStart": 0.07556414604187012,
+                  "clientSaved": 13.973502397537231,
+                  "clientCommitted": 14.586853265762329,
+                  "saveStart": 13.779446840286255,
+                  "saveEnd": 13.973502397537231
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 11.046752214431763,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.875,
+                      "waitAndPollingSeconds": 8.64100000000326,
+                      "retrievalAndValidationSeconds": 0.8279999999795109,
+                      "pngEncodeAndDurableSaveSeconds": 0.2552156448364258,
+                      "historyAndMetadataReceiptSeconds": 0.4015185832977295
+                    },
+                    "unattributedWrapperSeconds": 0.015017986297607422,
+                    "serverExecutionSecondsNestedInWait": 5.736000061035156,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005258884524416041,
+                  "serverStart": 17.17900013923645,
+                  "serverEnd": 22.915000200271606,
+                  "clientStart": 14.607452154159546,
+                  "clientSaved": 25.25268578529358,
+                  "clientCommitted": 25.65420436859131,
+                  "saveStart": 24.997470140457153,
+                  "saveEnd": 25.25268578529358
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 11.202917337417603,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.4529999999795109,
+                      "waitAndPollingSeconds": 9.26600000000326,
+                      "retrievalAndValidationSeconds": 0.875,
+                      "pngEncodeAndDurableSaveSeconds": 0.20335912704467773,
+                      "historyAndMetadataReceiptSeconds": 0.36687183380126953
+                    },
+                    "unattributedWrapperSeconds": 0.022686376585625112,
+                    "serverExecutionSecondsNestedInWait": 5.769000053405762,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005258884524416041,
+                  "serverStart": 28.52900004386902,
+                  "serverEnd": 34.29800009727478,
+                  "clientStart": 25.677571535110474,
+                  "clientSaved": 36.51361703872681,
+                  "clientCommitted": 36.880488872528076,
+                  "saveStart": 36.31025791168213,
+                  "saveEnd": 36.51361703872681
+                },
+                {
+                  "index": 4,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.85686445236206,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.06299999996554106,
+                      "submissionSeconds": 0.5150000000139698,
+                      "waitAndPollingSeconds": 6.51600000000326,
+                      "retrievalAndValidationSeconds": 1.077999999979511,
+                      "pngEncodeAndDurableSaveSeconds": 0.1961371898651123,
+                      "historyAndMetadataReceiptSeconds": 0.47661566734313965
+                    },
+                    "unattributedWrapperSeconds": 0.012111595191527158,
+                    "serverExecutionSecondsNestedInWait": 5.89900016784668,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005258884524416041,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.89900016784668,
+                  "clientStart": 0.04971051216125488,
+                  "clientSaved": 8.429959297180176,
+                  "clientCommitted": 8.906574964523315,
+                  "saveStart": 8.233822107315063,
+                  "saveEnd": 8.429959297180176
+                },
+                {
+                  "index": 5,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 10.916671752929688,
+                    "parts": {
+                      "preparationSeconds": 1.25,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.46899999998277053,
+                      "waitAndPollingSeconds": 7.48399999999674,
+                      "retrievalAndValidationSeconds": 1.0939999999827705,
+                      "pngEncodeAndDurableSaveSeconds": 0.16772198677062988,
+                      "historyAndMetadataReceiptSeconds": 0.4104785919189453
+                    },
+                    "unattributedWrapperSeconds": 0.02547117427457124,
+                    "serverExecutionSecondsNestedInWait": 5.2099997997283936,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005258884524416041,
+                  "serverStart": 11.968000173568726,
+                  "serverEnd": 17.17799997329712,
+                  "clientStart": 8.92281460762024,
+                  "clientSaved": 19.42900776863098,
+                  "clientCommitted": 19.839486360549927,
+                  "saveStart": 19.26128578186035,
+                  "saveEnd": 19.42900776863098
+                },
+                {
+                  "index": 6,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 10.83474588394165,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.8910000000032596,
+                      "waitAndPollingSeconds": 8.48399999999674,
+                      "retrievalAndValidationSeconds": 0.8119999999762513,
+                      "pngEncodeAndDurableSaveSeconds": 0.14284682273864746,
+                      "historyAndMetadataReceiptSeconds": 0.44579076766967773
+                    },
+                    "unattributedWrapperSeconds": 0.028108293539844453,
+                    "serverExecutionSecondsNestedInWait": 5.288000106811523,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005258884524416041,
+                  "serverStart": 23.23900008201599,
+                  "serverEnd": 28.527000188827515,
+                  "clientStart": 19.860811710357666,
+                  "clientSaved": 30.24976682662964,
+                  "clientCommitted": 30.695557594299316,
+                  "saveStart": 30.10692000389099,
+                  "saveEnd": 30.24976682662964
+                }
+              ]
+            },
+            {
+              "label": "pipeline-720p-n1-d2-r2",
+              "wallSeconds": 37.798141956329346,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 8.398136615753174,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.8589999999967404,
+                      "waitAndPollingSeconds": 6.172000000020489,
+                      "retrievalAndValidationSeconds": 0.7660000000032596,
+                      "pngEncodeAndDurableSaveSeconds": 0.16610407829284668,
+                      "historyAndMetadataReceiptSeconds": 0.37247514724731445
+                    },
+                    "unattributedWrapperSeconds": 0.03155739017529413,
+                    "serverExecutionSecondsNestedInWait": 5.789000034332275,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005389735056735852,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.789000034332275,
+                  "clientStart": 0.032186269760131836,
+                  "clientSaved": 8.057847738265991,
+                  "clientCommitted": 8.430322885513306,
+                  "saveStart": 7.8917436599731445,
+                  "saveEnd": 8.057847738265991
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 11.300780773162842,
+                    "parts": {
+                      "preparationSeconds": 0.015000000013969839,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.42199999996228144,
+                      "waitAndPollingSeconds": 9.51500000001397,
+                      "retrievalAndValidationSeconds": 0.75,
+                      "pngEncodeAndDurableSaveSeconds": 0.16565632820129395,
+                      "historyAndMetadataReceiptSeconds": 0.40488672256469727
+                    },
+                    "unattributedWrapperSeconds": 0.012237722403369844,
+                    "serverExecutionSecondsNestedInWait": 5.7789998054504395,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005389735056735852,
+                  "serverStart": 11.876000165939331,
+                  "serverEnd": 17.65499997138977,
+                  "clientStart": 8.457759857177734,
+                  "clientSaved": 19.35365390777588,
+                  "clientCommitted": 19.758540630340576,
+                  "saveStart": 19.187997579574585,
+                  "saveEnd": 19.35365390777588
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 12.86000394821167,
+                    "parts": {
+                      "preparationSeconds": 0.01600000000325963,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.6410000000032596,
+                      "waitAndPollingSeconds": 10.327999999979511,
+                      "retrievalAndValidationSeconds": 1.1880000000237487,
+                      "pngEncodeAndDurableSaveSeconds": 0.2202014923095703,
+                      "historyAndMetadataReceiptSeconds": 0.4409949779510498
+                    },
+                    "unattributedWrapperSeconds": 0.010807477927301079,
+                    "serverExecutionSecondsNestedInWait": 5.773999929428101,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005389735056735852,
+                  "serverStart": 23.716000080108643,
+                  "serverEnd": 29.490000009536743,
+                  "clientStart": 19.766762018203735,
+                  "clientSaved": 32.185770988464355,
+                  "clientCommitted": 32.626765966415405,
+                  "saveStart": 31.965569496154785,
+                  "saveEnd": 32.185770988464355
+                },
+                {
+                  "index": 4,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 14.033803462982178,
+                    "parts": {
+                      "preparationSeconds": 1.25,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.4220000000204891,
+                      "waitAndPollingSeconds": 10.952999999979511,
+                      "retrievalAndValidationSeconds": 0.75,
+                      "pngEncodeAndDurableSaveSeconds": 0.2021167278289795,
+                      "historyAndMetadataReceiptSeconds": 0.43437671661376953
+                    },
+                    "unattributedWrapperSeconds": 0.006310018536169082,
+                    "serverExecutionSecondsNestedInWait": 5.795000076293945,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005389735056735852,
+                  "serverStart": 5.789999961853027,
+                  "serverEnd": 11.585000038146973,
+                  "clientStart": 0.05275869369506836,
+                  "clientSaved": 13.652185440063477,
+                  "clientCommitted": 14.086562156677246,
+                  "saveStart": 13.450068712234497,
+                  "saveEnd": 13.652185440063477
+                },
+                {
+                  "index": 5,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 12.531809568405151,
+                    "parts": {
+                      "preparationSeconds": 0.43799999996554106,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.48499999998603016,
+                      "waitAndPollingSeconds": 9.5,
+                      "retrievalAndValidationSeconds": 1.0310000000172295,
+                      "pngEncodeAndDurableSaveSeconds": 0.18296217918395996,
+                      "historyAndMetadataReceiptSeconds": 0.8666744232177734
+                    },
+                    "unattributedWrapperSeconds": 0.013172966020647436,
+                    "serverExecutionSecondsNestedInWait": 5.770999908447266,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005389735056735852,
+                  "serverStart": 17.6560001373291,
+                  "serverEnd": 23.427000045776367,
+                  "clientStart": 14.100908041000366,
+                  "clientSaved": 25.766043186187744,
+                  "clientCommitted": 26.632717609405518,
+                  "saveStart": 25.583081007003784,
+                  "saveEnd": 25.766043186187744
+                },
+                {
+                  "index": 6,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 11.13997745513916,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.39100000000325963,
+                      "waitAndPollingSeconds": 9.26600000000326,
+                      "retrievalAndValidationSeconds": 0.875,
+                      "pngEncodeAndDurableSaveSeconds": 0.2000880241394043,
+                      "historyAndMetadataReceiptSeconds": 0.38300180435180664
+                    },
+                    "unattributedWrapperSeconds": 0.009887626627460122,
+                    "serverExecutionSecondsNestedInWait": 5.816999912261963,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0005389735056735852,
+                  "serverStart": 29.491000175476074,
+                  "serverEnd": 35.30800008773804,
+                  "clientStart": 26.658164501190186,
+                  "clientSaved": 37.41514015197754,
+                  "clientCommitted": 37.798141956329346,
+                  "saveStart": 37.215052127838135,
+                  "saveEnd": 37.41514015197754
+                }
+              ]
+            }
+          ],
+          "rounds": 2,
+          "images": 12,
+          "wallSeconds": 74.67863082885742,
+          "imagesPerSecond": 0.16068853789647872,
+          "secondsPerDeliveredImage": 6.223219235738118,
+          "observedRateRange": [
+            0.15873796143027852,
+            0.16268764822337653
+          ],
+          "meanClientLatencySeconds": 11.001393040021261,
+          "meanServerLatencySeconds": 5.699666659037272,
+          "meanSaveSeconds": 0.1913720965385437,
+          "meanHistoryAndReceiptSeconds": 0.4680863420168559,
+          "physicalPNGReuseFraction": 1.0,
+          "meanProviderStages": {
+            "preparationSeconds": 0.38158333333558403,
+            "referenceUploadSeconds": 0.02333333333566164,
+            "submissionSeconds": 0.5743333333327124,
+            "waitAndPollingSeconds": 8.884166666665502,
+            "retrievalAndValidationSeconds": 0.9296666666632518,
+            "totalClientSeconds": 10.793083333332712
+          },
+          "warmUSDPerImage": 0.0005324309790575946,
+          "maxOverlappingServerOperations": 1,
+          "exactPNGRepeatabilityCases": 6,
+          "repeatabilityCases": 6,
+          "freshSamplerAndDecode": true,
+          "freshEncodingVerified": false,
+          "deviceTelemetry": {
+            "samples": 125,
+            "scope": "nvidia-smi device samples during server intervals. MIG may report its physical parent; CUDA partition VRAM is recorded separately.",
+            "metrics": {
+              "memoryUsedMiB": {
+                "samples": 125,
+                "mean": 13124.352,
+                "min": 12096.0,
+                "max": 14560.0
+              },
+              "utilizationPercent": {
+                "samples": 125,
+                "mean": 86.312,
+                "min": 0.0,
+                "max": 100.0
+              },
+              "powerWatts": {
+                "samples": 125,
+                "mean": 114.93112,
+                "min": 44.32,
+                "max": 127.24
+              },
+              "smClockMHz": {
+                "samples": 125,
+                "mean": 1907.4,
+                "min": 1605.0,
+                "max": 2295.0
+              }
+            }
+          },
+          "storagePolicies": [
+            "exact-PNG dedup"
+          ],
+          "speedupOverOneWorker": 1.387096168733467
+        },
+        {
+          "resolution": "720p",
+          "workers": 1,
+          "clientSlots": 2,
+          "executionMode": "pipeline",
+          "postControl": false,
+          "attempt": "ada4000-attempt-1",
+          "encodingProfile": "fresh",
+          "runStartedAt": 1791304157.6066365,
+          "region": "EUR-IS-1",
+          "regionEvidence": "Explicit creation region; provider did not return confirmation",
+          "batchSize": 1,
+          "validDeliveredImages": 12,
+          "creativeQCPerformed": false,
+          "workload": {
+            "cases": 6,
+            "referenceCounts": [
+              1
+            ],
+            "promptWordCounts": [
+              230,
+              236
+            ]
+          },
+          "traces": [
+            {
+              "label": "fresh-pipeline-720p-n1-d2-r1",
+              "wallSeconds": 46.56643795967102,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 17.9543354511261,
+                    "parts": {
+                      "preparationSeconds": 3.7189999999827705,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.5,
+                      "waitAndPollingSeconds": 12.09399999998277,
+                      "retrievalAndValidationSeconds": 0.9529999999795109,
+                      "pngEncodeAndDurableSaveSeconds": 0.17115354537963867,
+                      "historyAndMetadataReceiptSeconds": 0.4750797748565674
+                    },
+                    "unattributedWrapperSeconds": 0.02710213093087077,
+                    "serverExecutionSecondsNestedInWait": 5.78600001335144,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000664002911647161,
+                  "serverStart": 6.271000146865845,
+                  "serverEnd": 12.057000160217285,
+                  "clientStart": 0.05746173858642578,
+                  "clientSaved": 17.536717414855957,
+                  "clientCommitted": 18.011797189712524,
+                  "saveStart": 17.36556386947632,
+                  "saveEnd": 17.536717414855957
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 17.939209938049316,
+                    "parts": {
+                      "preparationSeconds": 0.015000000013969839,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.3899999999557622,
+                      "waitAndPollingSeconds": 10.110000000044238,
+                      "retrievalAndValidationSeconds": 6.75,
+                      "pngEncodeAndDurableSaveSeconds": 0.18296194076538086,
+                      "historyAndMetadataReceiptSeconds": 0.46925783157348633
+                    },
+                    "unattributedWrapperSeconds": 0.005990165693219751,
+                    "serverExecutionSecondsNestedInWait": 5.7749998569488525,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000664002911647161,
+                  "serverStart": 18.18500018119812,
+                  "serverEnd": 23.960000038146973,
+                  "clientStart": 18.031062126159668,
+                  "clientSaved": 35.5010142326355,
+                  "clientCommitted": 35.970272064208984,
+                  "saveStart": 35.31805229187012,
+                  "saveEnd": 35.5010142326355
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 10.564346075057983,
+                    "parts": {
+                      "preparationSeconds": 2.4380000000237487,
+                      "referenceUploadSeconds": 0.030999999959021807,
+                      "submissionSeconds": 0.4380000000237487,
+                      "waitAndPollingSeconds": 6.061999999976251,
+                      "retrievalAndValidationSeconds": 0.9839999999967404,
+                      "pngEncodeAndDurableSaveSeconds": 0.18226385116577148,
+                      "historyAndMetadataReceiptSeconds": 0.41414856910705566
+                    },
+                    "unattributedWrapperSeconds": 0.014933654805645347,
+                    "serverExecutionSecondsNestedInWait": 5.895999908447266,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000664002911647161,
+                  "serverStart": 34.91000008583069,
+                  "serverEnd": 40.805999994277954,
+                  "clientStart": 36.000707149505615,
+                  "clientSaved": 46.15090465545654,
+                  "clientCommitted": 46.5650532245636,
+                  "saveStart": 45.96864080429077,
+                  "saveEnd": 46.15090465545654
+                },
+                {
+                  "index": 4,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 12.62208104133606,
+                    "parts": {
+                      "preparationSeconds": 0.4369999999762513,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 3.5160000000032596,
+                      "waitAndPollingSeconds": 6.23399999999674,
+                      "retrievalAndValidationSeconds": 1.7349999999860302,
+                      "pngEncodeAndDurableSaveSeconds": 0.22237157821655273,
+                      "historyAndMetadataReceiptSeconds": 0.4176750183105469
+                    },
+                    "unattributedWrapperSeconds": 0.029034444829449058,
+                    "serverExecutionSecondsNestedInWait": 5.959000110626221,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000664002911647161,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.959000110626221,
+                  "clientStart": 0.02153801918029785,
+                  "clientSaved": 12.22594404220581,
+                  "clientCommitted": 12.643619060516357,
+                  "saveStart": 12.003572463989258,
+                  "saveEnd": 12.22594404220581
+                },
+                {
+                  "index": 5,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 11.039701461791992,
+                    "parts": {
+                      "preparationSeconds": 1.2969999999622814,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.6880000000237487,
+                      "waitAndPollingSeconds": 7.421999999962281,
+                      "retrievalAndValidationSeconds": 0.9530000000377186,
+                      "pngEncodeAndDurableSaveSeconds": 0.16669321060180664,
+                      "historyAndMetadataReceiptSeconds": 0.4572775363922119
+                    },
+                    "unattributedWrapperSeconds": 0.024730714794714004,
+                    "serverExecutionSecondsNestedInWait": 5.801000118255615,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000664002911647161,
+                  "serverStart": 12.059000015258789,
+                  "serverEnd": 17.860000133514404,
+                  "clientStart": 12.667843103408813,
+                  "clientSaved": 23.250267028808594,
+                  "clientCommitted": 23.707544565200806,
+                  "saveStart": 23.083573818206787,
+                  "saveEnd": 23.250267028808594
+                },
+                {
+                  "index": 6,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 14.16341257095337,
+                    "parts": {
+                      "preparationSeconds": 0.0,
+                      "referenceUploadSeconds": 0.031000000017229468,
+                      "submissionSeconds": 0.39100000000325963,
+                      "waitAndPollingSeconds": 11.702999999979511,
+                      "retrievalAndValidationSeconds": 1.1400000000139698,
+                      "pngEncodeAndDurableSaveSeconds": 0.14162778854370117,
+                      "historyAndMetadataReceiptSeconds": 0.7411961555480957
+                    },
+                    "unattributedWrapperSeconds": 0.015588626847602427,
+                    "serverExecutionSecondsNestedInWait": 5.791000127792358,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.000664002911647161,
+                  "serverStart": 23.960999965667725,
+                  "serverEnd": 29.752000093460083,
+                  "clientStart": 23.73100233078003,
+                  "clientSaved": 37.1532187461853,
+                  "clientCommitted": 37.8944149017334,
+                  "saveStart": 37.0115909576416,
+                  "saveEnd": 37.1532187461853
+                }
+              ]
+            },
+            {
+              "label": "fresh-pipeline-720p-n1-d2-r2",
+              "wallSeconds": 44.40139055252075,
+              "clockPolicy": "Cloud and laptop clocks are shown separately; no exact cross-host alignment inferred",
+              "jobs": [
+                {
+                  "index": 1,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.770595073699951,
+                    "parts": {
+                      "preparationSeconds": 1.0939999999827705,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.7810000000172295,
+                      "waitAndPollingSeconds": 5.764999999955762,
+                      "retrievalAndValidationSeconds": 1.5790000000270084,
+                      "pngEncodeAndDurableSaveSeconds": 0.14250922203063965,
+                      "historyAndMetadataReceiptSeconds": 0.369307279586792
+                    },
+                    "unattributedWrapperSeconds": 0.02377857209648937,
+                    "serverExecutionSecondsNestedInWait": 5.7749998569488525,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0006331309393600182,
+                  "serverStart": 0.0,
+                  "serverEnd": 5.7749998569488525,
+                  "clientStart": 0.03076481819152832,
+                  "clientSaved": 9.432052612304688,
+                  "clientCommitted": 9.80135989189148,
+                  "saveStart": 9.289543390274048,
+                  "saveEnd": 9.432052612304688
+                },
+                {
+                  "index": 2,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 12.273305416107178,
+                    "parts": {
+                      "preparationSeconds": 0.01600000000325963,
+                      "referenceUploadSeconds": 0.0,
+                      "submissionSeconds": 0.40600000001722947,
+                      "waitAndPollingSeconds": 9.702999999979511,
+                      "retrievalAndValidationSeconds": 1.5940000000409782,
+                      "pngEncodeAndDurableSaveSeconds": 0.17723393440246582,
+                      "historyAndMetadataReceiptSeconds": 0.370084285736084
+                    },
+                    "unattributedWrapperSeconds": 0.006987195927649736,
+                    "serverExecutionSecondsNestedInWait": 5.7820000648498535,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0006331309393600182,
+                  "serverStart": 11.90499997138977,
+                  "serverEnd": 17.687000036239624,
+                  "clientStart": 9.822582483291626,
+                  "clientSaved": 21.72580361366272,
+                  "clientCommitted": 22.095887899398804,
+                  "saveStart": 21.548569679260254,
+                  "saveEnd": 21.72580361366272
+                },
+                {
+                  "index": 3,
+                  "worker": 0,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 20.152549743652344,
+                    "parts": {
+                      "preparationSeconds": 0.9369999999762513,
+                      "referenceUploadSeconds": 0.01600000000325963,
+                      "submissionSeconds": 0.7810000000172295,
+                      "waitAndPollingSeconds": 9.813000000023749,
+                      "retrievalAndValidationSeconds": 7.702999999979511,
+                      "pngEncodeAndDurableSaveSeconds": 0.19681620597839355,
+                      "historyAndMetadataReceiptSeconds": 0.6807024478912354
+                    },
+                    "unattributedWrapperSeconds": 0.025031089782714844,
+                    "serverExecutionSecondsNestedInWait": 5.834000110626221,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0006331309393600182,
+                  "serverStart": 25.9229998588562,
+                  "serverEnd": 31.756999969482422,
+                  "clientStart": 22.133604049682617,
+                  "clientSaved": 41.605451345443726,
+                  "clientCommitted": 42.28615379333496,
+                  "saveStart": 41.40863513946533,
+                  "saveEnd": 41.605451345443726
+                },
+                {
+                  "index": 4,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 20.301044702529907,
+                    "parts": {
+                      "preparationSeconds": 1.6089999999967404,
+                      "referenceUploadSeconds": 0.030999999959021807,
+                      "submissionSeconds": 0.4850000000442378,
+                      "waitAndPollingSeconds": 11.75,
+                      "retrievalAndValidationSeconds": 5.85899999999674,
+                      "pngEncodeAndDurableSaveSeconds": 0.21289467811584473,
+                      "historyAndMetadataReceiptSeconds": 0.3289947509765625
+                    },
+                    "unattributedWrapperSeconds": 0.02515527344075963,
+                    "serverExecutionSecondsNestedInWait": 5.830999851226807,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0006331309393600182,
+                  "serverStart": 5.776000022888184,
+                  "serverEnd": 11.60699987411499,
+                  "clientStart": 0.05218386650085449,
+                  "clientSaved": 20.0242338180542,
+                  "clientCommitted": 20.35322856903076,
+                  "saveStart": 19.811339139938354,
+                  "saveEnd": 20.0242338180542
+                },
+                {
+                  "index": 5,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 9.853155374526978,
+                    "parts": {
+                      "preparationSeconds": 0.01600000000325963,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 1.3439999999827705,
+                      "waitAndPollingSeconds": 6.172000000020489,
+                      "retrievalAndValidationSeconds": 1.4219999999622814,
+                      "pngEncodeAndDurableSaveSeconds": 0.17598962783813477,
+                      "historyAndMetadataReceiptSeconds": 0.7011816501617432
+                    },
+                    "unattributedWrapperSeconds": 0.006984096544329077,
+                    "serverExecutionSecondsNestedInWait": 5.801000118255615,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0006331309393600182,
+                  "serverStart": 19.829999923706055,
+                  "serverEnd": 25.63100004196167,
+                  "clientStart": 20.386454105377197,
+                  "clientSaved": 29.53842782974243,
+                  "clientCommitted": 30.239609479904175,
+                  "saveStart": 29.362438201904297,
+                  "saveEnd": 29.53842782974243
+                },
+                {
+                  "index": 6,
+                  "worker": 1,
+                  "serverWorker": 0,
+                  "accounting": {
+                    "measuredClientSeconds": 14.140120506286621,
+                    "parts": {
+                      "preparationSeconds": 0.01600000000325963,
+                      "referenceUploadSeconds": 0.015000000013969839,
+                      "submissionSeconds": 0.9689999999827705,
+                      "waitAndPollingSeconds": 10.65600000001723,
+                      "retrievalAndValidationSeconds": 1.6099999999860302,
+                      "pngEncodeAndDurableSaveSeconds": 0.16619372367858887,
+                      "historyAndMetadataReceiptSeconds": 0.6910924911499023
+                    },
+                    "unattributedWrapperSeconds": 0.016834291454870254,
+                    "serverExecutionSecondsNestedInWait": 5.736999988555908,
+                    "missingProviderComponents": [],
+                    "closureErrorSeconds": 0.0,
+                    "scope": "Local request start through committed metadata receipt. Server execution is nested within waiting, not added again. Remaining wrapper/clock residual is explicit; it is not an independently measured function."
+                  },
+                  "allocatedWarmCostUSD": 0.0006331309393600182,
+                  "serverStart": 31.757999897003174,
+                  "serverEnd": 37.49499988555908,
+                  "clientStart": 30.260273694992065,
+                  "clientSaved": 43.709301710128784,
+                  "clientCommitted": 44.40039420127869,
+                  "saveStart": 43.543107986450195,
+                  "saveEnd": 43.709301710128784
+                }
+              ]
+            }
+          ],
+          "rounds": 2,
+          "images": 12,
+          "wallSeconds": 90.96782851219177,
+          "imagesPerSecond": 0.1319147680698097,
+          "secondsPerDeliveredImage": 7.580652376015981,
+          "observedRateRange": [
+            0.12884816324573323,
+            0.13513090300410352
+          ],
+          "meanClientLatencySeconds": 13.721488296985626,
+          "meanServerLatencySeconds": 5.8140000104904175,
+          "meanSaveSeconds": 0.17822577555974325,
+          "meanHistoryAndReceiptSeconds": 0.5096664826075236,
+          "physicalPNGReuseFraction": 1.0,
+          "meanProviderStages": {
+            "preparationSeconds": 0.9661666666603802,
+            "referenceUploadSeconds": 0.0206666666684517,
+            "submissionSeconds": 0.8907500000059372,
+            "waitAndPollingSeconds": 8.956999999994878,
+            "retrievalAndValidationSeconds": 2.69016666666721,
+            "totalClientSeconds": 13.524749999996857
+          },
+          "warmUSDPerImage": 0.0006485669255035896,
+          "maxOverlappingServerOperations": 1,
+          "exactPNGRepeatabilityCases": 6,
+          "repeatabilityCases": 6,
+          "freshSamplerAndDecode": true,
+          "freshEncodingVerified": true,
+          "deviceTelemetry": {
+            "samples": 125,
+            "scope": "nvidia-smi device samples during server intervals. MIG may report its physical parent; CUDA partition VRAM is recorded separately.",
+            "metrics": {
+              "memoryUsedMiB": {
+                "samples": 125,
+                "mean": 13147.648,
+                "min": 12096.0,
+                "max": 14560.0
+              },
+              "utilizationPercent": {
+                "samples": 125,
+                "mean": 84.616,
+                "min": 0.0,
+                "max": 100.0
+              },
+              "powerWatts": {
+                "samples": 125,
+                "mean": 112.56248,
+                "min": 42.34,
+                "max": 125.56
+              },
+              "smClockMHz": {
+                "samples": 125,
+                "mean": 1879.8,
+                "min": 1605.0,
+                "max": 2295.0
+              }
+            }
+          },
+          "storagePolicies": [
+            "exact-PNG dedup"
+          ],
+          "speedupOverOneWorker": 1.1816012957175754
+        }
+      ],
       "hybridProfiles": [],
-      "hardware": [],
-      "rentalUpperUSD": 0,
-      "attemptStates": [],
-      "admissionStops": [],
-      "attempts": [],
+      "hardware": [
+        {
+          "attempt": "ada4000-attempt-1",
+          "runStartedAt": 1791304157.6066365,
+          "startupSeconds": 37.56620121002197,
+          "clockOffsetBounds": {
+            "lowerSeconds": -0.6021580696105957,
+            "upperSeconds": 1.1134400367736816,
+            "widthSeconds": 1.7155981063842773,
+            "scope": "Cloud minus laptop wall-clock offset bounds from one owned SSH exchange. Not clock synchronization; assumes no subsequent clock step. Older trials without bounds retain separate origins."
+          },
+          "connectionLatency": {
+            "clientContext": "Mississauga, Ontario, Canada",
+            "phase": "idle before model download",
+            "sampleCount": 3,
+            "isPurePing": false,
+            "notPartOfTimedCohorts": true,
+            "tcpConnect": {
+              "milliseconds": [
+                111.3535999902524,
+                118.22480004047975,
+                133.86240002000704
+              ],
+              "successfulSamples": 3,
+              "failures": 0,
+              "medianMs": 118.22480004047975,
+              "minMs": 111.3535999902524,
+              "maxMs": 133.86240002000704
+            },
+            "tunneledApplicationRequest": {
+              "milliseconds": [
+                227.37610002513975,
+                493.5616999864578,
+                520.4072000342421
+              ],
+              "successfulSamples": 3,
+              "failures": 0,
+              "medianMs": 493.5616999864578,
+              "minMs": 227.37610002513975,
+              "maxMs": 520.4072000342421
+            },
+            "interpretation": "TCP establishment includes connection overhead. HTTP includes SSH tunnel, HTTP connection and server handling. Neither is ICMP ping; no addresses or credentials are exported."
+          },
+          "downloadHashSeconds": 197.01731991767883,
+          "hourlyUSD": 0.30800000000000005,
+          "computeContainerHourlyUSD": 0.30100000000000005,
+          "standingHourlyUSD": 0.0070000000000000236,
+          "region": "EUR-IS-1",
+          "requestedRegion": "EUR-IS-1",
+          "providerConfirmedRegion": null,
+          "regionEvidence": "Explicit creation region; provider did not return confirmation",
+          "stockSnapshotAt": 1791304140.8369875,
+          "stockAtSelectedRegion": "Low",
+          "quoteGPUHourlyUSD": 0.28,
+          "workerEscalationBasis": "fresh",
+          "actualGPUHourlyUSD": 0.28,
+          "device": "cuda:0 NVIDIA RTX 4000 Ada Generation : cudaMallocAsync",
+          "vramGiB": 19.54827880859375,
+          "torch": "2.10.0+cu128",
+          "hostRAMBytes": 61999996928,
+          "hostCPUModel": "AMD EPYC 7702 64-Core Processor",
+          "visibleCPUThreads": 128,
+          "cpuQuota": null,
+          "affinityCPUCount": 128,
+          "cgroupMemoryLimitBytes": 61999996928,
+          "memoryQuotaVersion": "v1",
+          "gpuHardwareCSV": "580.173.02, 130.00, 3105, 4, 8",
+          "gpuMemoryCSV": "NVIDIA RTX 4000 Ada Generation, 20475, Disabled",
+          "gpuMemoryFields": [
+            "deviceName",
+            "totalMemoryMiB",
+            "currentECCMode"
+          ],
+          "memoryAdmission": {
+            "advertisedGB": 20,
+            "usableCUDABytes": 20989804544,
+            "usableCUDAGiB": 19.54827880859375,
+            "policy": "Nominal catalog GB converted to decimal bytes with 6% tolerance. Actual free bytes, not nominal capacity, govern resident-worker admission."
+          },
+          "gpuHardwareFields": [
+            "driverVersion",
+            "powerLimitWatts",
+            "maxSMClockMHz",
+            "currentPCIeGeneration",
+            "currentPCIeWidth"
+          ],
+          "gpuHardwareSnapshotScope": "Before model loading; current PCIe generation may reflect idle power saving",
+          "comfy": "0.30.0",
+          "comfyCommit": "e8c24f9020f5db75e9aaf38a83b48c2187be5526",
+          "templateImage": "runpod/comfyui:1.3.3-comfyuiv0.30.0-cuda12.8",
+          "requestedTemplateImage": "runpod/comfyui:1.3.3-comfyuiv0.30.0-cuda12.8",
+          "cudaVariant": "12.8",
+          "basePerformanceFlags": [],
+          "firstWarmupClientSeconds": 17.300780534744263
+        }
+      ],
+      "rentalUpperUSD": 0.09174537406497531,
+      "attemptStates": [
+        "COMPLETE"
+      ],
+      "admissionStops": [
+        {
+          "resolution": "720p",
+          "afterCount": 1,
+          "nextCount": null,
+          "reason": "Conservative resident-memory admission limit",
+          "admissionBasis": "fresh",
+          "admissionImagesPerSecond": 0.11164067655299845,
+          "freeGiB": 7.7896876111626625,
+          "usedGiB": 11.758591197431087,
+          "incrementAdmissionGiB": 11.758591197431087
+        }
+      ],
+      "attempts": [
+        {
+          "attempt": "ada4000-attempt-1",
+          "status": "COMPLETE",
+          "codeRevision": {
+            "runnerSHA256": "b2b73e8ee633b3e3714914d079be25c1c87183181e125eeb3f38dfa1a240a38f",
+            "commonSHA256": "f88a83c816c6621f19c18f53f4d00da538dba17db0f89600c184f4e910e8352c",
+            "remoteSHA256": "9bd65b4af443a1f00e6c5c6882f97425715c4d1c803a467ff0311144988b34d7",
+            "imageProviderSHA256": "d45f2d45248268abd802fdd4cb215a556fa8b28ee6cb154c5500e20befad9d60",
+            "accountingSHA256": "e575370f00629f428390fe0ead7b92334a8bd8274829c2438fc40431baeeb361"
+          },
+          "validTimedImages": 72,
+          "warmupImages": 10,
+          "errors": [],
+          "shutdownVerified": true,
+          "leaseAccounting": {
+            "attemptElapsedSeconds": 946.3706207275391,
+            "rentalClockSeconds": 946.3706207275391,
+            "parts": {
+              "provisionAndReadinessSeconds": 37.56620121002197,
+              "downloadAndHashSeconds": 197.0178723335266,
+              "timedCohortWallSeconds": 586.0049977302551,
+              "experimentalWarmupClientSeconds": 104.7516233921051
+            },
+            "unattributedSeconds": 21.02992606163025,
+            "closureErrorSeconds": 0.0,
+            "timedImages": 72,
+            "experimentalWarmupImages": 10,
+            "scope": "Disjoint parent-stage duration accounting, through verified deletion. Remaining time includes worker setup, live checks, connection probing, experiment bookkeeping, shutdown and any unmeasured gaps. This is not proof of GPU idleness. Experimental warmups are not normal production startup."
+          }
+        }
+      ],
       "availabilityObservations": [],
       "id": "ada4000",
       "name": "NVIDIA RTX 4000 Ada Generation",
       "vramGB": 20,
-      "status": "not tested",
+      "status": "measured",
       "preferredRegion": "EUR-IS-1",
       "catalog": {
         "id": "ada4000",
@@ -88272,6 +91163,14 @@
         "reason": "Candidate, CUDA/model compatibility still requires hardware verification",
         "timing": "not measured by catalog",
         "parallelism": "not inferred from VRAM"
+      },
+      "bestTested": {
+        "720p": {
+          "workers": 1,
+          "imagesPerSecond": 0.1158452755609588,
+          "warmUSDPerImage": 0.0007385329711657984,
+          "basis": "Best tested count; maximum feasible concurrency not established"
+        }
       }
     },
     {
@@ -88329,11 +91228,15 @@
         "stock": "Low",
         "availableRegions": [
           {
-            "dataCenterId": "EU-RO-1",
+            "dataCenterId": "EUR-IS-1",
             "stockStatus": "Low"
           },
           {
-            "dataCenterId": "EUR-IS-1",
+            "dataCenterId": "EUR-IS-2",
+            "stockStatus": "Low"
+          },
+          {
+            "dataCenterId": "US-MO-2",
             "stockStatus": "Low"
           }
         ],
@@ -88555,15 +91458,10 @@
         "vramGB": 16,
         "secureHourlyUSD": 0.24,
         "communityHourlyUSD": null,
-        "stock": "Low",
-        "availableRegions": [
-          {
-            "dataCenterId": "EU-RO-1",
-            "stockStatus": "Low"
-          }
-        ],
-        "eligibleForCurrentProtocol": true,
-        "reason": "Candidate, CUDA/model compatibility still requires hardware verification",
+        "stock": null,
+        "availableRegions": [],
+        "eligibleForCurrentProtocol": false,
+        "reason": "Not admitted: stock, minimum 16 GB VRAM or current $3/hour conservative rental ceiling",
         "timing": "not measured by catalog",
         "parallelism": "not inferred from VRAM"
       }
@@ -88594,6 +91492,41 @@
         "availableRegions": [
           {
             "dataCenterId": "US-KS-2",
+            "stockStatus": "Low"
+          }
+        ],
+        "eligibleForCurrentProtocol": true,
+        "reason": "Candidate, CUDA/model compatibility still requires hardware verification",
+        "timing": "not measured by catalog",
+        "parallelism": "not inferred from VRAM"
+      }
+    },
+    {
+      "profiles": [],
+      "productionProfiles": [],
+      "pipelineProfiles": [],
+      "hybridProfiles": [],
+      "hardware": [],
+      "rentalUpperUSD": 0,
+      "attemptStates": [],
+      "admissionStops": [],
+      "attempts": [],
+      "availabilityObservations": [],
+      "id": "gpu-rtx-pro-6000-blackwell-workstation-edition",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "vramGB": 96,
+      "status": "not tested",
+      "preferredRegion": "EU-RO-1",
+      "catalog": {
+        "id": "gpu-rtx-pro-6000-blackwell-workstation-edition",
+        "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+        "vramGB": 96,
+        "secureHourlyUSD": 2.19,
+        "communityHourlyUSD": 1.69,
+        "stock": "Low",
+        "availableRegions": [
+          {
+            "dataCenterId": "EU-RO-1",
             "stockStatus": "Low"
           }
         ],
@@ -88753,11 +91686,11 @@
         "stock": "Low",
         "availableRegions": [
           {
-            "dataCenterId": "EUR-IS-1",
+            "dataCenterId": "EU-NL-1",
             "stockStatus": "Low"
           },
           {
-            "dataCenterId": "US-WA-2",
+            "dataCenterId": "EUR-IS-1",
             "stockStatus": "Low"
           }
         ],
@@ -89036,7 +91969,7 @@
             "stockStatus": "Low"
           },
           {
-            "dataCenterId": "AP-JP-1",
+            "dataCenterId": "AP-IN-2",
             "stockStatus": "Low"
           },
           {
@@ -89107,6 +92040,10 @@
         "stock": "Low",
         "availableRegions": [
           {
+            "dataCenterId": "US-GA-2",
+            "stockStatus": "Low"
+          },
+          {
             "dataCenterId": "US-KS-2",
             "stockStatus": "Low"
           }
@@ -89141,18 +92078,6 @@
         "communityHourlyUSD": 3.59,
         "stock": "Low",
         "availableRegions": [
-          {
-            "dataCenterId": "AP-JP-1",
-            "stockStatus": "Low"
-          },
-          {
-            "dataCenterId": "CA-MTL-3",
-            "stockStatus": "Low"
-          },
-          {
-            "dataCenterId": "EU-FR-1",
-            "stockStatus": "Low"
-          },
           {
             "dataCenterId": "EUR-IS-4",
             "stockStatus": "Low"
@@ -89427,36 +92352,6 @@
       "admissionStops": [],
       "attempts": [],
       "availabilityObservations": [],
-      "id": "gpu-rtx-pro-6000-blackwell-workstation-edition",
-      "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
-      "vramGB": 96,
-      "status": "not tested",
-      "preferredRegion": null,
-      "catalog": {
-        "id": "gpu-rtx-pro-6000-blackwell-workstation-edition",
-        "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
-        "vramGB": 96,
-        "secureHourlyUSD": 2.19,
-        "communityHourlyUSD": 1.69,
-        "stock": null,
-        "availableRegions": [],
-        "eligibleForCurrentProtocol": false,
-        "reason": "Not admitted: stock, minimum 16 GB VRAM or current $3/hour conservative rental ceiling",
-        "timing": "not measured by catalog",
-        "parallelism": "not inferred from VRAM"
-      }
-    },
-    {
-      "profiles": [],
-      "productionProfiles": [],
-      "pipelineProfiles": [],
-      "hybridProfiles": [],
-      "hardware": [],
-      "rentalUpperUSD": 0,
-      "attemptStates": [],
-      "admissionStops": [],
-      "attempts": [],
-      "availabilityObservations": [],
       "id": "gpu-tesla-v100-pcie-16gb",
       "name": "Tesla V100-PCIE-16GB",
       "vramGB": 16,
@@ -89526,10 +92421,10 @@
     "Catalog-only GPUs remain visible without invented timing. Stock is an observation, not a causal performance correction. Requested region and provider-confirmed region are distinguished."
   ],
   "costLedger": {
-    "bookedRentalUpperUSD": 4.475236438796809,
+    "bookedRentalUpperUSD": 4.566981812861784,
     "unbookedRentalUpperUSD": 0,
-    "standingStorageUpperUSD": 0.09268320330911212,
-    "experimentConservativeUpperUSD": 4.567919642105921,
+    "standingStorageUpperUSD": 0.09694251508792241,
+    "experimentConservativeUpperUSD": 4.663924327949707,
     "activeOrUnresolvedAllocations": 0,
     "capUSD": 5.0,
     "basis": "Conservative rental ceilings plus standing storage. Includes experimental overhead; not an exact invoice. An unresolved allocation remains charged conservatively until reconciled."
