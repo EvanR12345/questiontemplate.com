@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {explorerRows,explorerFields,queryExplorer,compareValues,explorerCSV,EXPLORER_DEFAULTS} from './pipeline-gpu-explorer.mjs';
+import {explorerRows,explorerFields,queryExplorer,compareValues,explorerCSV,EXPLORER_DEFAULTS,projectMetrics} from './pipeline-gpu-explorer.mjs';
+import {DEFAULTS,buildPlan,schedule} from './pipeline-engine.mjs';
 const data=JSON.parse(fs.readFileSync(new URL('./pipeline-concurrency.json',import.meta.url))),rows=explorerRows(data);
+const evidence={...JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url))),concurrency:data};
 const config=overrides=>({...structuredClone(EXPLORER_DEFAULTS),...overrides});
 
 test('best-results view keeps all 49 GPUs, with missing performance clearly absent',()=>{
@@ -56,4 +58,30 @@ test('every public scalar settings and telemetry field is selectable without exp
 test('CSV preserves decimals, quotes and missing cells and neutralizes spreadsheet formulas',()=>{
   const csv=explorerCSV([{gpu:'=HYPERLINK("bad")',rate:38.04,missing:null}], [{key:'gpu',label:'GPU'},{key:'rate',label:'Rate'},{key:'missing',label:'Missing'}]);
   assert.equal(csv,'"GPU","Rate","Missing"\r\n"\'=HYPERLINK(""bad"")","38.04",""');
+});
+test('project rental cost includes the full billed interval once and excludes API and storage',()=>{
+  const row=queryExplorer(rows,config({search:'5090'}))[0],cfg={...DEFAULTS,policy:'proposed'},metrics=projectMetrics(row,cfg,evidence);
+  const plan=buildPlan({...cfg,gpu:row.gpuId,resolution:row.resolution,encodingProfile:row.conditioning,executionMode:row.method,imageWorkers:String(row.slots),measurementAttempt:row.attempt},evidence),result=schedule(plan);
+  assert.equal(metrics.projectRental,result.rentalSeconds/60);
+  assert.equal(metrics.projectGPUCost,result.gpuUSD);
+  assert.equal(metrics.projectIdle,(result.rentalSeconds-result.gpuWork)/60);
+  assert.ok(metrics.projectGPUCost<result.totalUSD);
+  assert.equal(metrics.projectRendering,result.tasks.filter(t=>t.lane==='render').reduce((s,t)=>s+t.duration,0)/60);
+});
+test('project estimates respond to video length and serial rental excludes cached downloads',()=>{
+  const row=queryExplorer(rows,config({search:'5090'}))[0];
+  const cfg={...DEFAULTS,policy:'serial'},cold=projectMetrics(row,cfg,evidence),warm=projectMetrics(row,{...cfg,warmCache:true},evidence),short=projectMetrics(row,{...cfg,minutes:60},evidence);
+  assert.ok(warm.projectRental<cold.projectRental);assert.ok(warm.projectGPUCost<cold.projectGPUCost);
+  assert.ok(short.projectRendering<cold.projectRendering);assert.ok(short.projectRental<cold.projectRental);
+});
+test('unmeasured and incomplete configurations have no invented project estimates',()=>{
+  for(const row of rows.filter(r=>r.coverage!=='Completed'))assert.deepEqual(projectMetrics(row,DEFAULTS,evidence),{});
+});
+test('project cost sorting and field filters use per-configuration estimates',()=>{
+  const metrics=row=>projectMetrics(row,DEFAULTS,evidence);
+  const result=queryExplorer(rows,config({sort:[{field:'projectGPUCost',direction:'asc'}]}),metrics);
+  const measured=result.filter(r=>r.coverage==='Completed');assert.ok(measured.every((r,i)=>!i||r.projectGPUCost>=measured[i-1].projectGPUCost));
+  assert.equal(result.at(-1).projectGPUCost,undefined);
+  const limited=queryExplorer(rows,config({rules:[{field:'projectRental',op:'lte',value:'60'}]}),metrics);
+  assert.ok(limited.length);assert.ok(limited.length<measured.length);assert.ok(limited.every(r=>r.projectRental<=60));
 });

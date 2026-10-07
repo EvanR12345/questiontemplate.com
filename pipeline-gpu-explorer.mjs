@@ -1,10 +1,14 @@
+import {buildPlan,schedule} from './pipeline-engine.mjs';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const missing=value=>value===null||value===undefined||value===''||(typeof value==='number'&&!Number.isFinite(value));
 const GROUPS={profiles:'resident',productionProfiles:'resident',pipelineProfiles:'pipeline',hybridProfiles:'hybrid'};
 const LABELS={gpu:'GPU',vram:'VRAM · GB',coverage:'Test coverage',resolution:'Resolution',conditioning:'Conditioning',method:'Execution method',copies:'Model copies',slots:'Request slots',region:'Test region',stock:'Stock at test',rate:'Images / min',warmCost:'Warm $ / 1,000 images',hourly:'Measured rental $ / hour',quote:'Secure quote $ / hour',community:'Community quote $ / hour',startup:'Boot / readiness · s',download:'Download / verify · s',cold:'First warmup client · s',client:'Mean client latency · s',server:'Mean server latency · s',rounds:'Completed rounds',images:'Test images',date:'Test date',attempt:'Rental attempt',gpuStatus:'GPU test status',catalogRegions:'Catalogue regions / stock'};
+Object.assign(LABELS,{projectRendering:'Rendering · min work (est.)',projectGPUCost:'GPU rental · $ (est.)',projectRental:'Rental · min (est.)',projectIdle:'GPU idle/setup · min (est.)'});
+const PROJECT_FIELDS=new Set(['projectRendering','projectGPUCost','projectRental','projectIdle']);
 export const EXPLORER_DEFAULTS={view:'best',resolution:'720p',conditioning:'fresh',method:'all',coverage:'all',search:'',region:'all',minVRAM:'',maxHourly:'',includeControls:false,sort:[{field:'rate',direction:'desc'}],rules:[],columns:['gpu','rate','warmCost','hourly','vram','region','method','copies','slots','coverage'],pageSize:10};
 const presets={
   performance:['gpu','rate','warmCost','hourly','vram','region','method','copies','slots','coverage'],
+  project:['gpu','rate','projectRendering','projectGPUCost','projectRental','projectIdle','resolution','method','copies','slots','coverage'],
   startup:['gpu','region','stock','startup','download','cold','hardware.cudaVariant','hardware.torch','hardware.comfy','hardware.hostRAMBytes','coverage'],
   evidence:['gpu','resolution','conditioning','method','copies','slots','rounds','images','date','attempt','coverage']
 };
@@ -53,7 +57,14 @@ function matchesRule(row,rule){
   if(wanted.trim()===''||!Number.isFinite(Number(value))||!Number.isFinite(Number(wanted)))return false;
   return rule.op==='gte'?Number(value)>=Number(wanted):rule.op==='lte'?Number(value)<=Number(wanted):false;
 }
-export function queryExplorer(rows,state){
+export function projectMetrics(row,config,evidence){
+  if(row.coverage!=='Completed'||!config||!evidence)return {};
+  try{
+    const p=buildPlan({...config,gpu:row.gpuId,resolution:row.resolution,encodingProfile:row.conditioning,executionMode:row.method,imageWorkers:String(row.method==='resident'?row.copies:row.slots),measurementAttempt:row.attempt,policy:config.policy==='serial'?'serial':'proposed'},evidence),r=schedule(p);
+    return {projectRendering:r.tasks.filter(t=>t.lane==='render').reduce((sum,t)=>sum+t.duration,0)/60,projectGPUCost:r.gpuUSD,projectRental:r.rentalSeconds/60,projectIdle:r.gpuIdleSeconds/60};
+  }catch{return {};}
+}
+export function queryExplorer(rows,state,metrics){
   const eligible=row=>state.includeControls||!['Control','Incomplete'].includes(row.coverage);
   const filtered=rows.filter(row=>eligible(row)
     &&(row.coverage==='Unmeasured'||state.resolution==='all'||row.resolution===state.resolution)
@@ -64,12 +75,12 @@ export function queryExplorer(rows,state){
     &&(state.region==='all'||row.region===state.region)
     &&(state.minVRAM===''||(!missing(row.vram)&&row.vram>=Number(state.minVRAM)))
     &&(state.maxHourly===''||(!missing(row.hourly??row.quote)&&(row.hourly??row.quote)<=Number(state.maxHourly)))
-    &&state.rules.every(rule=>matchesRule(row,rule)));
+    &&state.rules.every(rule=>matchesRule(PROJECT_FIELDS.has(rule.field)&&metrics?{...row,...metrics(row)}:row,rule)));
   const groups=new Map();for(const row of filtered){if(!groups.has(row.gpuId))groups.set(row.gpuId,[]);groups.get(row.gpuId).push(row);}
   const selected=state.view==='tests'?filtered:[...groups.values()].map(group=>group.reduce((a,b)=>
     // "Best" always means highest completed throughput, independent of table sort.
     a.coverage==='Completed'&&b.coverage!=='Completed'?a:b.coverage==='Completed'&&a.coverage!=='Completed'?b:compareValues(a.rate,b.rate,'desc')<=0?a:b));
-  return selected.sort((a,b)=>{
+  return selected.map(row=>metrics?{...row,...metrics(row)}:row).sort((a,b)=>{
     for(const rule of state.sort){const delta=compareValues(a[rule.field],b[rule.field],rule.direction);if(delta)return delta;}
     return a.id.localeCompare(b.id);
   });
@@ -87,7 +98,10 @@ function formatted(value,key){
 }
 export function mountGPUExplorer(host,data,onApply){
   const rows=explorerRows(data),fields=explorerFields(rows),byKey=new Map(fields.map(f=>[f.key,f])),STORE='questiontemplate-gpu-explorer-v1';
-  let state=structuredClone(EXPLORER_DEFAULTS),page=0;
+  let state=structuredClone(EXPLORER_DEFAULTS),page=0,projectConfig,projectEvidence,projectKey='',projectCache=new Map();
+  const metrics=row=>{if(!projectCache.has(row.id))projectCache.set(row.id,projectMetrics(row,projectConfig,projectEvidence));return projectCache.get(row.id);};
+  // Compute schedules only when projected fields are displayed, filtered or sorted.
+  const matches=()=>queryExplorer(rows,state,[...state.columns,...state.sort.map(r=>r.field),...state.rules.map(r=>r.field)].some(k=>PROJECT_FIELDS.has(k))?metrics:undefined);
   try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved&&Array.isArray(saved.sort)&&Array.isArray(saved.rules)&&Array.isArray(saved.columns)){
     state={...state,...saved,columns:saved.columns.filter(k=>byKey.has(k)),sort:saved.sort.filter(r=>r&&byKey.has(r.field)&&['asc','desc'].includes(r.direction)).slice(0,6),rules:saved.rules.filter(r=>r&&byKey.has(r.field)&&['exists','missing','contains','equals','notEqual','gte','lte'].includes(r.op)).slice(0,12)};
     for(const [key,valid] of Object.entries({view:['best','tests'],resolution:['all','720p','1080p'],conditioning:['all','fresh','cached'],method:['all','resident','pipeline','hybrid'],coverage:['all','completed','unmeasured','incomplete','control']}))if(!valid.includes(state[key]))state[key]=EXPLORER_DEFAULTS[key];
@@ -113,7 +127,7 @@ export function mountGPUExplorer(host,data,onApply){
     <div class="explorer-rule-header"><h3>Sort order</h3><button class="button" data-add-sort>Add tie-breaker</button></div><div data-sorts></div>
     <details class="explorer-advanced"><summary>Filters for any recorded field</summary><p class="caption">All conditions must match. Missing values never become zero.</p><div data-rules></div><button class="button" data-add-rule>Add field filter</button></details>
     <details class="explorer-advanced"><summary>Choose columns · <span data-column-count></span> fields available</summary><div class="explorer-presets"><button class="button" data-preset="performance">Speed & cost</button><button class="button" data-preset="startup">Startup & host</button><button class="button" data-preset="evidence">Test evidence</button><button class="button" data-all-columns>All recorded fields</button></div><div class="explorer-columns">${fields.map(f=>`<label><input type="checkbox" data-column="${esc(f.key)}" ${state.columns.includes(f.key)?'checked':''}> ${esc(f.label)}</label>`).join('')}</div></details>
-    <div class="explorer-rule-header"><p data-count role="status"></p><button class="button" data-csv>Export filtered CSV</button></div>
+    <p class="caption" data-project-scope></p><div class="explorer-rule-header"><p data-count role="status"></p><button class="button" data-preset="project">Rental & rendering</button><button class="button" data-csv>Export filtered CSV</button></div>
     <div class="evidence-table explorer-table" tabindex="0" aria-label="Sortable GPU measurements"><table><thead></thead><tbody></tbody></table></div>
     <div class="explorer-paging"><button class="button" data-prev>Previous</button><span data-page></span><button class="button" data-next>Next</button><label>Rows per page${select('data-size',[[10,'10'],[25,'25'],[50,'50']],state.pageSize)}</label></div>
     <p class="caption">Rates cover warm image delivery; startup, API, narration, reviews and rendering are separate. Best tested is not a hardware maximum. Each row retains its own host, location and settings. Catalogue price/stock are historical snapshots, not live availability. Untested candidates have no inferred speed. Raw per-image traces remain in the benchmark accounting section.</p><section data-inspector hidden class="explorer-inspector"></section>`;
@@ -133,16 +147,17 @@ export function mountGPUExplorer(host,data,onApply){
     if($('[data-use]'))$('[data-use]').onclick=()=>onApply({gpu:row.gpuId,resolution:row.resolution,encodingProfile:row.conditioning,executionMode:row.method,imageWorkers:String(row.method==='resident'?row.copies:row.slots),measurementAttempt:row.attempt});
   };
   function render(){
-    const matches=queryExplorer(rows,state),pages=Math.max(1,Math.ceil(matches.length/state.pageSize));page=Math.min(page,pages-1);
+    const results=matches(),pages=Math.max(1,Math.ceil(results.length/state.pageSize));page=Math.min(page,pages-1);
     const columns=state.columns.map(k=>byKey.get(k)).filter(Boolean);
-    $('[data-count]').textContent=`${matches.length} ${state.view==='best'?'GPUs':'test configurations'} · ${fields.length} sortable fields · missing values last`;
+    $('[data-count]').textContent=`${results.length} ${state.view==='best'?'GPUs':'test configurations'} · ${fields.length} sortable fields · missing values last`;
+    $('[data-project-scope]').textContent=projectConfig?`Project estimates: ${projectConfig.minutes}-minute video · ${projectConfig.chapters} chapters · ${projectConfig.policy==='serial'?'sequential':'proposed overlap'} · current narration, checks, intro and retry settings. Rental covers Boot → Stop, including idle/setup. Rendering is local 720p/24fps summed work, not elapsed finish time. Manual timeline moves are excluded; unmeasured configurations have no estimate.`:'Project estimates load with the planner settings.';
     $('[data-column-count]').textContent=fields.length;
     $('thead').innerHTML='<tr>'+columns.map(f=>{const rank=state.sort.findIndex(s=>s.field===f.key),dir=state.sort[rank]?.direction;return `<th scope="col" ${rank===0?`aria-sort="${dir==='asc'?'ascending':'descending'}"`:''}><button data-header="${esc(f.key)}">${esc(f.label)}${rank>=0?` ${dir==='asc'?'↑':'↓'}${rank+1}`:''}</button></th>`;}).join('')+'<th scope="col">Details</th></tr>';
-    $('tbody').innerHTML=matches.length?matches.slice(page*state.pageSize,(page+1)*state.pageSize).map(row=>`<tr data-row="${esc(row.id)}">${columns.map(f=>`<td title="${esc(missing(row[f.key])?'Not measured / recorded':String(row[f.key]))}">${esc(formatted(row[f.key],f.key))}</td>`).join('')}<td><button class="button" data-inspect="${esc(row.id)}" aria-label="Inspect ${esc(row.gpu)} ${esc(row.attempt||'catalogue')}">Inspect</button></td></tr>`).join(''):`<tr><td colspan="${columns.length+1}">No matching GPU records. Broaden your filters; missing measurements are not substituted.</td></tr>`;
+    $('tbody').innerHTML=results.length?results.slice(page*state.pageSize,(page+1)*state.pageSize).map(row=>`<tr data-row="${esc(row.id)}">${columns.map(f=>`<td title="${esc(missing(row[f.key])?'Not measured / recorded':String(row[f.key]))}">${esc(formatted(row[f.key],f.key))}</td>`).join('')}<td><button class="button" data-inspect="${esc(row.id)}" aria-label="Inspect ${esc(row.gpu)} ${esc(row.attempt||'catalogue')}">Inspect</button></td></tr>`).join(''):`<tr><td colspan="${columns.length+1}">No matching GPU records. Broaden your filters; missing measurements are not substituted.</td></tr>`;
     $('[data-page]').textContent=`Page ${page+1} / ${pages}`;$('[data-prev]').disabled=page===0;$('[data-next]').disabled=page>=pages-1;
     host.querySelectorAll('[data-header]').forEach(b=>b.onclick=()=>{const field=b.dataset.header,old=state.sort.find(s=>s.field===field);state.sort=[{field,direction:old?.direction==='asc'?'desc':'asc'},...state.sort.filter(s=>s.field!==field)].slice(0,6);page=0;drawRules();render();});
-    host.querySelectorAll('[data-inspect]').forEach(b=>b.onclick=()=>inspect(rows.find(r=>r.id===b.dataset.inspect)));
-    $('[data-csv]').disabled=!matches.length;
+    host.querySelectorAll('[data-inspect]').forEach(b=>b.onclick=()=>{const row=results.find(r=>r.id===b.dataset.inspect);inspect({...row,...metrics(row)});});
+    $('[data-csv]').disabled=!results.length;
     save();
   }
   host.querySelectorAll('[data-filter]').forEach(el=>{const update=()=>{state[el.dataset.filter]=el.value;if(el.dataset.filter==='coverage'&&['incomplete','control'].includes(el.value)){state.includeControls=true;$('[data-controls]').checked=true;}page=0;render();};el[el.type==='search'?'oninput':'onchange']=update;});
@@ -153,8 +168,8 @@ export function mountGPUExplorer(host,data,onApply){
   const setColumns=columns=>{state.columns=columns.filter(k=>byKey.has(k));host.querySelectorAll('[data-column]').forEach(el=>el.checked=state.columns.includes(el.dataset.column));render();};
   host.querySelectorAll('[data-preset]').forEach(el=>el.onclick=()=>setColumns(presets[el.dataset.preset]));$('[data-all-columns]').onclick=()=>setColumns(fields.map(f=>f.key));
   $('[data-prev]').onclick=()=>{page--;render();};$('[data-next]').onclick=()=>{page++;render();};$('[data-size]').onchange=e=>{state.pageSize=Number(e.target.value);page=0;render();};
-  $('[data-reset]').onclick=()=>{try{localStorage.removeItem(STORE);}catch{}mountGPUExplorer(host,data,onApply);};
-  $('[data-csv]').onclick=()=>{const csv=explorerCSV(queryExplorer(rows,state),state.columns.map(k=>byKey.get(k)));const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='studio-gpu-explorer.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+  $('[data-reset]').onclick=()=>{state=structuredClone(EXPLORER_DEFAULTS);page=0;host.querySelectorAll('[data-filter]').forEach(el=>el.value=state[el.dataset.filter]);$('[data-controls]').checked=false;$('[data-size]').value=state.pageSize;setColumns(state.columns);drawRules();$('[data-inspector]').hidden=true;render();};
+  $('[data-csv]').onclick=()=>{const csv=explorerCSV(matches(),state.columns.map(k=>byKey.get(k)));const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='studio-gpu-explorer.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   drawRules();render();
-  return {getState:()=>structuredClone(state),getRows:()=>queryExplorer(rows,state)};
+  return {getState:()=>structuredClone(state),getRows:matches,updateProject:(config,evidence)=>{const key=JSON.stringify(config);if(key===projectKey)return;projectKey=key;projectConfig={...config};projectEvidence=evidence;projectCache.clear();$('[data-inspector]').hidden=true;render();}};
 }

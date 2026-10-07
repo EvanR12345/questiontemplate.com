@@ -4,11 +4,12 @@ import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
 import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=automatic-speed-20261007';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=project-costs-20261007';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
 const keys=Object.keys(DEFAULTS),booleans=keys.filter(k=>typeof DEFAULTS[k]==='boolean');
+let gpuExplorer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
 const snapshot=()=>({type:'studio-pipeline-plan',version:VERSION,config:{...config},preferences:structuredClone(preferences),uncertainty});
 function checkpoint(){history.push(snapshot());if(history.length>40)history.shift();$('undo').disabled=false;}
@@ -35,6 +36,7 @@ function rebuild(){
     if(result.diagnostics.length)throw Error(result.diagnostics.join('; '));
     $('error').hidden=true;
     config=plan.config;
+    gpuExplorer?.updateProject(config,evidence);
     renderGenerationSpeed();
     $('sampleField').hidden=config.qc!=='sampled';$('introFields').hidden=!config.intro;
     $('modeNote').textContent=config.policy==='proposed'?'Planning experiment: separates GPU work from retrieval and overlaps chapter rendering. This is not deployed production behavior.':config.policy==='current'?'Installed cloud overlap: Luna lookahead and QC share API slots. The image lane includes preparation through retrieval. Rendering begins after image work.':'Every task runs sequentially. This is the comparison baseline, not a speed recommendation.';
@@ -186,7 +188,7 @@ async function start(){
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
     if(concurrencyResponse.ok){
       evidence.concurrency=await concurrencyResponse.json();
-      mountGPUExplorer($('gpuExplorer'),evidence.concurrency,settings=>{
+      gpuExplorer=mountGPUExplorer($('gpuExplorer'),evidence.concurrency,settings=>{
         const next={...config,...settings,policy:config.policy==='serial'?'serial':'proposed'};
         try{buildPlan(next,evidence);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();switchView('schedule');toast('Exact measured GPU configuration applied. Production settings remain unchanged.');}catch(error){toast(error.message);}
       });
