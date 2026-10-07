@@ -1,5 +1,6 @@
 """Local composition of existing story art; no paid generation or video changes."""
 from pathlib import Path
+import uuid
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from studio_branding import font_path
 from studio_data import digest
@@ -46,9 +47,13 @@ def make(store, pid, options):
     identity=digest({'source':source,'mtime':path.stat().st_mtime_ns,'title':title,'part':part,'version':1})
     folder=store.folder(pid)/'thumbnails'; folder.mkdir(exist_ok=True)
     target=folder/f'thumbnail-{identity[:20]}.jpg'
-    canvas.convert('RGB').save(target,'JPEG',quality=92,optimize=True)
-    if target.stat().st_size>2_000_000:
-        canvas.convert('RGB').save(target,'JPEG',quality=82,optimize=True)
+    temporary=target.with_name(target.stem+'.writing.'+uuid.uuid4().hex+'.jpg')
+    try:
+        canvas.convert('RGB').save(temporary,'JPEG',quality=92,optimize=True)
+        if temporary.stat().st_size>2_000_000:
+            canvas.convert('RGB').save(temporary,'JPEG',quality=82,optimize=True)
+        temporary.replace(target)
+    finally:temporary.unlink(missing_ok=True)
     asset={'path':target.relative_to(store.folder(pid)).as_posix(),'source':source,'title':title,'part':part,'width':1280,'height':720}
     def save(q):
         if not any(x['path']==asset['path'] for x in q.setdefault('thumbnails',[])): q['thumbnails'].append(asset)

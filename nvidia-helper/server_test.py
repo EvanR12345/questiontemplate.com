@@ -3,6 +3,10 @@ import struct
 import threading
 import unittest
 import tempfile
+import io
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stdout
+from unittest.mock import patch
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from server import make_handler
@@ -125,6 +129,31 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(content, b'saved-aac-audition')
         self.assertEqual(self.request('/studio/media-link', {'project':p['id'], 'path':'../../private.m4a'})[0],400)
         self.assertFalse(self.engine.calls)
+
+    def test_parallel_previews_reuse_one_ticket_and_expiry_still_applies(self):
+        store = self.server.RequestHandlerClass.studio_service.store
+        project = store.save(new_project())
+        store.asset(project['id'], 'preview.mp4').write_bytes(b'saved-video')
+        def link(_):
+            return json.loads(self.request('/studio/media-link', {'project':project['id'], 'path':'preview.mp4'})[2])
+        with ThreadPoolExecutor(4) as pool:links=list(pool.map(link, range(16)))
+        self.assertEqual(len({item['url'] for item in links}), 1)
+        ticket_path='/studio/media?'+links[0]['url'].split('/studio/media?',1)[1]
+        self.assertEqual(self.request(ticket_path)[2], b'saved-video')
+        with patch('server.time.time', return_value=links[0]['expires']+1):
+            self.assertEqual(self.request(ticket_path)[0], 401)
+            replacement=link(0)
+            self.assertNotEqual(replacement['url'], links[0]['url'])
+
+    def test_unexpected_errors_preserve_diagnostics_without_credentials_in_logs(self):
+        secret='sk-proj-'+ 'examplecredential' * 3
+        log=io.StringIO()
+        with patch.object(self.engine, 'prepare', side_effect=RuntimeError('Upstream HTTP 429; Bearer '+secret)), redirect_stdout(log):
+            code, _, raw=self.request('/prepare', {'voice':'af_heart'})
+        self.assertEqual(code, 503)
+        self.assertIn(b'HTTP 429', raw)
+        self.assertNotIn(secret.encode(), raw)
+        self.assertNotIn(secret, log.getvalue())
 
     def test_media_seeks_reject_bad_ranges_without_breaking_playback(self):
         store = self.server.RequestHandlerClass.studio_service.store

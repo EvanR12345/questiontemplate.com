@@ -21,7 +21,8 @@ def sha(path):
     return h.hexdigest()
 
 def stable_file(path):
-    return (path.stat().st_size, path.stat().st_mtime_ns)
+    stat = path.stat()
+    return (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
 
 class S3Objects:
     provider = 'Cloudflare R2'
@@ -175,20 +176,26 @@ class R2Archive:
         with self.store.lock:
             if (folder/'project.json').read_bytes() != snapshot:
                 self.enqueue(pid); return False
-            if old and old['project']==project and old.get('files')==records:
-                manifest['savedAt']=old['savedAt']
-            else:
-                from studio_data import digest
-                history=digest({'project':project,'files':records})[:16]
-                self.objects.put_json(f'studio/history/{pid}/{project["revision"]}-{history}.json',manifest)
-                self.objects.put_json(f'studio/manifests/{pid}.json',manifest,etag,create=old is None)
+        # Snapshot + immutable assets are already complete. Network requests
+        # must not hold the project lock and stall edits/generation commits.
+        # The cloud's condition still rejects concurrent remote revisions.
+        if old and old['project']==project and old.get('files')==records:
+            manifest['savedAt']=old['savedAt']
+        else:
+            from studio_data import digest
+            history=digest({'project':project,'files':records})[:16]
+            self.objects.put_json(f'studio/history/{pid}/{project["revision"]}-{history}.json',manifest)
+            self.objects.put_json(f'studio/manifests/{pid}.json',manifest,etag,create=old is None)
         self.manifests.pop(pid,None)
         self.catalogue_at = 0
-        with self.cv:
-            self.states[pid] = {'status':'SYNCED','revision':project['revision'],'savedAt':manifest['savedAt'],
-                'files':len(records),'bytes':sum(x['bytes'] for x in records.values()),'lastUploadBytes':uploaded,'error':''}
-            self.persist()
-        return True
+        with self.store.lock:
+            changed = (folder/'project.json').read_bytes() != snapshot
+            with self.cv:
+                self.states[pid] = {'status':'PENDING' if changed else 'SYNCED','revision':project['revision'],'savedAt':manifest['savedAt'],
+                    'files':len(records),'bytes':sum(x['bytes'] for x in records.values()),'lastUploadBytes':uploaded,'error':''}
+                self.persist()
+            if changed:self.enqueue(pid)
+        return not changed
 
     def restore(self, pid):
         manifest,_ = self.manifest(pid,True)

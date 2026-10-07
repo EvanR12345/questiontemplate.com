@@ -4,6 +4,7 @@ import hmac
 import io
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -111,6 +112,16 @@ def allowed_origin(origin):
     return parsed.scheme == 'http' and parsed.hostname in ('127.0.0.1', 'localhost')
 
 
+def safe_error_message(error):
+    """Keep useful diagnostics without reflecting credentials into the browser."""
+    message = str(error)
+    message = re.sub(r'\b(?:sk-|rpa_|rps_|hf_|GOCSPX-)[A-Za-z0-9_-]{12,}', '[redacted credential]', message)
+    message = re.sub(r'(?i)\bBearer\s+[^\s,;\"\']+', 'Bearer [redacted]', message)
+    message = re.sub(r'(?i)([?&](?:api_?key|access_token|refresh_token|token|code|secret|password)=)[^&#\s]+', r'\1[redacted]', message)
+    message = re.sub(r'(https?://)[^\s/@:]+:[^\s/@]+@', r'\1[redacted]@', message)
+    return message[:800]
+
+
 def make_handler(audio_engine, key, queue_root=None, image_factory=None):
     gpu_lock = getattr(audio_engine, "lock", threading.Lock())
     image_engine = None
@@ -144,6 +155,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
     studio = StudioService(queue_root or Path(__file__).resolve().parent / 'outputs',audio_engine,get_image_engine,gpu_lock,before_audio,
                            before_image if hasattr(audio_engine,'model') else lambda: None,queue)
     media_tickets = {}
+    media_by_path = {}
+    media_lock = threading.RLock()
+    next_media_cleanup = 0
 
     class Handler(BaseHTTPRequestHandler):
         image_queue = queue
@@ -193,7 +207,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             path = urlparse(self.path).path
             if path=='/studio/media':
                 ticket=parse_qs(urlparse(self.path).query).get('ticket',[''])[0]
-                item=media_tickets.get(ticket)
+                with media_lock:item=media_tickets.get(ticket)
                 if not item or item['expires']<time.time():self.reply(401,{'error':'Media preview expired. Reopen preview.'});return
                 self.send_asset(item['path'])
                 return
@@ -231,7 +245,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
-                except (ValueError,KeyError,FileNotFoundError) as error:self.reply(404,{'error':str(error)})
+                except (ValueError,KeyError,FileNotFoundError) as error:self.reply(404,{'error':safe_error_message(error)})
                 return
             if path == '/health':
                 self.reply(200, audio_engine.health())
@@ -243,7 +257,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 try:
                     self.reply(200, queue.result_path(path.rsplit('/', 1)[-1]).read_bytes(), binary=True, content_type='image/png')
                 except (ValueError, FileNotFoundError) as error:
-                    self.reply(404, {'error': str(error)})
+                    self.reply(404, {'error': safe_error_message(error)})
             else:
                 self.reply(404, {'error': 'Unknown endpoint.'})
 
@@ -280,17 +294,28 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):pass
 
         def studio_post(self,path,body):
+            nonlocal next_media_cleanup
             if path=='/studio/media-link':
                 if getattr(studio,'storage',None) and studio.storage.enabled:
                     url=studio.storage.media_url(body['project'],body['path'])
                     if url:return {'url':url,'expires':time.time()+3600,'provider':studio.storage.provider}
                 file=studio.store.asset(body['project'],body['path'])
                 if not file.is_file():raise ValueError('Asset is unavailable.')
-                ticket=secrets.token_hex(24)
-                for old in list(media_tickets):
-                    if media_tickets[old]['expires']<time.time():del media_tickets[old]
-                media_tickets[ticket]={'path':file,'expires':time.time()+3600}
-                return {'url':f'http://127.0.0.1:{PORT}/studio/media?ticket='+ticket,'expires':time.time()+3600}
+                now=time.time()
+                with media_lock:
+                    if now >= next_media_cleanup:
+                        for old,item in list(media_tickets.items()):
+                            if item['expires'] < now:
+                                del media_tickets[old]
+                                if media_by_path.get(item['path']) == old:media_by_path.pop(item['path'],None)
+                        next_media_cleanup=now+60
+                    ticket=media_by_path.get(file)
+                    if not ticket or media_tickets[ticket]['expires'] < now:
+                        ticket=secrets.token_hex(24)
+                        media_tickets[ticket]={'path':file,'expires':now+3600}
+                        media_by_path[file]=ticket
+                    expires=media_tickets[ticket]['expires']
+                return {'url':f'http://127.0.0.1:{PORT}/studio/media?ticket='+ticket,'expires':expires}
             if path=='/studio/create':
                 p=new_project(str(body.get('name','My story'))[:200]);legacy=body.get('legacy')
                 p['settings']['video']['fps']=60
@@ -511,9 +536,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 finally:
                     gpu_lock.release()
             except (ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
-                self.reply(400, {'error': str(error) or 'Invalid request.'})
+                self.reply(400, {'error': safe_error_message(error) or 'Invalid request.'})
             except Exception as error:
-                message = str(error)
+                message = safe_error_message(error)
                 if 'out of memory' in message.lower():
                     try:
                         audio_engine.torch.cuda.empty_cache()
@@ -522,8 +547,11 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     message = 'GPU memory ran out. Close GPU apps, use 512×512, or generate without character references.'
                 else:
                     print('Local helper request failed:', type(error).__name__, flush=True)
-                    traceback.print_exc()
-                    message = type(error).__name__ + ': ' + str(error)[:800]
+                    # Stack locations help debugging; raw exception text can
+                    # contain upstream URLs, tokens or private request bodies.
+                    for frame in traceback.extract_tb(error.__traceback__):
+                        print('  at', frame.name, 'line', frame.lineno, flush=True)
+                    message = type(error).__name__ + ': ' + message
                 self.reply(503, {'error': message})
     return Handler
 

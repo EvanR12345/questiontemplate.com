@@ -15,6 +15,8 @@ def local_url(value):
         raise ValueError(
             "Use a local HTTP backend. Remote providers require a separate explicitly configured adapter."
         )
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError('Use a local backend address without credentials, query parameters or fragments.')
     return value.rstrip("/")
 
 

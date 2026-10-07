@@ -8,10 +8,17 @@ from director_provider import (
     STR,
     validate_schema,
     compact_source_evidence,
+    local_url,
 )
 
 
 class DirectorRecoveryTest(unittest.TestCase):
+    def test_local_backend_rejects_secret_bearing_addresses(self):
+        self.assertEqual(local_url('http://127.0.0.1:8188/'), 'http://127.0.0.1:8188')
+        for url in ('http://user:password@localhost:8188', 'http://localhost:8188?token=private',
+                    'http://localhost:8188#secret', 'https://external.example'):
+            with self.subTest(url=url), self.assertRaises(ValueError):local_url(url)
+
     def test_camera_fields_reject_action_prose_but_keep_creative_composition(self):
         from director_provider import CAMERA
         valid = {'shotIndex':0,'shot':'medium wide','angle':'low angle',

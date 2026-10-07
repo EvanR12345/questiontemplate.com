@@ -2,6 +2,7 @@ import copy, json, tempfile, unittest, hashlib, wave, math, os, subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from array import array
+from unittest.mock import patch
 from pathlib import Path
 from PIL import Image
 from studio_data import ProjectStore,new_project
@@ -37,12 +38,61 @@ class CloudSaveTests(unittest.TestCase):
         self.a.sync(self.p['id']);self.assertEqual(self.obj.uploads,n)
         self.assertTrue(self.image.exists());self.assertEqual(self.a.status()['projects'][self.p['id']]['status'],'SYNCED')
         self.assertEqual(self.a.files(self.p['id'])['files'][0]['sha256'],sha(self.image))
+
+    def test_atomic_asset_replacement_with_same_size_and_mtime_is_not_skipped(self):
+        target=self.store.asset(self.p['id'], 'state.json');target.write_text('{"value":1}')
+        self.a.sync(self.p['id']);original=target.stat()
+        replacement=target.with_suffix('.writing.json');replacement.write_text('{"value":2}')
+        os.utime(replacement, ns=(original.st_atime_ns, original.st_mtime_ns))
+        replacement.replace(target)
+        self.assertEqual(target.stat().st_size,original.st_size)
+        self.assertEqual(target.stat().st_mtime_ns,original.st_mtime_ns)
+        self.a.sync(self.p['id'])
+        manifest,_=self.a.manifest(self.p['id'],True)
+        self.assertEqual(manifest['files']['state.json']['sha256'],sha(target))
+        self.assertEqual(self.obj.data[manifest['files']['state.json']['key']][0],b'{"value":2}')
+
+    def test_failed_thumbnail_encoding_preserves_completed_thumbnail_and_leaves_no_partial(self):
+        options={'source':'art.png','title':'Story','part':'1'}
+        asset=make(self.store,self.p['id'],options)
+        target=self.store.asset(self.p['id'],asset['path']);before=target.read_bytes()
+        def fail(image,filename,*args,**kwargs):
+            Path(filename).write_bytes(b'partial-jpeg')
+            raise OSError('Simulated encoder failure')
+        with patch.object(Image.Image,'save',fail), self.assertRaises(OSError):
+            make(self.store,self.p['id'],options)
+        self.assertEqual(target.read_bytes(),before)
+        self.assertEqual(list(target.parent.glob('*.writing.*')),[])
     def test_failed_upload_leaves_previous_cloud_snapshot_and_local_edits(self):
         self.a.sync(self.p['id']);key='studio/manifests/'+self.p['id']+'.json';old=self.obj.data[key]
         self.store.mutate(self.p['id'],lambda p:p.update(name='Keep me'))
         Image.new('RGB',(640,360),'red').save(self.image);self.obj.fail=True
         with self.assertRaises(RuntimeError):self.a.sync(self.p['id'])
         self.assertEqual(self.obj.data[key],old);self.assertEqual(self.store.load(self.p['id'])['name'],'Keep me')
+
+    def test_slow_cloud_publication_does_not_block_local_edits_and_requeues_new_revision(self):
+        entered=threading.Event();release=threading.Event();original=self.obj.put_json
+        def slow(key,*args,**kwargs):
+            if key.startswith('studio/manifests/'):
+                entered.set()
+                if not release.wait(5):raise TimeoutError('Test network not released')
+            return original(key,*args,**kwargs)
+        self.obj.put_json=slow
+        with ThreadPoolExecutor(2) as pool:
+            sync=pool.submit(self.a.sync,self.p['id'])
+            try:
+                self.assertTrue(entered.wait(5))
+                edit=pool.submit(self.store.mutate,self.p['id'],lambda p:p.update(name='New local revision'))
+                edit.result(timeout=1)
+            finally:release.set()
+            self.assertFalse(sync.result(timeout=5))
+        self.assertEqual(self.store.load_local(self.p['id'])['name'],'New local revision')
+        self.assertEqual(self.a.status()['projects'][self.p['id']]['status'],'PENDING')
+        self.assertIn(self.p['id'],self.a.pending)
+        self.obj.put_json=original;self.a.sync(self.p['id'])
+        manifest,_=self.a.manifest(self.p['id'],True)
+        self.assertEqual(manifest['project']['name'],'New local revision')
+        self.assertEqual(self.a.status()['projects'][self.p['id']]['status'],'SYNCED')
     def test_dashboard_preserves_pending_files_and_does_not_label_local_edits_cloud_saved(self):
         before={r['path']:r for r in self.a.files(self.p['id'])['files']}
         self.assertIn('art.png',before);self.assertFalse(before['art.png']['cloud'])
