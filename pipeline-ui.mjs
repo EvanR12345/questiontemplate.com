@@ -4,6 +4,7 @@ import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
 import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=automatic-speed-20261007';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -185,6 +186,10 @@ async function start(){
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
     if(concurrencyResponse.ok){
       evidence.concurrency=await concurrencyResponse.json();
+      mountGPUExplorer($('gpuExplorer'),evidence.concurrency,settings=>{
+        const next={...config,...settings,policy:config.policy==='serial'?'serial':'proposed'};
+        try{buildPlan(next,evidence);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();switchView('schedule');toast('Exact measured GPU configuration applied. Production settings remain unchanged.');}catch(error){toast(error.message);}
+      });
       mountConcurrencyLab($('concurrencyLab'),evidence.concurrency,settings=>{
         const next={...config,...settings,policy:config.policy==='serial'?'serial':'proposed'};
         try{buildPlan(next,evidence);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();switchView('schedule');toast('Measured throughput applied to the planning schedule. Production settings remain unchanged.');}catch(error){toast(error.message);}
