@@ -29,7 +29,7 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
     const [status,files,publisher]=await Promise.all([api('storage?project='+p.id),api('files?project='+p.id),api('publisher').catch(()=>({configured:false,connected:false}))]);
     const state=status.projects[p.id]??{};
     if(!$('cloudStatus'))return;
-    $('cloudStatus').textContent=status.enabled?`Cloudflare R2 · ${state.status??'Not yet synced'} · ${state.files??0} cloud files · ${bytes(state.bytes??0)}${state.error?' · '+state.error:''}${status.error?' · '+status.error:''}`:status.error||'Cloudflare R2 is not connected yet. Existing helper files remain safe.';
+    $('cloudStatus').textContent=status.enabled?`${status.provider||'Cloud storage'} · ${state.status??'Not yet synced'} · ${state.files??0} cloud files · ${bytes(state.bytes??0)}${state.error?' · '+state.error:''}${status.error?' · '+status.error:''}`:status.error||'Cloud storage is not connected yet. Existing helper files remain safe.';
     rows=files.files;paint();
     const publishedJobs=await Promise.all((p.publishing??[]).map(async job=>{
       if(!publisher.configured||['COMPLETE','CANCELLED'].includes(job.status))return job;

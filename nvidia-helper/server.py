@@ -255,7 +255,12 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 match=re.fullmatch(r'bytes=(\d*)-(\d*)',value)
                 if not match:self.reply(416,{'error':'Invalid range.'});return
                 a,b=match.groups()
-                start=int(a) if a else max(0,size-int(b));end=min(int(b),size-1) if a and b else size-1
+                if not (a or b):self.reply(416,{'error':'Invalid range.'});return
+                try:
+                    start=int(a) if a else max(0,size-int(b))
+                    end=min(int(b),size-1) if a and b else size-1
+                except ValueError:
+                    self.reply(416,{'error':'Invalid range.'});return
                 if start>=size or end<start:self.reply(416,{'error':'Invalid range.'});return
                 partial=True
             self.send_response(206 if partial else 200)
@@ -278,7 +283,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             if path=='/studio/media-link':
                 if getattr(studio,'storage',None) and studio.storage.enabled:
                     url=studio.storage.media_url(body['project'],body['path'])
-                    if url:return {'url':url,'expires':time.time()+3600,'provider':'Cloudflare R2'}
+                    if url:return {'url':url,'expires':time.time()+3600,'provider':studio.storage.provider}
                 file=studio.store.asset(body['project'],body['path'])
                 if not file.is_file():raise ValueError('Asset is unavailable.')
                 ticket=secrets.token_hex(24)
@@ -298,7 +303,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 return studio.store.save(p)
             if path=='/studio/import':return studio.store.save(body['project'])
             if path=='/studio/storage-sync':
-                if not studio.storage.enabled:raise ValueError('Connect the private Cloudflare R2 bucket before cloud saving.')
+                if not studio.storage.enabled:raise ValueError('Connect private cloud storage before cloud saving.')
                 projects=[body['project']] if body.get('project') else [p['id'] for p in studio.store.list_local()]
                 for pid in projects:
                     studio.store.load_local(pid);studio.storage.enqueue(pid)
@@ -315,6 +320,8 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 if operation=='connect':return studio.publisher.call(operation,{})
                 pid=body['project'];project=studio.store.load(pid)
                 if operation=='start':
+                    if not studio.storage.publisher_compatible:
+                        raise ValueError('This publisher uses R2. Copy and verify this video in R2 before publishing; no upload started.')
                     result=studio.publisher.call('start',options|{'project':pid})
                     save_upload_snapshot(studio.store,pid,result,initial=True)
                 else:

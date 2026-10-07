@@ -56,9 +56,10 @@ class BridgeTest(unittest.TestCase):
         self.thread.join()
         self.directory.cleanup()
 
-    def request(self, path='/health', body=None, key=KEY, origin=ORIGIN, method=None):
+    def request(self, path='/health', body=None, key=KEY, origin=ORIGIN, method=None, extra_headers=None):
         client = HTTPConnection('127.0.0.1', self.server.server_port, timeout=2)
         headers = {'Origin': origin, 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'}
+        headers.update(extra_headers or {})
         client.request(method or ('GET' if body is None else 'POST'), path, None if body is None else json.dumps(body), headers)
         response = client.getresponse()
         result = response.status, dict(response.getheaders()), response.read()
@@ -123,6 +124,29 @@ class BridgeTest(unittest.TestCase):
         self.assertTrue(headers['Content-Type'].startswith('audio/'))
         self.assertEqual(content, b'saved-aac-audition')
         self.assertEqual(self.request('/studio/media-link', {'project':p['id'], 'path':'../../private.m4a'})[0],400)
+        self.assertFalse(self.engine.calls)
+
+    def test_media_seeks_reject_bad_ranges_without_breaking_playback(self):
+        store = self.server.RequestHandlerClass.studio_service.store
+        project = store.save(new_project())
+        store.asset(project['id'], 'seek.mp4').write_bytes(b'0123456789')
+        _, _, body = self.request('/studio/media-link', {'project':project['id'], 'path':'seek.mp4'})
+        path = '/studio/media?' + json.loads(body)['url'].split('/studio/media?', 1)[1]
+        for value in ('bytes=-', 'bytes=-0', 'bytes=10-', 'bytes=8-2',
+                      'bytes=0-1,4-5', 'bytes=' + '9' * 5000 + '-'):
+            with self.subTest(value=value[:32]):
+                self.assertEqual(self.request(path, extra_headers={'Range':value})[0], 416)
+        for value, expected, content_range in (
+            ('bytes=2-4', b'234', 'bytes 2-4/10'),
+            ('bytes=-3', b'789', 'bytes 7-9/10'),
+            ('bytes=7-', b'789', 'bytes 7-9/10'),
+            ('bytes=8-99', b'89', 'bytes 8-9/10'),
+        ):
+            with self.subTest(value=value):
+                code, headers, content = self.request(path, extra_headers={'Range':value})
+                self.assertEqual((code, content), (206, expected))
+                self.assertEqual(headers['Content-Range'], content_range)
+        self.assertEqual(self.request(path)[2], b'0123456789')
         self.assertFalse(self.engine.calls)
 
 

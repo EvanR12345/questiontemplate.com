@@ -24,6 +24,8 @@ def stable_file(path):
     return (path.stat().st_size, path.stat().st_mtime_ns)
 
 class S3Objects:
+    provider = 'Cloudflare R2'
+    publisher_compatible = True
     def __init__(self, config):
         import boto3
         from botocore.config import Config
@@ -82,9 +84,26 @@ class R2Archive:
         if self.state_path.exists():
             try:self.states = json.loads(self.state_path.read_text(encoding='utf-8'))
             except (OSError,ValueError):self.journal_error='Cloud status journal could not be read. Local project data is unchanged; retry cloud save.'
+        requested_provider = 'r2'
         if self.objects is None and self.secret_path.exists():
-            try:self.objects = S3Objects(json.loads(self.secret_path.read_text(encoding='utf-8')))
-            except Exception:self.configuration_error='Cloud storage configuration is unavailable. Local audio and projects remain usable; check the private R2 credentials and SDK.'
+            try:
+                config = json.loads(self.secret_path.read_text(encoding='utf-8'))
+                requested_provider = config.get('provider', 'r2')
+                if config.get('provider', 'r2') == 'gcs':
+                    from google_storage import GCSObjects
+                    self.objects = GCSObjects(config)
+                elif config.get('provider', 'r2') == 'r2':self.objects = S3Objects(config)
+                else:raise ValueError('Unsupported storage provider.')
+            except Exception:self.configuration_error='Cloud storage configuration is unavailable. Local audio and projects remain usable; check the private storage credentials and SDK.'
+        self.provider = getattr(self.objects, 'provider', 'Google Cloud Storage' if requested_provider == 'gcs' else 'Cloudflare R2')
+        self.publisher_compatible = getattr(self.objects, 'publisher_compatible', requested_provider == 'r2')
+        if self.provider == 'Google Cloud Storage':
+            # Never display old R2 synchronization results as Google uploads.
+            self.state_path = store.root / 'cloud-sync-gcs.json'
+            self.states = {};self.journal_error = ''
+            if self.state_path.exists():
+                try:self.states = json.loads(self.state_path.read_text(encoding='utf-8'))
+                except (OSError,ValueError):self.journal_error='Cloud status journal could not be read. Retry cloud save.'
         self.enabled = self.objects is not None
         self.manifests = {}
         self.asset_locks = [threading.RLock() for _ in range(32)]
@@ -112,7 +131,8 @@ class R2Archive:
 
     def status(self, pid=None):
         with self.cv:
-            return {'enabled':self.enabled,'provider':'Cloudflare R2' if self.enabled else 'Local helper',
+            return {'enabled':self.enabled,'provider':self.provider if self.enabled else 'Local helper',
+                    'publisherCompatible':self.publisher_compatible,
                     'workingCache':True,'projects':copy.deepcopy(self.states if pid is None else {pid:self.states.get(pid,{})}),
                     'pending':len(self.pending),'error':self.configuration_error or self.journal_error}
 

@@ -70,7 +70,8 @@ class StudioService:
         self.renderer = VideoRenderer(self.store, self.config)
         self.renderer.prepare_outro = self.prepare_outro
         from studio_storage import R2Archive
-        self.storage = R2Archive(self.store, self.config_path.with_name('.r2-secrets.json'))
+        storage_config = self.config_path.with_name('.storage-secrets.json')
+        self.storage = R2Archive(self.store, storage_config if storage_config.exists() else self.config_path.with_name('.r2-secrets.json'))
         from studio_publisher import CloudPublisher
         self.publisher=CloudPublisher(self.config_path.with_name('.publisher-secrets.json'))
         self.cv = threading.Condition(threading.RLock())
