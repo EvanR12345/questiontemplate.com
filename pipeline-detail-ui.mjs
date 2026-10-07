@@ -13,11 +13,11 @@ export function startupCandidates(config,evidence){
  const values=Array.from({length:config.chapters},(_,i)=>evaluate(i+1));
  // Find a later clock start that preserves earliest image delivery and final finish.
  // This bounded binary search is a scheduling heuristic, not a global optimum.
- const baseline=values[0];
  for(const keepFastestVideo of [true,false]){
+  const baseline=values.reduce((a,b)=>(keepFastestVideo?a.result.end<=b.result.end:a.imageEnd<=b.imageEnd)?a:b);
   let lo=0,hi=Math.min(86400,baseline.imageEnd),balanced=baseline;
   for(let i=0;i<16&&hi-lo>1;i++){
-   const mid=(lo+hi)/2,v=evaluate(1,mid);
+   const mid=(lo+hi)/2,v=evaluate(baseline.readyChapters,mid);
    if(v.imageEnd<=baseline.imageEnd+.5&&(!keepFastestVideo||v.result.end<=baseline.result.end+.5)){lo=mid;balanced=v;}else hi=mid;
   }
   if(balanced.gpuStartSeconds>baseline.bootStart+1)values.push({...balanced,balanced:true,keepFastestVideo});
