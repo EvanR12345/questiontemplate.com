@@ -11,7 +11,9 @@ This Worker streams 16 MiB ranges directly from the private R2 bucket into a You
 5. Create the helper's private `.publisher-secrets.json` containing only `url` (the verified HTTPS workers.dev address) and `token`. Apply the same owner-only Windows ACL as `.studio-secrets.json` before writing it. This file is excluded from Git and project/cloud exports.
 6. In Studio → Files, connect YouTube and approve the Google consent screen. Then choose an uploaded cloud video, title, description, privacy and audience setting. Clicking upload is an explicit publishing decision.
 
-The account prerequisites and Google consent are not yet completed. The implementation is tested with a simulated R2/YouTube service; no real video has been uploaded by this module. Browser refresh or a laptop outage stops control requests, but restarting and pressing Resume safely continues the saved session. An unattended cloud coordinator is needed to continue transfers when Studio/helper is fully offline. This Worker does not run Kokoro, FFmpeg or image generation; moving all production off the laptop is separate compute integration.
+Account setup and Google channel consent are deployment prerequisites. The transfer implementation is tested with a simulated R2/YouTube service; deployment verification does not upload a real video. Browser refresh or a laptop outage stops control requests, but restarting and pressing Resume safely continues the saved session. An unattended cloud coordinator is needed to continue transfers when Studio/helper is fully offline. This Worker does not run Kokoro, FFmpeg or image generation; moving all production off the laptop is separate compute integration.
+
+While an external OAuth app remains in Google's Testing mode, upload authorization expires after seven days and the channel must reconnect ([Google token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)). Do not claim permanent connectivity or silently publish the OAuth app to production. R2 credentials also have their own configured expiration and must be renewed before that date.
 
 ## Tests
 
