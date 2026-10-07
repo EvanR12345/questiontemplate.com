@@ -1,0 +1,8 @@
+{
+  "name": "questiontemplate-publisher",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-07",
+  "workers_dev": true,
+  "r2_buckets": [{"binding":"STUDIO","bucket_name":"questiontemplate-studio"}],
+  "observability": {"enabled": false}
+}

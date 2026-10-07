@@ -12,15 +12,48 @@ from director_provider import (
 
 
 class DirectorRecoveryTest(unittest.TestCase):
-    def test_dialogue_quotes_are_data_not_strict_schema_enum_literals(self):
+    def test_camera_fields_reject_action_prose_but_keep_creative_composition(self):
+        from director_provider import CAMERA
+        valid = {'shotIndex':0,'shot':'medium wide','angle':'low angle',
+                 'composition':'Hero foreground right; teacher by the door.'}
+        validate_schema(valid,CAMERA)
+        with self.assertRaises(ValueError):
+            validate_schema(valid | {'shot':'Three heavy thuds as bodies hit the floor.'},CAMERA)
+        with self.assertRaises(ValueError):
+            validate_schema(valid | {'angle':'A tense dramatic reveal'},CAMERA)
+
+    def test_dialogue_evidence_uses_bounded_indices_not_quote_literals(self):
         class Capture(DirectorProvider):
             def call(self, role, context, schema, gate, **kwargs):
                 return schema
         schema = Capture().analyzeStory({'sentences': [{'text': '"Ah!" he cried.'}],
                                          'chapterCast': [{'id': 'hero'}]}, lambda _: None)
-        evidence = schema['properties']['changes']['items']['properties']['reason']
-        self.assertEqual(evidence['type'], 'string')
-        self.assertNotIn('enum', evidence)
+        evidence = schema['properties']['changes']['items']['properties']
+        self.assertNotIn('reason', evidence)
+        self.assertEqual(evidence['sentence'], {'type':'integer','enum':[0]})
+
+    def test_source_quote_restored_without_paraphrasing_or_merging_sentences(self):
+        class Capture(DirectorProvider):
+            def call(self, role, context, schema, gate, **kwargs):
+                value = {'summary':'Injured', 'changes':[
+                    {'characterId':'hero','field':'injury','value':'knee struck','sentence':0},
+                    {'characterId':'hero','field':'injury','value':'arm pierced','sentence':1}],
+                    'environmentChanges':[]}
+                return value
+        sentences = [{'text':'A baseball bat hit his knee.'},
+                     {'text':'Another man’s knife pierced his arm.'}]
+        result = Capture().analyzeStory({'sentences':sentences},lambda *_:None)
+        self.assertEqual([e['reason'] for e in result['changes']], [s['text'] for s in sentences])
+        self.assertEqual([e['sentence'] for e in result['changes']], [0,1])
+
+    def test_invalid_evidence_indices_and_empty_analysis_are_rejected(self):
+        from director_provider import restore_source_evidence
+        for index in (-1,1,True,'0'):
+            with self.subTest(index=index), self.assertRaisesRegex(ValueError,'evidence sentence'):
+                restore_source_evidence({'changes':[{'sentence':index}]},
+                                        {'sentences':[{'text':'Story.'}]},('changes',))
+        with self.assertRaisesRegex(ValueError,'at least one'):
+            DirectorProvider().analyzeStory({'sentences':[]},lambda *_:None)
 
     def test_oversized_evidence_is_referenced_without_losing_source_or_cached_passes(
         self,

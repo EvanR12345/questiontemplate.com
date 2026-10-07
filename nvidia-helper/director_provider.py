@@ -157,7 +157,32 @@ SHOT = obj(
         "transition": {"enum": ["cut", "crossfade"]},
     }
 )
-CAMERA = obj({"shotIndex": INT, "shot": STR, "angle": STR, "composition": STR})
+CAMERA_SHOTS = ('extreme wide', 'wide', 'medium wide', 'medium', 'medium close-up',
+                'close-up', 'extreme close-up', 'over-the-shoulder', 'POV', 'profile',
+                'establishing shot', 'reaction shot', 'insert shot', 'silhouette',
+                'tracking-style composition')
+CAMERA_ANGLES = ('eye level', 'low angle', 'high angle', "bird's-eye", "worm's-eye",
+                 'Dutch angle', 'overhead', 'profile')
+CAMERA = obj({'shotIndex': INT, 'shot': {'type':'string','enum':list(CAMERA_SHOTS)},
+              'angle': {'type':'string','enum':list(CAMERA_ANGLES)}, 'composition': STR})
+
+
+def indexed_evidence(properties, sentence_count):
+    """The model selects an index; the application supplies the actual quote."""
+    fields = {k: copy.deepcopy(v) for k, v in properties.items() if k != 'reason'}
+    fields['sentence'] = {'type': 'integer', 'enum': list(range(sentence_count)) or [0]}
+    return obj(fields)
+
+
+def restore_source_evidence(result, context, fields):
+    sentences = context['sentences']
+    for field in fields:
+        for event in result.get(field, []):
+            index = event.get('sentence')
+            if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(sentences):
+                raise ValueError('Director selected an invalid source evidence sentence.')
+            event['reason'] = sentences[index]['text']
+    return result
 
 
 class DirectorProvider:
@@ -182,16 +207,16 @@ class DirectorProvider:
         )
 
     def analyzeStory(self, context, gate):
-        # Dialogue quotes can be rejected as literals by a provider's strict
-        # output grammar. Validate exact source evidence in the application.
-        evidence = STR
+        # Copying quotes causes paraphrase and multi-sentence evidence failures.
+        # Keep the public result format, but select bounded indices on the wire.
+        count = len(context['sentences'])
+        if not count:
+            raise ValueError('Story analysis needs at least one narration sentence.')
         schema = obj(
             ANALYSIS["properties"]
             | {
-                "changes": arr(obj(CHANGE["properties"] | {"reason": evidence})),
-                "environmentChanges": arr(
-                    obj(ENVIRONMENT_CHANGE["properties"] | {"reason": evidence})
-                ),
+                "changes": arr(indexed_evidence(CHANGE['properties'], count)),
+                "environmentChanges": arr(indexed_evidence(ENVIRONMENT_CHANGE['properties'], count)),
             }
         )
         for field in ("changes", "environmentChanges", "beats"):
@@ -203,12 +228,13 @@ class DirectorProvider:
                 "type": "string",
                 "enum": valid_ids,
             }
-        return self.call(
-            "Story analyst. Use the supplied chapterCast as the source of character identity. When chapterCast is provided, return people=[]; do not create duplicates. Resolve aliases and pronouns to those existing IDs. Extract explicit held/dropped objects, injury, clothing and hairstyle changes. Do not repeat unchanged state. Change field names should be specific: outfit, hairStyle, injury, key, sword, phone. Each change reason MUST select its exact source sentence from the evidence enum. Extract time/weather changes with exact quoted evidence. Keep summary, beats and descriptions concise. Never guess traits or invent story events.",
+        result = self.call(
+            "Story analyst. Use the supplied chapterCast as the source of character identity. When chapterCast is provided, return people=[]; do not create duplicates. Resolve aliases and pronouns to those existing IDs. Extract explicit held/dropped objects, injury, clothing and hairstyle changes. Do not repeat unchanged state. Change field names should be specific: outfit, hairStyle, injury, key, sword, phone. For each change select its zero-based source sentence in sentence. The application supplies the exact quote; do not copy or paraphrase evidence. One event may describe only the change supported by that one sentence. Split changes across different sentences into separate events; do not aggregate injuries that occur at different moments. Keep summary, beats and descriptions concise. Never guess traits or invent story events.",
             context,
             schema,
             gate,
         )
+        return restore_source_evidence(result, context, ('changes', 'environmentChanges'))
 
     def updateCharacterBible(self, context, gate):
         return self.call(
@@ -234,6 +260,8 @@ class DirectorProvider:
         )
 
     def planScenes(self, context, gate):
+        from prompt_quality import SCENE_GUIDANCE
+        guidance = SCENE_GUIDANCE if getattr(self,"focused_prompts",False) else ""
         schema = obj({"shots": arr(SHOT)})
         ids = [p["id"] for p in context.get("people", context.get("chapterCast", []))]
         if ids:
@@ -242,7 +270,7 @@ class DirectorProvider:
                 | {"characters": arr({"type": "string", "enum": ids})}
             )
         return self.call(
-            "Scene director: one shot depicts ONE simultaneous visible moment. Never combine sequential actions (handover, rescue, then sitting) in one image. Use different shots when visible action changes. Favor 3–15 second shots; longer holds only for genuinely quiet beats. Cover each narration sentence once in order with inclusive indices and no gaps. Identity description sentences may share a shot. Use only supplied character IDs. Keep supporting people only where story calls for them. Shot action should be concise and drawable, without narration or sequential montage.",
+            "Scene director: one shot depicts ONE simultaneous visible moment. Never combine sequential actions (handover, rescue, then sitting) in one image. Use different shots when visible action changes. Favor 3–15 second shots; longer holds only for genuinely quiet beats. Cover each narration sentence once in order with inclusive indices and no gaps. Identity description sentences may share a shot. Use only supplied character IDs. Keep supporting people only where story calls for them. Shot action should be concise and drawable, without narration or sequential montage." + guidance,
             context,
             schema,
             gate,
@@ -283,17 +311,14 @@ class DirectorProvider:
                 if x.strip()
             )
         )
-        change = obj(
+        change = indexed_evidence(
             CHANGE["properties"]
             | {
                 "field": {"type": "string", "enum": fields or ["object"]},
-                "reason": {
-                    "type": "string",
-                },
-            }
+            }, len(context['sentences'])
         )
-        return self.call(
-            "Continuity supervisor: intentional changes backed by narration are valid. Extract EVERY explicit object possession/position change into objectChanges, including picking up, receiving, keeping in a particular hand, dropping and placing on a desk. The allowed field enum names the OBJECT, never a hand or accessories. value is its position/status (right hand, desk, held, removed), not its name. Preserve clothing/accessories separately. Use supplied character IDs and zero-based indices. reason MUST quote its exact source sentence. Report contradictions without rewriting events.",
+        result = self.call(
+            "Continuity supervisor: intentional changes backed by narration are valid. Extract EVERY explicit object possession/position change into objectChanges, including picking up, receiving, keeping in a particular hand, dropping and placing on a desk. The allowed field enum names the OBJECT, never a hand or accessories. value is its position/status (right hand, desk, held, removed), not its name. Preserve clothing/accessories separately. Use supplied character IDs and zero-based source indices in sentence. The application supplies the exact evidence quote. Each event must be supported by that one source sentence; split changes at different moments. Report contradictions without rewriting events.",
             context,
             obj(
                 {
@@ -306,10 +331,13 @@ class DirectorProvider:
             ),
             gate,
         )
+        return restore_source_evidence(result, context, ('objectChanges',))
 
     def writeImagePrompt(self, context, gate):
+        from prompt_quality import PROMPT_GUIDANCE
+        guidance = PROMPT_GUIDANCE if getattr(self,"focused_prompts",False) else ""
         return self.call(
-            "Image prompt engineer: only supplied visible action, characters, current appearance and camera. Do not add events. Use selected model prompt format. No rendered labels or prose captions.",
+            "Image prompt engineer: only supplied visible action, characters, current appearance and camera. Do not add events. Use selected model prompt format. No rendered labels or prose captions." + guidance,
             context,
             obj({"prompts": arr(obj({"shotIndex": INT, "prompt": STR}))}),
             gate,
@@ -325,7 +353,7 @@ class DirectorProvider:
                 ],
             }
         result = self.call(
-            "Visual quality reviewer: compare image to expected canonical identity and current appearance. Planned clothing changes are allowed. Anatomical left/right belong to the CHARACTER, not the viewer. Report only visible evidence. Do not demand a tiny facial mark, eye color, wrist accessory or object to be resolvable when framing, occlusion or lighting hides it. An unclear detail is not evidence it changed. For Low/Medium strictness, minor framing differences and uncertain details use action=review, not image_edit/regenerate. Reserve repairs for clearly visible wrong identity, wrong planned clothing, missing important people, contradictory action/objects, severe anatomy or serious artifacts. High strictness may require closer review of composition. pass can be true ONLY if issues is empty and action is pass. Never mark a review as passed. Return targeted repair only for a confirmed defect; otherwise leave repairPrompt empty.",
+            "Visual quality reviewer: compare image to expected canonical identity and current appearance. Planned clothing changes are allowed. Anatomical left/right belong to the CHARACTER, not the viewer. Report only visible evidence. Do not demand a tiny facial mark, eye color, wrist accessory or object to be resolvable when framing, occlusion or lighting hides it. An unclear detail is not evidence it changed. For Low/Medium strictness, minor framing differences and uncertain details use action=review, not image_edit/regenerate. Reserve repairs for clearly visible wrong identity, wrong planned clothing, missing important people, contradictory action/objects, severe anatomy or serious artifacts. High strictness may require closer review of composition. pass can be true ONLY if issues is empty and action is pass. Never mark a review as passed. Return targeted repair only for a confirmed defect; otherwise leave repairPrompt empty. Return one finding for each issues entry, in the same order with identical issue text. Severity advisory means minor cinematic staging, approximate poses, framing, expression, gaze, cosmetic anatomy or small injury/detail discrepancies that do not change the story. Major means a clearly visible wrong MAIN character identity, wrong weapon or essential action that changes the narrated story, or an unusable image. Uncertain means suspected defects without clear evidence. Do not classify absent inventory props or tiny injury details as major unless essential to the current narrated action. Respect intentional clothing/injury changes, occlusion and camera crop. qualityPolicy=practical prioritizes useful storytelling over exact pose or framing; it never authorizes repair spending. Keep actual findings even when advisory.",
             context,
             obj(
                 {
@@ -333,6 +361,7 @@ class DirectorProvider:
                     "issues": arr(STR),
                     "repairPrompt": STR,
                     "action": {"enum": ["pass", "image_edit", "regenerate", "review"]},
+                    "findings": arr(obj({"issue": STR, "severity": {"enum": ["advisory", "major", "uncertain"]}})),
                 }
             ),
             gate,

@@ -1,5 +1,6 @@
 import { pairingKey, helperJson } from "./helper-connection.mjs?v=queue-1";
 import { nativeRequest } from "./native-client.mjs?v=queue-1";
+import {engagementForm, engagementValues, filesPanel, wireFiles} from './studio-cloud-ui.mjs?v=r2-1';
 import {
   loadProjectState,
   saveStudioProject,
@@ -38,6 +39,7 @@ let key = pairingKey(),
   dirty = false,
   polling = false,
   scenePage = 0,
+  overlapRequested = false,
   saveTimer;
 const mediaCache = new Map();
 const root = document.createElement("section");
@@ -99,7 +101,9 @@ async function api(path, body) {
 }
 async function cache() {
   if (project) {
-    await saveStudioProject(project);
+    // Cloud-connected projects keep their data in the helper/R2. Retain an
+    // existing offline edit in IndexedDB until the user explicitly syncs it.
+    if (!connected || !health?.storage?.enabled || project._unsynced) await saveStudioProject(project);
     localStorage.setItem("qt-production-project", project.id);
   }
 }
@@ -130,6 +134,9 @@ async function connect() {
     connected = true;
     queue = health.queue;
     await refreshProjects();
+    // A fresh browser's empty connection placeholder is not a user-authored project.
+    // Prefer the saved helper projects rather than importing an empty duplicate.
+    if (project?._connectionPlaceholder) project = null;
     if (project?._unsynced) {
       try {
         await api("project?id=" + project.id);
@@ -207,6 +214,7 @@ async function patch(scope, item, values, redraw = false) {
     }
   }
   if (!connected) {
+    delete project._connectionPlaceholder;
     const target =
       scope === "project"
         ? project
@@ -226,7 +234,7 @@ async function patch(scope, item, values, redraw = false) {
   const state = $("#productionSaveState");
   if (state)
     state.textContent = connected
-      ? "Saved to helper and browser"
+      ? health?.storage?.enabled ? "Saved to helper · cloud sync runs in the background" : "Saved to helper and browser"
       : "Saved in browser · helper offline";
 }
 async function action(fn) {
@@ -268,6 +276,7 @@ async function saveEditor() {
   }
 }
 function dirtyEditor() {
+  delete project._connectionPlaceholder;
   dirty = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => action(saveEditor), 600);
@@ -324,7 +333,8 @@ function offlineProject() {
       appearanceHandling: "Automatic",
       maxImageRetries: 2,
       visionQC: false,
-      automaticRepair: true,
+      automaticRepair: false,
+      qcPolicy: "practical",
       customLayout: {
         minDuration: 3,
         maxDuration: 30,
@@ -436,12 +446,17 @@ function render() {
     return render();
   }
   const openControls = [...root.querySelectorAll('details[data-ui][open]')].map(el => el.dataset.ui);
+  const overlapEligible = connected && health?.cloudOverlapAvailable &&
+    project.settings.image.provider === "comfyui" && project.settings.director.provider === "openai-luna" &&
+    ["practical", "strict"].includes(checkLevel()) &&
+    Number.isFinite(project.settings.budget?.openaiUSD) && project.settings.budget.openaiUSD > 0 &&
+    !project.settings.economyPanels;
   root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · your text is saved in this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${options(
     projects.map((p) => [p.id, p.name]),
     project.id,
   )}</select><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
   <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
-  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong><p class="muted">Add your chapters below, then start the full workflow. Saved results and manual edits are preserved.</p><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div>
+  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong><p class="muted">Add your chapters below, then start the full workflow. Saved results and manual edits are preserved.</p><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && overlapRequested ? "checked" : ""} ${overlapEligible ? "" : "disabled"}> Overlap cloud tasks (preview)</label><p class="muted">Runs direction, images and reviews together. Requires Practical or Strict checks on every image, cloud images, Luna and an API spending cap.</p><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div>
   ${project._unsynced ? '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>' : ""}
   ${project.warnings
     .filter((w) => !w.resolved)
@@ -459,6 +474,7 @@ function render() {
     ["review", "Layout", "Scenes & images"],
     ["timeline", "Video", "Timeline & export"],
     ["settings", "Settings", "Style & AI options"],
+    ["files", "Files", "Cloud, parts & thumbnails"],
   ]
     .map(
       ([v, label, hint], index) =>
@@ -503,6 +519,8 @@ function content() {
       return timeline();
     case "settings":
       return settings();
+    case "files":
+      return filesPanel(project);
   }
 }
 function cleanText(text, title) {
@@ -536,15 +554,31 @@ function review() {
 function sceneRow(scene) {
   return `<article class="scene-item"><div class="scene-head"><div><h3>Scene ${ch().scenes.indexOf(scene) + 1} · ${escape(scene.purpose)}</h3><span class="scene-time">${time(scene.start)} → ${time(scene.end)}</span></div><span class="type-tag">${scene.origin || "AI"}</span></div><p class="narration-excerpt">${escape(scene.shots.map((s) => s.narrationSegment).join(" "))}</p><p class="muted">${escape(scene.location)} · ${escape(scene.mood)} · ${scene.shots.length} shots</p><p class="muted">Characters: ${escape(names(scene.characters))}</p><p class="muted">${escape(scene.pacingReason)}</p>${scene.appearanceChanges?.length ? `<div class="notice"><strong>Planned appearance / object changes</strong>${scene.appearanceChanges.map((e) => `<p>${escape(people().find((p) => p.id === e.characterId)?.name || e.characterId)} · ${escape(JSON.stringify(e.to))}<br><small>Story evidence: ${escape(e.reason)}</small></p>`).join("")}${!scene.appearanceChangesReviewed ? `<button data-accept-changes="${scene.id}">Accept planned changes</button>` : "Reviewed"}</div>` : ""}<div class="toolbar"><button data-scene="${scene.id}" data-scene-action="edit">Edit scene</button><button data-scene="${scene.id}" data-scene-action="add">Add shot</button><button data-scene="${scene.id}" data-scene-action="split">Split scene</button><button data-scene="${scene.id}" data-scene-action="merge">Merge with next</button><button data-scene="${scene.id}" data-scene-action="up">↑</button><button data-scene="${scene.id}" data-scene-action="down">↓</button><button data-scene="${scene.id}" data-scene-action="plan">Regenerate scene plan</button></div><div class="shot-grid">${scene.shots.map(shotRow).join("")}</div></article>`;
 }
+function checkLevel(s = project.settings) {
+  return s.qcCheckLevel ?? ((s.visionQC || s.generationMode === "MAX QUALITY") ? s.qcPolicy || "practical" : "off");
+}
+function qualityDecision(shot) {
+  return shot.qcDecision || {disposition: shot.qc?.pass === true ? "passed" : shot.qc?.pass === false ? "review" : "unreviewed", blocking: shot.qc?.pass === false && shot.qc?.action !== "review"};
+}
+function qualityLabel(shot) {
+  return ({accepted: "Accepted by you", advisory: "Advisory · production continues", review: "Needs your review", pending: "QC pending", passed: "AI passed", unreviewed: "Not checked"})[qualityDecision(shot).disposition] || "Needs review";
+}
+function promptMeasurements(shot) {
+  const m = shot.imageMetadata?.promptMeasurements;
+  if (!m) return "";
+  const seconds = m.clientIntervalSeconds == null ? "unknown client time" : `${m.clientIntervalSeconds.toFixed(2)}s client time`;
+  const cost = m.estimatedImageIntervalRentalUSD == null ? "rental estimate unavailable" : `$${m.estimatedImageIntervalRentalUSD.toFixed(6)} estimated image interval rental`;
+  return `<details><summary>Prompt measurements · ${m.promptWords} words</summary><p>${m.promptWords} whitespace words · ${m.promptCharacters} characters, including reference instructions. ${seconds}; ${cost}. Shared startup, warm-up, idle and shutdown are excluded. Token counts remain unknown unless actually measured.</p></details>`;
+}
 function shotRow(shot) {
-  return `<article class="shot-card">${shot.imagePath ? `<img data-asset="${escape(shot.imagePath)}" alt="${escape(shot.action)}">` : `<div class="shot-empty">${escape(shot.status.replaceAll("_", " "))}</div>`}<h4>${time(shot.start)} → ${time(shot.end)} · ${escape(shot.camera.shot)}</h4><p>${escape(shot.action)}</p><p>${escape(shot.imageModel)} · ${escape(shot.workflow)} · ${escape(shot.qc?.status || "PENDING")}</p><div class="shot-cast">${people()
+  return `<article class="shot-card">${shot.imagePath ? `<img data-asset="${escape(shot.imagePath)}" alt="${escape(shot.action)}">` : `<div class="shot-empty">${escape(shot.status.replaceAll("_", " "))}</div>`}<h4>${time(shot.start)} → ${time(shot.end)} · ${escape(shot.camera.shot)}</h4><p>${escape(shot.action)}</p><p>${escape(shot.imageModel)} · ${escape(shot.workflow)} · AI check: ${escape(shot.qc?.status || "UNREVIEWED")} · ${escape(qualityLabel(shot))}</p>${shot.qc?.issues?.length ? `<details><summary>AI findings (${shot.qc.issues.length})</summary><p>${shot.qc.issues.map(escape).join("<br>")}</p></details>` : ""}<div class="shot-cast">${people()
     .map(
       (p) =>
         `<label><input type="checkbox" data-shot-cast="${shot.id}" value="${p.id}" ${shot.characters.some((c) => c.id === p.id) ? "checked" : ""}>${escape(p.name)} <small>${escape(p.type)}</small></label>`,
     )
     .join(
       "",
-    )}<button data-shot="${shot.id}" data-shot-action="none">N/A</button></div><div class="toolbar"><button data-shot="${shot.id}" data-shot-action="edit">Edit shot</button><button data-shot="${shot.id}" data-shot-action="generate">${shot.imagePath ? "Regenerate" : "Generate"}</button><button data-shot="${shot.id}" data-shot-action="repair" ${shot.imagePath ? "" : "disabled"}>Repair</button><button data-shot="${shot.id}" data-shot-action="qc" ${shot.imagePath ? "" : "disabled"}>Visual QC</button>${shot.imagePath && shot.qc?.pass !== true ? `<button data-shot="${shot.id}" data-shot-action="accept-image">Accept image</button>` : ""}<button data-shot="${shot.id}" data-shot-action="delete">Delete</button></div>${shot.generationError ? `<p class="notice error">${escape(shot.generationError)}</p>` : ""}</article>`;
+    )}<button data-shot="${shot.id}" data-shot-action="none">N/A</button></div><div class="toolbar"><button data-shot="${shot.id}" data-shot-action="edit">Edit shot</button><button data-shot="${shot.id}" data-shot-action="generate">${shot.imagePath ? "Regenerate" : "Generate"}</button><button data-shot="${shot.id}" data-shot-action="repair" ${shot.imagePath ? "" : "disabled"}>Repair</button><button data-shot="${shot.id}" data-shot-action="qc" ${shot.imagePath && checkLevel() !== "off" ? "" : "disabled"}>Visual QC</button>${shot.imagePath && shot.qc?.pass !== true && qualityDecision(shot).disposition !== "accepted" ? `<button data-shot="${shot.id}" data-shot-action="accept-image">Use this image · no repair</button>` : ""}<button data-shot="${shot.id}" data-shot-action="delete">Delete</button></div>${promptMeasurements(shot)}${shot.generationError ? `<p class="notice error">${escape(shot.generationError)}</p>` : ""}</article>`;
 }
 function timeline() {
   const c = ch();
@@ -562,9 +596,11 @@ function settings() {
     i = s.image;
   const providers = health?.providers || {};
   const selected = providers[i.provider];
+  const level = checkLevel(s), w = {enabled:false, type:"text", text:"Studio", imagePath:"", position:"bottom-right", widthPercent:12, opacity:.65, marginPercent:2, color:"#FFFFFF", ...s.watermark};
   const models = selected?.models || [i.model];
-  return `<h2>Project settings</h2><label>Project name<input id="settingProjectName" value="${escape(project.name)}"></label><div class="two-col"><label>Visual style<select id="settingStyle">${options(["cinematic illustration", "anime", "manga", "storybook", "photorealistic cinema", "full-color manhwa", "dark fantasy"], s.style)}</select></label><label>Director layout<select id="settingLayout">${options(["AUTO", "CINEMATIC", "DYNAMIC", "MANGA / ANIME", "STORYBOOK", "CUSTOM"], s.layoutMode)}</select></label><label>Generation mode<select id="settingGenerationMode">${options(["QUICK", "BALANCED", "MAX QUALITY"], s.generationMode)}</select></label><label>Image quality preset<select id="settingImagePreset">${options(["Fast Local", "Balanced Quality", "Maximum Quality", "Character Reference", "Image Repair", "Anime/Manga", "Cinematic", "Storybook"], i.preset)}</select></label></div>
-  <div class="section-box"><h3>Image generator</h3><div class="two-col"><label>Image provider<select id="settingImageProvider">${options(
+  return `<h2>Project settings</h2><p class="muted">Saved for this project. Use the sections below, then save your changes.</p><div class="toolbar"><button data-save-settings>Save changes</button><a href="#settings-checks">Checks</a><a href="#settings-intro">Intro</a><a href="#settings-watermark">Watermark</a><a href="#settings-video">Video</a><a href="#settings-voice">Voice</a><a href="#settings-cost">Spending limits</a></div><label>Project name<input id="settingProjectName" value="${escape(project.name)}"></label><div class="two-col"><label>Visual style<select id="settingStyle">${options(["cinematic illustration", "anime", "manga", "storybook", "photorealistic cinema", "full-color manhwa", "dark fantasy"], s.style)}</select></label><label>Director layout<select id="settingLayout">${options(["AUTO", "CINEMATIC", "DYNAMIC", "MANGA / ANIME", "STORYBOOK", "CUSTOM"], s.layoutMode)}</select></label><label>Generation mode<select id="settingGenerationMode">${options(["QUICK", "BALANCED", "MAX QUALITY"], s.generationMode)}</select></label><label>Image quality preset<select id="settingImagePreset">${options(["Fast Local", "Balanced Quality", "Maximum Quality", "Character Reference", "Image Repair", "Anime/Manga", "Cinematic", "Storybook"], i.preset)}</select></label></div>
+  <div class="section-box" id="settings-checks"><h3>Visual checks</h3><div class="two-col"><label>Check level<select id="settingCheckLevel">${options([["off", "Off · no automatic or manual paid checks"], ["sampled", "Sampled · first shot + a stable sample"], ["practical", "Practical · every new image"], ["strict", "Strict · every new image"]], level)}</select></label><label>Sample about one image in<input id="settingSampleEvery" type="number" min="2" max="20" step="1" value="${s.qcSampleEvery ?? 5}"></label><label>How findings affect production<select id="settingQCPolicy">${options([["practical", "Practical · minor differences are advisory"], ["strict", "Strict · detailed review"]], ["practical","strict"].includes(level) ? level : s.qcPolicy || "practical")}</select></label></div><p class="muted">Sampled checks include the first shot of each chapter and planned intro, then select roughly one in N using stable shot IDs. Resuming keeps the same selection. Skipped images stay “Not checked.” Off also overrides MAX QUALITY. Existing AI findings and your image acceptances stay saved.</p><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""} ${level !== "off" && (level === "strict" || level === "sampled" && s.qcPolicy === "strict") ? "" : "disabled"}>Allow automatic retries in strict review</label><p class="muted">Practical review treats minor pose, framing, expression and prop detail differences as advice. Clear story or identity errors need your review. Strict retries also need a verified estimate for checks, replacement images, rechecks and extra rental within the 10% overhead ceiling. ${escape(project.qcRepairBudget?.reason || "Missing cost evidence keeps automatic repairs on hold.")}</p></div>
+  <div class="section-box"><h3>Image generator</h3><label class="inline"><input id="settingFocusedPrompts" type="checkbox" ${s.focusedPrompts === true ? "checked" : ""}>Focused story facts for newly planned images</label><p class="muted">Optional guidance based on the prompt test: keep explicit gender, established people count and prop ownership; shorten repeated reference instructions. Existing shots and manual prompts stay saved. Prompts have no fixed word quota and are never cut off. A universal speed, price or quality winner was not established.</p><div class="two-col"><label>Image provider<select id="settingImageProvider">${options(
     [
       ["existing", "Existing SD fallback / DreamShaper"],
       ["native-flux", "Quantized FLUX.2 Klein 4B"],
@@ -573,33 +609,19 @@ function settings() {
     i.provider,
   )}</select></label><label>Image model<select id="settingImageModel">${options(models, i.model)}</select></label><label>Workflow<select id="settingImageWorkflow">${options(selected?.workflow || [i.workflow], i.workflow)}</select></label><label>SD reference strength<input ${i.provider === "native-flux" ? "disabled" : ""} id="settingReferenceStrength" type="number" min="0" max="1" step=".05" value="${i.referenceStrength}"></label></div><p class="muted">${selected?.installed ? "Installed" : "Unavailable: configure this local backend before generating."} ${selected?.validated === false ? "This native configuration has not passed laptop validation yet." : ""} ${escape(selected?.capabilities?.referenceLimitations || "")}</p><button id="showModelNotes">Model evaluation and diagnosis</button> <button id="connectCloudImages">Connect Qwen cloud images</button></div>
   <div class="section-box"><h3>Economy storyboard canvases</h3><label class="inline"><input id="settingEconomyPanels" type="checkbox" ${s.economyPanels ? 'checked' : ''}>Four independent shots per Qwen canvas</label><p class="muted">Luna groups the shots; each crop is saved separately as a 640×360 landscape image. This can reduce generation calls by about 75%, with less detail and a risk of composition mixing. Individual full-resolution regeneration remains available. The helper does not start or stop rented GPUs.</p><button id="prepareStory">Prepare complete narration and director plan</button> <button id="prepareRestyle">Restyle existing shots</button></div>
-  <div class="section-box"><h3>Voice</h3><div class="two-col"><label>Existing Kokoro voice<select id="settingVoice">${options(["am_michael", "am_fenrir", "am_puck", "bm_george", "af_heart", "af_bella", "af_nicole", "bf_emma"], s.voice)}</select></label><label>Speaking speed<input id="settingSpeed" type="number" min=".5" max="2" step=".05" value="${s.speed}"></label><label>Narration delivery<select id="settingNarrationDelivery">${options([["standard", "Standard · sentence timing"], ["cinematic", "Restrained cinematic · connected delivery"]], s.narrationDelivery || "standard")}</select></label><label>Sound effects<select id="settingSoundEffects">${options([["subtle", "Subtle · quieter than narration"], ["off", "Off · brief pauses"]], s.soundEffects || "subtle")}</select></label></div><p class="muted">Unsupported cries such as Ahhh and Aaagghhh become brief pauses. Marked effects and isolated cues such as Thud are never spelled as letters. The source story stays intact.</p><p class="muted">Cinematic delivery gives short connected sentences shared voice context. Sentences containing your emphasis phrases run 4% slower. Kokoro cannot accept acting prompts or guarantee a reference narrator’s pitch or emotion. Grouped sentence times use model duration estimates.</p><label>Emphasis phrases · one per line, up to 12<textarea id="settingEmphasisPhrases" rows="2">${escape((s.emphasisPhrases || []).join("\n"))}</textarea></label><label>Voice audition text<textarea id="voicePreviewText" rows="3">${escape(project.introHookProposal?.text || project.intro.voiceText || "He had already lost everything. This time, he would fight for a second chance.\nAhhh!\n*Slash*\nThud.\nNo! I can't leave you here.")}</textarea></label><div class="toolbar"><button id="voicePreviewGenerate">Preview selected voice</button><button id="voicePreviewRefresh">Refresh auditions</button></div><p class="muted">Exports use AAC at 128 kbps. Auditions use the same encoding when FFmpeg is configured; lossless WAV masters stay saved. Short fades protect speech joins. Bitrate does not change the narrator or remove noise inside a phrase.</p><p class="muted">Local audition only; chapter audio and shot timings stay saved. Listen before regenerating a chapter.</p><div id="voicePreviewResults">${voicePreviewResults()}</div></div>
-  <div class="section-box"><h3>Optional intro</h3><label class="inline"><input id="introEnabled" type="checkbox" ${project.intro.enabled ? "checked" : ""}>Enable intro</label><div class="two-col"><label>Duration: <span id="introDurationValue">${project.intro.duration}</span> seconds<input id="introDuration" type="range" min="10" max="30" step="1" value="${project.intro.duration}"></label><label>Placement<select id="introPlacement">${options(
+  <div class="section-box" id="settings-voice"><h3>Voice</h3><div class="two-col"><label>Existing Kokoro voice<select id="settingVoice">${options(["am_michael", "am_fenrir", "am_puck", "bm_george", "af_heart", "af_bella", "af_nicole", "bf_emma"], s.voice)}</select></label><label>Speaking speed<input id="settingSpeed" type="number" min=".5" max="2" step=".05" value="${s.speed}"></label><label>Narration delivery<select id="settingNarrationDelivery">${options([["standard", "Standard · sentence timing"], ["cinematic", "Restrained cinematic · connected delivery"]], s.narrationDelivery || "standard")}</select></label><label>Sound effects<select id="settingSoundEffects">${options([["subtle", "Subtle · quieter than narration"], ["off", "Off · brief pauses"]], s.soundEffects || "subtle")}</select></label></div><p class="muted">Unsupported cries such as Ahhh and Aaagghhh become brief pauses. Marked effects and isolated cues such as Thud are never spelled as letters. The source story stays intact.</p><p class="muted">Cinematic delivery gives short connected sentences shared voice context. Sentences containing your emphasis phrases run 4% slower. Kokoro cannot accept acting prompts or guarantee a reference narrator’s pitch or emotion. Grouped sentence times use model duration estimates.</p><label>Emphasis phrases · one per line, up to 12<textarea id="settingEmphasisPhrases" rows="2">${escape((s.emphasisPhrases || []).join("\n"))}</textarea></label><label>Voice audition text<textarea id="voicePreviewText" rows="3">${escape(project.introHookProposal?.text || project.intro.voiceText || "He had already lost everything. This time, he would fight for a second chance.\nAhhh!\n*Slash*\nThud.\nNo! I can't leave you here.")}</textarea></label><div class="toolbar"><button id="voicePreviewGenerate">Preview selected voice</button><button id="voicePreviewRefresh">Refresh auditions</button></div><p class="muted">Exports use AAC at 128 kbps. Auditions use the same encoding when FFmpeg is configured; lossless WAV masters stay saved. Short fades protect speech joins. Bitrate does not change the narrator or remove noise inside a phrase.</p><p class="muted">Local audition only; chapter audio and shot timings stay saved. Listen before regenerating a chapter.</p><div id="voicePreviewResults">${voicePreviewResults()}</div></div>
+  <div class="section-box" id="settings-intro"><h3>Optional intro</h3><p class="muted">Off starts directly with Chapter 1. Enabling reuses your saved intro assets and text; generation buttons run only when selected.</p><label class="inline"><input id="introEnabled" type="checkbox" ${project.intro.enabled ? "checked" : ""}>Enable intro</label><div class="two-col"><label>Duration: <span id="introDurationValue">${project.intro.duration}</span> seconds<input id="introDuration" type="range" min="10" max="30" step="1" value="${project.intro.duration}"></label><label>Placement<select id="introPlacement">${options(
     [
       ["full_story_only", "Full story only"],
       ["every_chapter", "Every chapter"],
     ],
     project.intro.placement,
-  )}</select></label><label class="inline"><input id="introShowTitle" type="checkbox" ${project.intro.showTitle ? "checked" : ""}>Show title text in video</label><label>Optional title<input id="introTitle" value="${escape(project.intro.title)}"></label><label>Subtitle<input id="introSubtitle" value="${escape(project.intro.subtitle)}"></label></div><label>Intro visual description<textarea id="introVisualPrompt" rows="2">${escape(project.intro.visualPrompt || "")}</textarea></label><label>Optional explicit intro voice text<textarea id="introVoiceText" rows="2">${escape(project.intro.voiceText)}</textarea></label><div class="toolbar"><button id="introUpload">Choose background image</button><button id="introGenerate">Generate intro visual</button><button id="introAudio">Generate separate intro voice</button><button id="introPreview">Preview intro</button><button id="editIntroShots">Edit intro shots and references</button></div>${project.intro.visualPath ? `<img data-asset="${escape(project.intro.visualPath)}" alt="Intro background" style="max-width:260px;margin-top:12px">` : ""}</div>
-  <details><summary>Advanced AI settings</summary><div class="two-col"><label>Director provider<select id="settingDirectorProvider">${options(
-    [
-      ["local-qwen", "Local Qwen3.5-4B Q4_K_M"],
-      ["openai-luna", "GPT-6 Luna · OpenAI API"],
-    ],
-    s.director.provider,
-  )}</select></label><label>Director reasoning<select id="settingReasoning">${options(["Fast", "Balanced", "High"], s.director.reasoning)}</select></label><label>Continuity strictness<select id="settingContinuity">${options(["Low", "Medium", "High"], s.continuityStrictness)}</select></label><label>Appearance changes<select id="settingAppearance">${options(["Automatic", "Review changes", "Strict"], s.appearanceHandling)}</select></label><label>Max image retries<input id="settingRetries" type="number" min="0" max="10" value="${s.maxImageRetries}"></label><label>Resolution<select id="settingResolution">${options(
-    [
-      ["384x384", "384 × 384 · references / repair"],
-      ["448x448", "448 × 448 · native balanced"],
-      ["512x512", "512 × 512 · SD fallback"],
-      ["768x512", "768 × 512"],
-      ["512x768", "512 × 768"],
-      ["1344x768", "1344 × 768 · cloud landscape"],
-      ["1024x1024", "1024 × 1024 · cloud square"],
-    ],
-    i.width + "x" + i.height,
-  )}</select></label><label>Steps<input id="settingSteps" type="number" min="1" max="50" value="${i.steps}"></label><label>Guidance<input id="settingGuidance" type="number" min="1" max="14" step=".5" value="${i.guidance}"></label><label>Sampler<input id="settingSampler" value="${escape(i.sampler)}"></label><label>Scheduler<input id="settingScheduler" value="${escape(i.scheduler)}"></label></div><label class="inline"><input id="settingVision" type="checkbox" ${s.visionQC ? "checked" : ""}>Vision QC (Luna vision or local Qwen projector)</label><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""}>Automatic repair within retry limit</label><label class="inline"><input id="settingFallback" type="checkbox" ${i.fallbackEnabled ? "checked" : ""}>Enable explicit SD 1.5 fallback when the chosen provider fails</label><button id="editCustomLayout">Edit custom pacing targets</button> <button id="editImageSettings">Edit conditioning / LoRA / full generation settings</button> <button id="configureCloud">Cloud setup · Luna + Runpod</button> <button id="configureRuntimes">Configure local runtime paths</button><p class="muted">Unsupported settings are rejected before jobs are queued. No silent model substitution.</p></details>
-  <details><summary>Video output</summary><div class="two-col"><label>Video size<select id="settingVideoSize">${options(
+  )}</select></label><label class="inline"><input id="introShowTitle" type="checkbox" ${project.intro.showTitle ? "checked" : ""}>Show title text in video</label><label>Optional title<input id="introTitle" value="${escape(project.intro.title)}"></label><label>Subtitle<input id="introSubtitle" value="${escape(project.intro.subtitle)}"></label></div><label>Intro visual description<textarea id="introVisualPrompt" rows="2">${escape(project.intro.visualPrompt || "")}</textarea></label><label>Optional explicit intro voice text<textarea id="introVoiceText" rows="2">${escape(project.intro.voiceText)}</textarea></label><div class="toolbar"><button id="introUpload">Choose background image</button><button id="introGenerate">Generate intro visual</button><button id="introAudio">Generate separate intro voice</button><button id="introPreview">Preview intro</button><button id="editIntroShots">Edit intro shots and references</button></div>${project.intro.shots?.length ? `<div class="shot-grid">${project.intro.shots.map(s => `<article class="shot-card">${s.imagePath ? `<img data-asset="${escape(s.imagePath)}" alt="Intro shot">` : ""}<p>Intro · AI check: ${escape(s.qc?.status || "UNREVIEWED")} · ${escape(qualityLabel(s))}</p>${s.imagePath && s.qc?.pass !== true && qualityDecision(s).disposition !== "accepted" ? `<button data-intro-accept="${s.id}">Use this image · no repair</button>` : ""}</article>`).join("")}</div>` : ""}${project.intro.visualPath ? `<img data-asset="${escape(project.intro.visualPath)}" alt="Intro background" style="max-width:260px;margin-top:12px">` : ""}</div>
+
+  ${engagementForm(project)}
+  <div class="section-box" id="settings-watermark"><h3>Watermark</h3><label class="inline"><input id="settingWatermarkEnabled" type="checkbox" ${w.enabled ? "checked" : ""}>Add watermark to chapter, full-story and intro exports</label><div class="two-col"><label>Watermark type<select id="settingWatermarkType">${options([["text","Text"],["image","Uploaded logo"]],w.type)}</select></label><label>Text<input id="settingWatermarkText" maxlength="100" value="${escape(w.text)}"></label><label>Position<select id="settingWatermarkPosition">${options([["top-left","Top left"],["top-right","Top right"],["bottom-left","Bottom left"],["bottom-right","Bottom right"],["center","Center"]],w.position)}</select></label><label>Width (% of video)<input id="settingWatermarkWidth" type="number" min="1" max="50" step="1" value="${w.widthPercent}"></label><label>Opacity (%)<input id="settingWatermarkOpacity" type="number" min="5" max="100" step="1" value="${Math.round(w.opacity*100)}"></label><label>Edge margin (%)<input id="settingWatermarkMargin" type="number" min="0" max="10" step=".5" value="${w.marginPercent}"></label><label>Text color<input id="settingWatermarkColor" type="color" value="${escape(w.color)}"></label></div><input id="settingWatermarkPath" type="hidden" value="${escape(w.imagePath)}"><div class="toolbar"><button id="watermarkUpload">Upload logo</button><button id="watermarkRemove" ${w.imagePath ? "" : "disabled"}>Remove selected logo</button></div><p id="watermarkLogoStatus" class="muted">${w.imagePath ? "Saved logo selected. Transparency is preserved." : "No logo selected. Upload a PNG, JPEG or WebP image."}</p>${w.imagePath ? `<img data-asset="${escape(w.imagePath)}" alt="Selected watermark logo" style="max-width:160px;max-height:100px;margin-top:12px">` : ""}<p class="muted">Applied once to finished exports, including intros within them. Original images and reusable unmarked clips stay saved. Logo changes require rebuilding exports. Watermark rendering uses your chosen video size, frame rate and quality.</p></div>
+  <div class="section-box" id="settings-cost"><h3>Spending limits</h3><label>Project API limit (USD)<input id="settingAPIBudget" type="number" min=".001" step=".01" value="${s.budget?.openaiUSD ?? ""}" placeholder="Keep existing provider configuration"></label><p class="muted">The project API ledger includes direction, planning and visual checks. This is separate from GPU rental. ${s.cloudWindow?.gpuBudgetUSD != null ? `Saved GPU window limit: $${escape(s.cloudWindow.gpuBudgetUSD)}.` : "Existing GPU window configuration stays saved. Rental limits also require the actual worker start time and hourly rate."} Pausing Studio does not stop a rented GPU. Settings does not start cloud workers.</p><button id="settingsCloudBudget">Open cloud connection</button></div>
+  <details id="settings-video" open><summary>Video output</summary><div class="two-col"><label>Video size<select id="settingVideoSize">${options(
     [
       ["640x360", "640 × 360"],
       ["1280x720", "1280 × 720"],
@@ -624,9 +646,27 @@ function settings() {
       ["24", "24"],
       ["25", "25"],
       ["30", "30"],
+      ["60", "60 · smoother motion"],
     ],
     String(s.video.fps),
-  )}</select></label></div></details><button class="primary" id="productionSaveSettings">Save project settings</button>`;
+  )}</select></label></div></details>  <details><summary>Advanced AI settings</summary><div class="two-col"><label>Director provider<select id="settingDirectorProvider">${options(
+    [
+      ["local-qwen", "Local Qwen3.5-4B Q4_K_M"],
+      ["openai-luna", "GPT-6 Luna · OpenAI API"],
+    ],
+    s.director.provider,
+  )}</select></label><label>Director reasoning<select id="settingReasoning">${options(["Fast", "Balanced", "High"], s.director.reasoning)}</select></label><label>Continuity strictness<select id="settingContinuity">${options(["Low", "Medium", "High"], s.continuityStrictness)}</select></label><label>Appearance changes<select id="settingAppearance">${options(["Automatic", "Review changes", "Strict"], s.appearanceHandling)}</select></label><label>Max image retries<input id="settingRetries" type="number" min="0" max="10" value="${s.maxImageRetries}"></label><label>Resolution<select id="settingResolution">${options(
+    [
+      ["384x384", "384 × 384 · references / repair"],
+      ["448x448", "448 × 448 · native balanced"],
+      ["512x512", "512 × 512 · SD fallback"],
+      ["768x512", "768 × 512"],
+      ["512x768", "512 × 768"],
+      ["1344x768", "1344 × 768 · cloud landscape"],
+      ["1024x1024", "1024 × 1024 · cloud square"],
+    ],
+    i.width + "x" + i.height,
+  )}</select></label><label>Steps<input id="settingSteps" type="number" min="1" max="50" value="${i.steps}"></label><label>Guidance<input id="settingGuidance" type="number" min="1" max="14" step=".5" value="${i.guidance}"></label><label>Sampler<input id="settingSampler" value="${escape(i.sampler)}"></label><label>Scheduler<input id="settingScheduler" value="${escape(i.scheduler)}"></label></div><label class="inline"><input id="settingFallback" type="checkbox" ${i.fallbackEnabled ? "checked" : ""}>Enable explicit SD 1.5 fallback when the chosen provider fails</label><button id="editCustomLayout">Edit custom pacing targets</button> <button id="editImageSettings">Edit conditioning / LoRA / full generation settings</button> <button id="configureCloud">Cloud setup · Luna + Runpod</button> <button id="configureRuntimes">Configure local runtime paths</button><p class="muted">Unsupported settings are rejected before jobs are queued. No silent model substitution.</p></details><button class="primary" id="productionSaveSettings">Save project settings</button>`;
 }
 function shotMotionLabel(shot) {
   const mode = project.settings.video.motionMode || "director";
@@ -677,7 +717,7 @@ function renderQueue() {
     runStatus = $("#fullVideoStatus");
   if (runStatus && run) {
     const reviewCount = project.chapters.flatMap(c => c.scenes.flatMap(s => s.shots))
-      .filter(s => ["REVIEW_REQUIRED", "FAILED"].includes(s.qc?.status)).length;
+      .filter(s => qualityDecision(s).blocking).length;
     const ready =
       run.status === "COMPLETE" && !!project.render?.path && !project.renderStale && !activeFullRun;
     const status =
@@ -782,14 +822,14 @@ function renderQueue() {
     total = counts
       ? Object.values(counts.all).reduce((a, b) => a + b, 0)
       : jobs.length,
-    failureCount = plannedImages.filter(s => s.status === "FAILED" || ["FAILED", "REVIEW_REQUIRED"].includes(s.qc?.status)).length,
+    failureCount = plannedImages.filter(s => qualityDecision(s).blocking || s.generationError && !s.imagePath).length,
     currentShot = shots(
       project.chapters.find((c) => c.id === current?.chapter),
     ).find((s) => s.id === current?.shot),
     currentScene = project.chapters
       .find((c) => c.id === current?.chapter)
       ?.scenes.find((s) => s.id === currentShot?.sceneId);
-  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting · ${failureCount} images need attention · ETA ${queue.paused ? "Paused" : queue.etaSeconds == null ? "—" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || "Ready"))}</p><progress max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel all queued</button><button data-control="retry-missing" ${imageDone === imageTotal ? "disabled" : ""}>Retry missing images</button></div><details data-ui="job-history"><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
+  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting · ${failureCount} images need attention · ETA ${queue.paused ? "Paused" : queue.etaStatus === "LONGER_THAN_HISTORY" ? "Longer than earlier runs" : queue.etaSeconds == null ? "Measuring" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || "Ready"))}</p><progress max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel all queued</button><button data-control="retry-missing" ${imageDone === imageTotal ? "disabled" : ""}>Retry missing images</button></div><details data-ui="job-history"><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
     .filter(
       (j) =>
         j.status === "FAILED" ||
@@ -806,11 +846,21 @@ function renderQueue() {
   for (const detail of root.querySelectorAll('details[data-ui]')) {
     if (openDetails.has(detail.dataset.ui)) detail.open = true;
   }
+  el.insertAdjacentHTML("beforeend", '<button id="downloadProductionTrace">Download timing report</button>');
+  const executions = (queue.executions || []).filter(item => item.project === project.id && item.kind === "image-qc");
+  if (executions.length) {
+    el.insertAdjacentHTML("beforeend", `<details data-ui="cloud-tasks"><summary>Cloud tasks · ${executions.filter(item => item.status === "RUNNING").length} active</summary>${executions.map(item => `<p class="muted">${escape(item.message || item.status)}${item.status === "UNKNOWN" ? " · Needs reconciliation before retry" : ""}${item.status === "RUNNING" ? ` <button data-control="cancel-current" data-execution="${escape(item.id)}">Cancel this task</button>` : ""}</p>`).join("")}</details>`);
+  }
+  el.querySelector("#downloadProductionTrace").onclick = () => action(async () => {
+    const trace = await api("trace?project=" + encodeURIComponent(project.id));
+    downloadBlob(new Blob([JSON.stringify(trace, null, 2)], {type: "application/json"}), "studio-timing-report.json");
+  });
   el.querySelectorAll("[data-control]").forEach(
     (b) =>
       (b.onclick = () =>
         action(async () => {
-          queue = await api("control", { action: b.dataset.control, project: project.id });
+          queue = await api("control", { action: b.dataset.control, project: project.id,
+            ...(b.dataset.execution ? {job: b.dataset.execution} : {}) });
           renderQueue();
         })),
   );
@@ -842,10 +892,16 @@ async function submit(kind, selected, options) {
   note("Added to the production queue. Completed results save immediately.");
 }
 function wire() {
+  if(tab==='files') void action(()=>wireFiles({p:project,api,action,note,media,
+    submit:(kind,options)=>submit(kind,undefined,options),
+    reload:async()=>{project=await api('project?id='+project.id);render();}}));
+  $('#prepareOutro')?.addEventListener('click',()=>action(async()=>{await saveSettings();await submit('outro-audio');}));
+  $("#productionOverlap").onchange = (event) => { overlapRequested = event.target.checked; };
   $("#productionFullVideo").onclick = () =>
     action(async () => {
       await saveSettingsIfVisible();
-      queue = await api("jobs", { project: project.id, kind: "produce-story" });
+      queue = await api("jobs", { project: project.id, kind: "produce-story",
+        options: {overlap: !!$("#productionOverlap")?.checked} });
       renderQueue();
       note(
         "Full video queued. Keep the shared helper running. Pause, cancel or retry here; completed work is saved and reused.",
@@ -1206,34 +1262,29 @@ function wire() {
           }),
         )),
   );
+  root.querySelectorAll("[data-intro-accept]").forEach(b => b.onclick = () => action(() => {
+    if (!connected) throw new Error("Connect the helper to accept an intro image.");
+    const s=project.intro.shots.find(s=>s.id===b.dataset.introAccept);
+    return mutate("review",{shot:s.id,chapter:s.chapterId || chapterId,imagePath:s.imagePath,imageSHA256:s.imageMetadata?.imageSHA256 || s.qc?.checkedImageSHA256 || "", reviewSpecSignature:s.qcReviewSignature});
+  }));
   if (tab === "settings") wireSettings();
 }
 async function shotAction(sid, act) {
   const s = shots().find((s) => s.id === sid);
   if (act === "generate") return submit("image", [sid]);
   if (act === "qc") return submit("qc", [sid]);
-  if (act === "accept-image")
-    return patch(
-      "shot",
-      sid,
-      {
-        qc: {
-          ...s.qc,
-          status: "PASSED",
-          pass: true,
-          reviewer: "MANUAL",
-          reviewedAt: Date.now() / 1000,
-        },
-        status: "PASSED",
-      },
-      true,
-    );
+  if (act === "accept-image") {
+    if (!connected) throw new Error("Connect the helper to accept the current image; AI findings will remain saved.");
+    return mutate("review", {shot:sid, chapter:s.chapterId, imagePath:s.imagePath,
+      imageSHA256:s.imageMetadata?.imageSHA256 || s.qc?.checkedImageSHA256 || "", reviewSpecSignature:s.qcReviewSignature});
+  }
   if (act === "none") return patch("shot", sid, { characters: [] }, true);
   if (act === "edit") {
     editShot(s);
     return;
   }
   if (act === "repair") {
+    if (!project.qcRepairBudget?.allowed) throw new Error(project.qcRepairBudget?.reason || "Repair cost overhead is unverified; no paid repair has been queued.");
     const caps = health?.providers[s.imageProvider]?.capabilities;
     if (!caps?.supportsImageEditing && !caps?.supportsInpainting)
       throw new Error(
@@ -1256,6 +1307,7 @@ async function shotAction(sid, act) {
           );
         await submit("image", [sid], {
           operation: s.imageProvider === "existing" ? "inpaint" : "edit",
+          budgetedQCRepair: true,
           mask: file ? await toDataURL(file) : undefined,
         });
       },
@@ -1553,6 +1605,40 @@ function voicePreviewResults() {
   return (project.voicePreviews || []).slice().reverse().map(p => `<p>${escape(p.voice)} · ${p.speed}× · ${time(p.duration)} · ${escape(p.narrationDelivery || 'standard')} · ${escape(p.soundEffects || 'subtle')}${p.exportPath ? ' · AAC 128 kbps' : ' · lossless WAV'}</p><audio controls data-asset="${escape(p.exportPath || p.path)}"></audio>`).join('');
 }
 function wireSettings() {
+  const updateChecks = () => {
+    const level = $("#settingCheckLevel").value;
+    if (["practical", "strict"].includes(level)) $("#settingQCPolicy").value = level;
+    $("#settingQCPolicy").disabled = level !== "sampled";
+    $("#settingSampleEvery").disabled = level !== "sampled";
+    $("#settingRepair").disabled = level === "off" || $("#settingQCPolicy").value !== "strict";
+    if ($("#settingRepair").disabled) $("#settingRepair").checked = false;
+  };
+  $("#settingCheckLevel").onchange = updateChecks;
+  $("#settingQCPolicy").onchange = updateChecks;
+  updateChecks();
+  const updateWatermark = () => {
+    const image = $("#settingWatermarkType").value === "image";
+    $("#settingWatermarkText").disabled = image;
+    $("#settingWatermarkColor").disabled = image;
+  };
+  $("#settingWatermarkType").onchange = updateWatermark;
+  updateWatermark();
+  $('#watermarkUpload').onclick = () => action(async () => {
+    const file = await chooseFile();
+    if (!file) return;
+    const asset = await api('upload',{project:project.id,data:await toDataURL(file),purpose:'watermark'});
+    $('#settingWatermarkPath').value = asset.path;
+    $('#settingWatermarkType').value = 'image';
+    await saveSettings(); render();
+    note('Logo saved with transparency. Rebuild an export to apply it.');
+  });
+  $('#watermarkRemove').onclick = () => action(async () => {
+    $('#settingWatermarkPath').value = '';
+    $('#settingWatermarkEnabled').checked = false;
+    $('#settingWatermarkType').value = 'text';
+    await saveSettings(); render();
+  });
+  $('#settingsCloudBudget').onclick = () => $('#configureCloud').click();
   $('#voicePreviewGenerate').onclick = () => action(async () => {
     const text = $('#voicePreviewText').value.trim();
     if (!text || text.length > 1800) throw new Error('Enter 1–1800 characters for the audition.');
@@ -1571,6 +1657,7 @@ function wireSettings() {
     await fillMedia();
   });
   $("#productionSaveSettings").onclick = () => action(saveSettings);
+  root.querySelectorAll("[data-save-settings]").forEach(b => b.onclick = () => action(saveSettings));
   $('#prepareStory').onclick = () => action(async () => { await saveSettings(); await submit('prepare-story'); });
   $('#prepareRestyle').onclick = () => action(async () => { await saveSettings(); await submit('restyle-story'); });
   $('#editIntroShots').onclick = () => jsonDialog('Intro shots, timing and references', project.intro.shots || [], v => patch('project', project.id, {intro: {...project.intro, shots:v}}, true));
@@ -1700,9 +1787,9 @@ function wireSettings() {
         );
       }
     });
-  $("#introAudio").onclick = () => action(() => submit("intro-audio"));
-  $("#introGenerate").onclick = () => action(() => submit("intro-image"));
-  $("#introPreview").onclick = () => action(() => submit("intro-render"));
+  $("#introAudio").onclick = () => action(async () => { await saveSettings(); await submit("intro-audio"); });
+  $("#introGenerate").onclick = () => action(async () => { await saveSettings(); await submit("intro-image"); });
+  $("#introPreview").onclick = () => action(async () => { await saveSettings(); await submit("intro-render"); });
   $("#showModelNotes").onclick = () => {
     const a = document.createElement("a");
     a.href = "./STUDIO-IMPLEMENTATION.md";
@@ -1726,9 +1813,25 @@ async function saveSettings() {
   s.continuityStrictness = $("#settingContinuity").value;
   s.appearanceHandling = $("#settingAppearance").value;
   s.maxImageRetries = Number($("#settingRetries").value);
-  s.visionQC = $("#settingVision").checked;
-  s.automaticRepair = $("#settingRepair").checked;
+  s.qcPolicy = $("#settingQCPolicy").value;
+  s.qcCheckLevel = $("#settingCheckLevel").value;
+  s.qcSampleEvery = Number($("#settingSampleEvery").value);
+  s.visionQC = s.qcCheckLevel !== "off";
+  s.automaticRepair = !$("#settingRepair").disabled && $("#settingRepair").checked;
   s.economyPanels = $('#settingEconomyPanels').checked;
+  s.focusedPrompts = $('#settingFocusedPrompts').checked;
+  const apiLimit = $('#settingAPIBudget').value.trim();
+  if (apiLimit) {
+    const amount = Number(apiLimit);
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a positive API spending limit.');
+    s.budget = {...s.budget, openaiUSD:amount};
+  } else if (s.budget?.openaiUSD != null) throw new Error('Keep or change the existing API limit; it cannot be cleared here.');
+  s.watermark = {...s.watermark,
+    enabled:$('#settingWatermarkEnabled').checked, type:$('#settingWatermarkType').value,
+    text:$('#settingWatermarkText').value, imagePath:$('#settingWatermarkPath').value,
+    position:$('#settingWatermarkPosition').value, widthPercent:Number($('#settingWatermarkWidth').value),
+    opacity:Number($('#settingWatermarkOpacity').value)/100, marginPercent:Number($('#settingWatermarkMargin').value),
+    color:$('#settingWatermarkColor').value};
   Object.assign(s.image, {
     provider: $("#settingImageProvider").value,
     model: $("#settingImageModel").value,
@@ -1751,6 +1854,7 @@ async function saveSettings() {
   s.video.imageFit = $("#settingImageFit").value;
   s.video.motionMode = $("#settingMotionMode").value;
   s.video.zoomAmount = Number($("#settingZoomAmount").value) / 100;
+  s.engagement=engagementValues(s.engagement);
   Object.assign(intro, {
     enabled: $("#introEnabled").checked,
     duration: Number($("#introDuration").value),
@@ -1827,7 +1931,7 @@ const savedId = localStorage.getItem("qt-production-project");
 if (savedId) project = await loadStudioProject(savedId);
 if (!project) {
   const existing = await listStudioProjects();
-  project = existing[0] || offlineProject();
+  project = existing[0] || {...offlineProject(), _connectionPlaceholder:true};
   if (existing.length) projects = existing;
 }
 chapterId = project.chapters[0].id;

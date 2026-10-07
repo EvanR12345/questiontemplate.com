@@ -219,9 +219,15 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     query=parse_qs(urlparse(self.path).query)
                     if path=='/studio/health':self.reply(200,studio.health())
                     elif path=='/studio/projects':self.reply(200,studio.store.list())
-                    elif path=='/studio/project':self.reply(200,studio.store.load(query['id'][0]))
+                    elif path=='/studio/project':
+                        from studio_qc import project_view
+                        self.reply(200,project_view(studio.store,query['id'][0]))
                     elif path=='/studio/revision':self.reply(200,studio.store.revision(query['id'][0]))
                     elif path=='/studio/queue':self.reply(200,studio.snapshot())
+                    elif path=='/studio/trace':self.reply(200,studio.trace_report(query['project'][0]))
+                    elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
+                    elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0]))
+                    elif path=='/studio/publisher':self.reply(200,studio.publisher.status())
                     elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
@@ -270,6 +276,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
 
         def studio_post(self,path,body):
             if path=='/studio/media-link':
+                if getattr(studio,'storage',None) and studio.storage.enabled:
+                    url=studio.storage.media_url(body['project'],body['path'])
+                    if url:return {'url':url,'expires':time.time()+3600,'provider':'Cloudflare R2'}
                 file=studio.store.asset(body['project'],body['path'])
                 if not file.is_file():raise ValueError('Asset is unavailable.')
                 ticket=secrets.token_hex(24)
@@ -279,6 +288,8 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 return {'url':f'http://127.0.0.1:{PORT}/studio/media?ticket='+ticket,'expires':time.time()+3600}
             if path=='/studio/create':
                 p=new_project(str(body.get('name','My story'))[:200]);legacy=body.get('legacy')
+                p['settings']['video']['fps']=60
+                p['settings']['engagement'].update(popupEnabled=True,outroEnabled=True)
                 if studio.config.get('fluxValidated') and not legacy:
                     p['settings']['image'].update(studio.providers['native-flux'].getRecommendedSettings(),provider='native-flux',model='flux2-klein-4b-q4',workflow='text-to-image')
                 if legacy:
@@ -286,6 +297,37 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     for c in legacy.get('characters',[]):p['characters'].append(character(c.get('name','Character'),c.get('description','')))
                 return studio.store.save(p)
             if path=='/studio/import':return studio.store.save(body['project'])
+            if path=='/studio/storage-sync':
+                if not studio.storage.enabled:raise ValueError('Connect the private Cloudflare R2 bucket before cloud saving.')
+                projects=[body['project']] if body.get('project') else [p['id'] for p in studio.store.list_local()]
+                for pid in projects:
+                    studio.store.load_local(pid);studio.storage.enqueue(pid)
+                return studio.storage.status(body.get('project'))
+            if path=='/studio/storage-restore':
+                if not studio.storage.enabled:raise ValueError('Cloud storage is not connected.')
+                return studio.storage.restore(body['project'])
+            if path=='/studio/thumbnail':
+                from studio_thumbnails import make
+                return make(studio.store,body['project'],body.get('options',{}))
+            if path=='/studio/publish':
+                operation=body['operation'];options=body.get('options',{})
+                if operation=='connect':return studio.publisher.call(operation,{})
+                pid=body['project'];project=studio.store.load(pid)
+                if operation=='start':
+                    result=studio.publisher.call('start',options|{'project':pid})
+                    studio.store.mutate(pid,lambda p:p.setdefault('publishing',[]).append(result))
+                else:
+                    if not any(j['id']==options.get('id') for j in project.get('publishing',[])):
+                        raise ValueError('This upload does not belong to the selected project.')
+                    result=studio.publisher.call(operation,{'id':options['id']})
+                    def save(p):
+                        for j in p.get('publishing',[]):
+                            if j['id']==result['id']:j.update(result)
+                    studio.store.mutate(pid,save)
+                return result
+            if path=='/studio/review':
+                from studio_qc import accept_image
+                return accept_image(studio.store,body['project'],body.get('chapter'),body['shot'],body)
             if path=='/studio/config':return studio.configure(body)
             if path=='/studio/cloud-test':
                 from openai_director import OpenAIDirector
@@ -306,7 +348,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             pid=body['project']
             if path=='/studio/upload':
                 from PIL import Image
-                raw=base64.b64decode(body['data'].split(',',1)[-1]);img=Image.open(io.BytesIO(raw));img.thumbnail((1536,1536));name='references/'+uid()+'.png';target=studio.store.asset(pid,name);target.parent.mkdir(exist_ok=True);img.convert('RGB').save(target,'PNG');return {'path':name}
+                raw=base64.b64decode(body['data'].split(',',1)[-1]);img=Image.open(io.BytesIO(raw));img.thumbnail((1536,1536));name='references/'+uid()+'.png';target=studio.store.asset(pid,name);target.parent.mkdir(exist_ok=True);img.convert('RGBA' if body.get('purpose')=='watermark' else 'RGB').save(target,'PNG');return {'path':name}
             def change(p):
                 scope=body.get('scope','project');id=body.get('id');action=body.get('action','patch')
                 if path=='/studio/edit':
@@ -320,10 +362,16 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     patch=body['patch']
                     if not isinstance(patch,dict) or any(k in ('id','schemaVersion','revision','created') for k in patch):raise ValueError('Cannot edit stable identity fields.')
                     changed={k:v for k,v in patch.items() if target.get(k)!=v}
-                    previous_prompt=target.get('prompt','');previous_handoff=copy.deepcopy(target.get('handoff',{}));previous_video=copy.deepcopy(p['settings'].get('video',{}))
+                    previous_prompt=target.get('prompt','');previous_handoff=copy.deepcopy(target.get('handoff',{}));previous_video=copy.deepcopy(p['settings'].get('video',{}));previous_watermark=copy.deepcopy(p['settings'].get('watermark',{}));previous_engagement=copy.deepcopy(p['settings'].get('engagement',{}))
                     target.update(patch)
                     if changed and scope in ('shot','scene','chapter'):get_chapter(p,id if scope=='chapter' else body['chapter'])['renderStale']=True;p['renderStale']=True
-                    if scope=='project' and ('intro' in changed or 'settings' in changed and patch['settings'].get('video')!=previous_video):p['renderStale']=True
+                    if scope=='project' and 'settings' in changed:
+                        from studio_branding import identity as watermark_identity
+                        watermark_identity(p,studio.store)
+                        if p['settings'].get('video')!=previous_video or p['settings'].get('watermark',{})!=previous_watermark or p['settings'].get('engagement',{})!=previous_engagement:
+                            p['renderStale']=True;p['intro']['renderStale']=True
+                            for chapter in p['chapters']:chapter['renderStale']=True
+                    if scope=='project' and 'intro' in changed:p['renderStale']=True
                     if scope=='chapter' and 'handoff' in patch:
                         from studio_data import warn_dependents
                         warn_dependents(p,target,previous_handoff)
@@ -397,7 +445,8 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 latest=studio.store.load(pid);warning=next(x for x in latest['warnings'] if x['id']==body['id'])
                 for chapter in latest['chapters']:
                     if chapter['id'] in warning['affected'] and chapter['sourceText'].strip():studio.enqueue(pid,chapter['id'],'analyze')
-            return studio.store.load(pid)
+            from studio_qc import project_view
+            return project_view(studio.store,pid)
 
         def do_POST(self):
             if not self.permitted():

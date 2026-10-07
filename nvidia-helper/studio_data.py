@@ -251,7 +251,9 @@ def new_project(name="My story"):
             "appearanceHandling": "Automatic",
             "maxImageRetries": 2,
             "visionQC": False,
-            "automaticRepair": True,
+            "qcSampleEvery": 5,
+            "automaticRepair": False,
+            "qcPolicy": "practical",
             "customLayout": {
                 "sceneCount": None,
                 "minDuration": 3,
@@ -275,6 +277,8 @@ def new_project(name="My story"):
                 "imageFit": "cover",
                 "motionMode": "gentle",
             },
+            "engagement": {"popupEnabled": False, "minMinutes": 10, "maxMinutes": 15,
+                "dingEnabled": True, "outroEnabled": False, "splitEnabled": False, "partMinutes": 120},
         },
         "intro": {
             "enabled": False,
@@ -331,6 +335,9 @@ def character(name, description="", kind="main"):
 
 
 def validate_project(p):
+    from studio_qc import validate_checks
+    from studio_branding import validate as validate_watermark
+    from studio_engagement import validate as validate_engagement
     if not isinstance(p, dict) or not re.fullmatch(
         r"pr-[a-f0-9]{16}", str(p.get("id", ""))
     ):
@@ -351,6 +358,13 @@ def validate_project(p):
         raise ValueError("Intro duration must be 10–30 seconds.")
     if p["intro"]["placement"] not in ("full_story_only", "every_chapter"):
         raise ValueError("Invalid intro placement.")
+    if 'focusedPrompts' in p['settings'] and not isinstance(p['settings']['focusedPrompts'], bool):
+        raise ValueError('Focused prompts must be enabled or disabled.')
+    validate_checks(p['settings'])
+    validate_watermark(p['settings'].get('watermark', {}))
+    validate_engagement(p['settings'].get('engagement', {}))
+    if p['settings'].get('qcPolicy', 'practical') not in ('practical','strict'):
+        raise ValueError('Choose practical or strict visual review.')
     if not 0 <= int(p["settings"].get("maxImageRetries", 2)) <= 10:
         raise ValueError("Use 0–10 image retries.")
     if p['settings'].get('soundEffects', 'subtle') not in ('subtle', 'off'):
@@ -472,6 +486,7 @@ class ProjectStore:
         self.root = (Path(root) / "studio").resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
+        self.archive = None
 
     def folder(self, id):
         if not re.fullmatch(r"pr-[a-f0-9]{16}", str(id)):
@@ -479,6 +494,11 @@ class ProjectStore:
         return self.root / id
 
     def load(self, id):
+        if not (self.folder(id) / 'project.json').exists() and self.archive:
+            return self.archive.restore(id)
+        return self.load_local(id)
+
+    def load_local(self, id):
         with self.lock:
             return json.loads(
                 (self.folder(id) / "project.json").read_text(encoding="utf-8")
@@ -491,18 +511,22 @@ class ProjectStore:
             folder.mkdir(exist_ok=True)
             path = folder / "project.json"
             if path.exists():
-                old = json.loads(path.read_text(encoding="utf-8"))
+                previous_bytes = path.read_bytes()
+                old = json.loads(previous_bytes)
                 if expected is not None and old["revision"] != expected:
                     raise ValueError(
                         "Project changed in another operation. Reload before saving."
                     )
                 p["revision"] = old["revision"] + 1
-                backup = folder / "project.previous.json"
-                backup.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+                # Preserve the exact previous JSON bytes without serializing
+                # the entire project a second time. Publish backup atomically.
+                backup = folder / "project.previous.tmp"
+                backup.write_bytes(previous_bytes)
+                backup.replace(folder / 'project.previous.json')
             p["updated"] = time.time()
             temp = folder / "project.tmp"
             temp.write_text(
-                json.dumps(p, ensure_ascii=False, indent=2), encoding="utf-8"
+                json.dumps(p, ensure_ascii=False, separators=(',',':')), encoding="utf-8"
             )
             temp.replace(path)
             metadata = folder / "revision.tmp"
@@ -511,6 +535,8 @@ class ProjectStore:
                 encoding="utf-8",
             )
             metadata.replace(folder / "revision.json")
+            if self.archive:
+                self.archive.enqueue(p['id'])
             return copy.deepcopy(p)
 
     def revision(self, id):
@@ -522,14 +548,27 @@ class ProjectStore:
                 else {"revision": self.load(id)["revision"]}
             )
 
-    def mutate(self, id, fn):
+    def mutate(self, id, fn, *, skip_unchanged=False):
         with self.lock:
             p = self.load(id)
+            before = copy.deepcopy(p) if skip_unchanged else None
             result = fn(p)
-            self.save(p)
+            if not skip_unchanged or p != before:
+                self.save(p)
             return result if result is not None else p
 
     def list(self):
+        local = self.list_local()
+        if not self.archive: return local
+        try:
+            merged = {p['id']:p for p in self.archive.list_projects()}
+            for p in local:
+                if p['id'] not in merged or p['revision'] >= merged[p['id']]['revision']: merged[p['id']] = p
+            return sorted(merged.values(), key=lambda p:p['updated'], reverse=True)
+        except Exception:
+            return local
+
+    def list_local(self):
         result = []
         with self.lock:
             for f in self.root.glob("pr-*/project.json"):
@@ -541,6 +580,12 @@ class ProjectStore:
         return sorted(result, key=lambda p: p["updated"], reverse=True)
 
     def asset(self, id, name):
+        path = self.asset_local(id,name)
+        if not path.exists() and self.archive:
+            return self.archive.fetch_asset(id,name)
+        return path
+
+    def asset_local(self, id, name):
         folder = self.folder(id).resolve()
         path = (folder / name).resolve()
         if not path.is_relative_to(folder) or path.suffix.lower() not in (
@@ -552,6 +597,7 @@ class ProjectStore:
             ".m4a",
             ".mp4",
             ".json",
+            ".flac",
         ):
             raise ValueError("Invalid asset path.")
         if any(x.startswith(".") for x in Path(name).parts):

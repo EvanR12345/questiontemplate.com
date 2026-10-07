@@ -2,7 +2,9 @@
 
 import hashlib, json, math, os, shutil, subprocess, time, wave
 from pathlib import Path
+from studio_qc import decision as qc_decision
 from studio_data import digest
+from render_queue import render_unique_clips
 
 SUPPORTED_MOTIONS = {'static','slow zoom in','slow zoom out','pan left','pan right','pan up','pan down'}
 
@@ -32,6 +34,39 @@ class VideoRenderer:
         self.store = store
         self.config = config
         self._asset_digests = {}
+
+    @staticmethod
+    def available_memory_bytes():
+        try:
+            if os.name == 'nt':
+                import ctypes
+                class MemoryStatus(ctypes.Structure):
+                    _fields_ = [('length',ctypes.c_ulong),('load',ctypes.c_ulong)] + [
+                        (name,ctypes.c_ulonglong) for name in
+                        ('total','available','pageTotal','pageAvailable','virtualTotal','virtualAvailable','extended')]
+                status = MemoryStatus()
+                status.length = ctypes.sizeof(status)
+                if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                    return status.available
+            else:
+                return os.sysconf('SC_AVPHYS_PAGES') * os.sysconf('SC_PAGE_SIZE')
+        except (AttributeError,OSError,ValueError):
+            pass
+        return None
+
+    def render_capacity(self, video, pending=0):
+        maximum = self.config.get('renderWorkers',2)
+        if isinstance(maximum,bool) or not isinstance(maximum,int) or not 1 <= maximum <= 3:
+            raise ValueError('Choose one to three render workers.')
+        maximum = min(maximum,max(1,(os.cpu_count() or 1)//4))
+        available = self.available_memory_bytes()
+        if available is None:
+            return 1
+        # Account for workers already using RAM, then keep headroom for Chrome
+        # and the queue owner. Never kill a clip just because capacity shrank.
+        slot = max(256*2**20, video['width']*video['height']*300)
+        capacity = int((available + pending*slot - 512*2**20)//slot)
+        return max(1,min(maximum,capacity))
 
     def asset_identity(self, project_id, name):
         """Hash the saved bytes once per file revision, not QC or prompt metadata."""
@@ -100,46 +135,64 @@ class VideoRenderer:
                      gate, self.store.folder(project_id) / 'audition-export.log')
         return {'exportPath':destination.name, 'exportCodec':'AAC', 'exportBitrate':128000}
 
-    def run(self, args, gate, log):
+    def run(self, args, gate, log, multiple_outputs=False):
         # Cache names become visible only after FFmpeg succeeds. A cancelled
         # intro, WAV or concatenation must never be reused as a complete asset.
         destination = Path(args[-1])
         staging = destination.with_name(
             destination.stem + ".writing" + destination.suffix
         )
-        staged_args = [*args[:-1], str(staging)]
-        with Path(log).open("wb") as output:
-            proc = subprocess.Popen(
-                [self.executable(), "-hide_banner", "-nostdin", "-y", *staged_args],
-                stdout=output,
-                stderr=output,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            try:
-                while proc.poll() is None:
-                    gate("Rendering video")
-                    time.sleep(0.15)
-            except Exception:
-                proc.terminate()
+        staged_args = args if multiple_outputs else [*args[:-1], str(staging)]
+        try:
+            with Path(log).open("wb") as output:
+                proc = subprocess.Popen(
+                    [self.executable(), "-hide_banner", "-nostdin", "-y", *staged_args],
+                    stdout=output,
+                    stderr=output,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
                 try:
-                    proc.wait(5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
-                raise
-        if proc.returncode:
+                    while proc.poll() is None:
+                        gate("Rendering video")
+                        time.sleep(0.15)
+                except BaseException:
+                    proc.terminate()
+                    try:
+                        proc.wait(5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+                    raise
+            if proc.returncode:
+                raise RuntimeError(
+                    "FFmpeg rendering failed: "
+                    + Path(log).read_text(errors="replace")[-1400:]
+                )
+            if not multiple_outputs:
+                staging.replace(destination)
+        finally:
+            # This invocation owns its staging path. Keep completed clip caches
+            # and previous selected videos; a failed partial cannot be resumed.
+            if not multiple_outputs and staging.is_file():
+                staging.unlink()
+
+    @staticmethod
+    def require_output_space(destination, media_bytes, audio_seconds=0):
+        """Bound the next stream-copy assembly from actual completed inputs."""
+        required = math.ceil(media_bytes * 1.05 + audio_seconds * 16000) + 64 * 2**20
+        free = shutil.disk_usage(Path(destination).parent).free
+        if free < required:
             raise RuntimeError(
-                "FFmpeg rendering failed: "
-                + Path(log).read_text(errors="replace")[-1400:]
+                f'Not enough disk space to assemble this video: need about {required / 2**30:.2f} GB free; '
+                f'{free / 2**30:.2f} GB available. Completed clips and audio are saved. Free space and retry the render.'
             )
-        staging.replace(destination)
 
     def encoding(self, p):
         v = p["settings"]["video"]
         if (
             v["width"] not in (640, 1280, 1920)
             or v["height"] not in (360, 720, 1080)
-            or v["fps"] not in (24, 25, 30)
+            or v["fps"] not in (24, 25, 30, 60)
         ):
             raise ValueError("Use a supported output size and frame rate.")
         return [
@@ -203,8 +256,8 @@ class VideoRenderer:
             ('x0','y0','x1','y1','x2','y2','x3','y3'), corners))
         return f'{fitting},{repeat},format=yuv444p,perspective={transform}:sense=source:eval=frame:interpolation=cubic,format=yuv420p,setsar=1'
 
-    def concat(self, files, target, gate, log, durations=None, video_only=False):
-        listing = target.with_suffix(".concat.txt")
+    @staticmethod
+    def concat_listing(files, listing, durations=None):
         lines = []
         for i, f in enumerate(files):
             lines.append(
@@ -215,6 +268,10 @@ class VideoRenderer:
             if durations:
                 lines.append("duration " + str(durations[i]))
         listing.write_text("\n".join(lines), encoding="utf-8")
+        return listing
+
+    def concat(self, files, target, gate, log, durations=None, video_only=False):
+        listing = self.concat_listing(files,target.with_suffix('.concat.txt'),durations)
         self.run(
             [
                 "-f",
@@ -245,6 +302,9 @@ class VideoRenderer:
             raise ValueError("Generate every shot before rendering this chapter.")
         if not ch.get("audio", {}).get("path"):
             raise ValueError("Generate chapter narration first.")
+        for index,shot in enumerate(shots):
+            if qc_decision(p,shot,self.store)['blocking']:
+                raise ValueError(f'Shot {index+1} needs review. Accept this image or request a repair before rendering.')
         if any(s.get('qc', {}).get('status') == 'PENDING' for s in shots):
             raise ValueError('Finish pending image quality checks before rendering.')
         if ch["audio"].get("textDigest") and ch["audio"]["textDigest"] != digest(
@@ -295,10 +355,11 @@ class VideoRenderer:
                  old.get('signature') == legacy_signature and all(s['motion'] == 'static' for s in visual_shots) and self.legacy_is_current(old_path, assets))
         ):
             return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4"}
-        clips = []
+        clip_jobs = []
+        unique_jobs = {}
         durations = []
         for index, s in enumerate(shots):
-            gate(f"Rendering shot {index+1} / {len(shots)}")
+            gate(f"Preparing shot {index+1} / {len(shots)}")
             # Round absolute boundaries, avoiding accumulated per-shot rounding drift.
             frames = max(1, round(s["end"] * fps) - round(s["start"] * fps))
             duration = frames / fps
@@ -309,10 +370,10 @@ class VideoRenderer:
             legacy = folder / ('clip-' + digest({'rendererVersion': 5, 'shot': s, 'video': v})[:24] + '.mp4')
             if visual_shots[index]['motion'] == 'static':
                 self.reuse_legacy_clip(legacy, clip, [assets[index]])
-            if not clip.exists():
-                temporary = clip.with_suffix(".partial.mp4")
-                self.run(
-                    [
+            job = {
+                'clip':str(clip),
+                'args':[
+                        '-filter_threads','2',
                         "-i",
                         str(self.store.asset(p["id"], s["imagePath"])),
                         "-vf",
@@ -321,14 +382,24 @@ class VideoRenderer:
                         str(frames),
                         "-an",
                         *self.encoding(p),
-                        str(temporary),
+                        str(clip.with_suffix('.partial.mp4')),
                     ],
-                    gate,
-                    folder / "render.log",
-                )
-                temporary.replace(clip)
-            clips.append(clip)
+            }
+            # Identical pixels at different timeline positions share one clip.
+            # Use the first immutable plan even if identical source bytes have
+            # different asset names; no two workers write the same destination.
+            unique_jobs.setdefault(name,job)
+            clip_jobs.append((name,unique_jobs[name]))
             durations.append(duration)
+        def render_clip(job, worker_gate):
+            clip = Path(job['clip'])
+            if not clip.is_file() or clip.stat().st_size == 0:
+                self.run(job['args'],worker_gate,clip.with_suffix('.log'))
+                clip.with_suffix('.partial.mp4').replace(clip)
+            return clip
+        workers = self.config.get('renderWorkers',2)
+        clips = render_unique_clips(clip_jobs,render_clip,gate,workers=workers,
+                                   capacity=lambda pending:self.render_capacity(v,pending))
         # Each incoming crossfade blends from the previous shot's final frame.
         # Only two clips are decoded at once, and every boundary keeps its own
         # transition. The fade occupies the incoming shot's first 250 ms, so
@@ -373,14 +444,21 @@ class VideoRenderer:
                 assembled.append(clip)
         visual_identity = digest({'version': 1, 'clips': [clip.name for clip in assembled]})
         visual = folder / f"visual-{visual_identity[:24]}.mp4"
-        if not visual.exists():
-            self.concat(assembled, visual, gate, folder / "render.log")
         destination = folder / f"chapter-{ch['number']:03d}-{signature[:12]}.mp4"
         temp = destination.with_suffix(".partial.mp4")
+        # Reuse existing silent assemblies. For new chapters, concatenate and
+        # attach narration in one stream-copy pass, avoiding a second full video.
+        if visual.is_file() and visual.stat().st_size:
+            visual_input = ['-i',str(visual)]
+        else:
+            listing = self.concat_listing(assembled,destination.with_suffix('.concat.txt'))
+            visual_input = ['-f','concat','-safe','0','-i',str(listing)]
+        self.require_output_space(destination,
+            visual.stat().st_size if visual.is_file() and visual.stat().st_size else sum(c.stat().st_size for c in assembled),
+            ch['audio']['duration'])
         self.run(
             [
-                "-i",
-                str(visual),
+                *visual_input,
                 "-i",
                 str(self.store.asset(p["id"], ch["audio"]["path"])),
                 "-map",
@@ -416,10 +494,30 @@ class VideoRenderer:
             "downloadName": f"chapter-{ch['number']:03d}.mp4",
         }
 
+    def watermark_export(self, p, result, gate):
+        from studio_branding import identity, bitmap, coordinates
+        branding = identity(p,self.store)
+        if not branding.get('enabled', True): return result
+        source = self.store.asset(p['id'],result['path'])
+        signature = digest({'branding':branding,'source':self.asset_identity(p['id'],result['path']),
+                            'video':p['settings']['video']})
+        target = self.store.folder(p['id']) / ('watermarked-'+signature+'.mp4')
+        if not target.exists():
+            logo = target.with_suffix('.png')
+            bitmap(p,self.store,logo)
+            x,y = coordinates(p)
+            self.require_output_space(target,source.stat().st_size*2,result['duration'])
+            self.run(['-i',str(source),'-i',str(logo),'-filter_complex_threads','1',
+                      '-filter_complex',f'[0:v][1:v]overlay=x={x}:y={y}:eof_action=repeat:format=auto[v]',
+                      '-map','[v]','-map','0:a?','-c:a','copy',*self.encoding(p),
+                      '-movflags','+faststart',str(target)],gate,target.with_suffix('.log'))
+        return result | {'path':target.name,'signature':signature,'renderIdentity':signature,
+                         'watermarkIdentity':branding,'narrationRender':result}
+
     def chapter_export(self, p, ch, gate):
         base = self.chapter(p, ch, gate)
         if not p["intro"]["enabled"] or p["intro"]["placement"] != "every_chapter":
-            return base
+            return self.engagement_export(p,base,gate,namespace=ch['id'])
         single = p | {
             "chapters": [ch],
             "intro": p["intro"] | {"placement": "full_story_only"},
@@ -432,6 +530,11 @@ class VideoRenderer:
         }
 
     def intro(self, p, gate):
+        path = self.raw_intro(p,gate)
+        result = self.watermark_export(p,{'path':path.name,'duration':p['intro']['duration']},gate)
+        return self.store.asset(p['id'],result['path'])
+
+    def raw_intro(self, p, gate):
         intro = p["intro"]
         v = p["settings"]["video"]
         duration = float(intro["duration"])
@@ -472,8 +575,8 @@ class VideoRenderer:
             for index, shot in enumerate(intro['shots']):
                 if shot.get('qc', {}).get('status') == 'PENDING':
                     raise ValueError('Finish pending intro image quality checks before rendering.')
-                if shot.get('status') == 'FAILED':
-                    raise ValueError(f'Intro shot {index+1} failed quality review. Repair it before rendering.')
+                if qc_decision(p,shot,self.store)['blocking']:
+                    raise ValueError(f'Intro shot {index+1} needs review. Accept it or request a repair before rendering.')
                 start, end = float(shot['start']), float(shot['end'])
                 if not all(math.isfinite(x) for x in (start, end)) or abs(start-cursor) > .02 or end <= start or end > duration+.02:
                     raise ValueError('Intro shots must cover its duration in order without gaps or overlaps.')
@@ -561,7 +664,7 @@ class VideoRenderer:
 
         def add_intro():
             nonlocal duration
-            visual = self.intro(p, gate)
+            visual = self.raw_intro(p, gate)
             files.append(visual)
             durations.append(p["intro"]["duration"])
             duration += p["intro"]["duration"]
@@ -599,14 +702,15 @@ class VideoRenderer:
                 continue
             result = self.chapter(p, ch, gate)
 
+            chapter_result = self.watermark_export(p,result,gate)
             def chapter_saved(latest):
                 c = next(c for c in latest["chapters"] if c["id"] == ch["id"])
                 if (
                     c.get("render", {}).get("path")
-                    and c["render"]["path"] != result["path"]
+                    and c["render"]["path"] != chapter_result["path"]
                 ):
                     c.setdefault("renderHistory", []).append(c["render"])
-                c.update(render=result, renderStale=False)
+                c.update(render=chapter_result, renderStale=bool(p["intro"]["enabled"] and p["intro"]["placement"] == "every_chapter"))
 
             self.store.mutate(p["id"], chapter_saved)
             if p["intro"]["enabled"] and p["intro"]["placement"] == "every_chapter":
@@ -677,10 +781,118 @@ class VideoRenderer:
                 log,
             )
             temporary.replace(target)
-        return {
+        return self.engagement_export(p,{
             "path": target.name,
             "duration": duration,
             "signature": signature,
             "downloadName": p["name"] + ".mp4",
             "created": time.time(),
-        }
+        },gate)
+
+    def engagement_export(self, p, result, gate, namespace='full'):
+        from studio_engagement import settings, schedule, card, ding, audio_signature
+        s=settings(p)
+        if s['outroEnabled'] and callable(getattr(self,'prepare_outro',None)):
+            self.prepare_outro(p); s=settings(p)
+        events=schedule(p,result['duration'],namespace)
+        if not events and not s['outroEnabled']:
+            final=self.watermark_export(p,result,gate)
+            if s['splitEnabled']:final=final|{'parts':self.split_export(p,final,gate,s['partMinutes'])}
+            return final
+        from studio_branding import identity as branding_identity, bitmap, coordinates
+        branding=branding_identity(p,self.store)
+        brand=branding.get('enabled',True) and result.get('watermarkIdentity')!=branding
+        folder=self.store.folder(p['id']); source=self.store.asset(p['id'],result['path'])
+        identity={'version':2,'source':self.asset_identity(p['id'],result['path']),
+                  'settings':s,'events':events,'video':p['settings']['video'],'namespace':namespace,'branding':branding}
+        if s['outroEnabled']:
+            if not s['outroAudioPath'] or s['outroAudioSignature']!=audio_signature(p):
+                raise ValueError('Prepare the updated outro narration before rendering. Chapter audio is unchanged.')
+            audio=self.store.asset(p['id'],s['outroAudioPath'])
+            identity['outroAudio']=self.asset_identity(p['id'],s['outroAudioPath'])
+        signature=digest(identity); duration=result['duration']
+        decorated=source
+        if events:
+            decorated=folder/f'reminders-{signature[:20]}.mp4'
+            if not decorated.exists():
+                logo=decorated.with_suffix('.png'); card(p,logo)
+                inputs=['-i',str(source),'-i',str(logo)]
+                enabled='+'.join(f'between(t,{e["start"]},{e["end"]})' for e in events)
+                x='main_w-overlay_w-24' if s['position']=='bottom-right' else '24'
+                filters=[f"[0:v][1:v]overlay=x={x}:y=main_h-overlay_h-24:eof_action=repeat:enable='{enabled}'[{ 'reminded' if brand else 'v' }]"]
+                next_input=2
+                if brand:
+                    mark=decorated.with_name(decorated.stem+'-watermark.png');bitmap(p,self.store,mark);bx,by=coordinates(p)
+                    inputs+=['-i',str(mark)];next_input+=1
+                    filters.append(f'[reminded][2:v]overlay=x={bx}:y={by}:eof_action=repeat:format=auto[v]')
+                audio_map='0:a:0'
+                if s['dingEnabled'] and s['dingVolume']>0:
+                    bell=decorated.with_suffix('.wav'); ding(bell,s['dingVolume']); inputs+=['-i',str(bell)]
+                    filters.append(f'[{next_input}:a]asplit='+str(len(events))+''.join(f'[bell{i}]' for i in range(len(events))))
+                    segments=[]; cursor=0
+                    for i,e in enumerate(events):
+                        gap=max(0,e['start']-cursor)
+                        filters += [f'anullsrc=r=24000:cl=mono:d={gap}[sil{i}]',
+                                    f'[bell{i}]atrim=duration=0.6,asetpts=PTS-STARTPTS[tone{i}]']
+                        segments += [f'[sil{i}]',f'[tone{i}]']; cursor=e['start']+.6
+                    filters.append(f'anullsrc=r=24000:cl=mono:d={max(0,duration-cursor)}[tail]')
+                    segments.append('[tail]')
+                    filters.append(''.join(segments)+f'concat=n={len(segments)}:v=0:a=1[chimes]')
+                    filters.append('[0:a][chimes]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=0[a]')
+                    audio_map='[a]'
+                graph=decorated.with_suffix('.filters.txt'); graph.write_text(';'.join(filters),encoding='utf-8')
+                self.require_output_space(decorated,source.stat().st_size*2,duration)
+                self.run([*inputs,'-filter_complex_threads','1','-filter_complex_script',str(graph),
+                    '-map','[v]','-map',audio_map,*self.encoding(p),'-c:a','aac','-b:a','128k',
+                    '-t',str(duration),'-movflags','+faststart',str(decorated)],gate,decorated.with_suffix('.log'))
+        elif brand:
+            decorated=self.store.asset(p['id'],self.watermark_export(p,result,gate)['path'])
+        target=decorated
+        if s['outroEnabled']:
+            outro=folder/f'outro-{signature[:20]}.mp4'
+            with wave.open(str(audio),'rb') as wav: spoken=wav.getnframes()/wav.getframerate()
+            outro_duration=max(s['outroDuration'],spoken+.5)
+            if not outro.exists():
+                visual=outro.with_suffix('.png'); card(p,visual,outro=True)
+                inputs=['-loop','1','-i',str(visual),'-i',str(audio)]
+                if branding.get('enabled',True):
+                    mark=outro.with_name(outro.stem+'-watermark.png');bitmap(p,self.store,mark);bx,by=coordinates(p)
+                    inputs+=['-i',str(mark),'-filter_complex_threads','1','-filter_complex',f'[0:v][2:v]overlay=x={bx}:y={by}:eof_action=repeat:format=auto[v]', '-map','[v]','-map','1:a:0']
+                self.run([*inputs,'-af','apad',
+                    '-t',str(outro_duration),*self.encoding(p),'-c:a','aac','-b:a','128k',
+                    '-ar','24000','-ac','1','-movflags','+faststart',str(outro)],gate,outro.with_suffix('.log'))
+            target=folder/f'complete-{signature[:20]}.mp4'
+            if not target.exists(): self.concat([decorated,outro],target,gate,target.with_suffix('.log'),[duration,outro_duration])
+            duration+=outro_duration
+        final=result | {'path':target.name,'duration':duration,'signature':signature,
+                         'engagementEvents':events,'engagementIdentity':identity,'narrationRender':result,'watermarkIdentity':branding}
+        if s['splitEnabled']:
+            final['parts']=self.split_export(p,final,gate,s['partMinutes'])
+        return final
+
+    def split_export(self,p,result,gate,minutes):
+        """Keyframe-aware stream-copy parts: no new image/director/audio calls."""
+        source=self.store.asset(p['id'],result['path']); length=float(minutes)*60
+        signature=digest({'source':self.asset_identity(p['id'],result['path']),'minutes':minutes,'version':1})
+        folder=self.store.folder(p['id'])/('parts-'+signature[:16]); folder.mkdir(exist_ok=True)
+        receipt=folder/'parts.json'
+        if receipt.exists():
+            saved=json.loads(receipt.read_text(encoding='utf-8'))
+            if all(self.store.asset(p['id'],x['path']).is_file() for x in saved): return saved
+        # FFmpeg segment muxer chooses existing keyframes near the requested time.
+        # Report measured boundaries, not an exact two-hour promise.
+        staging=folder/'working'; staging.mkdir(exist_ok=True)
+        pattern=staging/'part-%03d.mp4'; listing=staging/'segments.csv'
+        self.require_output_space(folder/'parts.json',source.stat().st_size)
+        self.run(['-i',str(source),'-map','0','-c','copy','-f','segment','-segment_time',str(length),
+            '-reset_timestamps','1','-segment_list',str(listing),'-segment_list_type','csv',str(pattern)],gate,folder/'split.log',multiple_outputs=True)
+        import csv
+        parts=[]
+        for i,row in enumerate(csv.reader(listing.read_text(encoding='utf-8').splitlines()),1):
+            file=folder/Path(row[0]).name
+            (staging/file.name).replace(file)
+            parts.append({'number':i,'path':file.relative_to(self.store.folder(p['id'])).as_posix(),
+                'start':float(row[1]),'end':float(row[2]),'duration':float(row[2])-float(row[1]),
+                'downloadName':f'{p["name"]}-part-{i:02d}.mp4','keyframeAligned':True})
+        temp=receipt.with_suffix('.tmp'); temp.write_text(json.dumps(parts),encoding='utf-8'); temp.replace(receipt)
+        return parts

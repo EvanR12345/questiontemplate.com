@@ -1,15 +1,32 @@
 """Cloud image checks that do not rent a GPU or download weights."""
 
+import copy
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from image_provider import ComfyImageProvider, reference_prompt, select_references, visible_appearance
+from image_provider import ComfyImageProvider, reference_prompt, select_references, visible_appearance, visual_continuity
 from studio_data import ProjectStore, character, new_project
 
 
 class CloudImageTest(unittest.TestCase):
+    def test_continuity_uses_human_names_without_database_identifier_fields(self):
+        state = {'location': 'loc-123', 'locationId': 'loc-123', 'grid': 'room layout',
+                 'characters': {'char-123': {'characterId': 'char-123', 'outfit': 'blue coat',
+                                            'currentAppearance': {'phone': 'on floor', 'reference_ids': ['asset-123']}}}}
+        before = copy.deepcopy(state)
+        visible = visual_continuity(state, {'loc-123': 'School hall', 'char-123': 'Mira'})
+        self.assertEqual(visible, {'location': 'School hall', 'grid': 'room layout',
+                         'characters': {'Mira': {'outfit': 'blue coat', 'currentAppearance': {'phone': 'on floor'}}}})
+        self.assertEqual(state, before)
+
+    def test_list_continuity_keeps_physical_facts_and_removes_record_ids(self):
+        value = {'objects': [{'id': 'object-123', 'name': 'silver watch', 'position': 'left wrist'}],
+                 'weather': 'rain', 'clothing': 'new uniform'}
+        self.assertEqual(visual_continuity(value, {}), {'objects': [{'name': 'silver watch', 'position': 'left wrist'}],
+                        'weather': 'rain', 'clothing': 'new uniform'})
+
     def test_generic_raised_weapon_retains_one_known_held_prop(self):
         shot = {'action':'Christopher remains ready to fight.', 'narrationSegment':'He was still fighting.',
                 'pose':'Weapon raised toward his opponents.', 'camera':{}}
@@ -115,7 +132,7 @@ class CloudImageTest(unittest.TestCase):
             "image_provider.request_json",
             return_value={"devices": [{"vram_total": 16 * 2**30}]},
         ):
-            with self.assertRaisesRegex(ValueError, "16.0 GB"):
+            with self.assertRaisesRegex(ValueError, "16.0 GiB"):
                 self.provider().validateSettings(
                     {"width": 1024, "height": 1024, "steps": 40, "seed": 41}
                 )
@@ -127,7 +144,7 @@ class CloudImageTest(unittest.TestCase):
 
     def test_cpu_server_cannot_claim_gpu_workflow(self):
         with patch("image_provider.request_json", return_value={"devices": []}):
-            with self.assertRaisesRegex(ValueError, "0.0 GB"):
+            with self.assertRaisesRegex(ValueError, "0.0 GiB"):
                 self.provider().validateSettings(
                     {"width": 1024, "height": 1024, "steps": 40, "seed": 41}
                 )
@@ -194,6 +211,62 @@ class CloudImageTest(unittest.TestCase):
         provider.template = lambda: {"model": "qwen", "prompt": {}, "bindings": {}}
         with self.assertRaisesRegex(ValueError, "Too many references"):
             provider.generateImage({"settings": {"model": "qwen", "seed": 1, "steps": 40}, "prompt": "Repair watch", "operation": "edit", "sourceImage": "source", "referenceImages": ["first", "second", "third"]}, lambda *args: None)
+
+    def test_main_identity_references_cannot_be_silently_truncated(self):
+        project, shot, _ = self.project_and_shot()
+        for person in project['characters']:
+            person['references'] = [{'path': 'not-read.png', 'kind': 'face'}]
+        provider = self.provider()
+        provider.getCapabilities = lambda: {'maxReferenceImages': 1}
+        with patch('image_provider.data_url') as read:
+            with self.assertRaisesRegex(ValueError, 'identity references for 2 main characters'):
+                select_references(project, shot, None, provider)
+            read.assert_not_called()
+
+    def test_manual_references_require_explicit_selection_change_when_over_limit(self):
+        project, shot, _ = self.project_and_shot()
+        shot.update(manual={'referenceImages': True}, referenceImages=[{'path': 'first'}, {'path': 'second'}])
+        provider = self.provider()
+        provider.getCapabilities = lambda: {'maxReferenceImages': 1}
+        with patch('image_provider.data_url') as read:
+            with self.assertRaisesRegex(ValueError, 'no references were silently dropped'):
+                select_references(project, shot, None, provider)
+            read.assert_not_called()
+        self.assertEqual(len(shot['referenceImages']), 2)
+
+    def test_model_specific_reference_limit_is_respected_before_reading_assets(self):
+        project, shot, _ = self.project_and_shot()
+        for person in project['characters']:
+            person['references'] = [{'path': 'not-read.png', 'kind': 'face'}]
+        provider = self.provider()
+        provider.getCapabilities = lambda: {'maxReferenceImages': 3}
+        provider.getModelCapabilities = lambda model: {'maxReferenceImages': 1}
+        shot['imageModel'] = 'one-reference-model'
+        with patch('image_provider.data_url') as read:
+            with self.assertRaisesRegex(ValueError, '1 available reference slots'):
+                select_references(project, shot, None, provider)
+            read.assert_not_called()
+
+    def test_edit_source_cannot_displace_the_only_main_identity_reference(self):
+        project, shot, _ = self.project_and_shot()
+        shot['characters'] = shot['characters'][:1]
+        project['characters'][0]['references'] = [{'path': 'not-read.png', 'kind': 'face'}]
+        provider = self.provider()
+        provider.getCapabilities = lambda: {'maxReferenceImages': 1}
+        with patch('image_provider.data_url') as read:
+            with self.assertRaisesRegex(ValueError, '0 available reference slots'):
+                select_references(project, shot, None, provider, reserved_slots=1)
+            read.assert_not_called()
+
+    def test_generator_without_reference_support_does_not_read_unused_assets(self):
+        project, shot, _ = self.project_and_shot()
+        for person in project['characters']:
+            person['references'] = [{'path': 'not-read.png', 'kind': 'face'}]
+        provider = self.provider()
+        provider.getCapabilities = lambda: {'maxReferenceImages': 0}
+        with patch('image_provider.data_url') as read:
+            self.assertEqual(select_references(project, shot, None, provider), ([], []))
+            read.assert_not_called()
 
 
 if __name__ == "__main__":

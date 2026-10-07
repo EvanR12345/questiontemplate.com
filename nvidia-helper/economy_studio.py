@@ -168,6 +168,16 @@ def generate_panel_story(service, pid, options):
                 latest['renderStale'] = True
                 get_chapter(latest,chapter['id'])['renderStale'] = True
             service.store.mutate(pid,commit)
+            if p['settings'].get('qcCheckLevel') in ('sampled','practical','strict'):
+                from studio_qc import should_check, decision
+                for sid,_,_ in saved:
+                    latest = service.store.load(pid)
+                    shot = get_shot(latest,chapter['id'],sid)
+                    if should_check(latest,shot):
+                        service.inspect_shot(latest,chapter['id'],sid)
+                        reviewed = service.store.load(pid)
+                        if decision(reviewed,get_shot(reviewed,chapter['id'],sid),service.store)['blocking']:
+                            raise ValueError('Economy image needs your review. No replacement was purchased; accept it or request a repair.')
             seconds = time.monotonic()-began
             completed_batches.append(seconds)
             service.record_timing(pid,'Economy image canvas',seconds,{'chapter':chapter['number'],'shots':[s['id'] for s in current],'images':len(current),

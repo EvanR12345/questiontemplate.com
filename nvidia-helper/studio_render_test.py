@@ -6,6 +6,35 @@ from studio_render import VideoRenderer, effective_motion
 
 
 class MotionTest(unittest.TestCase):
+    def test_assembly_rejects_insufficient_space_without_deleting_inputs(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'completed-clip.mp4';source.write_bytes(b'keep')
+            with patch('studio_render.shutil.disk_usage',return_value=SimpleNamespace(free=80*2**20)):
+                with self.assertRaisesRegex(RuntimeError,'Completed clips and audio are saved'):
+                    VideoRenderer.require_output_space(Path(folder)/'final.mp4',100*2**20,120)
+            self.assertEqual(source.read_bytes(),b'keep')
+            with patch('studio_render.shutil.disk_usage',return_value=SimpleNamespace(free=300*2**20)):
+                VideoRenderer.require_output_space(Path(folder)/'final.mp4',100*2**20,120)
+
+    def test_render_pool_respects_ram_cpu_and_configured_limit(self):
+        renderer = VideoRenderer(None,{})
+        video = {'width':1280,'height':720}
+        with patch('studio_render.os.cpu_count',return_value=12):
+            with patch.object(renderer,'available_memory_bytes',return_value=3*2**30):
+                self.assertEqual(renderer.render_capacity(video),2)
+                renderer.config['renderWorkers'] = 3
+                self.assertEqual(renderer.render_capacity(video),3)
+            with patch.object(renderer,'available_memory_bytes',return_value=256*2**20):
+                self.assertEqual(renderer.render_capacity(video),1)
+            with patch.object(renderer,'available_memory_bytes',return_value=None):
+                self.assertEqual(renderer.render_capacity(video),1)
+        with patch('studio_render.os.cpu_count',return_value=4), patch.object(renderer,'available_memory_bytes',return_value=3*2**30):
+            self.assertEqual(renderer.render_capacity(video),1)
+        renderer.config['renderWorkers'] = True
+        with self.assertRaises(ValueError):
+            renderer.render_capacity(video)
+
     def shot(self, camera="medium", duration=10, **extra):
         return {"start": 0, "end": duration, "camera": {"shot": camera}, "motion": "static", **extra}
 
@@ -117,7 +146,11 @@ class RenderReuseTest(unittest.TestCase):
             renderer = VideoRenderer(store, {})
             with patch.object(renderer, 'run', side_effect=self.save_output) as run:
                 ch['render'] = renderer.chapter(p, ch, lambda *_: None)
-                self.assertEqual(run.call_count, 4)
+                self.assertEqual(run.call_count, 3)
+                args = run.call_args.args[0]
+                self.assertEqual(args[:4],['-f','concat','-safe','0'])
+                self.assertEqual(args[args.index('-c:v')+1],'copy')
+                self.assertFalse(list((store.folder(p['id'])/ch['id']).glob('visual-*.mp4')))
                 run.reset_mock()
                 ch['scenes'][0]['shots'][0].update(qc={'status':'REVIEW_REQUIRED', 'issues':['watch']}, prompt='Revised prompt', seed=123)
                 ch['audio']['reviewNotes'] = 'Reviewed'

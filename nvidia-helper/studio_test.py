@@ -12,6 +12,53 @@ from studio_render import VideoRenderer
 
 
 class StudioDataTest(unittest.TestCase):
+    def test_remote_work_keeps_voice_on_gpu_but_local_models_release_it(self):
+        from studio_service import StudioService
+        from unittest.mock import Mock
+        service=StudioService.__new__(StudioService)
+        service.before_image=Mock()
+        project=new_project()
+        project['settings']['director']['provider']='openai-luna'
+        service.prepare_director_device(project)
+        service.prepare_image_device(type('Cloud',(),{'id':'comfyui'})())
+        service.before_image.assert_not_called()
+        project['settings']['director']['provider']='local-qwen'
+        service.prepare_director_device(project)
+        service.prepare_image_device(type('Local',(),{'id':'existing'})())
+        service.prepare_image_device(type('LocalFlux',(),{'id':'native-flux'})())
+        self.assertEqual(service.before_image.call_count,3)
+
+    def test_queue_noop_does_not_rewrite_project_or_advance_revision(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = ProjectStore(folder)
+            p = store.save(new_project('Preserve existing project'))
+            path = store.folder(p['id']) / 'project.json'
+            original = path.read_bytes()
+            stamp = path.stat().st_mtime_ns
+            returned = store.mutate(p['id'], lambda q: q.update(name=q['name']), skip_unchanged=True)
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(path.stat().st_mtime_ns, stamp)
+            self.assertEqual(returned['revision'], p['revision'])
+            self.assertFalse((path.parent / 'project.previous.json').exists())
+            store.mutate(p['id'], lambda q: q.update(name='Actual change'), skip_unchanged=True)
+            self.assertEqual(store.load(p['id'])['revision'], p['revision'] + 1)
+            self.assertEqual((path.parent / 'project.previous.json').read_bytes(), original)
+
+    def test_compact_save_preserves_unicode_fields_and_exact_previous_backup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=ProjectStore(folder);p=store.save(new_project('Unicode — story'))
+            path=store.folder(p['id'])/'project.json'
+            # Simulate an older pretty export with LF line endings.
+            old=json.loads(path.read_bytes());old['customNotes']={'prose':'A\nB — café','manual':True}
+            raw=json.dumps(old,ensure_ascii=False,indent=2).encode('utf-8')
+            path.write_bytes(raw)
+            store.mutate(p['id'],lambda q:q.update(name='Revised'))
+            self.assertEqual((path.parent/'project.previous.json').read_bytes(),raw)
+            reloaded=store.load(p['id'])
+            self.assertEqual(reloaded['customNotes'],old['customNotes'])
+            self.assertEqual(reloaded['revision'],old['revision']+1)
+            self.assertNotIn(b'\n',path.read_bytes())
+
     def test_direct_job_times_survive_retries_without_double_counting(self):
         from studio_service import StudioService
         p = new_project()
@@ -242,6 +289,7 @@ class StudioDataTest(unittest.TestCase):
             service.provider = lambda *args: Provider()
             service.director = Director()
             service.gate = lambda *args: None
+            service.before_image = lambda: None
             service.repair_identity_bindings(p["id"], ch["id"])
             result = service.store.load(p["id"])["chapters"][0]
             first, last = result["scenes"][0]["shots"]
@@ -536,6 +584,7 @@ class ProductionQueueTest(unittest.TestCase):
                         [str(target)], lambda *args: None, Path(folder) / "render.log"
                     )
             self.assertEqual(target.read_bytes(), b"previous completed video")
+            self.assertFalse(target.with_name('intro.writing.mp4').exists())
 
     def test_thousand_jobs_cancel_recover_and_retry_keep_assets_and_seeds(self):
         from studio_service import StudioService

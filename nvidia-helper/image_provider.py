@@ -1,6 +1,7 @@
 """Image backends are replaceable; no story facts or timeline logic lives here."""
+from prompt_quality import execution_evidence
 
-import base64, copy, hashlib, io, json, math, re, secrets, subprocess, time, urllib.request
+import base64, copy, hashlib, io, json, math, re, secrets, subprocess, time, urllib.error, urllib.request
 from pathlib import Path
 from PIL import Image, ImageStat
 from director_provider import local_url, request_json
@@ -24,6 +25,17 @@ BASE_CAPS = {
         "supportsBatchGeneration",
     )
 }
+
+
+class RemoteGenerationUncertain(RuntimeError):
+    """A request may already have generated an image; never retry automatically."""
+    def __init__(self, prompt_id=None, timed_out=False):
+        self.prompt_id = prompt_id
+        self.timed_out = timed_out
+        detail = (' ComfyUI prompt ID: ' + str(prompt_id) + '.') if prompt_id else ''
+        super().__init__('Image request outcome is uncertain.' + detail +
+            ' Check the existing ComfyUI queue/history before retrying; no automatic new generation was submitted.'
+            ' Stop the rented GPU if you are finished: stopping this queue does not stop rental billing.')
 BASE_CAPS.update(
     maxReferenceImages=0,
     maxResolution=512,
@@ -102,13 +114,23 @@ class ImageProvider:
         memory = self.available_vram_gb() if check_hardware else None
         requirements = caps.get("hardwareRequirements", {})
         minimum = requirements.get("vramGB", 0)
+        unit = requirements.get('vramUnit', 'GiB')
+        if unit not in ('GiB', 'nominalGB'):
+            raise ValueError('Unknown workflow VRAM unit.')
+        if isinstance(minimum,bool) or not isinstance(minimum,(int,float)) or not math.isfinite(minimum) or minimum<0:
+            raise ValueError('Workflow VRAM requirement must be a non-negative number.')
+        # Existing declarations retain their GiB semantics. A workflow may
+        # explicitly describe a marketed card class in nominal GB instead.
+        # Driver/ECC reservations are then handled in the same byte units as
+        # the remote hardware admission; this does not promise inference fit.
+        minimum_gib = minimum*1_000_000_000*.94/2**30 if unit=='nominalGB' else minimum
         if (
             memory is not None
-            and minimum > memory + 0.05
+            and minimum_gib > memory + 0.05
             and requirements.get("mode") not in ("cpu", "cpu-offload")
         ):
             raise ValueError(
-                f"This workflow requires approximately {minimum} GB VRAM; this GPU has {memory:.1f} GB. Select a smaller model or explicitly configure a tested CPU/offload workflow."
+                f"This workflow requires approximately {minimum} {unit} VRAM; this GPU has {memory:.1f} GiB usable. Select a smaller model or explicitly configure a tested CPU/offload workflow."
             )
         for field in ("width", "height", "steps"):
             n = result.get(field, self.getRecommendedSettings()[field])
@@ -702,6 +724,15 @@ class ComfyImageProvider(ImageProvider):
             return {"installed": False, "error": str(e)}
 
     def generateImage(self, r, checkpoint):
+        began = time.monotonic()
+        polling_interval = self.config.get('comfyPollInterval', .25)
+        timeout = self.config.get('comfyGenerationTimeoutSeconds', 600)
+        if (isinstance(polling_interval, bool) or not isinstance(polling_interval, (int, float))
+                or not math.isfinite(polling_interval) or not .1 <= polling_interval <= 2):
+            raise ValueError('ComfyUI polling interval must be 0.1–2 seconds.')
+        if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                or not math.isfinite(timeout) or not 30 <= timeout <= 3600):
+            raise ValueError('ComfyUI generation timeout must be 30–3600 seconds.')
         s = self.validateSettings(r["settings"])
         t, s = self.resolve_template(r, s)
         health = self.healthCheck()
@@ -736,11 +767,14 @@ class ComfyImageProvider(ImageProvider):
                 for value in prompt.values():
                     value["inputs"] = {key: field for key, field in value["inputs"].items()
                         if not (isinstance(field, list) and field and str(field[0]) == str(node))}
+        prepared = time.monotonic()
+        upload_hits = 0
         for index, ref in enumerate(refs):
             checkpoint(0, s["steps"], "Uploading character references")
             raw = base64.b64decode(ref.split(",", 1)[-1])
             fingerprint = hashlib.sha256(raw).hexdigest()
             uploaded_name = self._uploads.get(fingerprint)
+            upload_hits += int(bool(uploaded_name))
             boundary = "qt-" + secrets.token_hex(8)
             name = "qt-" + secrets.token_hex(8) + ".png"
             body = (
@@ -760,38 +794,86 @@ class ComfyImageProvider(ImageProvider):
                 self._uploads[fingerprint] = uploaded_name
             for node, field in t["bindings"].get("reference" + str(index), []):
                 prompt[str(node)]["inputs"][field] = uploaded_name
-        job = request_json(
-            self.url + "/prompt", {"prompt": prompt, "client_id": secrets.token_hex(16)}
-        )
-        id = job["prompt_id"]
+        uploaded_at = time.monotonic()
+        observer = r.get('_executionObserver')
+        if observer is not None and not callable(observer):
+            raise ValueError('Execution observer must be callable.')
+        operation_id = 'comfy-' + secrets.token_hex(16)
+        if observer:
+            observer('submitting', {'operationId': operation_id, 'provider': 'comfyui'})
+        try:
+            job = request_json(
+                self.url + "/prompt", {"prompt": prompt, "client_id": secrets.token_hex(16)}
+            )
+            id = job['prompt_id']
+            if not isinstance(id,str) or not id:
+                raise ValueError('No confirmed ComfyUI prompt identity.')
+            if observer:
+                try:observer('accepted', {'operationId': operation_id, 'remoteId': id})
+                except Exception as error:raise RemoteGenerationUncertain(id) from error
+        except urllib.error.HTTPError as error:
+            # A gateway can return 408 after the worker accepted the request.
+            # Only explicit rejection statuses are safe to classify as unused.
+            if error.code in (400, 401, 403, 404, 413, 422, 429):
+                if observer:
+                    observer('rejected', {'operationId': operation_id})
+                raise
+            raise RemoteGenerationUncertain() from error
+        except (OSError, ValueError, KeyError) as error:
+            raise RemoteGenerationUncertain() from error
+        submitted_at = time.monotonic()
         started = time.time()
+        polls = 0
         try:
             while True:
                 checkpoint(0, s["steps"], "ComfyUI generation")
-                history = request_json(self.url + "/history/" + id)
+                try:
+                    history = request_json(self.url + "/history/" + id, timeout=15)
+                except (OSError, ValueError) as error:
+                    raise RemoteGenerationUncertain(id) from error
+                polls += 1
                 if id in history:
                     break
-                time.sleep(0.5)
-        except Exception:
+                if time.monotonic() - submitted_at > timeout:
+                    raise RemoteGenerationUncertain(id, timed_out=True)
+                time.sleep(polling_interval)
+        except Exception as error:
             # Remove this queued job. Interrupt only if this job owns the running slot.
-            try:
-                request_json(self.url + "/queue", {"delete": [id]})
-                q = request_json(self.url + "/queue")
-                if any(v[1] == id for v in q.get("queue_running", [])):
-                    request_json(self.url + "/interrupt", {})
-            except Exception:
-                pass
+            # A transient disconnect may still finish successfully. Leave that
+            # request alone for reconciliation; explicit cancel/timeout stops it.
+            if not isinstance(error, RemoteGenerationUncertain) or error.timed_out:
+                try:
+                    request_json(self.url + "/queue", {"delete": [id]}, timeout=3)
+                    q = request_json(self.url + "/queue", timeout=3)
+                    if any(v[1] == id for v in q.get("queue_running", [])):
+                        request_json(self.url + "/interrupt", {}, timeout=3)
+                except Exception:
+                    pass
             raise
+        finished_at = time.monotonic()
         entry = history[id]
         if entry.get("status", {}).get("status_str") == "error":
+            if observer:
+                try:observer('failed', {'operationId': operation_id})
+                except Exception as error:raise RemoteGenerationUncertain(id) from error
             raise RuntimeError("ComfyUI failed: " + str(entry.get("status"))[:1200])
-        image = next(
-            v["images"][0] for v in entry["outputs"].values() if v.get("images")
-        )
+        try:
+            image = next(
+                v["images"][0] for v in entry["outputs"].values() if v.get("images")
+            )
+        except (KeyError, StopIteration, TypeError, AttributeError) as error:
+            raise RemoteGenerationUncertain(id) from error
         from urllib.parse import urlencode
 
-        with urllib.request.urlopen(self.url + "/view?" + urlencode(image)) as response:
-            img = visible_image(response.read())
+        try:
+            with urllib.request.urlopen(self.url + "/view?" + urlencode(image), timeout=30) as response:
+                raw = response.read()
+        except OSError as error:
+            raise RemoteGenerationUncertain(id) from error
+        img = visible_image(raw)
+        if observer:
+            try:observer('completed', {'operationId': operation_id})
+            except Exception as error:raise RemoteGenerationUncertain(id) from error
         return {
             "pil": img,
             "seed": s["seed"],
@@ -801,6 +883,19 @@ class ComfyImageProvider(ImageProvider):
             "workflow": t["name"],
             "settings": s,
             "resolvedWorkflow": prompt,
+            'remotePromptId': id,
+            'serverExecutionEvidence': execution_evidence(entry,prompt),
+            'providerTimings': {
+                'preparationSeconds': prepared-began,
+                'referenceUploadSeconds': uploaded_at-prepared,
+                'submissionSeconds': submitted_at-uploaded_at,
+                'waitAndPollingSeconds': finished_at-submitted_at,
+                'retrievalAndValidationSeconds': time.monotonic()-finished_at,
+                'totalClientSeconds': time.monotonic()-began,
+                'historyRequests': polls,
+                'references':len(refs),'referenceUploadCacheHits':upload_hits,
+                'timingSource':'client wall time; wait includes queue, inference and polling',
+            },
         }
 
 
@@ -831,7 +926,22 @@ def visible_appearance(shot, selected):
     return {k:v for k,v in appearance.items() if k not in weapons or k in named}
 
 
+def visual_continuity(value, names):
+    """Keep visual facts while removing database identifiers from model text."""
+    if isinstance(value, dict):
+        return {names.get(key, key): visual_continuity(item, names)
+                for key, item in value.items()
+                if not re.search(r'(?:^id$|[_-]ids?$|Ids?$|IDs?$)', key)}
+    if isinstance(value, list):
+        return [visual_continuity(item, names) for item in value]
+    return names.get(value, value) if isinstance(value, str) else value
+
+
 def format_prompt(project, shot, provider):
+    from prompt_quality import focused
+    use_focused = focused(project,shot)
+    if project["settings"].get("focusedPrompts") is True and shot.get("manual",{}).get("prompt"):
+        return shot.get("prompt",""),shot.get("negativePrompt","")
     people = {c["id"]: c for c in project["characters"]}
     ch = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
     people.update({c["id"]: c for c in ch["people"]})
@@ -845,6 +955,8 @@ def format_prompt(project, shot, provider):
             + [f"{k}: {v}" for k, v in identity.items() if v]
             + [f"{k}: {v}" for k, v in visible_appearance(shot, selected).items() if v]
         )
+        if use_focused:
+            details += [f"{k}: {p[k]}" for k in ("gender","approximateAge") if p.get(k)]
         descriptions.append("; ".join(details))
     camera = shot["camera"]
     parts = [
@@ -871,19 +983,21 @@ def format_prompt(project, shot, provider):
     visual_constraints = project['settings'].get('imageVisualConstraints', project['settings'].get('visualConstraints', ''))
     if visual_constraints:
         parts.append('Production constraints: ' + visual_constraints)
-    parts.append('One continuous landscape composition depicting one simultaneous moment. No collage, split panels, borders, labels or title text. Preserve the specified identities and current clothing; do not remove clothing without a stated story change.')
+    parts.append('One continuous landscape scene; one simultaneous moment. Preserve identities and current clothing; only stated story changes override them.' if use_focused else 'One continuous landscape composition depicting one simultaneous moment. No collage, split panels, borders, labels or title text. Preserve the specified identities and current clothing; do not remove clothing without a stated story change.')
     if shot.get("continuity"):
         # Persistent environmental history is not an instruction to reenact an
         # earlier battle. Only stable scene conditions belong in this prompt.
-        continuity = {k:v for k,v in shot['continuity'].items()
-                      if k not in ('mood','gunfire','elapsedTime','condition')}
+        names = {key: person.get('name', key) for key, person in people.items()}
+        names.update({place['id']: place.get('name', place['id']) for place in project.get('locations', [])})
+        continuity = visual_continuity({k:v for k,v in shot['continuity'].items()
+                      if k not in ('mood','gunfire','elapsedTime','condition')}, names)
         if continuity:
             parts.append("Keep: " + json.dumps(continuity, ensure_ascii=False))
     caps = (provider.getModelCapabilities(shot.get('imageModel', ''))
             if hasattr(provider, 'getModelCapabilities') else provider.getCapabilities())
     prompt = (
         ". ".join(p for p in parts if p)
-        + ". No rendered text, captions, or additional important people."
+        + (". No extra people, duplicate weapons, panels, borders, captions or watermark." if use_focused else ". No rendered text, captions, or additional important people.")
     )
     if caps.get("promptFormat") == "sd-tags":
         prompt = (
@@ -903,6 +1017,8 @@ def reference_prompt(project, shot, metadata, operation="generate"):
     chapter = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
     people = {c["id"]: c for c in project["characters"] + chapter["people"]}
     appearances = {c['id']: visible_appearance(shot, c) for c in shot['characters']}
+    from prompt_quality import focused
+    use_focused = focused(project,shot)
     notes = []
     offset = 1 if operation == "edit" else 0
     if offset:
@@ -910,6 +1026,9 @@ def reference_prompt(project, shot, metadata, operation="generate"):
     for index, ref in enumerate(metadata, 1 + offset):
         if ref.get("characterId"):
             person = people.get(ref["characterId"], {})
+            if use_focused:
+                notes.append(f'Image {index}: {person.get("name", ref["characterId"])} permanent face identity. Shot controls clothing and pose: ' + json.dumps(appearances.get(ref["characterId"],{}),ensure_ascii=False) + ".")
+                continue
             notes.append(
                 f'Use image {index} as the identity reference for {person.get("name", ref["characterId"])}. '
                 "Preserve face and permanent traits. Current appearance overrides reference clothing: "
@@ -925,17 +1044,36 @@ def reference_prompt(project, shot, metadata, operation="generate"):
 
 
 def select_references(project, shot, store, provider, reserved_slots=0):
-    caps = provider.getCapabilities()
+    caps = (provider.getModelCapabilities(shot['imageModel'])
+            if shot.get('imageModel') and hasattr(provider, 'getModelCapabilities')
+            else provider.getCapabilities())
     maximum = max(0, caps.get("maxReferenceImages", 0) - reserved_slots)
     refs = []
     metadata = []
     if shot.get("manual", {}).get("referenceImages"):
-        selected = shot.get("referenceImages", [])[:maximum]
+        selected = shot.get("referenceImages", [])
+        if len(selected) > maximum:
+            raise ValueError('Selected references exceed the image workflow limit '
+                             f'({len(selected)} selected, {maximum} available). '
+                             'Choose a compatible workflow or edit the reference selection; '
+                             'no references were silently dropped.')
         return [
             data_url(store.asset(project["id"], r["path"])) for r in selected
         ], copy.deepcopy(selected)
     chapter = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
     people = project["characters"] + chapter["people"]
+    required_main = sum(
+        selected.get('type') == 'main'
+        and bool(next((p.get('references') for p in people if p['id'] == selected['id']), []))
+        for selected in shot['characters']
+    )
+    if caps.get('maxReferenceImages', 0) and required_main > maximum:
+        raise ValueError(f'This shot needs identity references for {required_main} main characters, '
+                         f'but the selected model/workflow has {maximum} available reference slots '
+                         'after reserving the edit source. Choose a compatible workflow; '
+                         'no character identity references were silently dropped.')
+    if not maximum:
+        return [], []
     for selected in sorted(shot["characters"], key=lambda c: c["type"] != "main"):
         p = next((c for c in people if c["id"] == selected["id"]), None)
         if not p:
@@ -963,6 +1101,8 @@ def select_references(project, shot, store, provider, reserved_slots=0):
             ),
         )
         if ordered:
+            if len(refs) >= maximum:
+                break
             r = ordered[0]
             refs.append(data_url(store.asset(project["id"], r["path"])))
             metadata.append(r | {"characterId": p["id"]})

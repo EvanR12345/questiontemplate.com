@@ -29,6 +29,18 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_trace_export_is_authenticated_and_does_not_expose_project_text(self):
+        service = self.server.RequestHandlerClass.studio_service
+        project = service.store.save(new_project())
+        with service.trace.span(project['id'], 'Test stage', {'prompt': 'PRIVATE STORY'}):
+            pass
+        path = '/studio/trace?project=' + project['id']
+        self.assertEqual(self.request(path=path, key='bad')[0], 401)
+        code, _, raw = self.request(path=path)
+        self.assertEqual(code, 200)
+        self.assertNotIn(b'PRIVATE STORY', raw)
+        self.assertEqual(json.loads(raw)['spans'][0]['stage'], 'Test stage')
+
     def setUp(self):
         self.engine = FakeEngine()
         self.directory = tempfile.TemporaryDirectory()

@@ -13,7 +13,7 @@ $zip = [IO.Compression.ZipFile]::OpenRead($archive)
 try {
     foreach ($entry in $zip.Entries) {
         if ($entry.FullName -notmatch '^nvidia-helper/' -or $entry.FullName -match '(^|/)\.\.(/|$)|:|^/') { throw 'Unsafe helper archive path.' }
-        if ($entry.FullName -match '^nvidia-helper/(\.venv|python|models|studio-runtime|outputs|studio-config\.json|\.pairing-key)(/|$)') { throw 'Archive attempted to replace protected helper data.' }
+        if ($entry.FullName -match '^nvidia-helper/(\.venv|python|models|studio-runtime|outputs|studio-config\.json|\.[^/]+)(/|$)') { throw 'Archive attempted to replace protected helper data.' }
     }
 } finally { $zip.Dispose() }
 Expand-Archive -LiteralPath $archive -DestinationPath $staging -Force
@@ -44,7 +44,7 @@ foreach ($process in $processes) { & "$env:SystemRoot\System32\taskkill.exe" /PI
 $backup = Join-Path $destination ('backups\update-' + $stamp)
 foreach ($file in $updateFiles) {
     $relative = $file.FullName.Substring($source.Length + 1)
-    if ($relative -match '^(\.venv|python|models|studio-runtime|outputs|studio-config\.json|\.pairing-key)(\\|$)') { throw 'Archive attempted to replace protected helper data.' }
+    if ($relative -match '^(\.venv|python|models|studio-runtime|outputs|studio-config\.json|\.[^\\]+)(\\|$)') { throw 'Archive attempted to replace protected helper data.' }
     $target = [IO.Path]::GetFullPath((Join-Path $destination $relative))
     if (-not $target.StartsWith($destRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe update destination.' }
     if (Test-Path -LiteralPath $target) {

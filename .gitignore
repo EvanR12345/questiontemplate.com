@@ -6,3 +6,7 @@ nvidia-helper/outputs/
 **/.studio-secrets.json
 **/.studio-secrets.json.tmp
 **/.env
+**/.r2-secrets.json
+**/.r2-secrets.json.tmp
+**/.youtube-secrets.json
+**/.publisher-secrets.json
