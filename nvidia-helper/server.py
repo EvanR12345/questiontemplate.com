@@ -310,20 +310,18 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 from studio_thumbnails import make
                 return make(studio.store,body['project'],body.get('options',{}))
             if path=='/studio/publish':
+                from studio_publisher import save_upload_snapshot
                 operation=body['operation'];options=body.get('options',{})
                 if operation=='connect':return studio.publisher.call(operation,{})
                 pid=body['project'];project=studio.store.load(pid)
                 if operation=='start':
                     result=studio.publisher.call('start',options|{'project':pid})
-                    studio.store.mutate(pid,lambda p:p.setdefault('publishing',[]).append(result))
+                    save_upload_snapshot(studio.store,pid,result,initial=True)
                 else:
                     if not any(j['id']==options.get('id') for j in project.get('publishing',[])):
                         raise ValueError('This upload does not belong to the selected project.')
                     result=studio.publisher.call(operation,{'id':options['id']})
-                    def save(p):
-                        for j in p.get('publishing',[]):
-                            if j['id']==result['id']:j.update(result)
-                    studio.store.mutate(pid,save)
+                    save_upload_snapshot(studio.store,pid,result)
                 return result
             if path=='/studio/review':
                 from studio_qc import accept_image

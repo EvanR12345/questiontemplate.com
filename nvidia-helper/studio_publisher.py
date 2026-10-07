@@ -5,6 +5,19 @@ from urllib.parse import urlparse
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
 
+def save_upload_snapshot(store,pid,result,initial=False):
+    """R2 owns live byte progress; avoid archiving the whole story per chunk."""
+    if not initial and result['status'] not in ('COMPLETE','CANCELLED'):return
+    project=store.load(pid)
+    existing=next((job for job in project.get('publishing',[]) if job['id']==result['id']),None)
+    if existing and all(existing.get(key)==value for key,value in result.items()):return
+    def save(project):
+        jobs=project.setdefault('publishing',[])
+        current=next((job for job in jobs if job['id']==result['id']),None)
+        if current is None:jobs.append(dict(result))
+        else:current.update(result)
+    store.mutate(pid,save)
+
 class CloudPublisher:
     def __init__(self,secret_path):self.secret_path=Path(secret_path)
     def config(self):

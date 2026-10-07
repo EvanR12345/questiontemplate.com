@@ -1,9 +1,33 @@
 import io,json,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
-from studio_publisher import CloudPublisher
+from studio_publisher import CloudPublisher,save_upload_snapshot
+from studio_data import ProjectStore,new_project
 
 class PublisherTests(unittest.TestCase):
+    def test_chunk_progress_does_not_archive_whole_project_but_completion_is_saved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store=ProjectStore(tmp);project=store.save(new_project('Upload story'));pid=project['id']
+            job={'id':'upload-1','status':'UPLOADING','uploaded':0,'total':100}
+            save_upload_snapshot(store,pid,job,initial=True)
+            initial=store.load(pid)['revision']
+            for progress in range(1,100):save_upload_snapshot(store,pid,dict(job,uploaded=progress))
+            self.assertEqual(store.load(pid)['revision'],initial)
+            completed=dict(job,status='COMPLETE',uploaded=100,videoId='video-1')
+            save_upload_snapshot(store,pid,completed)
+            self.assertEqual(store.load(pid)['publishing'][0]['videoId'],'video-1')
+            self.assertEqual(store.load(pid)['revision'],initial+1)
+            save_upload_snapshot(store,pid,completed)
+            self.assertEqual(store.load(pid)['revision'],initial+1)
+    def test_cancellation_snapshot_keeps_original_video_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store=ProjectStore(tmp);project=new_project('Keep source');project['render']={'path':'story.mp4'}
+            project=store.save(project);pid=project['id']
+            job={'id':'upload-2','status':'UPLOADING','uploaded':0,'total':100}
+            save_upload_snapshot(store,pid,job,initial=True)
+            save_upload_snapshot(store,pid,dict(job,status='CANCELLED',uploaded=25))
+            self.assertEqual(store.load(pid)['render']['path'],'story.mp4')
+            self.assertEqual(store.load(pid)['publishing'][0]['status'],'CANCELLED')
     def test_control_requests_identify_studio_and_transfer_only_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'private.json'
