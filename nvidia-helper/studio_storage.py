@@ -87,6 +87,9 @@ class R2Archive:
             except Exception:self.configuration_error='Cloud storage configuration is unavailable. Local audio and projects remain usable; check the private R2 credentials and SDK.'
         self.enabled = self.objects is not None
         self.manifests = {}
+        self.asset_locks = [threading.RLock() for _ in range(32)]
+        self.catalogue_lock = threading.RLock()
+        self.catalogue = None; self.catalogue_at = 0
         if self.enabled:
             store.archive = self
             for p in store.list_local(): self.enqueue(p['id'])
@@ -160,6 +163,7 @@ class R2Archive:
                 self.objects.put_json(f'studio/history/{pid}/{project["revision"]}-{history}.json',manifest)
                 self.objects.put_json(f'studio/manifests/{pid}.json',manifest,etag,create=old is None)
         self.manifests.pop(pid,None)
+        self.catalogue_at = 0
         with self.cv:
             self.states[pid] = {'status':'SYNCED','revision':project['revision'],'savedAt':manifest['savedAt'],
                 'files':len(records),'bytes':sum(x['bytes'] for x in records.values()),'lastUploadBytes':uploaded,'error':''}
@@ -186,11 +190,18 @@ class R2Archive:
 
     def fetch_asset(self, pid, name):
         target = self.store.asset_local(pid,name)
+        # Simultaneous preview/render requests must share one restore rather
+        # than overwrite each other's temporary file or an existing local edit.
+        with self.asset_locks[hash((pid,name.replace('\\','/'))) % len(self.asset_locks)]:
+            if target.exists(): return target
+            return self._fetch_asset(pid,name,target)
+
+    def _fetch_asset(self, pid, name, target):
         manifest,_ = self.manifest(pid)
         record = (manifest or {}).get('files',{}).get(name.replace('\\','/'))
         if not record: return target
-        expected_prefix = f'studio/assets/{pid}/{record["sha256"]}/'
-        if not record['key'].startswith(expected_prefix): raise ValueError('Invalid cloud asset identity.')
+        if not re.fullmatch(r'[a-f0-9]{64}',record.get('sha256','')) or record.get('key') != f'studio/assets/{pid}/{record["sha256"]}/{name.replace(chr(92),"/")}':
+            raise ValueError('Invalid cloud asset identity.')
         target.parent.mkdir(parents=True,exist_ok=True); tmp=target.with_suffix(target.suffix+'.cloud-partial')
         self.objects.download(record['key'],tmp)
         if tmp.stat().st_size != record['bytes'] or sha(tmp)!=record['sha256']:
@@ -202,7 +213,7 @@ class R2Archive:
         record=(manifest or {}).get('files',{}).get(name.replace('\\','/'))
         local=self.store.asset_local(pid,name)
         if not record or (local.exists() and record.get('stamp')!=list(stable_file(local))): return None
-        if not record['key'].startswith(f'studio/assets/{pid}/{record["sha256"]}/'):
+        if not re.fullmatch(r'[a-f0-9]{64}',record.get('sha256','')) or record.get('key') != f'studio/assets/{pid}/{record["sha256"]}/{name.replace(chr(92),"/")}':
             raise ValueError('Invalid cloud asset identity.')
         return self.objects.url(record['key'])
 
@@ -227,10 +238,18 @@ class R2Archive:
         return {'files':rows,'cloud':True,'revision':(manifest or {}).get('project',{}).get('revision')}
 
     def list_projects(self):
+        with self.catalogue_lock:
+            if self.catalogue is not None and time.monotonic()-self.catalogue_at < 30:
+                return copy.deepcopy(self.catalogue)
+            self.catalogue = self._list_projects()
+            self.catalogue_at = time.monotonic()
+            return copy.deepcopy(self.catalogue)
+
+    def _list_projects(self):
         result=[]
         for key in self.objects.keys('studio/manifests/'):
             pid=key.rsplit('/',1)[-1].removesuffix('.json')
-            manifest,_=self.manifest(pid)
+            manifest,_=self.manifest(pid,True)
             if manifest:
                 p=manifest['project']; result.append({k:p[k] for k in ('id','name','revision','updated')} | {'chapters':len(p['chapters'])})
         return result

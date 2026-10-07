@@ -1,4 +1,6 @@
 import copy, json, tempfile, unittest, hashlib, wave, math, os, subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from array import array
 from pathlib import Path
 from PIL import Image
@@ -57,6 +59,36 @@ class CloudSaveTests(unittest.TestCase):
         path=self.store.asset(self.p['id'],asset['path'])
         with Image.open(path) as img:self.assertEqual(img.size,(1280,720));self.assertGreater(img.getpixel((38,55))[0],180)
         self.assertLess(path.stat().st_size,2_000_000)
+    def test_parallel_asset_requests_restore_once_without_overwriting_each_other(self):
+        self.a.sync(self.p['id']);expected=self.image.read_bytes();self.image.unlink()
+        entered=threading.Event();release=threading.Event();downloads=[]
+        original=self.obj.download
+        def delayed(key,path):
+            downloads.append(key);entered.set()
+            if not release.wait(5):raise RuntimeError('Test release timed out')
+            original(key,path)
+        self.obj.download=delayed
+        with ThreadPoolExecutor(2) as pool:
+            first=pool.submit(self.a.fetch_asset,self.p['id'],'art.png')
+            self.assertTrue(entered.wait(5))
+            second=pool.submit(self.a.fetch_asset,self.p['id'],'art.png')
+            release.set()
+            for request in (first,second):self.assertEqual(request.result(timeout=5).read_bytes(),expected)
+        self.assertEqual(len(downloads),1)
+    def test_asset_record_must_match_exact_path_not_only_project_hash_prefix(self):
+        self.a.sync(self.p['id']);self.image.unlink()
+        manifest,etag=self.a.manifest(self.p['id'])
+        manifest['files']['art.png']['key']=manifest['files']['art.png']['key'].replace('art.png','other.png')
+        with self.assertRaisesRegex(ValueError,'Invalid cloud asset identity'):self.a.fetch_asset(self.p['id'],'art.png')
+        with self.assertRaisesRegex(ValueError,'Invalid cloud asset identity'):self.a.media_url(self.p['id'],'art.png')
+    def test_project_catalogue_reuses_reads_and_returns_independent_values(self):
+        self.a.sync(self.p['id']);calls=[];original=self.obj.keys
+        def keys(prefix):calls.append(prefix);return original(prefix)
+        self.obj.keys=keys
+        first=self.a.list_projects();first[0]['name']='Do not leak edits'
+        self.assertEqual(self.a.list_projects()[0]['name'],'Cloud story');self.assertEqual(len(calls),1)
+        self.store.mutate(self.p['id'],lambda p:p.update(name='Changed'));self.a.sync(self.p['id'])
+        self.assertEqual(self.a.list_projects()[0]['name'],'Changed');self.assertEqual(len(calls),2)
 
 class EngagementTests(unittest.TestCase):
     def test_reminders_stable_across_outro_asset_and_thumbnail_changes(self):
