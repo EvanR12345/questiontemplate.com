@@ -19,10 +19,33 @@ test('hybrid clients use the measured rate once, with two copies and four slots'
 });
 test('startup alternatives preserve work and dependencies and report finite estimates',()=>{
  const candidates=startupCandidates({...config,chapters:4},evidence);
- assert.equal(candidates.length,3);
+ assert.equal(candidates.filter(v=>!v.balanced).length,4);
  for(const v of candidates){assert.deepEqual(v.result.diagnostics,[]);assert.equal(v.plan.attemptCount,candidates[0].plan.attemptCount);assert.ok(Number.isFinite(v.result.totalUSD));assert.ok(v.plan.tasks.find(t=>t.id==='boot').deps.includes('c'+v.readyChapters+'-handoff'));}
  assert.ok(candidates.some(v=>v.pareto));
  assert.throws(()=>buildPlan({...config,chapters:2,readyChapters:3},evidence),/cannot exceed/);
+});
+test('timed startup reduces waiting without delaying earliest image delivery or video finish',()=>{
+ const candidates=startupCandidates(config,evidence),baseline=candidates[0],timed=candidates.find(v=>v.balanced);
+ assert.ok(timed);assert.ok(timed.bootStart>baseline.bootStart+1);
+ assert.ok(timed.imageEnd<=baseline.imageEnd+.5);assert.ok(timed.result.end<=baseline.result.end+.5);
+ assert.ok(timed.result.rentalSeconds<baseline.result.rentalSeconds);assert.ok(timed.result.gpuUSD<baseline.result.gpuUSD);
+ assert.deepEqual(timed.result.diagnostics,[]);assert.equal(timed.plan.attemptCount,baseline.plan.attemptCount);
+ const restored=importSnapshot({type:'studio-pipeline-plan',version:1,config:timed.plan.config,preferences:{}},evidence);
+ const r=schedule(buildPlan(restored.config,evidence));assert.equal(r.tasks.find(t=>t.id==='boot').start,timed.bootStart);
+});
+test('timed boot cannot bypass chapter readiness, and rendering is outside GPU stop dependencies',()=>{
+ const p=buildPlan({...config,gpuStartSeconds:10},evidence),r=schedule(p),boot=r.tasks.find(t=>t.id==='boot');
+ assert.ok(boot.start>=r.tasks.find(t=>t.id==='c1-handoff').end);assert.ok(boot.start>=10);
+ assert.ok(!p.tasks.find(t=>t.id==='stop').deps.some(id=>id.endsWith('-render')));
+ assert.throws(()=>buildPlan({...config,gpuStartSeconds:-1},evidence),/GPU boot time/);
+ assert.throws(()=>buildPlan({...config,gpuStartSeconds:Infinity},evidence),/GPU boot time/);
+});
+test('aligned completion offers the later rental start and shows its rendering tradeoff',()=>{
+ const candidates=startupCandidates(config,evidence),baseline=candidates[0],fast=candidates.find(v=>v.balanced&&v.keepFastestVideo),aligned=candidates.find(v=>v.balanced&&!v.keepFastestVideo);
+ assert.ok(aligned);assert.ok(aligned.bootStart>fast.bootStart);
+ assert.ok(aligned.imageEnd<=baseline.imageEnd+.5);assert.ok(aligned.gap<=baseline.gap+.5);
+ assert.ok(aligned.result.gpuUSD<fast.result.gpuUSD);assert.ok(aligned.result.gpuIdleSeconds<fast.result.gpuIdleSeconds);
+ assert.ok(aligned.result.end>fast.result.end);assert.deepEqual(aligned.result.diagnostics,[]);
 });
 test('priority survives export/import while enforced resource dependencies remain intact',()=>{
  const input={type:'studio-pipeline-plan',version:1,config,preferences:{'c1-voice':{notBefore:10,priority:-3}}};

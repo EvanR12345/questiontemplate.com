@@ -5,7 +5,7 @@ export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intr
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'off', sample:20,
   retries:0, warmCache:false, apiSlots:3, cpuOverlap:false, batch:24,
   exhaustive:false, earlyGpu:false, directorCost:.38798, qcCost:.0003, storageDaily:.168,
-  resolution:'legacy', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1 };
+  resolution:'legacy', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0 };
 
 export const LANES = [
   ['setup','Cloud startup','Boot · models · shutdown'],
@@ -85,6 +85,8 @@ export function validateConfig(input, evidence) {
   if(c.policy==='current'&&!['practical','strict'].includes(c.qc)) throw Error('The installed overlap requires Practical or Strict vision checks. Use Proposed for an Off/Sampled experiment.');
   for(const key of ['intro','warmCache','cpuOverlap','exhaustive','earlyGpu']) if(typeof c[key]!=='boolean') throw Error(`${key} must be true or false.`);
   if(c.readyChapters>c.chapters)throw Error('GPU readiness chapters cannot exceed chapter count.');
+  if(!Number.isFinite(Number(c.gpuStartSeconds))||Number(c.gpuStartSeconds)<0||Number(c.gpuStartSeconds)>86400)throw Error('GPU boot time must be 0–86400 seconds from project start.');
+  c.gpuStartSeconds=Number(c.gpuStartSeconds);
   if(Math.ceil(c.minutes*c.cadence/c.batch)*8+c.chapters*12>3000)throw Error('Too many display tasks. Increase images per scheduling group; inference batch size remains one.');
   if(c.intro && c.introSeconds>=c.minutes*60) throw Error('The intro must be shorter than the full video.');
   return c;
@@ -139,7 +141,7 @@ export function buildPlan(input, evidence) {
     add('intro-voice','voice',0,c.introSeconds/cal.voiceSampleSeconds*cal.voiceWallSeconds,['intro-plan'],{cpu:.8,audioGPU:1});
   }
   const startDeps=c.earlyGpu?['preflight']:c.policy==='serial'?[...handoffs.slice(1)]:[handoffs[c.readyChapters]];
-  add('boot','boot',0,g.boot,startDeps,{cloud:1});
+  add('boot','boot',0,g.boot,startDeps,{cloud:1},{notBefore:c.gpuStartSeconds});
   add('models','models',0,c.warmCache?1:g.download,['boot'],{cloud:1});
   add('health','health',0,3,['models'],{cloud:1});
   add('cold','cold',0,g.cold,['health'],{remote:1});
@@ -229,7 +231,7 @@ export function schedule(plan, preferences={}) {
     let choices=[];
     for(const task of pending) {
       if(!task.deps.every(d=>completed.has(d)))continue;
-      const requested=preferences[task.id]?.notBefore||0;
+      const requested=Math.max(task.notBefore||0,preferences[task.id]?.notBefore||0);
       let start=Math.max(requested,0,...task.deps.map(d=>completed.get(d).end));
       for(let guard=0;;guard++){
         if(guard>plan.tasks.length*3+20)throw Error('Resource allocation failed.');

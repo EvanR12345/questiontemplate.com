@@ -1,10 +1,10 @@
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=timed-start-20261007';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=timed-start-20261007';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
 import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=automatic-speed-20261007';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=rental-view-20261007';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=timed-start-20261007';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -15,7 +15,7 @@ const snapshot=()=>({type:'studio-pipeline-plan',version:VERSION,config:{...conf
 function checkpoint(){history.push(snapshot());if(history.length>40)history.shift();$('undo').disabled=false;}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
 function persist(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{try{localStorage.setItem(STORE,JSON.stringify(snapshot()));$('saved').textContent='Saved on this device';}catch{$('saved').textContent='Device storage unavailable — export your plan';}},180);}
-function setControls(){for(const k of keys){if(!$(k))continue;if(booleans.includes(k))$(k).checked=config[k];else $(k).value=config[k];}$('uncertainty').value=uncertainty;}
+function setControls(){for(const k of keys){if(!$(k))continue;if(booleans.includes(k))$(k).checked=config[k];else $(k).value=config[k];}$('readyChapters').max=config.chapters;$('uncertainty').value=uncertainty;}
 function readControls(){const next={};for(const k of keys){if(!$(k))continue;next[k]=booleans.includes(k)?$(k).checked:typeof DEFAULTS[k]==='number'?Number($(k).value):$(k).value;}return {...config,...next};}
 function getTask(id){return result.tasks.find(t=>t.id===id);}
 function renderGenerationSpeed(){
@@ -57,7 +57,7 @@ function rebuild(){
     focus=oldFocus==='all'||Number(oldFocus)<=config.chapters?oldFocus:'all';$('chapterFocus').value=focus;
     if(selected&&!getTask(selected))selected=null;
     renderTimeline();renderBreakdown();renderProcesses();renderPairs();renderEvidence();renderInspector();
-    mountStartupTradeoffs($('startTradeoffs'),config,evidence,n=>{checkpoint();config={...config,earlyGpu:false,readyChapters:n,policy:'proposed'};preferences={};setControls();rebuild();toast('GPU startup dependency changed. Production settings remain unchanged.');});
+    mountStartupTradeoffs($('startTradeoffs'),config,evidence,settings=>{checkpoint();config={...config,...settings,earlyGpu:false,policy:'proposed'};preferences={};setControls();rebuild();toast('GPU startup timing applied to the planner. Production settings remain unchanged.');});
     if(view==='gpus')renderGPUs();persist();
   }catch(e){$('error').textContent=e.message;$('error').hidden=false;}
 }
@@ -206,6 +206,8 @@ async function start(){
     setControls();rebuild();
     for(const k of [...keys,'uncertainty'])if($(k))$(k).addEventListener('change',()=>{
       let next=readControls();if(['gpu','resolution','encodingProfile','executionMode'].includes(k))next.measurementAttempt='latest';
+      if(k==='chapters'){next.readyChapters=Math.min(next.readyChapters,next.chapters);}
+      if(k!=='gpuStartSeconds'&&k!=='uncertainty'&&next.gpuStartSeconds>0){next.gpuStartSeconds=0;toast('Timed GPU startup cleared after settings changed. Recalculate using Spend less on rented waiting.');}
       // Never silently change the user's check level to satisfy installed overlap.
       if(next.policy==='current'&&!['practical','strict'].includes(next.qc)){toast('Installed overlap needs Practical/Strict checks. Choose those checks, or use Proposed mode.');setControls();return;}
       try{if(['gpu','resolution','encodingProfile'].includes(k))next=selectGPUConfig(next,evidence,next.gpu);buildPlan(next,evidence);const u=Number($('uncertainty').value);if(!Number.isFinite(u)||u<0||u>100)throw Error('Sensitivity must be 0–100%.');checkpoint();config=next;uncertainty=u;preferences={};selected=null;setControls();rebuild();if(['gpu','resolution','encodingProfile'].includes(k))toast('Automatically selected fastest tested settings: '+executionLabel(plan));}catch(e){toast(e.message);setControls();}

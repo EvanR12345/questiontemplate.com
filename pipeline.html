@@ -35,7 +35,8 @@
           <label>Extra image attempts <span>%</span><input id="retries" type="number" min="0" max="100" value="0"><small>An allowance, not a measured error rate.</small></label>
           <label>Timing sensitivity <span>±%</span><input id="uncertainty" type="number" min="0" max="100" value="20"><small>Assumed range. Not statistical confidence.</small></label>
           <label class="check"><input id="warmCache" type="checkbox"> Existing model cache</label>
-          <label>Ready chapters before GPU boot<input id="readyChapters" type="number" min="1" max="40" value="1"><small>Wait for these ordered chapter plans. More can reduce rented idle time while delaying first images.</small></label>
+          <label>Chapter plans ready before GPU boot<input id="readyChapters" type="number" min="1" max="14" value="1"><small>How many ordered plans to wait for, between 1 and your chapter count. Adjusts automatically when chapters decrease.</small></label>
+          <label>Earliest GPU boot · project seconds<input id="gpuStartSeconds" type="number" min="0" max="86400" step="1" value="0"><small>0 = no clock delay. The timed startup option sets this; recalculated suggestions use your current settings.</small></label>
           <label class="check"><input id="earlyGpu" type="checkbox"> Start GPU immediately</label>
           <label class="check"><input id="cpuOverlap" type="checkbox"> Experiment: audio + render</label>
           <label class="check"><input id="exhaustive" type="checkbox"> Decode every video frame</label>
@@ -66,5 +67,5 @@
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script type="module" src="./pipeline-ui.mjs?v=rental-view-20261007"></script>
+  <script type="module" src="./pipeline-ui.mjs?v=timed-start-20261007"></script>
 </body></html>

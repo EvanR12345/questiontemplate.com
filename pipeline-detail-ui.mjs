@@ -1,20 +1,36 @@
-import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs';
+import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=timed-start-20261007';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const seconds=n=>Number.isFinite(n)?n.toFixed(3)+'s':'Not measured',money=n=>'$'+n.toFixed(3);
 const phaseNames={preparationSeconds:'Build request',referenceUploadSeconds:'Reference upload/cache',submissionSeconds:'Submit operation',waitAndPollingSeconds:'Wait / poll (includes server)',retrievalAndValidationSeconds:'Retrieve / decode check',pngEncodeAndDurableSaveSeconds:'PNG encode / durable save',historyAndMetadataReceiptSeconds:'History / metadata receipt',provisionAndReadinessSeconds:'Provision / readiness',downloadAndHashSeconds:'Download / verify hashes',timedCohortWallSeconds:'Timed image cohorts',experimentalWarmupClientSeconds:'Experimental warmups'};
 
 export function startupCandidates(config,evidence){
- const counts=[...new Set([1,Math.ceil(config.chapters/4),Math.ceil(config.chapters/2),config.chapters])];
- const values=counts.map(n=>{
-  const p=buildPlan({...config,policy:'proposed',earlyGpu:false,readyChapters:n},evidence),r=schedule(p);
-  return {readyChapters:n,result:r,plan:p};
- });
+ const evaluate=(n,gpuStartSeconds=0)=>{
+  const p=buildPlan({...config,policy:'proposed',earlyGpu:false,readyChapters:n,gpuStartSeconds},evidence),r=schedule(p);
+  const directorEnd=Math.max(...r.tasks.filter(t=>t.kind==='handoff'||t.kind==='introPlan').map(t=>t.end));
+  const imageEnd=Math.max(...r.tasks.filter(t=>['delivered','save'].includes(t.kind)).map(t=>t.end));
+  return {readyChapters:n,gpuStartSeconds,result:r,plan:p,directorEnd,imageEnd,gap:imageEnd-directorEnd,bootStart:r.tasks.find(t=>t.id==='boot').start};
+ };
+ const values=Array.from({length:config.chapters},(_,i)=>evaluate(i+1));
+ // Find a later clock start that preserves earliest image delivery and final finish.
+ // This bounded binary search is a scheduling heuristic, not a global optimum.
+ const baseline=values[0];
+ for(const keepFastestVideo of [true,false]){
+  let lo=0,hi=Math.min(86400,baseline.imageEnd),balanced=baseline;
+  for(let i=0;i<16&&hi-lo>1;i++){
+   const mid=(lo+hi)/2,v=evaluate(1,mid);
+   if(v.imageEnd<=baseline.imageEnd+.5&&(!keepFastestVideo||v.result.end<=baseline.result.end+.5)){lo=mid;balanced=v;}else hi=mid;
+  }
+  if(balanced.gpuStartSeconds>baseline.bootStart+1)values.push({...balanced,balanced:true,keepFastestVideo});
+ }
  return values.map(v=>({...v,pareto:!values.some(o=>o!==v&&o.result.end<=v.result.end+.01&&o.result.totalUSD<=v.result.totalUSD+.00001&&(o.result.end<v.result.end-.01||o.result.totalUSD<v.result.totalUSD-.00001))}));
 }
 export function mountStartupTradeoffs(host,config,evidence,onApply){
- const values=startupCandidates(config,evidence);
- host.innerHTML=`<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption">Compare starting the GPU after more chapters are directed. These are feasible simulations using your current settings, without manual moves; they are not a measured two-hour production run or a global optimum.</p><div class="evidence-table"><table><thead><tr><th>Ready chapters</th><th>Estimated finish</th><th>GPU rental time</th><th>GPU cost</th><th>Total + API/storage</th><th></th></tr></thead><tbody>${values.map(v=>`<tr><td>${v.readyChapters}${v.pareto?' · tradeoff':''}</td><td>${formatTime(v.result.end)}</td><td>${formatTime(v.result.rentalSeconds)}</td><td>${money(v.result.gpuUSD)}</td><td>${money(v.result.totalUSD)}</td><td><button class="button" data-ready="${v.readyChapters}">Use</button></td></tr>`).join('')}</tbody></table></div><p class="caption">Boot → Stop is billed continuously, even while no images run. “Use” clears manual moves and can be undone. Changing model-copy count uses measured throughput; it never multiplies speed by VRAM.</p>`;
- host.querySelectorAll('[data-ready]').forEach(b=>b.onclick=()=>onApply(Number(b.dataset.ready)));
+ const cacheKey=JSON.stringify(config);if(host._startupKey!==cacheKey){host._startupValues=startupCandidates(config,evidence);host._startupKey=cacheKey;}
+ const values=host._startupValues,fastest=values.reduce((a,b)=>a.result.end<=b.result.end?a:b),cheapest=values.reduce((a,b)=>a.result.gpuUSD<=b.result.gpuUSD?a:b),balanced=values.find(v=>v.balanced);
+ const aligned=values.find(v=>v.balanced&&!v.keepFastestVideo),featured=[...new Set([fastest,balanced,aligned,cheapest].filter(Boolean))];
+ const table=list=>`<div class="evidence-table"><table><thead><tr><th>Start strategy</th><th>GPU boot</th><th>Luna done</th><th>Images done</th><th>Image tail</th><th>Video finish</th><th>GPU idle/setup</th><th>Rental</th><th>GPU $</th><th>Total $</th><th></th></tr></thead><tbody>${list.map(v=>`<tr><td>${v.balanced?(v.keepFastestVideo?'Timed · keep fastest video':'Timed · align Luna + images'):`After ${v.readyChapters} / ${config.chapters} chapter plans`}${v===fastest?' · fastest video':''}${v===cheapest?' · lowest rental':''}</td><td>${formatTime(v.bootStart)}</td><td>${formatTime(v.directorEnd)}</td><td>${formatTime(v.imageEnd)}</td><td>${v.gap<0?'−':''}${formatTime(Math.abs(v.gap))}</td><td>${formatTime(v.result.end)}</td><td>${formatTime(v.result.gpuIdleSeconds)}</td><td>${formatTime(v.result.rentalSeconds)}</td><td>${money(v.result.gpuUSD)}</td><td>${money(v.result.totalUSD)}</td><td><button class="button" data-ready="${v.readyChapters}" data-start-index="${values.indexOf(v)}">Use</button></td></tr>`).join('')}</tbody></table></div>`;
+ host.innerHTML=`<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption">Test every chapter boundary plus timed startups between boundaries. “Keep fastest video” delays boot without delaying image completion or video by more than 0.5s. “Align Luna + images” delays boot while preserving earliest image completion; the final video may finish later because local rendering starts later. Last shots still require Luna’s last plan, so an exact simultaneous finish cannot be guaranteed.</p>${table(featured)}<details><summary>All ${config.chapters} chapter-boundary options</summary>${table(values.filter(v=>!featured.includes(v)))}</details><p class="caption">All times are projections from project start, without manual moves. “Image tail” is images done minus Luna done. “All chapters” waits for plans, not the finished video. Setup, transfers, QC contention and rendering remain in the model. This is a bounded scheduling search, not a measured production run or global optimum. “Use” clears manual moves and can be undone.</p>`;
+ host.querySelectorAll('[data-start-index]').forEach(b=>b.onclick=()=>{const v=values[Number(b.dataset.startIndex)];onApply({readyChapters:v.readyChapters,gpuStartSeconds:v.gpuStartSeconds});});
 }
 
 export function imageAccountingHTML(profile,gpu,roundIndex=0){
