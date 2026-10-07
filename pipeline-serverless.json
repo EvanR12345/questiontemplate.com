@@ -1,0 +1,5195 @@
+{
+  "version": 1,
+  "generatedAt": 1791339268.8773005,
+  "cumulativeCapUSD": 1,
+  "model": "FLUX.2 Klein 4B FP8 / Qwen3 4B BF16 text encoder",
+  "resolution": "1280 \u00d7 720",
+  "steps": 4,
+  "sampler": "Euler / Flux2Scheduler",
+  "guidance": 1,
+  "backend": "Runpod worker-comfyui 5.10.0-base / ComfyUI 0.34.0 / Torch 2.11 cu128",
+  "inferenceCache": "Attempt 3: all node caching disabled. Attempts 4-6: loaded models reused, encoders forced fresh.",
+  "regionObservations": [
+    {
+      "attempt": 4,
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "region": "US-MO-1",
+      "source": "Runpod endpoint overview after nine completed requests; not a per-image placement log"
+    },
+    {
+      "attempt": 6,
+      "gpu": "NVIDIA GeForce RTX 5090",
+      "region": "EUR-IS-2",
+      "source": "Runpod endpoint overview after eleven completed requests; not a per-image placement log"
+    }
+  ],
+  "attempts": [
+    {
+      "attempt": 1,
+      "status": "FAILED",
+      "completedImages": 0,
+      "cacheMode": "none",
+      "acceptedRequests": 2,
+      "failure": {
+        "type": "RuntimeError",
+        "message": "Job API HTTP 404"
+      },
+      "elapsedSeconds": 333.6071753501892,
+      "groups": [],
+      "healthTransitions": [],
+      "remainingOwnEndpointIds": [],
+      "gpuTargets": [
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "flexHourlyUSD": 1.58
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "flexHourlyUSD": 4.79
+        }
+      ]
+    },
+    {
+      "attempt": 2,
+      "status": "FAILED",
+      "completedImages": 0,
+      "cacheMode": "none",
+      "acceptedRequests": 2,
+      "failure": {
+        "type": "RuntimeError",
+        "message": "Paid job FAILED; no automatic retry"
+      },
+      "elapsedSeconds": 46.03102922439575,
+      "groups": [],
+      "healthTransitions": [],
+      "remainingOwnEndpointIds": [],
+      "gpuTargets": [
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "flexHourlyUSD": 1.58
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "flexHourlyUSD": 4.79
+        }
+      ]
+    },
+    {
+      "attempt": 3,
+      "status": "FAILED",
+      "completedImages": 13,
+      "cacheMode": "none",
+      "acceptedRequests": 14,
+      "failure": {
+        "type": "RuntimeError",
+        "message": "Pilot deadline reserve reached"
+      },
+      "elapsedSeconds": 285.5237808227539,
+      "groups": [
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "pattern": "warmup",
+          "images": 1,
+          "completedRounds": 0,
+          "samples": [
+            {
+              "label": "5090-warmup",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "41c9e9a1f77d35e5ac6a8b3dd8ee1c5a33897fad3c5231f94bd935cddac068db",
+              "bytes": 1445538,
+              "workerId": "o4n44tilpb5y3u",
+              "deliverySeconds": 250.75510168075562,
+              "queueAndStartupSeconds": 237.638,
+              "providerExecutionSeconds": 9.298,
+              "comfyExecutionSeconds": 6.65,
+              "handlerSeconds": 8.176636219024658,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 1,
+            "median": 250.75510168075562,
+            "min": 250.75510168075562,
+            "max": 250.75510168075562
+          },
+          "comfyExecution": {
+            "n": 1,
+            "median": 6.65,
+            "min": 6.65,
+            "max": 6.65
+          },
+          "providerExecution": {
+            "n": 1,
+            "median": 9.298,
+            "min": 9.298,
+            "max": 9.298
+          },
+          "queueAndStartup": {
+            "n": 1,
+            "median": 237.638,
+            "min": 237.638,
+            "max": 237.638
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [],
+          "completedRoundThroughput": null,
+          "workerIds": [
+            "o4n44tilpb5y3u"
+          ]
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "pattern": "continuous",
+          "images": 3,
+          "completedRounds": 1,
+          "samples": [
+            {
+              "label": "5090-continuous-r1-1",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "41c9e9a1f77d35e5ac6a8b3dd8ee1c5a33897fad3c5231f94bd935cddac068db",
+              "bytes": 1445538,
+              "workerId": "o4n44tilpb5y3u",
+              "deliverySeconds": 12.53712797164917,
+              "queueAndStartupSeconds": 0.142,
+              "providerExecutionSeconds": 8.503,
+              "comfyExecutionSeconds": 6.305,
+              "handlerSeconds": 7.739285945892334,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-continuous-r1-2",
+              "seed": 1745486344,
+              "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+              "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+              "pngSHA256": "6d37b7a9c2efba81a2bb420778d301be9191c6c2f943fb0b07a79250f1a503a1",
+              "bytes": 1429722,
+              "workerId": "o4n44tilpb5y3u",
+              "deliverySeconds": 21.336180210113525,
+              "queueAndStartupSeconds": 8.571,
+              "providerExecutionSeconds": 7.511,
+              "comfyExecutionSeconds": 5.747,
+              "handlerSeconds": 6.847075462341309,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-continuous-r2-1",
+              "seed": 1328513679,
+              "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "24948960559bdb2484f7ad80c32bed354836e0c028bcf6b22d229a2d27f85827",
+              "bytes": 1257574,
+              "workerId": "o4n44tilpb5y3u",
+              "deliverySeconds": 12.692694902420044,
+              "queueAndStartupSeconds": 0.145,
+              "providerExecutionSeconds": 8.493,
+              "comfyExecutionSeconds": 5.77,
+              "handlerSeconds": 7.262145519256592,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 3,
+            "median": 12.692694902420044,
+            "min": 12.53712797164917,
+            "max": 21.336180210113525
+          },
+          "comfyExecution": {
+            "n": 3,
+            "median": 5.77,
+            "min": 5.747,
+            "max": 6.305
+          },
+          "providerExecution": {
+            "n": 3,
+            "median": 8.493,
+            "min": 7.511,
+            "max": 8.503
+          },
+          "queueAndStartup": {
+            "n": 3,
+            "median": 0.145,
+            "min": 0.142,
+            "max": 8.571
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [
+            21.34497833251953
+          ],
+          "completedRoundThroughput": {
+            "n": 1,
+            "median": 5.621931216354407,
+            "min": 5.621931216354407,
+            "max": 5.621931216354407
+          },
+          "workerIds": [
+            "o4n44tilpb5y3u"
+          ]
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "pattern": "warmup",
+          "images": 1,
+          "completedRounds": 0,
+          "samples": [
+            {
+              "label": "h100-warmup",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "a33f67584b89fed3a98b1ce0a27be378c0f64f5020324d87384dbd2e94e36a56",
+              "bytes": 1432111,
+              "workerId": "6jqatgawf99xxl",
+              "deliverySeconds": 41.44952082633972,
+              "queueAndStartupSeconds": 30.165,
+              "providerExecutionSeconds": 7.505,
+              "comfyExecutionSeconds": 6.136,
+              "handlerSeconds": 6.988670587539673,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 1,
+            "median": 41.44952082633972,
+            "min": 41.44952082633972,
+            "max": 41.44952082633972
+          },
+          "comfyExecution": {
+            "n": 1,
+            "median": 6.136,
+            "min": 6.136,
+            "max": 6.136
+          },
+          "providerExecution": {
+            "n": 1,
+            "median": 7.505,
+            "min": 7.505,
+            "max": 7.505
+          },
+          "queueAndStartup": {
+            "n": 1,
+            "median": 30.165,
+            "min": 30.165,
+            "max": 30.165
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [],
+          "completedRoundThroughput": null,
+          "workerIds": [
+            "6jqatgawf99xxl"
+          ]
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "pattern": "continuous",
+          "images": 4,
+          "completedRounds": 2,
+          "samples": [
+            {
+              "label": "h100-continuous-r1-1",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "a33f67584b89fed3a98b1ce0a27be378c0f64f5020324d87384dbd2e94e36a56",
+              "bytes": 1432111,
+              "workerId": "6jqatgawf99xxl",
+              "deliverySeconds": 14.892504930496216,
+              "queueAndStartupSeconds": 0.032,
+              "providerExecutionSeconds": 11.247,
+              "comfyExecutionSeconds": 9.95,
+              "handlerSeconds": 10.865151643753052,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-continuous-r1-2",
+              "seed": 1745486344,
+              "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+              "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+              "pngSHA256": "4df3319713ea6bd084767f938ec62caf86e7b3dfa263dc19734d4e02e99e44fa",
+              "bytes": 1428707,
+              "workerId": "6jqatgawf99xxl",
+              "deliverySeconds": 27.20301389694214,
+              "queueAndStartupSeconds": 11.939,
+              "providerExecutionSeconds": 11.087,
+              "comfyExecutionSeconds": 9.734,
+              "handlerSeconds": 10.601499557495117,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-continuous-r2-1",
+              "seed": 1328513679,
+              "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "1c82ad7e12e2a7f9279619d9874f9d115ecaf36a894b4327f8914eafec0ccd13",
+              "bytes": 1250148,
+              "workerId": "6jqatgawf99xxl",
+              "deliverySeconds": 12.681169986724854,
+              "queueAndStartupSeconds": 0.028,
+              "providerExecutionSeconds": 10.44,
+              "comfyExecutionSeconds": 8.979,
+              "handlerSeconds": 9.856660842895508,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-continuous-r2-2",
+              "seed": 251485061,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "89e9f74dd1c87fab22feada187570e9d473b468f9a34692e347f67929e4323f1",
+              "bytes": 1477413,
+              "workerId": "6jqatgawf99xxl",
+              "deliverySeconds": 24.26599931716919,
+              "queueAndStartupSeconds": 10.791,
+              "providerExecutionSeconds": 10.317,
+              "comfyExecutionSeconds": 8.861,
+              "handlerSeconds": 9.814296960830688,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 4,
+            "median": 19.579252123832703,
+            "min": 12.681169986724854,
+            "max": 27.20301389694214
+          },
+          "comfyExecution": {
+            "n": 4,
+            "median": 9.3565,
+            "min": 8.861,
+            "max": 9.95
+          },
+          "providerExecution": {
+            "n": 4,
+            "median": 10.7635,
+            "min": 10.317,
+            "max": 11.247
+          },
+          "queueAndStartup": {
+            "n": 4,
+            "median": 5.4115,
+            "min": 0.028,
+            "max": 11.939
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [
+            27.2084903717041,
+            24.273796319961548
+          ],
+          "completedRoundThroughput": {
+            "n": 2,
+            "median": 4.676995256870852,
+            "min": 4.410388020821467,
+            "max": 4.943602492920237
+          },
+          "workerIds": [
+            "6jqatgawf99xxl"
+          ]
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "pattern": "short_gap",
+          "images": 4,
+          "completedRounds": 2,
+          "samples": [
+            {
+              "label": "h100-short_gap-r1-1",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "a33f67584b89fed3a98b1ce0a27be378c0f64f5020324d87384dbd2e94e36a56",
+              "bytes": 1432111,
+              "workerId": "6jqatgawf99xxl",
+              "deliverySeconds": 11.47714877128601,
+              "queueAndStartupSeconds": 0.028,
+              "providerExecutionSeconds": 9.157,
+              "comfyExecutionSeconds": 7.687,
+              "handlerSeconds": 8.631855249404907,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-short_gap-r1-2",
+              "seed": 1745486344,
+              "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+              "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+              "pngSHA256": "4df3319713ea6bd084767f938ec62caf86e7b3dfa263dc19734d4e02e99e44fa",
+              "bytes": 1428707,
+              "workerId": "6jqatgawf99xxl",
+              "deliverySeconds": 14.45741319656372,
+              "queueAndStartupSeconds": 0.032,
+              "providerExecutionSeconds": 11.504,
+              "comfyExecutionSeconds": 9.87,
+              "handlerSeconds": 10.80459451675415,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-short_gap-r2-1",
+              "seed": 1328513679,
+              "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "1c82ad7e12e2a7f9279619d9874f9d115ecaf36a894b4327f8914eafec0ccd13",
+              "bytes": 1250148,
+              "workerId": "6jqatgawf99xxl",
+              "deliverySeconds": 12.545756101608276,
+              "queueAndStartupSeconds": 0.032,
+              "providerExecutionSeconds": 10.689,
+              "comfyExecutionSeconds": 9.336,
+              "handlerSeconds": 10.228779077529907,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-short_gap-r2-2",
+              "seed": 251485061,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "89e9f74dd1c87fab22feada187570e9d473b468f9a34692e347f67929e4323f1",
+              "bytes": 1477413,
+              "workerId": "6jqatgawf99xxl",
+              "deliverySeconds": 12.999972581863403,
+              "queueAndStartupSeconds": 0.04,
+              "providerExecutionSeconds": 10.861,
+              "comfyExecutionSeconds": 9.481,
+              "handlerSeconds": 10.384073734283447,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 4,
+            "median": 12.77286434173584,
+            "min": 11.47714877128601,
+            "max": 14.45741319656372
+          },
+          "comfyExecution": {
+            "n": 4,
+            "median": 9.4085,
+            "min": 7.687,
+            "max": 9.87
+          },
+          "providerExecution": {
+            "n": 4,
+            "median": 10.775,
+            "min": 9.157,
+            "max": 11.504
+          },
+          "queueAndStartup": {
+            "n": 4,
+            "median": 0.032,
+            "min": 0.028,
+            "max": 0.04
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [
+            27.973281860351562,
+            27.571929693222046
+          ],
+          "completedRoundThroughput": {
+            "n": 2,
+            "median": 4.321030102591018,
+            "min": 4.289807702902539,
+            "max": 4.352252502279496
+          },
+          "workerIds": [
+            "6jqatgawf99xxl"
+          ]
+        }
+      ],
+      "healthTransitions": [
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324621.1833436,
+          "label": "continuous-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 1,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324648.596316,
+          "label": "continuous-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 3,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324673.1306677,
+          "label": "short_gap-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 5,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324701.272935,
+          "label": "short_gap-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 7,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324729.0243316,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324730.2399232,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324731.4058332,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324732.6418235,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324733.7993157,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324735.0621445,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324736.2518182,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324737.4532301,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324738.630305,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324739.893927,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324741.0487685,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324742.2800195,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324743.5315104,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324744.7148614,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324745.9218445,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324747.098991,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324748.3121555,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324749.5456526,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324750.7455788,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324751.9378245,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324753.1388092,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324754.3107617,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324755.492055,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324756.66111,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324757.9437258,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324759.1286154,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324760.2996974,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324761.479702,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324762.6499012,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324763.8674173,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324765.0426955,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324766.2309601,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324767.3968513,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324768.6101081,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324769.8019211,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324770.987093,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324772.200202,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324773.385886,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324774.6267567,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324775.806514,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324777.0283601,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324778.2101219,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324779.3874516,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324780.6205404,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324781.8087666,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324783.0320392,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324784.2036471,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324785.3979626,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324786.5928683,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324787.7701564,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324788.9718587,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324790.138725,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324791.3350985,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324792.5594304,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324793.7217317,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324794.8968942,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324796.1505928,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324797.3341534,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324798.5143375,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324799.7089896,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324800.9238505,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324802.0939708,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324803.2886708,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324804.5171225,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324805.6861548,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324806.875495,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324808.063835,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324809.3004532,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324810.4875531,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324811.6862843,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324812.877236,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324815.0397558,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324816.2519736,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324817.420801,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324818.6322346,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "sv5tsgeg9nskcl",
+          "at": 1791324819.7955682,
+          "label": "scale_zero_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "wzlvrztk4lfkzj",
+          "at": 1791324830.493485,
+          "label": "continuous-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 1,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "wzlvrztk4lfkzj",
+          "at": 1791324852.0768204,
+          "label": "continuous-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 3,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        }
+      ],
+      "remainingOwnEndpointIds": [],
+      "gpuTargets": [
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "flexHourlyUSD": 1.58
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "flexHourlyUSD": 4.79
+        }
+      ]
+    },
+    {
+      "attempt": 4,
+      "status": "FAILED",
+      "completedImages": 11,
+      "cacheMode": "resident_fresh",
+      "acceptedRequests": 12,
+      "failure": {
+        "type": "RuntimeError",
+        "message": "Pilot deadline reserve reached"
+      },
+      "elapsedSeconds": 226.11609506607056,
+      "groups": [
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "pattern": "warmup",
+          "images": 1,
+          "completedRounds": 0,
+          "samples": [
+            {
+              "label": "h100-warmup",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "a33f67584b89fed3a98b1ce0a27be378c0f64f5020324d87384dbd2e94e36a56",
+              "bytes": 1432111,
+              "workerId": "xv9a89mriini8s",
+              "deliverySeconds": 98.697016954422,
+              "queueAndStartupSeconds": 87.716,
+              "providerExecutionSeconds": 7.966,
+              "comfyExecutionSeconds": 6.865,
+              "handlerSeconds": 7.233607769012451,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 1,
+            "median": 98.697016954422,
+            "min": 98.697016954422,
+            "max": 98.697016954422
+          },
+          "comfyExecution": {
+            "n": 1,
+            "median": 6.865,
+            "min": 6.865,
+            "max": 6.865
+          },
+          "providerExecution": {
+            "n": 1,
+            "median": 7.966,
+            "min": 7.966,
+            "max": 7.966
+          },
+          "queueAndStartup": {
+            "n": 1,
+            "median": 87.716,
+            "min": 87.716,
+            "max": 87.716
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [],
+          "completedRoundThroughput": null,
+          "workerIds": [
+            "xv9a89mriini8s"
+          ]
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "pattern": "continuous",
+          "images": 4,
+          "completedRounds": 2,
+          "samples": [
+            {
+              "label": "h100-continuous-r1-1",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "a33f67584b89fed3a98b1ce0a27be378c0f64f5020324d87384dbd2e94e36a56",
+              "bytes": 1432111,
+              "workerId": "xv9a89mriini8s",
+              "deliverySeconds": 4.4192938804626465,
+              "queueAndStartupSeconds": 0.026,
+              "providerExecutionSeconds": 1.748,
+              "comfyExecutionSeconds": 1.186,
+              "handlerSeconds": 1.2493760585784912,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-continuous-r1-2",
+              "seed": 1745486344,
+              "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+              "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+              "pngSHA256": "4df3319713ea6bd084767f938ec62caf86e7b3dfa263dc19734d4e02e99e44fa",
+              "bytes": 1428707,
+              "workerId": "xv9a89mriini8s",
+              "deliverySeconds": 7.347014665603638,
+              "queueAndStartupSeconds": 1.924,
+              "providerExecutionSeconds": 1.768,
+              "comfyExecutionSeconds": 1.253,
+              "handlerSeconds": 1.3240911960601807,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-continuous-r2-1",
+              "seed": 1328513679,
+              "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "1c82ad7e12e2a7f9279619d9874f9d115ecaf36a894b4327f8914eafec0ccd13",
+              "bytes": 1250148,
+              "workerId": "xv9a89mriini8s",
+              "deliverySeconds": 7.243621110916138,
+              "queueAndStartupSeconds": 2.382,
+              "providerExecutionSeconds": 1.857,
+              "comfyExecutionSeconds": 1.216,
+              "handlerSeconds": 1.266763687133789,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-continuous-r2-2",
+              "seed": 251485061,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "89e9f74dd1c87fab22feada187570e9d473b468f9a34692e347f67929e4323f1",
+              "bytes": 1477413,
+              "workerId": "xv9a89mriini8s",
+              "deliverySeconds": 4.841226816177368,
+              "queueAndStartupSeconds": 0.03,
+              "providerExecutionSeconds": 1.854,
+              "comfyExecutionSeconds": 1.181,
+              "handlerSeconds": 1.2262201309204102,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 4,
+            "median": 6.042423963546753,
+            "min": 4.4192938804626465,
+            "max": 7.347014665603638
+          },
+          "comfyExecution": {
+            "n": 4,
+            "median": 1.201,
+            "min": 1.181,
+            "max": 1.253
+          },
+          "providerExecution": {
+            "n": 4,
+            "median": 1.811,
+            "min": 1.748,
+            "max": 1.857
+          },
+          "queueAndStartup": {
+            "n": 4,
+            "median": 0.977,
+            "min": 0.026,
+            "max": 2.382
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [
+            7.364895820617676,
+            7.282938241958618
+          ],
+          "completedRoundThroughput": {
+            "n": 2,
+            "median": 16.385187920360337,
+            "min": 16.29350949731912,
+            "max": 16.47686634340155
+          },
+          "workerIds": [
+            "xv9a89mriini8s"
+          ]
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "pattern": "short_gap",
+          "images": 4,
+          "completedRounds": 2,
+          "samples": [
+            {
+              "label": "h100-short_gap-r1-1",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "a33f67584b89fed3a98b1ce0a27be378c0f64f5020324d87384dbd2e94e36a56",
+              "bytes": 1432111,
+              "workerId": "xv9a89mriini8s",
+              "deliverySeconds": 3.7870354652404785,
+              "queueAndStartupSeconds": 0.031,
+              "providerExecutionSeconds": 1.618,
+              "comfyExecutionSeconds": 1.171,
+              "handlerSeconds": 1.2198803424835205,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-short_gap-r1-2",
+              "seed": 1745486344,
+              "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+              "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+              "pngSHA256": "4df3319713ea6bd084767f938ec62caf86e7b3dfa263dc19734d4e02e99e44fa",
+              "bytes": 1428707,
+              "workerId": "xv9a89mriini8s",
+              "deliverySeconds": 4.2789530754089355,
+              "queueAndStartupSeconds": 0.032,
+              "providerExecutionSeconds": 1.746,
+              "comfyExecutionSeconds": 1.197,
+              "handlerSeconds": 1.2627921104431152,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-short_gap-r2-1",
+              "seed": 1328513679,
+              "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "1c82ad7e12e2a7f9279619d9874f9d115ecaf36a894b4327f8914eafec0ccd13",
+              "bytes": 1250148,
+              "workerId": "xv9a89mriini8s",
+              "deliverySeconds": 3.726891279220581,
+              "queueAndStartupSeconds": 0.037,
+              "providerExecutionSeconds": 1.653,
+              "comfyExecutionSeconds": 1.202,
+              "handlerSeconds": 1.2626478672027588,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-short_gap-r2-2",
+              "seed": 251485061,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "89e9f74dd1c87fab22feada187570e9d473b468f9a34692e347f67929e4323f1",
+              "bytes": 1477413,
+              "workerId": "xv9a89mriini8s",
+              "deliverySeconds": 4.102898597717285,
+              "queueAndStartupSeconds": 0.029,
+              "providerExecutionSeconds": 1.781,
+              "comfyExecutionSeconds": 1.23,
+              "handlerSeconds": 1.2955000400543213,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 4,
+            "median": 3.944967031478882,
+            "min": 3.726891279220581,
+            "max": 4.2789530754089355
+          },
+          "comfyExecution": {
+            "n": 4,
+            "median": 1.1995,
+            "min": 1.171,
+            "max": 1.23
+          },
+          "providerExecution": {
+            "n": 4,
+            "median": 1.6995,
+            "min": 1.618,
+            "max": 1.781
+          },
+          "queueAndStartup": {
+            "n": 4,
+            "median": 0.0315,
+            "min": 0.029,
+            "max": 0.037
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [
+            10.103957176208496,
+            9.855635166168213
+          ],
+          "completedRoundThroughput": {
+            "n": 2,
+            "median": 12.0261551379165,
+            "min": 11.876534896897686,
+            "max": 12.175775378935317
+          },
+          "workerIds": [
+            "xv9a89mriini8s"
+          ]
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "pattern": "long_gap_resume",
+          "images": 2,
+          "completedRounds": 1,
+          "samples": [
+            {
+              "label": "h100-long_gap_resume-r1-1",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "a33f67584b89fed3a98b1ce0a27be378c0f64f5020324d87384dbd2e94e36a56",
+              "bytes": 1432111,
+              "workerId": "fb023593a4vbaa",
+              "deliverySeconds": 44.344698429107666,
+              "queueAndStartupSeconds": 34.757,
+              "providerExecutionSeconds": 7.308,
+              "comfyExecutionSeconds": 6.402,
+              "handlerSeconds": 6.881047010421753,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "h100-long_gap_resume-r1-2",
+              "seed": 1745486344,
+              "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+              "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+              "pngSHA256": "4df3319713ea6bd084767f938ec62caf86e7b3dfa263dc19734d4e02e99e44fa",
+              "bytes": 1428707,
+              "workerId": "fb023593a4vbaa",
+              "deliverySeconds": 5.252913236618042,
+              "queueAndStartupSeconds": 0.031,
+              "providerExecutionSeconds": 1.965,
+              "comfyExecutionSeconds": 1.377,
+              "handlerSeconds": 1.4538414478302002,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 2,
+            "median": 24.798805832862854,
+            "min": 5.252913236618042,
+            "max": 44.344698429107666
+          },
+          "comfyExecution": {
+            "n": 2,
+            "median": 3.8895,
+            "min": 1.377,
+            "max": 6.402
+          },
+          "providerExecution": {
+            "n": 2,
+            "median": 4.6365,
+            "min": 1.965,
+            "max": 7.308
+          },
+          "queueAndStartup": {
+            "n": 2,
+            "median": 17.394,
+            "min": 0.031,
+            "max": 34.757
+          },
+          "firstAfterPauseDelivery": {
+            "n": 1,
+            "median": 44.344698429107666,
+            "min": 44.344698429107666,
+            "max": 44.344698429107666
+          },
+          "followingImageDelivery": {
+            "n": 1,
+            "median": 5.252913236618042,
+            "min": 5.252913236618042,
+            "max": 5.252913236618042
+          },
+          "resumeWorkerChangedFromWarmup": true,
+          "roundWallSeconds": [
+            49.62091088294983
+          ],
+          "completedRoundThroughput": {
+            "n": 1,
+            "median": 2.418335291810071,
+            "min": 2.418335291810071,
+            "max": 2.418335291810071
+          },
+          "workerIds": [
+            "fb023593a4vbaa"
+          ]
+        }
+      ],
+      "healthTransitions": [
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325211.2338653,
+          "label": "continuous-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 1,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325218.803908,
+          "label": "continuous-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 3,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325226.273519,
+          "label": "short_gap-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 5,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325236.5474308,
+          "label": "short_gap-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 7,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325246.6462781,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325247.8188767,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325249.0184634,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325250.1967142,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325251.4171154,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325252.5900803,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325253.830008,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325255.0319295,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325256.2007577,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325257.3904605,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325258.5898864,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325259.7647107,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325260.9547691,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325262.1218793,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325263.2948022,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325264.5203316,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325265.7432275,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325266.9827993,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325268.170858,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325269.3992245,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325270.5940123,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325271.7615461,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325272.9425557,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325274.157938,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325275.3166678,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325276.5226707,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325276.7619638,
+          "label": "long_gap_resume-before",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325326.5895958,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325327.7599623,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325328.93109,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325330.142518,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325331.3218818,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325332.5412025,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325333.7204294,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325334.920729,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325336.1318755,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "kas3ab6le0akb1",
+          "at": 1791325337.3509016,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        }
+      ],
+      "remainingOwnEndpointIds": [],
+      "gpuTargets": [
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "flexHourlyUSD": 1.58
+        },
+        {
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "flexHourlyUSD": 4.79
+        }
+      ]
+    },
+    {
+      "attempt": 5,
+      "status": "FAILED",
+      "completedImages": 0,
+      "cacheMode": "resident_fresh",
+      "acceptedRequests": 1,
+      "failure": {
+        "type": "RuntimeError",
+        "message": "Job API HTTP 500"
+      },
+      "elapsedSeconds": 71.16805243492126,
+      "groups": [],
+      "healthTransitions": [],
+      "remainingOwnEndpointIds": [],
+      "gpuTargets": [
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "flexHourlyUSD": 1.58
+        }
+      ]
+    },
+    {
+      "attempt": 6,
+      "status": "COMPLETE",
+      "completedImages": 13,
+      "cacheMode": "resident_fresh",
+      "acceptedRequests": 13,
+      "failure": null,
+      "elapsedSeconds": 412.2164349555969,
+      "groups": [
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "pattern": "warmup",
+          "images": 1,
+          "completedRounds": 0,
+          "samples": [
+            {
+              "label": "5090-warmup",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "41c9e9a1f77d35e5ac6a8b3dd8ee1c5a33897fad3c5231f94bd935cddac068db",
+              "bytes": 1445538,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 279.3603718280792,
+              "queueAndStartupSeconds": 268.153,
+              "providerExecutionSeconds": 8.352,
+              "comfyExecutionSeconds": 7.041,
+              "handlerSeconds": 7.3264319896698,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 1,
+            "median": 279.3603718280792,
+            "min": 279.3603718280792,
+            "max": 279.3603718280792
+          },
+          "comfyExecution": {
+            "n": 1,
+            "median": 7.041,
+            "min": 7.041,
+            "max": 7.041
+          },
+          "providerExecution": {
+            "n": 1,
+            "median": 8.352,
+            "min": 8.352,
+            "max": 8.352
+          },
+          "queueAndStartup": {
+            "n": 1,
+            "median": 268.153,
+            "min": 268.153,
+            "max": 268.153
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [],
+          "completedRoundThroughput": null,
+          "workerIds": [
+            "glxh5vxpbhzfv6"
+          ]
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "pattern": "continuous",
+          "images": 4,
+          "completedRounds": 2,
+          "samples": [
+            {
+              "label": "5090-continuous-r1-1",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "41c9e9a1f77d35e5ac6a8b3dd8ee1c5a33897fad3c5231f94bd935cddac068db",
+              "bytes": 1445538,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 7.0027101039886475,
+              "queueAndStartupSeconds": 0.143,
+              "providerExecutionSeconds": 2.137,
+              "comfyExecutionSeconds": 1.715,
+              "handlerSeconds": 1.7515499591827393,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-continuous-r1-2",
+              "seed": 1745486344,
+              "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+              "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+              "pngSHA256": "6d37b7a9c2efba81a2bb420778d301be9191c6c2f943fb0b07a79250f1a503a1",
+              "bytes": 1429722,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 9.740499496459961,
+              "queueAndStartupSeconds": 3.119,
+              "providerExecutionSeconds": 2.763,
+              "comfyExecutionSeconds": 1.777,
+              "handlerSeconds": 2.099412441253662,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-continuous-r2-1",
+              "seed": 1328513679,
+              "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "24948960559bdb2484f7ad80c32bed354836e0c028bcf6b22d229a2d27f85827",
+              "bytes": 1257574,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 10.052758693695068,
+              "queueAndStartupSeconds": 2.866,
+              "providerExecutionSeconds": 2.127,
+              "comfyExecutionSeconds": 1.733,
+              "handlerSeconds": 1.7681872844696045,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-continuous-r2-2",
+              "seed": 251485061,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "411cb5c7d352752b3cf5cef9982616d25a98c73613ef28b984165f50a510c1c9",
+              "bytes": 1469298,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 5.627614974975586,
+              "queueAndStartupSeconds": 0.151,
+              "providerExecutionSeconds": 2.048,
+              "comfyExecutionSeconds": 1.712,
+              "handlerSeconds": 1.7466599941253662,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 4,
+            "median": 8.371604800224304,
+            "min": 5.627614974975586,
+            "max": 10.052758693695068
+          },
+          "comfyExecution": {
+            "n": 4,
+            "median": 1.7240000000000002,
+            "min": 1.712,
+            "max": 1.777
+          },
+          "providerExecution": {
+            "n": 4,
+            "median": 2.1319999999999997,
+            "min": 2.048,
+            "max": 2.763
+          },
+          "queueAndStartup": {
+            "n": 4,
+            "median": 1.5085,
+            "min": 0.143,
+            "max": 3.119
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [
+            9.75616717338562,
+            10.060832977294922
+          ],
+          "completedRoundThroughput": {
+            "n": 2,
+            "median": 12.11367702851824,
+            "min": 11.927441820256185,
+            "max": 12.299912236780294
+          },
+          "workerIds": [
+            "glxh5vxpbhzfv6"
+          ]
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "pattern": "short_gap",
+          "images": 4,
+          "completedRounds": 2,
+          "samples": [
+            {
+              "label": "5090-short_gap-r1-1",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "41c9e9a1f77d35e5ac6a8b3dd8ee1c5a33897fad3c5231f94bd935cddac068db",
+              "bytes": 1445538,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 4.4854512214660645,
+              "queueAndStartupSeconds": 0.139,
+              "providerExecutionSeconds": 2.302,
+              "comfyExecutionSeconds": 1.714,
+              "handlerSeconds": 1.752798080444336,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-short_gap-r1-2",
+              "seed": 1745486344,
+              "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+              "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+              "pngSHA256": "6d37b7a9c2efba81a2bb420778d301be9191c6c2f943fb0b07a79250f1a503a1",
+              "bytes": 1429722,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 6.159652471542358,
+              "queueAndStartupSeconds": 0.146,
+              "providerExecutionSeconds": 2.71,
+              "comfyExecutionSeconds": 1.728,
+              "handlerSeconds": 1.7691833972930908,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-short_gap-r2-1",
+              "seed": 1328513679,
+              "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "24948960559bdb2484f7ad80c32bed354836e0c028bcf6b22d229a2d27f85827",
+              "bytes": 1257574,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 5.254793882369995,
+              "queueAndStartupSeconds": 0.229,
+              "providerExecutionSeconds": 2.252,
+              "comfyExecutionSeconds": 1.755,
+              "handlerSeconds": 1.7952098846435547,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-short_gap-r2-2",
+              "seed": 251485061,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "411cb5c7d352752b3cf5cef9982616d25a98c73613ef28b984165f50a510c1c9",
+              "bytes": 1469298,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 4.973581552505493,
+              "queueAndStartupSeconds": 0.14,
+              "providerExecutionSeconds": 2.578,
+              "comfyExecutionSeconds": 1.719,
+              "handlerSeconds": 1.7531177997589111,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 4,
+            "median": 5.114187717437744,
+            "min": 4.4854512214660645,
+            "max": 6.159652471542358
+          },
+          "comfyExecution": {
+            "n": 4,
+            "median": 1.7235,
+            "min": 1.714,
+            "max": 1.755
+          },
+          "providerExecution": {
+            "n": 4,
+            "median": 2.44,
+            "min": 2.252,
+            "max": 2.71
+          },
+          "queueAndStartup": {
+            "n": 4,
+            "median": 0.14300000000000002,
+            "min": 0.139,
+            "max": 0.229
+          },
+          "firstAfterPauseDelivery": null,
+          "followingImageDelivery": null,
+          "resumeWorkerChangedFromWarmup": null,
+          "roundWallSeconds": [
+            12.67970871925354,
+            12.284280776977539
+          ],
+          "completedRoundThroughput": {
+            "n": 2,
+            "median": 9.616260733874594,
+            "min": 9.463939799956576,
+            "max": 9.768581667792613
+          },
+          "workerIds": [
+            "glxh5vxpbhzfv6"
+          ]
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "pattern": "long_gap_resume",
+          "images": 4,
+          "completedRounds": 2,
+          "samples": [
+            {
+              "label": "5090-long_gap_resume-r1-1",
+              "seed": 251344740,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "41c9e9a1f77d35e5ac6a8b3dd8ee1c5a33897fad3c5231f94bd935cddac068db",
+              "bytes": 1445538,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 6.11313271522522,
+              "queueAndStartupSeconds": 0.886,
+              "providerExecutionSeconds": 2.692,
+              "comfyExecutionSeconds": 1.737,
+              "handlerSeconds": 1.9960193634033203,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-long_gap_resume-r1-2",
+              "seed": 1745486344,
+              "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+              "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+              "pngSHA256": "6d37b7a9c2efba81a2bb420778d301be9191c6c2f943fb0b07a79250f1a503a1",
+              "bytes": 1429722,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 6.314866542816162,
+              "queueAndStartupSeconds": 0.145,
+              "providerExecutionSeconds": 2.662,
+              "comfyExecutionSeconds": 1.718,
+              "handlerSeconds": 1.756239652633667,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-long_gap_resume-r2-1",
+              "seed": 1328513679,
+              "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "24948960559bdb2484f7ad80c32bed354836e0c028bcf6b22d229a2d27f85827",
+              "bytes": 1257574,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 7.4907848834991455,
+              "queueAndStartupSeconds": 0.828,
+              "providerExecutionSeconds": 2.637,
+              "comfyExecutionSeconds": 1.765,
+              "handlerSeconds": 2.0290067195892334,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            },
+            {
+              "label": "5090-long_gap_resume-r2-2",
+              "seed": 251485061,
+              "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+              "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+              "pngSHA256": "411cb5c7d352752b3cf5cef9982616d25a98c73613ef28b984165f50a510c1c9",
+              "bytes": 1469298,
+              "workerId": "glxh5vxpbhzfv6",
+              "deliverySeconds": 5.706315517425537,
+              "queueAndStartupSeconds": 0.145,
+              "providerExecutionSeconds": 2.716,
+              "comfyExecutionSeconds": 1.739,
+              "handlerSeconds": 1.7826533317565918,
+              "loggerRepair": {
+                "afterSHA256": "eecc52b8026daee8717e4ca6312de8cfd8b80f8a44180825fa55fd5bca483496",
+                "beforeSHA256": "abd65bb7467150363539f425baa8af63d086a28154df826f375c06b7d4244bbf",
+                "fix": "guard_empty_progress_log_deque"
+              }
+            }
+          ],
+          "delivery": {
+            "n": 4,
+            "median": 6.213999629020691,
+            "min": 5.706315517425537,
+            "max": 7.4907848834991455
+          },
+          "comfyExecution": {
+            "n": 4,
+            "median": 1.738,
+            "min": 1.718,
+            "max": 1.765
+          },
+          "providerExecution": {
+            "n": 4,
+            "median": 2.677,
+            "min": 2.637,
+            "max": 2.716
+          },
+          "queueAndStartup": {
+            "n": 4,
+            "median": 0.4865,
+            "min": 0.145,
+            "max": 0.886
+          },
+          "firstAfterPauseDelivery": {
+            "n": 2,
+            "median": 6.801958799362183,
+            "min": 6.11313271522522,
+            "max": 7.4907848834991455
+          },
+          "followingImageDelivery": {
+            "n": 2,
+            "median": 6.01059103012085,
+            "min": 5.706315517425537,
+            "max": 6.314866542816162
+          },
+          "resumeWorkerChangedFromWarmup": false,
+          "roundWallSeconds": [
+            12.459471940994263,
+            13.228715181350708
+          ],
+          "completedRoundThroughput": {
+            "n": 2,
+            "median": 9.351201258629565,
+            "min": 9.07117572303401,
+            "max": 9.63122679422512
+          },
+          "workerIds": [
+            "glxh5vxpbhzfv6"
+          ]
+        }
+      ],
+      "healthTransitions": [
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326250.8529987,
+          "label": "continuous-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 1,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326260.7961783,
+          "label": "continuous-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 3,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326271.0518541,
+          "label": "short_gap-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 5,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326283.9240751,
+          "label": "short_gap-before",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 7,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326296.4207165,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326297.6417735,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326298.8351858,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326300.0093918,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326301.184525,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326302.4322867,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326303.628934,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326304.829456,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326306.0371358,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326307.2379434,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326308.4194062,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326309.62705,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326310.809341,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326311.9785419,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326314.1808248,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326315.3982449,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326316.5641959,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326317.7723072,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326318.935134,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326320.0925393,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326321.2660246,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326322.4344232,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326323.6296036,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326324.828024,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326325.9882824,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326327.1778123,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326327.3756652,
+          "label": "long_gap_resume-before",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 9,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326340.0626438,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326341.2350123,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326342.4156137,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326343.7634494,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326344.938855,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326346.1302197,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326347.3147364,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326348.4989479,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326349.6725206,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326350.8497837,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326352.0561972,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326353.2370467,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326354.4102015,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326355.5897775,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326356.7916462,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326357.9623673,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326359.1441216,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 0,
+            "initializing": 0,
+            "ready": 0,
+            "running": 1,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326360.5838773,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326361.7573783,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326362.9471936,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326364.131906,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326365.3229015,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326366.4892342,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326367.6549132,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326368.8492377,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326370.0298297,
+          "label": "long_gap_resume-wait",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        },
+        {
+          "endpointId": "ukkkqcyahewxot",
+          "at": 1791326370.187494,
+          "label": "long_gap_resume-before",
+          "workers": {
+            "idle": 1,
+            "initializing": 0,
+            "ready": 1,
+            "running": 0,
+            "throttled": 0,
+            "unhealthy": 0
+          },
+          "jobs": {
+            "completed": 11,
+            "failed": 0,
+            "inProgress": 0,
+            "inQueue": 0,
+            "retried": 0
+          }
+        }
+      ],
+      "remainingOwnEndpointIds": [],
+      "gpuTargets": [
+        {
+          "gpu": "NVIDIA GeForce RTX 5090",
+          "flexHourlyUSD": 1.58
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Tiny fixed-order pilot; no statistical significance or production quality claim.",
+    "One ComfyUI process per endpoint: two queued requests do not prove two simultaneous GPU inferences.",
+    "Provider execution time includes handler work; Comfy execution includes model loading, text/reference encoding, denoising, decoding and PNG output.",
+    "Queue/startup time includes provider waits and may contain unbilled container/model-cache preparation; it is not a billing duration.",
+    "Attempt 3 cache-none disables loader output reuse. Attempts 4-6 reuse loaders with fresh encoders. Neither is a multi-copy optimized pod.",
+    "Completed-round images/minute includes request/delivery and the in-round two-second gap when applicable, but excludes the preceding 30-second pause and initial startup. It is not GPU-only throughput.",
+    "The GPUs ran in different observed regions and different attempts. Hardware, placement, startup and network effects are not independently isolated; no causal location penalty is measured.",
+    "FlashBoot idle/ready snapshots are distinct from forced cold starts. Idle count alone does not establish billing; the H100 UI showed a zero spend rate while health retained idle=1.",
+    "Total account debit is measured separately; no per-GPU invoice split is inferred.",
+    "No cost or time for narration, Luna, vision checks, repair, rendering or final video is included in image-stage projections.",
+    "Decode/black-frame checks are not story or character-quality checks."
+  ],
+  "cacheOutputComparison": [
+    {
+      "gpu": "NVIDIA GeForce RTX 5090",
+      "seed": 251344740,
+      "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+      "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+      "identicalPixels": true,
+      "meanAbsoluteRGBDifference": 0.0,
+      "samePNG": true
+    },
+    {
+      "gpu": "NVIDIA GeForce RTX 5090",
+      "seed": 1328513679,
+      "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+      "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+      "identicalPixels": true,
+      "meanAbsoluteRGBDifference": 0.0,
+      "samePNG": true
+    },
+    {
+      "gpu": "NVIDIA GeForce RTX 5090",
+      "seed": 1745486344,
+      "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+      "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+      "identicalPixels": true,
+      "meanAbsoluteRGBDifference": 0.0,
+      "samePNG": true
+    },
+    {
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "seed": 251344740,
+      "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+      "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+      "identicalPixels": true,
+      "meanAbsoluteRGBDifference": 0.0,
+      "samePNG": true
+    },
+    {
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "seed": 251485061,
+      "promptSHA256": "c013d2081acbd72d0e45b071c0d006466c19fc79d71a0fb74ec02ebe3d0a0499",
+      "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+      "identicalPixels": true,
+      "meanAbsoluteRGBDifference": 0.0,
+      "samePNG": true
+    },
+    {
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "seed": 1328513679,
+      "promptSHA256": "7e4b43cf1475f7c8c1d2b402c419596070a0db50d1af62a598bb2a9a08f9e18e",
+      "referenceSHA256": "8d043d749e42cc869075fbc95fd270d4add7da6b5f3eee879133bcbe21cf0b52",
+      "identicalPixels": true,
+      "meanAbsoluteRGBDifference": 0.0,
+      "samePNG": true
+    },
+    {
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "seed": 1745486344,
+      "promptSHA256": "b1091a2b6fe8d174aba3b3323e16131ea6294aaba222cab01c4433184c6d731d",
+      "referenceSHA256": "ac12da4b2d5a06b33b018e1dc2fc85a467166754d3375d0c819f62f775d3a948",
+      "identicalPixels": true,
+      "meanAbsoluteRGBDifference": 0.0,
+      "samePNG": true
+    }
+  ],
+  "costs": {
+    "at": 1791339106.3869467,
+    "observedCumulativeDebitUSD": 0.4837681409000001,
+    "standingStorageHourlyUSD": 0.007,
+    "remainingOwnedEndpoints": [],
+    "remainingOwnedTemplates": [],
+    "cumulativeCapUSD": 1,
+    "bookedConservativeCeilingUSD": 0.9573661796999999,
+    "settlementStatus": "Observed account debit includes standing storage during testing; later postings may change total. Do not add storage to the debit again.",
+    "allAccountEndpointCount": 0
+  }
+}

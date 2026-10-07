@@ -1,6 +1,7 @@
 import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs';
 import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
+import {serverlessHTML} from './pipeline-serverless.mjs';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -184,6 +185,10 @@ async function start(){
     try{buildPlan(measuredDefault,evidence);config={...measuredDefault};}catch{config={...DEFAULTS};}
     try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved){const state=importSnapshot(saved,evidence);config=state.config;preferences=state.preferences;uncertainty=Number.isFinite(saved.uncertainty)?Math.max(0,Math.min(100,saved.uncertainty)):20;}}catch{toast('Saved planner settings were invalid; using the default plan. Studio projects are unaffected.');}
     setControls();rebuild();
+    try {
+      const response=await fetch('./pipeline-serverless.json');
+      if(response.ok){const data=await response.json();const panel=document.createElement('section');panel.id='serverlessLab';panel.innerHTML=serverlessHTML(data);$('concurrencyLab').insertAdjacentElement('afterend',panel);}
+    } catch { /* Optional pilot evidence never blocks the existing planner. */ }
     const detailResponse=await fetch('./pipeline-details.json');
     if(detailResponse.ok){const details=await detailResponse.json();mountObservedRuns($('observedRuns'),details);mountFunctionIndex($('functionIndex'),details,kind=>{const task=result.tasks.find(t=>t.kind===kind);if(task){selected=task.id;renderInspector();}else{const meta=CATALOG.find(t=>t.id===kind);if(meta){$('inspectorLabel').textContent='NESTED / CONDITIONAL';$('taskInspector').innerHTML=`<h3>${esc(meta.name)}</h3><p class="task-desc">${esc(meta.description)}</p><p>${esc(meta.basis)}</p><p>${esc(meta.parallel)}</p>`;}}});}else{$('functionIndex').textContent='Source inventory unavailable. Process-level explanations remain available.';$('observedRuns').textContent='Recorded timing file unavailable; no trace is substituted.';}
     for(const k of [...keys,'uncertainty'])if($(k))$(k).addEventListener('change',()=>{
