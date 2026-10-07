@@ -2,6 +2,7 @@ import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=timed-start
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const seconds=n=>Number.isFinite(n)?n.toFixed(3)+'s':'Not measured',money=n=>'$'+n.toFixed(3);
 const phaseNames={preparationSeconds:'Build request',referenceUploadSeconds:'Reference upload/cache',submissionSeconds:'Submit operation',waitAndPollingSeconds:'Wait / poll (includes server)',retrievalAndValidationSeconds:'Retrieve / decode check',pngEncodeAndDurableSaveSeconds:'PNG encode / durable save',historyAndMetadataReceiptSeconds:'History / metadata receipt',provisionAndReadinessSeconds:'Provision / readiness',downloadAndHashSeconds:'Download / verify hashes',timedCohortWallSeconds:'Timed image cohorts',experimentalWarmupClientSeconds:'Experimental warmups'};
+export const ALIGNMENT_BUFFER_SECONDS=15;
 
 function* startupSearch(config,evidence){
  const evaluate=(n,gpuStartSeconds=0)=>{
@@ -13,16 +14,36 @@ function* startupSearch(config,evidence){
  const values=[];for(let i=0;i<config.chapters;i++){values.push(evaluate(i+1));yield `Comparing chapter boundaries · ${i+1} / ${config.chapters}`;}
  // Find a later clock start that preserves earliest image delivery and final finish.
  // This bounded binary search is a scheduling heuristic, not a global optimum.
- for(const keepFastestVideo of [true,false]){
-  const baseline=values.reduce((a,b)=>(keepFastestVideo?a.result.end<=b.result.end:a.imageEnd<=b.imageEnd)?a:b);
+ {
+  const baseline=values.reduce((a,b)=>a.result.end<=b.result.end?a:b);
   let lo=0,hi=Math.min(86400,baseline.imageEnd),balanced=baseline;
   for(let i=0;i<16&&hi-lo>1;i++){
    const mid=(lo+hi)/2,v=evaluate(baseline.readyChapters,mid);
-   if(v.imageEnd<=baseline.imageEnd+.5&&(!keepFastestVideo||v.result.end<=baseline.result.end+.5)){lo=mid;balanced=v;}else hi=mid;
-   yield `Refining ${keepFastestVideo?'video finish':'Luna + images'} timing · ${i+1} / 16`;
+   if(v.imageEnd<=baseline.imageEnd+.5&&v.result.end<=baseline.result.end+.5){lo=mid;balanced=v;}else hi=mid;
+   yield `Refining video finish timing · ${i+1} / 16`;
   }
-  if(balanced.gpuStartSeconds>baseline.bootStart+1)values.push({...balanced,balanced:true,keepFastestVideo});
+  if(balanced.gpuStartSeconds>baseline.bootStart+1)values.push({...balanced,balanced:true,keepFastestVideo:true});
  }
+ // A coarse scan plus local refinement avoids assuming smooth/monotonic timing.
+ // Match the last-chapter billed interval, allowing at most a small waiting buffer.
+ const last=values.find(v=>v.readyChapters===config.chapters),target=last.result.rentalSeconds+ALIGNMENT_BUFFER_SECONDS;
+ const qualifies=v=>v.result.rentalSeconds<=target+.001;
+ const first=values[0];let best=last,step=(last.bootStart-first.bootStart)/32;
+ for(let i=0;i<=32;i++){
+  const v=evaluate(1,first.bootStart+step*i);
+  if(qualifies(v)&&v.bootStart<best.bootStart)best=v;
+  yield `Finding low-wait alignment · ${i+1} / 33`;
+ }
+ for(let level=0;level<2&&step>.25;level++){
+  const upper=best.bootStart,lower=Math.max(first.bootStart,upper-step),spacing=(upper-lower)/16;
+  for(let i=0;i<=16;i++){
+   const v=evaluate(1,lower+spacing*i);
+   if(qualifies(v)&&v.bootStart<best.bootStart)best=v;
+   yield `Refining low-wait alignment · ${level+1} / 2 · ${i+1} / 17`;
+  }
+  step=spacing;
+ }
+ values.push({...best,balanced:true,keepFastestVideo:false,bufferSeconds:ALIGNMENT_BUFFER_SECONDS,rentalReferenceSeconds:last.result.rentalSeconds,rentalExtraSeconds:Math.max(0,best.result.rentalSeconds-last.result.rentalSeconds)});
  return values.map(v=>({...v,pareto:!values.some(o=>o!==v&&o.result.end<=v.result.end+.01&&o.result.totalUSD<=v.result.totalUSD+.00001&&(o.result.end<v.result.end-.01||o.result.totalUSD<v.result.totalUSD-.00001))}));
 }
 export function startupCandidates(config,evidence){
@@ -46,8 +67,8 @@ export function mountStartupTradeoffs(host,config,evidence,onApply){
  if(!host._startupValues)return;
  const values=host._startupValues,fastest=values.reduce((a,b)=>a.result.end<=b.result.end?a:b),cheapest=values.reduce((a,b)=>a.result.gpuUSD<=b.result.gpuUSD?a:b),balanced=values.find(v=>v.balanced);
  const aligned=values.find(v=>v.balanced&&!v.keepFastestVideo),featured=[...new Set([fastest,balanced,aligned,cheapest].filter(Boolean))];
- const table=list=>`<div class="evidence-table"><table><thead><tr><th>Start strategy</th><th>GPU boot</th><th>Luna done</th><th>Images done</th><th>Image tail</th><th>Video finish</th><th>GPU idle/setup</th><th>Rental</th><th>GPU $</th><th>Total $</th><th></th></tr></thead><tbody>${list.map(v=>`<tr><td>${v.balanced?(v.keepFastestVideo?'Timed · keep fastest video':'Timed · align Luna + images'):`After ${v.readyChapters} / ${config.chapters} chapter plans`}${v===fastest?' · fastest video':''}${v===cheapest?' · lowest rental':''}</td><td>${formatTime(v.bootStart)}</td><td>${formatTime(v.directorEnd)}</td><td>${formatTime(v.imageEnd)}</td><td>${v.gap<0?'−':''}${formatTime(Math.abs(v.gap))}</td><td>${formatTime(v.result.end)}</td><td>${formatTime(v.result.gpuIdleSeconds)}</td><td>${formatTime(v.result.rentalSeconds)}</td><td>${money(v.result.gpuUSD)}</td><td>${money(v.result.totalUSD)}</td><td><button class="button" data-ready="${v.readyChapters}" data-start-index="${values.indexOf(v)}">Use</button></td></tr>`).join('')}</tbody></table></div>`;
- host.innerHTML=`<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption">Test every chapter boundary plus timed startups between boundaries. “Keep fastest video” delays boot without delaying image completion or video by more than 0.5s. “Align Luna + images” delays boot while preserving earliest image completion; the final video may finish later because local rendering starts later. Last shots still require Luna’s last plan, so an exact simultaneous finish cannot be guaranteed.</p>${table(featured)}<details><summary>All ${config.chapters} chapter-boundary options</summary>${table(values.filter(v=>!featured.includes(v)))}</details><p class="caption">All times are projections from project start, without manual moves. “Image tail” is images done minus Luna done. “All chapters” waits for plans, not the finished video. Setup, transfers, QC contention and rendering remain in the model. This is a bounded scheduling search, not a measured production run or global optimum. “Use” clears manual moves and can be undone.</p>`;
+ const table=list=>`<div class="evidence-table"><table><thead><tr><th>Start strategy</th><th>GPU boot</th><th>Luna done</th><th>Images done</th><th>Image tail</th><th title="Project start through final video checks, including audio, directing, images, rendering and assembly">Total time</th><th>GPU idle/setup</th><th>Rental</th><th>GPU $</th><th>Total cost</th><th></th></tr></thead><tbody>${list.map(v=>`<tr><td>${v.balanced?(v.keepFastestVideo?'Timed · keep fastest video':`Timed · align Luna + images · ${v.bufferSeconds}s buffer`):`After ${v.readyChapters} / ${config.chapters} chapter plans`}${v===fastest?' · fastest video':''}${v===cheapest?' · lowest rental':''}</td><td>${formatTime(v.bootStart)}</td><td>${formatTime(v.directorEnd)}</td><td>${formatTime(v.imageEnd)}</td><td>${v.gap<0?'−':''}${formatTime(Math.abs(v.gap))}</td><td>${formatTime(v.result.end)}</td><td>${formatTime(v.result.gpuIdleSeconds)}</td><td>${formatTime(v.result.rentalSeconds)}</td><td>${money(v.result.gpuUSD)}</td><td>${money(v.result.totalUSD)}</td><td><button class="button" data-ready="${v.readyChapters}" data-start-index="${values.indexOf(v)}">Use</button></td></tr>`).join('')}</tbody></table></div>`;
+ host.innerHTML=`<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption">Test every chapter boundary plus timed startups between boundaries. “Keep fastest video” preserves the faster video finish. “Align Luna + images” targets the same billed rental duration as starting after the last chapter, plus at most ${ALIGNMENT_BUFFER_SECONDS}s of waiting buffer. It starts as early as this bounded search finds within that budget; rendering can finish later. Last shots still require the final chapter plan.</p>${table(featured)}<details><summary>All ${config.chapters} chapter-boundary options</summary>${table(values.filter(v=>!featured.includes(v)))}</details><p class="caption">“Total time” includes narration, directing, images, rendering, assembly and final checks from project start. Rental includes setup and transfers. The buffer is extra rented waiting, not free GPU time; actual calculated costs are shown. All values are projections without manual moves. “All chapters” waits for plans, not the finished video. This bounded scan is not a global optimum or measured production run. “Use” clears manual moves and can be undone.</p>`;
  host.querySelectorAll('[data-start-index]').forEach(b=>b.onclick=()=>{const v=values[Number(b.dataset.startIndex)];onApply({readyChapters:v.readyChapters,gpuStartSeconds:v.gpuStartSeconds});});
 }
 

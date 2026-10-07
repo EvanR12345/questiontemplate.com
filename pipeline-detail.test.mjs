@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {DEFAULTS,buildPlan,schedule,importSnapshot} from './pipeline-engine.mjs';
 import {latestProfiles} from './pipeline-measurements.mjs';
-import {startupCandidates,imageAccountingHTML} from './pipeline-detail-ui.mjs';
+import {startupCandidates,imageAccountingHTML,ALIGNMENT_BUFFER_SECONDS} from './pipeline-detail-ui.mjs';
 const evidence=JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url),'utf8'));
 evidence.concurrency=JSON.parse(fs.readFileSync(new URL('./pipeline-concurrency.json',import.meta.url),'utf8'));
 const details=JSON.parse(fs.readFileSync(new URL('./pipeline-details.json',import.meta.url),'utf8'));
@@ -46,6 +46,16 @@ test('aligned completion offers the later rental start and shows its rendering t
  assert.ok(aligned.imageEnd<=baseline.imageEnd+.5);assert.ok(aligned.gap<=baseline.gap+.5);
  assert.ok(aligned.result.gpuUSD<fast.result.gpuUSD);assert.ok(aligned.result.gpuIdleSeconds<fast.result.gpuIdleSeconds);
  assert.ok(aligned.result.end>fast.result.end);assert.deepEqual(aligned.result.diagnostics,[]);
+});
+test('aligned rental matches the last-chapter billed interval with at most a 15 second buffer',()=>{
+ const values=startupCandidates(config,evidence),aligned=values.find(v=>v.balanced&&!v.keepFastestVideo),last=values.find(v=>!v.balanced&&v.readyChapters===config.chapters);
+ assert.equal(aligned.bufferSeconds,15);assert.equal(ALIGNMENT_BUFFER_SECONDS,15);
+ assert.ok(aligned.result.rentalSeconds<=last.result.rentalSeconds+15.001);
+ assert.ok(aligned.result.gpuUSD<=last.result.gpuUSD+15.001/3600*aligned.plan.gpu.hourly);
+ assert.ok(aligned.imageEnd<last.imageEnd);assert.ok(aligned.bootStart<last.bootStart);
+ assert.equal(aligned.plan.attemptCount,last.plan.attemptCount);assert.deepEqual(aligned.result.diagnostics,[]);
+ // Regression: the old binary deadline stopped near 1679s; a later start is feasible.
+ assert.ok(aligned.bootStart>2000&&aligned.bootStart<2120);
 });
 test('priority survives export/import while enforced resource dependencies remain intact',()=>{
  const input={type:'studio-pipeline-plan',version:1,config,preferences:{'c1-voice':{notBefore:10,priority:-3}}};
