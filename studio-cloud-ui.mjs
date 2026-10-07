@@ -38,6 +38,7 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
         const controls=document.createElement('div');controls.id='publisherControls';
         controls.innerHTML=`<button id="youtubeConnect">Connect YouTube</button><label>Saved cloud video<select id="publishSource">${rows.filter(r=>r.category==='Video'&&r.cloud).map(r=>`<option value="${esc(r.path)}">${esc(r.path)}</option>`).join('')}</select></label><label>YouTube title<input id="publishTitle" maxlength="100" value="${esc(p.name.slice(0,100))}"></label><label>Description<textarea id="publishDescription" maxlength="5000" rows="3"></textarea></label><label>Visibility<select id="publishPrivacy"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></label><label class="inline"><input type="checkbox" id="publishKids">This video is made for kids</label><button id="publishStart" ${publisher.connected?'':'disabled'}>Upload selected cloud video</button><div id="publishProgress" role="status"></div>${(p.publishing??[]).map(j=>`<p>${esc(j.title)} · ${esc(j.status)} · ${Math.round(100*j.uploaded/j.total)}% ${j.status==='COMPLETE'?`<a href="https://www.youtube.com/watch?v=${encodeURIComponent(j.videoId)}" target="_blank" rel="noopener">Open video</a>`:`<button data-upload-resume="${esc(j.id)}">Resume upload</button><button data-upload-cancel="${esc(j.id)}">Cancel upload</button>`}</p>`).join('')}`;
         $('publisherControls')?.remove();yt.after(controls);
+        controls.insertAdjacentHTML('beforeend','<p class="muted">Choose a video part for uploads over 12 hours. YouTube may keep a new unaudited app\'s uploads private; final visibility is confirmed after upload. <a href="https://developers.google.com/youtube/v3/docs/videos/insert" target="_blank" rel="noopener">YouTube requirements</a></p>');
         $('youtubeConnect').onclick=()=>action(async()=>{const result=await api('publish',{operation:'connect'});const a=document.createElement('a');a.href=result.url;a.target='_blank';a.rel='noopener';a.click();});
         async function runUpload(job){
           if(transferring.has(job.id))return;transferring.add(job.id);
@@ -46,7 +47,7 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
               job=await api('publish',{project:p.id,operation:'next',options:{id:job.id}});
               if($('publishProgress'))$('publishProgress').textContent=`${job.title} · ${Math.round(100*job.uploaded/job.total)}% · ${job.status}`;
             }
-            await reload();note(job.status==='COMPLETE'?'YouTube upload completed. Visibility: '+job.privacy:'Upload cancelled; source video remains in R2.');
+            await reload();note(job.status==='COMPLETE'?'YouTube upload completed. '+(job.actualPrivacy?'Visibility: '+job.actualPrivacy:'Check final visibility in YouTube Studio.'):'Upload cancelled; source video remains in R2.');
           }finally{transferring.delete(job.id);}
         }
         $('publishStart').onclick=()=>action(async()=>{

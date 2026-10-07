@@ -15,4 +15,6 @@ The account prerequisites and Google consent are not yet completed. The implemen
 
 ## Tests
 
+YouTube may keep uploads from new unaudited API projects private even when public visibility is requested ([API documentation](https://developers.google.com/youtube/v3/docs/videos/insert)). Completion reports YouTube's returned visibility, rather than assuming the request succeeded. Uploads exceeding [12 hours or 256 GB](https://support.google.com/youtube/answer/71673) are rejected before starting; choose the generated two-hour parts instead. Channel verification and any required API audit remain account prerequisites.
+
 Run `node --test cloud-publisher/worker.test.mjs` from the app repository. Tests verify authentication, secret-free status, direct range transfer, acknowledged-byte recovery, invalid cloud sources/session hosts and OAuth state/PKCE. Keep real API keys and production uploads out of these tests.

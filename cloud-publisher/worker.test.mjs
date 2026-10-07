@@ -53,3 +53,16 @@ test('failed YouTube cancellation stays resumable and releases the lease',async(
   const saved=env.STUDIO.data.get('publisher/jobs/'+id+'.json').value;
   assert.equal(saved.status,'UPLOADING');assert.equal(saved.leaseUntil,0);
 });
+test('completion uses the actual privacy returned by YouTube, not the requested public setting',async()=>{
+  const env=fixture(),id='01234567-89ab-cdef-0123-456789abcdef';
+  env.STUDIO.data.set('publisher/jobs/'+id+'.json',{etag:'job',value:{id,project,path:'story.mp4',privacy:'public',total:40,uploaded:0,status:'UPLOADING',leaseUntil:0,session:'https://www.googleapis.com/upload/youtube/v3/videos?upload_id=x'}});
+  const fetcher=async url=>url.includes('/token')?Response.json({access_token:'x'}):Response.json({id:'video-id',status:{privacyStatus:'private'}});
+  const job=await (await handle(request(env,'/uploads/next',{id}),env,fetcher)).json();
+  assert.equal(job.status,'COMPLETE');assert.equal(job.actualPrivacy,'private');assert.equal(job.privacy,'private');
+});
+test('rejects an overlength full story before any YouTube request while keeping saved parts eligible',async()=>{
+  const env=fixture();env.STUDIO.data.get(`studio/manifests/${project}.json`).value.project={render:{path:'story.mp4',duration:43215,parts:[{path:'part-1.mp4',duration:7200}]}};
+  let calls=0;const response=await handle(request(env,'/uploads/start',{project,path:'story.mp4',title:'Story'}),env,async()=>{calls++;throw Error('Unexpected network request');});
+  assert.equal(response.status,400);assert.match((await response.json()).error,/Choose a saved video part/);assert.equal(calls,0);
+  assert.ok(env.STUDIO.data.has(`studio/manifests/${project}.json`));
+});

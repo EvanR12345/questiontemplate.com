@@ -18,7 +18,8 @@ class CloudPublisher:
     def request(self,path,body=None):
         c=self.config()
         if not c:raise ValueError('The cloud publisher is not connected yet. Configure its Worker and authorize YouTube first.')
-        r=Request(c['url']+path,headers={'Authorization':'Bearer '+c['token'],'Content-Type':'application/json'},
+        r=Request(c['url']+path,headers={'Authorization':'Bearer '+c['token'],'Content-Type':'application/json',
+                  'Accept':'application/json','User-Agent':'QuestionTemplateStudio/1.0'},
             data=json.dumps(body).encode() if body is not None else None)
         try:
             with urlopen(r,timeout=115) as response:return json.load(response)

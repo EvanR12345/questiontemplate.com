@@ -31,13 +31,14 @@ $processes = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'pytho
 $keyPath = Join-Path $destination '.pairing-key'
 if (Test-Path -LiteralPath $keyPath) {
     $headers = @{ Authorization = 'Bearer ' + [IO.File]::ReadAllText($keyPath).Trim() }
-    foreach ($endpoint in @('/image/queue', '/studio/queue')) {
+    foreach ($endpoint in @('/image/queue', '/studio/queue', '/studio/storage')) {
         try { $queue = Invoke-RestMethod -Uri ('http://127.0.0.1:8765' + $endpoint) -Headers $headers -TimeoutSec 3 }
         catch {
             if ($processes.Count -gt 0 -and $_.Exception.Response.StatusCode.value__ -ne 404) { throw 'The running helper could not confirm that its queue is idle. The update was stopped before replacing code.' }
             $queue = $null
         }
         if ($queue -and ($queue.current -or $queue.counts.queued -gt 0 -or $queue.counts.QUEUED -gt 0)) { throw 'Finish or cancel queued work before updating. Saved assets and installed code were retained.' }
+        if ($endpoint -eq '/studio/storage' -and $queue -and ($queue.pending -gt 0 -or @($queue.projects.PSObject.Properties.Value | Where-Object { $_.status -eq 'UPLOADING' }).Count)) { throw 'Finish cloud synchronization before updating. Local and cloud copies were retained.' }
     }
 }
 foreach ($process in $processes) { & "$env:SystemRoot\System32\taskkill.exe" /PID $process.ProcessId /T /F | Out-Null }

@@ -13,13 +13,13 @@ async function token(env,fetcher){
   if(!r.ok)throw Error('YouTube authorization expired. Reconnect your channel.');
   return (await r.json()).access_token;
 }
-async function publicJob(job){return {id:job.id,project:job.project,path:job.path,title:job.title,privacy:job.privacy,total:job.total,uploaded:job.uploaded,status:job.status,videoId:job.videoId??null};}
+async function publicJob(job){return {id:job.id,project:job.project,path:job.path,title:job.title,privacy:job.actualPrivacy??job.privacy,actualPrivacy:job.actualPrivacy??null,total:job.total,uploaded:job.uploaded,status:job.status,videoId:job.videoId??null};}
 async function acknowledge(response,job){
   if(response.status===308){
     const range=response.headers.get('Range');const end=range?Number(/^bytes=0-(\d+)$/.exec(range)?.[1]): -1;
     if(!Number.isInteger(end)||end>=job.total)throw Error('Invalid upload acknowledgement; source remains saved.');
     job.uploaded=end+1;job.status='UPLOADING';
-  }else if(response.ok){const value=await response.json();if(!value.id)throw Error('YouTube returned no video ID.');job.videoId=value.id;job.status='COMPLETE';job.uploaded=job.total;}
+  }else if(response.ok){const value=await response.json();if(!value.id)throw Error('YouTube returned no video ID.');job.videoId=value.id;job.status='COMPLETE';job.uploaded=job.total;if(['private','unlisted','public'].includes(value.status?.privacyStatus))job.actualPrivacy=value.status.privacyStatus;}
   else if(response.status===404||response.status===410)throw Error('YouTube upload session expired. Start a new upload explicitly.');
   else throw Error('YouTube transfer was interrupted. Retry to query the saved session.');
 }
@@ -67,6 +67,10 @@ export async function handle(request,env,fetcher=fetch){
       if(!pid(body.project)||typeof body.path!=='string')throw Error('Choose a saved project video.');
       const manifest=await read(env.STUDIO,'studio/manifests/'+body.project+'.json');const file=manifest?.value.files?.[body.path];
       if(!file||!body.path.endsWith('.mp4')||file.key!==`studio/assets/${body.project}/${file.sha256}/${body.path}`)throw Error('Upload the completed video to cloud storage first.');
+      const renders=[manifest.value.project?.render,...(manifest.value.project?.chapters??[]).map(c=>c.render),...(manifest.value.project?.render?.parts??[])];
+      const duration=renders.find(r=>r?.path===body.path)?.duration;
+      if(!Number.isSafeInteger(file.bytes)||file.bytes<=0)throw Error('Cloud video size is invalid.');
+      if(file.bytes>256000000000||duration>43200)throw Error('YouTube accepts up to 12 hours or 256 GB per video. Choose a saved video part instead.');
       const head=await env.STUDIO.head(file.key);if(!head||head.size!==file.bytes||head.customMetadata?.sha256!==file.sha256)throw Error('Cloud video verification failed.');
       const title=String(body.title??'').trim(),description=String(body.description??'');
       if(!title||title.length>100||description.length>5000)throw Error('Use a title of 1–100 characters and description up to 5000.');
