@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {DEFAULTS,buildPlan,schedule,validateSchedule,importSnapshot,CATALOG} from './pipeline-engine.mjs';
+import {DEFAULTS,buildPlan,schedule,validateSchedule,validateConfig,importSnapshot,CATALOG} from './pipeline-engine.mjs';
 import {measuredRows} from './pipeline-lab.mjs';
 const evidence=JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url),'utf8'));
 const parallelEvidence=structuredClone(evidence);
@@ -170,3 +170,18 @@ test('nested processes are documented without extra timing tasks',()=>{
 test('all built-in modes have no graph cycles across small and large projects',()=>{
   for(const policy of ['serial','current','proposed'])for(const chapters of [1,2,14]){const r=schedule(buildPlan({...DEFAULTS,policy,chapters,qc:policy==='current'?'strict':'off'},evidence));assert.deepEqual(r.diagnostics,[]);}
 });
+
+ test('duration and chapters have no arbitrary upper bound; invalid numbers still fail',()=>{
+  const c=validateConfig({...DEFAULTS,minutes:50000,chapters:1000,readyChapters:1000,gpuStartSeconds:200000,batch:200},evidence);
+  assert.equal(c.minutes,50000);assert.equal(c.chapters,1000);assert.equal(c.readyChapters,1000);
+  const plan=buildPlan(c,evidence);assert.equal(plan.config.chapters,1000);assert.ok(plan.tasks.length<30000);
+  for(const input of [{minutes:Infinity},{minutes:-1},{chapters:1.5},{chapters:0},{readyChapters:1001}])
+   assert.throws(()=>validateConfig({...c,...input},evidence));
+ });
+ test('long projects preserve settings and manual moves beyond one day on import',()=>{
+  const c={...DEFAULTS,minutes:1200,chapters:100,readyChapters:100};
+  const p=buildPlan(c,evidence),r=schedule(p);assert.deepEqual(r.diagnostics,[]);
+  const imported=importSnapshot({version:1,type:'studio-pipeline-plan',config:c,preferences:{boot:{notBefore:200000}}},evidence);
+  assert.equal(imported.config.minutes,1200);assert.equal(imported.config.chapters,100);
+  assert.equal(imported.preferences.boot.notBefore,200000);
+ });

@@ -1,10 +1,10 @@
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=alignment-buffer-20261007';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=timed-start-20261007';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=continuous-unbounded-20261007';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=continuous-unbounded-20261007';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=automatic-speed-20261007';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=timed-start-20261007';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=continuous-unbounded-20261007';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=continuous-unbounded-20261007';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -22,7 +22,7 @@ function renderGenerationSpeed(){
   const speed=generationSpeed(plan,evidence);
   $('generationRate').value=speed.highest===null?'Not measured':speed.highest.toFixed(1);
   $('generationRateNote').textContent=speed.highest===null?'No completed generation-speed measurement for this timing profile. Choose a measured resolution.':
-    `Highest tested: ${speed.label}. Warm delivery includes preparation and saving; startup is separate.`+
+    `Continuous warm throughput: ${speed.label}. No boot, download, model loading, Luna waiting, rental idle or rendering delays included. Per-image preparation, transfer and saving remain included in this measured sustained rate.`+
     (speed.isFastest?'':` Current manual setup: ${speed.current.toFixed(1)} images/min; the schedule uses that rate.`);
   $('fastestGPU').disabled=speed.highest===null||speed.isFastest;
 }
@@ -38,6 +38,7 @@ function rebuild(){
     config=plan.config;
     gpuExplorer?.updateProject(config,evidence);
     renderGenerationSpeed();
+    $('batch').nextElementSibling.textContent=plan.groupSize>config.batch?`Long timeline: ${plan.groupSize} images per display group (requested ${config.batch}). Actual image count, model and inference are unchanged.`:'Display grouping only; inference stays unchanged. Long timelines automatically use larger groups.';
     $('sampleField').hidden=config.qc!=='sampled';$('introFields').hidden=!config.intro;
     $('modeNote').textContent=config.policy==='proposed'?'Planning experiment: separates GPU work from retrieval and overlaps chapter rendering. This is not deployed production behavior.':config.policy==='current'?'Installed cloud overlap: Luna lookahead and QC share API slots. The image lane includes preparation through retrieval. Rendering begins after image work.':'Every task runs sequentially. This is the comparison baseline, not a speed recommendation.';
     $('scheduleDescription').textContent=`${config.policy==='proposed'?'Proposed':config.policy==='current'?'Installed overlap model':'Sequential baseline'} · ${plan.imageCount} images · ${result.tasks.length} operations · ${Object.keys(preferences).length} manual moves`;
@@ -64,7 +65,7 @@ function rebuild(){
 function renderTimeline(){
   if(!result||view!=='schedule')return;
   const zoom=Number($('zoom').value),min=Math.max(620,$('timeline').clientWidth-155),usable=min*zoom;
-  scale=usable/(result.end*1.04);const width=Math.ceil(usable+155),step=result.end>7200?1800:result.end>3600?900:300;
+  scale=usable/(result.end*1.04);const width=Math.ceil(usable+155),step=Math.max(result.end>7200?1800:result.end>3600?900:300,Math.ceil(result.end/24/60)*60);
   positions=new Map();let html='<div class="timeline-inner" style="width:'+width+'px"><div class="ruler"><span class="label">Elapsed production time</span>';
   for(let t=0;t<=result.end;t+=step)html+=`<span class="tick" style="left:${155+t*scale}px">${Math.round(t/60)}m</span>`;
   html+='</div>';let top=34;
@@ -109,7 +110,7 @@ function beginDrag(event){
   button.addEventListener('pointermove',onMove);button.addEventListener('pointerup',finish);button.addEventListener('pointercancel',cancel);
 }
 function moveTask(id,target){
-  if(!Number.isFinite(target)||target>86400){toast('Choose a start within 24 hours.');return;}
+  if(!Number.isFinite(target)||target<0){toast('Choose a finite, nonnegative start time.');return;}
   target=Math.max(0,target);const why=explainMove(plan,result,id,target);checkpoint();preferences[id]={...preferences[id],notBefore:target};selected=id;rebuild();const moved=getTask(id);
   $('moveFeedback').textContent=`${id}: requested ${formatTime(target)}, scheduled ${formatTime(moved.start)}. ${moved.start>target+.1?why+' Dependencies or capacity pushed it later.':'Dependent tasks were re-scheduled; all resource checks pass.'}`;
 }
@@ -118,7 +119,7 @@ function renderInspector(){
   const meta=CATALOG.find(m=>m.id===task.kind);
   $('inspectorLabel').textContent=task.manual?'MANUAL START':'SCHEDULED';
   const resources=Object.entries(task.resources).map(([r,n])=>`<span class="res-tag">${esc(r)} · ${n} / ${plan.capacities[r]}</span>`).join('')||'<span class="res-tag">No exclusive resource</span>';
-  $('taskInspector').innerHTML=`<h3 class="task-title">${esc(task.name)}</h3><div class="task-id">${esc(task.id)} · ${labelChapter(task.chapter)}</div><p class="task-desc">${esc(meta.description)}</p><div class="task-times"><div><span>Starts</span><strong>${formatTime(task.start)}</strong></div><div><span>Ends</span><strong>${formatTime(task.end)}</strong></div><div><span>Work</span><strong>${sec(task.duration)}</strong></div></div><div class="inspect-section"><h3>Resources reserved</h3>${resources}<p style="margin-top:7px">Units are scheduling constraints, not measured CPU utilization.</p></div><div class="inspect-section"><h3>Must finish first · ${task.deps.length}</h3>${task.deps.slice(0,12).map(id=>{const dep=getTask(id);return `<button class="dep" data-select="${esc(id)}">${esc(id)}<br>${esc(dep.name)} · ends ${formatTime(dep.end)}</button>`;}).join('')||'<p>No preceding task.</p>'}${task.deps.length>12?`<p>${task.deps.length-12} more dependencies are in the JSON below and exported plan.</p>`:''}</div><div class="inspect-section"><h3>Can run alongside</h3><p>${esc(meta.parallel)}</p></div><div class="inspect-section"><h3>Timing evidence</h3><p>${esc(task.basis||meta.basis)}</p>${task.images?`<p>${task.images} ${task.workers?task.workers+' worker':'sequential'} image${task.images===1?'':'s'} in this group.</p>`:''}<p>GPU rental bills continuously from Boot through Stop, including idle gaps.</p></div><div class="task-fields"><label>Requested start · seconds<input id="taskStart" type="number" min="0" max="86400" step="1" value="${Math.round(task.start)}"></label><button class="button" id="applyMove">Move this task</button><label>Scheduling priority<input id="taskPriority" type="number" min="-1000000" max="1000000" step="1" value="${preferences[task.id]?.priority??task.priority}"><small>Lower values go first among equally ready work. Dependencies still apply.</small></label><button class="button" id="applyPriority">Set priority</button><button class="button" id="clearMove" ${task.manual?'':'disabled'}>Clear manual start</button></div><details class="inspect-section"><summary>All task data</summary><pre style="font:9px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(task,null,2))}</pre></details>`;
+  $('taskInspector').innerHTML=`<h3 class="task-title">${esc(task.name)}</h3><div class="task-id">${esc(task.id)} · ${labelChapter(task.chapter)}</div><p class="task-desc">${esc(meta.description)}</p><div class="task-times"><div><span>Starts</span><strong>${formatTime(task.start)}</strong></div><div><span>Ends</span><strong>${formatTime(task.end)}</strong></div><div><span>Work</span><strong>${sec(task.duration)}</strong></div></div><div class="inspect-section"><h3>Resources reserved</h3>${resources}<p style="margin-top:7px">Units are scheduling constraints, not measured CPU utilization.</p></div><div class="inspect-section"><h3>Must finish first · ${task.deps.length}</h3>${task.deps.slice(0,12).map(id=>{const dep=getTask(id);return `<button class="dep" data-select="${esc(id)}">${esc(id)}<br>${esc(dep.name)} · ends ${formatTime(dep.end)}</button>`;}).join('')||'<p>No preceding task.</p>'}${task.deps.length>12?`<p>${task.deps.length-12} more dependencies are in the JSON below and exported plan.</p>`:''}</div><div class="inspect-section"><h3>Can run alongside</h3><p>${esc(meta.parallel)}</p></div><div class="inspect-section"><h3>Timing evidence</h3><p>${esc(task.basis||meta.basis)}</p>${task.images?`<p>${task.images} ${task.workers?task.workers+' worker':'sequential'} image${task.images===1?'':'s'} in this group.</p>`:''}<p>GPU rental bills continuously from Boot through Stop, including idle gaps.</p></div><div class="task-fields"><label>Requested start · seconds<input id="taskStart" type="number" min="0" step="1" value="${Math.round(task.start)}"></label><button class="button" id="applyMove">Move this task</button><label>Scheduling priority<input id="taskPriority" type="number" min="-1000000" max="1000000" step="1" value="${preferences[task.id]?.priority??task.priority}"><small>Lower values go first among equally ready work. Dependencies still apply.</small></label><button class="button" id="applyPriority">Set priority</button><button class="button" id="clearMove" ${task.manual?'':'disabled'}>Clear manual start</button></div><details class="inspect-section"><summary>All task data</summary><pre style="font:9px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(task,null,2))}</pre></details>`;
   $('applyMove').onclick=()=>moveTask(task.id,Number($('taskStart').value));
   $('applyPriority').onclick=()=>{const value=Number($('taskPriority').value);if(!Number.isFinite(value)||Math.abs(value)>1000000){toast('Priority must be between −1000000 and 1000000.');return;}checkpoint();preferences[task.id]={notBefore:preferences[task.id]?.notBefore||0,priority:value};rebuild();};
   $('clearMove').onclick=()=>{checkpoint();delete preferences[task.id];rebuild();};

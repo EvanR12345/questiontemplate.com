@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {DEFAULTS,buildPlan,schedule,importSnapshot} from './pipeline-engine.mjs';
 import {latestProfiles} from './pipeline-measurements.mjs';
-import {startupCandidates,imageAccountingHTML,ALIGNMENT_BUFFER_SECONDS} from './pipeline-detail-ui.mjs';
+import {startupCandidates,startupBoundaries,imageAccountingHTML,ALIGNMENT_BUFFER_SECONDS} from './pipeline-detail-ui.mjs';
 const evidence=JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url),'utf8'));
 evidence.concurrency=JSON.parse(fs.readFileSync(new URL('./pipeline-concurrency.json',import.meta.url),'utf8'));
 const details=JSON.parse(fs.readFileSync(new URL('./pipeline-details.json',import.meta.url),'utf8'));
@@ -79,6 +79,18 @@ test('public function inventory and observed traces have no story, references or
  assert.ok(!/rpa_|sk-[A-Za-z0-9]|@gmail|C:\\\\Users|referenceImages|cleanNarrationText/i.test(JSON.stringify(details)));
  const ids=new Set(details.functions.map(f=>f.id));assert.equal(ids.size,details.functions.length);
 });
-test('display task explosion is refused rather than freezing the planner',()=>{
- assert.throws(()=>buildPlan({...config,minutes:360,cadence:20,batch:1},evidence),/Too many display tasks/);
+test('long video display groups expand without reducing actual images or inference',()=>{
+ const p=buildPlan({...config,minutes:1200,chapters:100,cadence:20,batch:1},evidence);
+ assert.equal(p.config.minutes,1200);assert.equal(p.config.chapters,100);assert.equal(p.config.batch,1);
+ assert.ok(p.groupSize>1);assert.ok(p.tasks.length<3000);
+ assert.equal(p.tasks.filter(t=>t.kind==='delivered').reduce((n,t)=>n+t.attempts,0),p.attemptCount);
+ assert.equal(p.imageCount,Math.ceil((1200*60-30)/60*20)+5);
 });
+
+ test('large-project startup search samples boundaries without dropping chapter count or the selected boundary',()=>{
+  const c={...config,chapters:1000,readyChapters:333};
+  const boundaries=startupBoundaries(c);
+  assert.ok(boundaries.length<=65);assert.equal(boundaries[0],1);assert.equal(boundaries.at(-1),1000);
+  assert.ok(boundaries.includes(333));assert.equal(c.chapters,1000);
+  assert.equal(startupBoundaries({...c,chapters:64,readyChapters:1}).length,64);
+ });

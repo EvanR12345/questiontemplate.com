@@ -1,4 +1,4 @@
-import {buildPlan} from './pipeline-engine.mjs';
+import {buildPlan} from './pipeline-engine.mjs?v=continuous-unbounded-20261007';
 
 export function gpuChoices(evidence) {
   const measured=(evidence.concurrency?.gpus||[]).filter(g=>

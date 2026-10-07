@@ -17,10 +17,10 @@
     <div class="lab">
       <aside class="settings" aria-label="Production settings">
         <h2>Production setup</h2><p class="caption">Same model. Same image frequency.</p>
-        <label>Final video length <span>minutes</span><input id="minutes" type="number" min="1" max="360" value="120"></label>
-        <div class="fieldpair"><label>Chapters<input id="chapters" type="number" min="1" max="40" value="14"></label><label>Images / video min<input id="cadence" type="number" min="1" max="20" step="0.1" value="5.884" aria-describedby="cadenceNote"></label></div>
+        <label>Final video length <span>minutes</span><input id="minutes" type="number" min="1" value="120"></label>
+        <div class="fieldpair"><label>Chapters<input id="chapters" type="number" min="1" value="14"></label><label>Images / video min<input id="cadence" type="number" min="1" max="20" step="0.1" value="5.884" aria-describedby="cadenceNote"></label></div>
         <p class="caption" id="cadenceNote">Visual frequency in the finished video. GPU speed updates separately below.</p>
-        <label>Images / min · automatic<input id="generationRate" type="text" value="Loading measurements…" readonly aria-describedby="generationRateNote"><small id="generationRateNote">Highest tested generation speed for the selected GPU and image settings.</small></label>
+        <label>Images / min · continuous<input id="generationRate" type="text" value="Loading measurements…" readonly aria-describedby="generationRateNote"><small id="generationRateNote">Highest tested continuous warm throughput. Excludes startup, Luna waiting and rental idle time.</small></label>
         <button id="fastestGPU" class="button full" disabled>Use fastest tested settings</button>
         <label>Cloud GPU<select id="gpu"></select></label><label>Image timing profile<select id="resolution"><option value="legacy">Earlier 1344 × 768 · serial</option><option value="720p">Measured 720p</option><option value="1080p">Measured 1080p</option></select></label><label>Conditioning timing<select id="encodingProfile"><option value="fresh">Fresh prompt + reference encoding</option><option value="cached">Reused conditioning · control</option></select></label><label>Image execution<select id="executionMode"><option value="resident">Independent workers</option><option value="pipeline">One worker · pipelined requests</option><option value="hybrid">Multiple workers · buffered requests</option></select></label><label id="workerField" hidden>Worker count / request slots<select id="imageWorkers"><option value="best">Best tested count</option><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option></select><small>Only completed two-round results can calibrate the schedule.</small></label>
         <label>Scheduling mode<select id="policy"><option value="proposed">Proposed streaming overlap</option><option value="current">Installed cloud overlap</option><option value="serial">Fully sequential baseline</option></select></label>
@@ -31,12 +31,12 @@
         <div id="introFields" class="fieldpair"><label>Intro seconds<input id="introSeconds" type="number" min="10" max="60" value="30"></label><label>Intro images<input id="introImages" type="number" min="1" max="20" value="5"></label></div>
         <details open><summary>Capacity & uncertainty</summary>
           <label>Shared Luna API slots<select id="apiSlots"><option>1</option><option>2</option><option selected>3</option></select></label>
-          <label>Images per scheduling group<input id="batch" type="number" min="1" max="100" value="24"><small>Sequential images grouped for readability; this is not multi-image inference.</small></label>
+          <label>Images per scheduling group<input id="batch" type="number" min="1" value="24"><small>Display grouping only; inference stays unchanged. Long timelines automatically use larger groups.</small></label>
           <label>Extra image attempts <span>%</span><input id="retries" type="number" min="0" max="100" value="0"><small>An allowance, not a measured error rate.</small></label>
           <label>Timing sensitivity <span>±%</span><input id="uncertainty" type="number" min="0" max="100" value="20"><small>Assumed range. Not statistical confidence.</small></label>
           <label class="check"><input id="warmCache" type="checkbox"> Existing model cache</label>
           <label>Chapter plans ready before GPU boot<input id="readyChapters" type="number" min="1" max="14" value="1"><small>How many ordered plans to wait for, between 1 and your chapter count. Adjusts automatically when chapters decrease.</small></label>
-          <label>Earliest GPU boot · project seconds<input id="gpuStartSeconds" type="number" min="0" max="86400" step="1" value="0"><small>0 = no clock delay. The timed startup option sets this; recalculated suggestions use your current settings.</small></label>
+          <label>Earliest GPU boot · project seconds<input id="gpuStartSeconds" type="number" min="0" step="1" value="0"><small>0 = no clock delay. The timed startup option sets this; recalculated suggestions use your current settings.</small></label>
           <label class="check"><input id="earlyGpu" type="checkbox"> Start GPU immediately</label>
           <label class="check"><input id="cpuOverlap" type="checkbox"> Experiment: audio + render</label>
           <label class="check"><input id="exhaustive" type="checkbox"> Decode every video frame</label>
@@ -67,5 +67,5 @@
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script type="module" src="./pipeline-ui.mjs?v=alignment-buffer-20261007"></script>
+  <script type="module" src="./pipeline-ui.mjs?v=continuous-unbounded-20261007"></script>
 </body></html>

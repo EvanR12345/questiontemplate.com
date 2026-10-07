@@ -66,11 +66,11 @@ export const CATALOG = [
 
 export function validateConfig(input, evidence) {
   const c={...DEFAULTS,...input};
-  for(const [key,lo,hi] of [['minutes',1,360],['chapters',1,40],['readyChapters',1,40],['cadence',1,20],['introSeconds',10,60],['introImages',1,20],['sample',1,100],['retries',0,100],['apiSlots',1,3],['batch',1,100],['directorCost',0,100],['qcCost',0,1],['storageDaily',0,10]]) {
-    if(!Number.isFinite(Number(c[key]))||Number(c[key])<lo||Number(c[key])>hi) throw Error(`Invalid ${key}: use ${lo}–${hi}.`);
+  for(const [key,lo,hi] of [['minutes',1,Infinity],['chapters',1,Infinity],['readyChapters',1,Infinity],['cadence',1,20],['introSeconds',10,60],['introImages',1,20],['sample',1,100],['retries',0,100],['apiSlots',1,3],['batch',1,Infinity],['directorCost',0,100],['qcCost',0,1],['storageDaily',0,10]]) {
+    if(!Number.isFinite(Number(c[key]))||Number(c[key])<lo||Number(c[key])>hi) throw Error(`Invalid ${key}: use ${hi===Infinity?'a finite number of at least '+lo:lo+'–'+hi}.`);
     c[key]=Number(c[key]);
   }
-  for(const key of ['chapters','readyChapters','introImages','apiSlots','batch']) if(!Number.isInteger(c[key])) throw Error(`${key} must be a whole number.`);
+  for(const key of ['chapters','readyChapters','introImages','apiSlots','batch']) if(!Number.isSafeInteger(c[key])) throw Error(`${key} must be a whole number.`);
   if(!evidence.gpus.some(g=>g.id===c.gpu)&&!evidence.concurrency?.gpus.some(g=>g.id===c.gpu&&(g.profiles.length||g.productionProfiles?.length))) throw Error('Unknown GPU profile.');
   if(!['cached','fresh'].includes(c.encodingProfile))throw Error('Unknown conditioning profile.');
   if(!['resident','pipeline','hybrid'].includes(c.executionMode))throw Error('Unknown execution method.');
@@ -85,9 +85,8 @@ export function validateConfig(input, evidence) {
   if(c.policy==='current'&&!['practical','strict'].includes(c.qc)) throw Error('The installed overlap requires Practical or Strict vision checks. Use Proposed for an Off/Sampled experiment.');
   for(const key of ['intro','warmCache','cpuOverlap','exhaustive','earlyGpu']) if(typeof c[key]!=='boolean') throw Error(`${key} must be true or false.`);
   if(c.readyChapters>c.chapters)throw Error('GPU readiness chapters cannot exceed chapter count.');
-  if(!Number.isFinite(Number(c.gpuStartSeconds))||Number(c.gpuStartSeconds)<0||Number(c.gpuStartSeconds)>86400)throw Error('GPU boot time must be 0–86400 seconds from project start.');
+  if(!Number.isFinite(Number(c.gpuStartSeconds))||Number(c.gpuStartSeconds)<0)throw Error('GPU boot time must be a finite, nonnegative number of seconds from project start.');
   c.gpuStartSeconds=Number(c.gpuStartSeconds);
-  if(Math.ceil(c.minutes*c.cadence/c.batch)*8+c.chapters*12>3000)throw Error('Too many display tasks. Increase images per scheduling group; inference batch size remains one.');
   if(c.intro && c.introSeconds>=c.minutes*60) throw Error('The intro must be shorter than the full video.');
   return c;
 }
@@ -115,8 +114,15 @@ export function buildPlan(input, evidence) {
   const capacities={api:c.policy==='serial'?1:c.apiSlots, cloud:1, remote:1, network:1, disk:1, cpu:c.cpuOverlap?2:1, audioGPU:1, imagePipe:1};
   const story=c.minutes*60-(c.intro?c.introSeconds:0);
   const count=Math.ceil(story/60*c.cadence),chapterSec=story/c.chapters;
+  if(!Number.isSafeInteger(count))throw Error('Image count exceeds numeric precision; use a smaller planning scenario.');
+  // Coarsen image display groups only, preserving chapters, attempts and duration.
+  // This detailed browser chart has a task budget, not a project-length cap.
+  const available=Math.max(100,3000-c.chapters*20-40);
+  if(c.chapters*14>30000)throw Error('The detailed browser chart exceeds its 30,000-operation memory budget. These project settings are valid, but require a larger-project view.');
+  const groupSize=Math.max(c.batch,Math.ceil((count*(1+c.retries/100)+(c.intro?c.introImages:0))*8/available));
   const tasks=[];let seq=0;
   const add=(id,kind,chapter,duration,deps,resources={},extra={})=>{
+    if(tasks.length>=30000)throw Error('The detailed browser chart exceeds its 30,000-operation memory budget. These project settings are valid, but require a larger-project view.');
     const meta=CATALOG.find(x=>x.id===kind);if(!meta)throw Error('Unknown process '+kind);
     const t={id,kind,chapter,name:meta.name,lane:meta.lane,duration:Math.max(.05,duration),deps:[...new Set(deps)],resources,priority:seq++,basis:meta.basis,...extra};tasks.push(t);return id;
   };
@@ -154,8 +160,8 @@ export function buildPlan(input, evidence) {
     const imageStart=i===0?'intro-plan':handoffs[i],finalSaves=[],finalReviews=[];
     let checked=0;
     const wanted=c.qc==='off'?0:c.qc==='sampled'?Math.ceil(n*c.sample/100):n;
-    for(let a=0;a<n+extras;a+=c.batch){
-      const size=Math.min(c.batch,n+extras-a),p=`c${i}-b${Math.floor(a/c.batch)+1}-`;
+    for(let a=0;a<n+extras;a+=groupSize){
+      const size=Math.min(groupSize,n+extras-a),p=`c${i}-b${Math.floor(a/groupSize)+1}-`;
       let save;
       if(measurement){
         const deps=[imageStart,'cold',...(lastPack?[lastPack]:[])];
@@ -165,7 +171,7 @@ export function buildPlan(input, evidence) {
       }else{
       const imageLock=c.policy==='proposed'?{}:{imagePipe:1};
       const capDeps=c.policy==='proposed'?(packNumber>=3?[allPackSaves[packNumber-3]]:[]):lastPack?[lastPack]:[];
-      const prepare=add(p+'prepare','prepare',i,size*g.prepare,[imageStart,...capDeps],{cpu:.1,...imageLock},{images:size,batch:Math.floor(a/c.batch)+1});
+      const prepare=add(p+'prepare','prepare',i,size*g.prepare,[imageStart,...capDeps],{cpu:.1,...imageLock},{images:size,batch:Math.floor(a/groupSize)+1});
       const upload=add(p+'upload','upload',i,size*(g.upload+g.submit),[prepare,'cold'],{network:1,...imageLock},{images:size});
       const infer=add(p+'infer','infer',i,size*g.server,[upload],{remote:1,...imageLock},{images:size,attempts:size,hasAllowance:a+size>n});
       const poll=add(p+'poll','poll',i,size*g.poll,[infer],{...imageLock},{images:size});
@@ -205,7 +211,7 @@ export function buildPlan(input, evidence) {
       done.add(task.id);previous=task.id;left.splice(left.indexOf(task),1);
     }
   }
-  return {version:VERSION,config:c,gpu:g,measurement,tasks,capacities,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
+  return {version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
     renderScope:'Historical 720p/24fps rendering, regardless of image resolution. Full 1080p video rendering is not calibrated.'};
 }
 
@@ -224,13 +230,16 @@ function fits(task,start,allocations,capacities) {
 }
 
 export function schedule(plan, preferences={}) {
-  const pending=[...plan.tasks],completed=new Map(),allocations={},out=[];
-  const ids=new Set(pending.map(t=>t.id));if(ids.size!==pending.length)throw Error('Duplicate task IDs.');
-  for(const t of pending)for(const dep of t.deps)if(!ids.has(dep))throw Error(`Missing dependency ${dep}.`);
-  while(pending.length) {
+  const pending=new Set(plan.tasks),completed=new Map(),allocations={},out=[];
+  const ids=new Set(plan.tasks.map(t=>t.id));if(ids.size!==pending.size)throw Error('Duplicate task IDs.');
+  const ready=new Set(),remaining=new Map(),followers=new Map();
+  for(const task of plan.tasks){
+    remaining.set(task.id,task.deps.length);if(!task.deps.length)ready.add(task);
+    for(const dep of task.deps){if(!ids.has(dep))throw Error(`Missing dependency ${dep}.`);(followers.get(dep)||followers.set(dep,[]).get(dep)).push(task);}
+  }
+  while(pending.size) {
     let choices=[];
-    for(const task of pending) {
-      if(!task.deps.every(d=>completed.has(d)))continue;
+    for(const task of ready) {
       const requested=Math.max(task.notBefore||0,preferences[task.id]?.notBefore||0);
       let start=Math.max(requested,0,...task.deps.map(d=>completed.get(d).end));
       for(let guard=0;;guard++){
@@ -240,9 +249,10 @@ export function schedule(plan, preferences={}) {
       choices.push({task,start,priority:preferences[task.id]?.priority??task.priority});
     }
     if(!choices.length)throw Error('Cycle in task dependencies.');
-    choices.sort((a,b)=>a.start-b.start||a.priority-b.priority);
+    choices.sort((a,b)=>a.start-b.start||a.priority-b.priority||a.task.priority-b.task.priority);
     const {task,start}=choices[0],item={...task,start,end:start+task.duration,manual:Boolean(preferences[task.id])};
-    out.push(item);completed.set(item.id,item);pending.splice(pending.indexOf(task),1);
+    out.push(item);completed.set(item.id,item);pending.delete(task);ready.delete(task);
+    for(const follower of followers.get(item.id)||[]){const left=remaining.get(follower.id)-1;remaining.set(follower.id,left);if(left===0)ready.add(follower);}
     for(const [pool,units] of Object.entries(task.resources))(allocations[pool]||=[]).push({id:item.id,start:item.start,end:item.end,units});
   }
   out.sort((a,b)=>a.start-b.start||a.priority-b.priority);
@@ -290,7 +300,7 @@ export function importSnapshot(input,evidence){
   if(input.preferences&&typeof input.preferences!=='object')throw Error('Invalid task preferences.');
   for(const [id,p] of Object.entries(input.preferences||{})){
     if(!known.has(id))continue;
-    if(!p||!Number.isFinite(p.notBefore)||p.notBefore<0||p.notBefore>86400)throw Error('Invalid start preference.');
+    if(!p||!Number.isFinite(p.notBefore)||p.notBefore<0)throw Error('Invalid start preference.');
     if(p.priority!==undefined&&(!Number.isFinite(p.priority)||Math.abs(p.priority)>1000000))throw Error('Invalid task priority.');
     preferences[id]={notBefore:p.notBefore,...(p.priority===undefined?{}:{priority:p.priority})};
   }

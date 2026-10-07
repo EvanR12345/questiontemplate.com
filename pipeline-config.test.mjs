@@ -74,3 +74,10 @@ test('legacy profiles do not invent a highest possible speed',()=>{
   const speed=generationSpeed(buildPlan(chosen,evidence),evidence);
   assert.equal(speed.highest,null);assert.equal(speed.current,null);
 });
+
+ test('continuous warm speed excludes startup, idle, directing, duration and rendering settings',()=>{
+  const base=generationSpeed(buildPlan(config,evidence),evidence);
+  const changes={minutes:1000,chapters:80,warmCache:true,gpuStartSeconds:100000,readyChapters:80,directorCost:8,exhaustive:true,qc:'strict'};
+  const changed=generationSpeed(buildPlan({...config,...changes},evidence),evidence);
+  assert.equal(changed.highest,base.highest);assert.equal(changed.current,base.current);
+ });
