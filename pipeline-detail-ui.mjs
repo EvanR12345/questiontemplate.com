@@ -3,14 +3,14 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const seconds=n=>Number.isFinite(n)?n.toFixed(3)+'s':'Not measured',money=n=>'$'+n.toFixed(3);
 const phaseNames={preparationSeconds:'Build request',referenceUploadSeconds:'Reference upload/cache',submissionSeconds:'Submit operation',waitAndPollingSeconds:'Wait / poll (includes server)',retrievalAndValidationSeconds:'Retrieve / decode check',pngEncodeAndDurableSaveSeconds:'PNG encode / durable save',historyAndMetadataReceiptSeconds:'History / metadata receipt',provisionAndReadinessSeconds:'Provision / readiness',downloadAndHashSeconds:'Download / verify hashes',timedCohortWallSeconds:'Timed image cohorts',experimentalWarmupClientSeconds:'Experimental warmups'};
 
-export function startupCandidates(config,evidence){
+function* startupSearch(config,evidence){
  const evaluate=(n,gpuStartSeconds=0)=>{
   const p=buildPlan({...config,policy:'proposed',earlyGpu:false,readyChapters:n,gpuStartSeconds},evidence),r=schedule(p);
   const directorEnd=Math.max(...r.tasks.filter(t=>t.kind==='handoff'||t.kind==='introPlan').map(t=>t.end));
   const imageEnd=Math.max(...r.tasks.filter(t=>['delivered','save'].includes(t.kind)).map(t=>t.end));
   return {readyChapters:n,gpuStartSeconds,result:r,plan:p,directorEnd,imageEnd,gap:imageEnd-directorEnd,bootStart:r.tasks.find(t=>t.id==='boot').start};
  };
- const values=Array.from({length:config.chapters},(_,i)=>evaluate(i+1));
+ const values=[];for(let i=0;i<config.chapters;i++){values.push(evaluate(i+1));yield `Comparing chapter boundaries · ${i+1} / ${config.chapters}`;}
  // Find a later clock start that preserves earliest image delivery and final finish.
  // This bounded binary search is a scheduling heuristic, not a global optimum.
  for(const keepFastestVideo of [true,false]){
@@ -19,13 +19,31 @@ export function startupCandidates(config,evidence){
   for(let i=0;i<16&&hi-lo>1;i++){
    const mid=(lo+hi)/2,v=evaluate(baseline.readyChapters,mid);
    if(v.imageEnd<=baseline.imageEnd+.5&&(!keepFastestVideo||v.result.end<=baseline.result.end+.5)){lo=mid;balanced=v;}else hi=mid;
+   yield `Refining ${keepFastestVideo?'video finish':'Luna + images'} timing · ${i+1} / 16`;
   }
   if(balanced.gpuStartSeconds>baseline.bootStart+1)values.push({...balanced,balanced:true,keepFastestVideo});
  }
  return values.map(v=>({...v,pareto:!values.some(o=>o!==v&&o.result.end<=v.result.end+.01&&o.result.totalUSD<=v.result.totalUSD+.00001&&(o.result.end<v.result.end-.01||o.result.totalUSD<v.result.totalUSD-.00001))}));
 }
+export function startupCandidates(config,evidence){
+ const search=startupSearch(config,evidence);let step;do{step=search.next();}while(!step.done);return step.value;
+}
 export function mountStartupTradeoffs(host,config,evidence,onApply){
- const cacheKey=JSON.stringify(config);if(host._startupKey!==cacheKey){host._startupValues=startupCandidates(config,evidence);host._startupKey=cacheKey;}
+ const cacheKey=JSON.stringify(config);
+ if(host._startupKey!==cacheKey){
+  host._startupKey=cacheKey;host._startupValues=null;
+  const generation=(host._startupGeneration||0)+1;host._startupGeneration=generation;
+  host.innerHTML='<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption" role="status" data-start-progress>Comparing startup timings… Controls remain available.</p>';
+  const search=startupSearch(config,evidence);
+  host._startupTask=(async()=>{
+   try{for(;;){await new Promise(resolve=>setTimeout(resolve,0));if(host._startupGeneration!==generation)return;
+    const step=search.next();if(step.done){host._startupValues=step.value;mountStartupTradeoffs(host,config,evidence,onApply);return;}
+    host.querySelector('[data-start-progress]').textContent=step.value+' · controls remain available.';
+   }}catch(error){if(host._startupGeneration===generation)host.innerHTML=`<p class="caption" role="status">Startup comparison unavailable: ${esc(error.message)}</p>`;}
+  })();
+  return;
+ }
+ if(!host._startupValues)return;
  const values=host._startupValues,fastest=values.reduce((a,b)=>a.result.end<=b.result.end?a:b),cheapest=values.reduce((a,b)=>a.result.gpuUSD<=b.result.gpuUSD?a:b),balanced=values.find(v=>v.balanced);
  const aligned=values.find(v=>v.balanced&&!v.keepFastestVideo),featured=[...new Set([fastest,balanced,aligned,cheapest].filter(Boolean))];
  const table=list=>`<div class="evidence-table"><table><thead><tr><th>Start strategy</th><th>GPU boot</th><th>Luna done</th><th>Images done</th><th>Image tail</th><th>Video finish</th><th>GPU idle/setup</th><th>Rental</th><th>GPU $</th><th>Total $</th><th></th></tr></thead><tbody>${list.map(v=>`<tr><td>${v.balanced?(v.keepFastestVideo?'Timed · keep fastest video':'Timed · align Luna + images'):`After ${v.readyChapters} / ${config.chapters} chapter plans`}${v===fastest?' · fastest video':''}${v===cheapest?' · lowest rental':''}</td><td>${formatTime(v.bootStart)}</td><td>${formatTime(v.directorEnd)}</td><td>${formatTime(v.imageEnd)}</td><td>${v.gap<0?'−':''}${formatTime(Math.abs(v.gap))}</td><td>${formatTime(v.result.end)}</td><td>${formatTime(v.result.gpuIdleSeconds)}</td><td>${formatTime(v.result.rentalSeconds)}</td><td>${money(v.result.gpuUSD)}</td><td>${money(v.result.totalUSD)}</td><td><button class="button" data-ready="${v.readyChapters}" data-start-index="${values.indexOf(v)}">Use</button></td></tr>`).join('')}</tbody></table></div>`;
