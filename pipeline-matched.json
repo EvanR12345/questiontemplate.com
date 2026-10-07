@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "status": "CAPACITY_BLOCKED",
+  "model": "FLUX.2 Klein 4B FP8",
+  "resolution": "1280 \u00d7 720",
+  "requestedRegion": "EUR-NO-1",
+  "regionMatched": false,
+  "regionLimitation": "Pod measured in requested EUR-NO-1; Serverless allowed any available region after common-region allocation failed. Runtime/settings remain matched; network/location is a confound.",
+  "imageDigest": "runpod/worker-comfyui@sha256:e9d18d3db15839ebb10c10c824109fc2956f31ef7bf21916220c008855b0d538",
+  "modelCopies": 2,
+  "clientSlots": 4,
+  "finishedVideoSeconds": 7200,
+  "storyNarrationSeconds": 7170,
+  "introSeconds": 30,
+  "storyImages": 704,
+  "introImages": 5,
+  "modes": [
+    {
+      "mode": "pod",
+      "savedImages": 30,
+      "acceptedJobs": 0,
+      "continuousRounds": 2,
+      "continuousImages": 24,
+      "imagesPerMinute": 16.856621033158532,
+      "roundRates": [
+        16.630171377947303,
+        17.08932286055508
+      ],
+      "warmDelivery": {
+        "n": 24,
+        "median": 12.14243495464325,
+        "min": 9.479997396469116,
+        "max": 20.08460569381714
+      },
+      "handler": {
+        "n": 24,
+        "median": 8.975098013877869,
+        "min": 6.517078638076782,
+        "max": 14.621837615966797
+      },
+      "providerExecution": null,
+      "bothCopiesWarmSeconds": 159.16666054725647,
+      "firstSavedSeconds": 158.7179696559906,
+      "hourlyUSD": 0.99,
+      "resumeFirstSeconds": 13.144546747207642,
+      "resumeCohortSeconds": 19.31051230430603,
+      "resumeImages": 4,
+      "workerIds": [
+        "06nqus9wv60wsu"
+      ],
+      "verifiedCopies": true,
+      "nodeObservationSeconds": {
+        "VAEEncode": {
+          "n": 24,
+          "median": 0.6769008636474609,
+          "min": 0.42339468002319336,
+          "max": 1.1058766841888428
+        },
+        "CLIPTextEncode": {
+          "n": 24,
+          "median": 0.8920799493789673,
+          "min": 0.3921043872833252,
+          "max": 1.3051581382751465
+        },
+        "ConditioningZeroOut": {
+          "n": 24,
+          "median": 0.1021493673324585,
+          "min": 0.0026857852935791016,
+          "max": 0.29879212379455566
+        },
+        "ReferenceLatent": {
+          "n": 48,
+          "median": 0.0010318756103515625,
+          "min": 0.0004825592041015625,
+          "max": 0.09790420532226562
+        },
+        "CFGGuider": {
+          "n": 24,
+          "median": 0.0011719465255737305,
+          "min": 0.0005953311920166016,
+          "max": 0.10184001922607422
+        },
+        "SamplerCustomAdvanced": {
+          "n": 24,
+          "median": 2.2838810682296753,
+          "min": 1.534566879272461,
+          "max": 3.980527639389038
+        },
+        "VAEDecode": {
+          "n": 24,
+          "median": 1.1902698278427124,
+          "min": 0.4755284786224365,
+          "max": 1.4630954265594482
+        },
+        "SaveImage": {
+          "n": 24,
+          "median": 0.8547329902648926,
+          "min": 0.16562461853027344,
+          "max": 1.6802318096160889
+        },
+        "LoadImage": {
+          "n": 2,
+          "median": 0.2799433469772339,
+          "min": 0.2790029048919678,
+          "max": 0.2808837890625
+        },
+        "ImageScaleToTotalPixels": {
+          "n": 2,
+          "median": 0.06923794746398926,
+          "min": 0.030483007431030273,
+          "max": 0.10799288749694824
+        },
+        "RandomNoise": {
+          "n": 10,
+          "median": 0.0021572113037109375,
+          "min": 0.0008845329284667969,
+          "max": 0.09319663047790527
+        }
+      },
+      "nodeObservationLimit": "Worker observation of Comfy node-event intervals; included inside handler time, not isolated GPU kernel timing. Medians cannot be summed into an end-to-end request.",
+      "runtime": {
+        "torch": "2.11.0+cu128",
+        "cuda": "12.8",
+        "comfyVersion": "0.34.0",
+        "imageDigest": "sha256:e9d18d3db15839ebb10c10c824109fc2956f31ef7bf21916220c008855b0d538"
+      },
+      "modelSetup": [
+        {
+          "filename": "flux-2-klein-4b-fp8.safetensors",
+          "bytes": 4070624520,
+          "sha256": "97ed34fe0567e436200f2faee3939b88f2b5d99f8af2a4dc16532c4245c0ccb6",
+          "providerCache": false,
+          "cacheDiscoverySeconds": 0.0006449222564697266,
+          "downloadSeconds": 21.603584051132202,
+          "verificationSeconds": 2.7881078720092773,
+          "linkSeconds": 0.05897331237792969
+        },
+        {
+          "filename": "qwen_3_4b.safetensors",
+          "bytes": 8044982048,
+          "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
+          "providerCache": false,
+          "cacheDiscoverySeconds": 0.0025620460510253906,
+          "downloadSeconds": 66.4735472202301,
+          "verificationSeconds": 5.30982780456543,
+          "linkSeconds": 0.140031099319458
+        },
+        {
+          "filename": "flux2-vae.safetensors",
+          "bytes": 336213556,
+          "sha256": "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5",
+          "providerCache": false,
+          "cacheDiscoverySeconds": 0.0005767345428466797,
+          "downloadSeconds": 2.6834633350372314,
+          "verificationSeconds": 0.2335817813873291,
+          "linkSeconds": 0.0013201236724853516
+        }
+      ],
+      "warmUploadSeconds": {
+        "n": 24,
+        "median": 0.00890958309173584,
+        "min": 0.0050067901611328125,
+        "max": 0.20598316192626953
+      },
+      "localDecodeAndSaveSeconds": {
+        "n": 24,
+        "median": 0.09068799018859863,
+        "min": 0.07009363174438477,
+        "max": 0.23206710815429688
+      },
+      "projectedImageStageSeconds": 2683.685239007076,
+      "projectedContinuousImageUSD": 0.7380134407269459,
+      "projectionScope": "Continuous prepared image stream; includes startup and two warmup outputs once, 707 further outputs and assumed 8-second shutdown. Other video stages and scheduling gaps are separate."
+    },
+    {
+      "mode": "serverless",
+      "savedImages": 0,
+      "acceptedJobs": 2,
+      "continuousRounds": 0,
+      "continuousImages": 0,
+      "imagesPerMinute": null,
+      "roundRates": [],
+      "warmDelivery": null,
+      "handler": null,
+      "providerExecution": null,
+      "bothCopiesWarmSeconds": null,
+      "firstSavedSeconds": null,
+      "hourlyUSD": 1.58,
+      "resumeFirstSeconds": null,
+      "resumeCohortSeconds": null,
+      "resumeImages": 0,
+      "workerIds": [],
+      "verifiedCopies": false,
+      "nodeObservationSeconds": {},
+      "nodeObservationLimit": "Worker observation of Comfy node-event intervals; included inside handler time, not isolated GPU kernel timing. Medians cannot be summed into an end-to-end request.",
+      "warmUploadSeconds": null,
+      "localDecodeAndSaveSeconds": null
+    }
+  ],
+  "limits": [
+    "Small repeated six-case benchmark, not a freshly produced two-hour video.",
+    "Same pinned runtime, model fingerprints, prompts, seeds and references in both modes.",
+    "Two independent ComfyUI processes; four requests do not mean four model copies.",
+    "Queue/startup wall time is not necessarily billed GPU time.",
+    "Image validation checks decoding, size and black frames, not narrative fidelity.",
+    "Only two complete continuous rounds qualify for a production-rate projection.",
+    "Account debit includes failed launches and shared standing storage; no invented per-mode invoice.",
+    "Stopped pods and endpoint configuration are retained; container-only model files may disappear on stop."
+  ],
+  "matchedUniqueShots": 0,
+  "identicalPNGUniqueShots": 0,
+  "cleanup": {
+    "endpointPaused": true,
+    "podStopped": true,
+    "pauseCheckedAt": 1791344339.0634384
+  },
+  "failure": "No Serverless worker was allocated in the common-region attempt or the any-region followup before their guards stopped them",
+  "observedCumulativeDebitUSD": 0.6615262021000001,
+  "cumulativeCapUSD": 1
+}

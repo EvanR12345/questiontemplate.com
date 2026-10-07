@@ -2,6 +2,7 @@ import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipe
 import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
+import {matchedHTML} from './pipeline-matched.mjs';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -189,6 +190,10 @@ async function start(){
       const response=await fetch('./pipeline-serverless.json');
       if(response.ok){const data=await response.json();const panel=document.createElement('section');panel.id='serverlessLab';panel.innerHTML=serverlessHTML(data);$('concurrencyLab').insertAdjacentElement('afterend',panel);}
     } catch { /* Optional pilot evidence never blocks the existing planner. */ }
+    try {
+      const response=await fetch('./pipeline-matched.json');
+      if(response.ok){const data=await response.json();const panel=document.createElement('section');panel.id='matchedLab';panel.innerHTML=matchedHTML(data,evidence);($('serverlessLab')||$('concurrencyLab')).insertAdjacentElement('afterend',panel);}
+    } catch { /* Incomplete matched measurements never substitute a speed estimate. */ }
     const detailResponse=await fetch('./pipeline-details.json');
     if(detailResponse.ok){const details=await detailResponse.json();mountObservedRuns($('observedRuns'),details);mountFunctionIndex($('functionIndex'),details,kind=>{const task=result.tasks.find(t=>t.kind===kind);if(task){selected=task.id;renderInspector();}else{const meta=CATALOG.find(t=>t.id===kind);if(meta){$('inspectorLabel').textContent='NESTED / CONDITIONAL';$('taskInspector').innerHTML=`<h3>${esc(meta.name)}</h3><p class="task-desc">${esc(meta.description)}</p><p>${esc(meta.basis)}</p><p>${esc(meta.parallel)}</p>`;}}});}else{$('functionIndex').textContent='Source inventory unavailable. Process-level explanations remain available.';$('observedRuns').textContent='Recorded timing file unavailable; no trace is substituted.';}
     for(const k of [...keys,'uncertainty'])if($(k))$(k).addEventListener('change',()=>{
