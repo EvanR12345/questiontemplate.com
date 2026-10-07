@@ -11,6 +11,7 @@ export function gpuChoices(evidence) {
 export function selectGPUConfig(config,evidence,gpu) {
   const base={...config,gpu,measurementAttempt:'latest',imageWorkers:'best'};
   if(base.resolution==='legacy') {
+    base.executionMode='resident';
     buildPlan(base,evidence);
     return base;
   }
@@ -30,5 +31,15 @@ export function selectGPUConfig(config,evidence,gpu) {
 export function executionLabel(plan) {
   const m=plan.measurement;
   if(!m)return 'Earlier serial profile';
-  return `${m.workers} model ${m.workers===1?'copy':'copies'} · ${m.clientSlots||m.workers} request slots · ${(m.imagesPerSecond*60).toFixed(1)} images/min`;
+  const slots=m.clientSlots||m.workers;
+  return `${m.workers} model ${m.workers===1?'copy':'copies'} · ${slots} request ${slots===1?'slot':'slots'} · ${(m.imagesPerSecond*60).toFixed(1)} images/min`;
+}
+
+// Story image frequency is independent of generation throughput. Never feed this
+// derived speed back into cadence, which would increase the work being compared.
+export function generationSpeed(plan,evidence) {
+  if(!plan.measurement)return {highest:null,current:null,isFastest:false,label:''};
+  const fastest=buildPlan(selectGPUConfig(plan.config,evidence,plan.config.gpu),evidence);
+  const highest=fastest.measurement.imagesPerSecond*60,current=plan.measurement.imagesPerSecond*60;
+  return {highest,current,isFastest:Math.abs(highest-current)<1e-8,label:executionLabel(fastest)};
 }

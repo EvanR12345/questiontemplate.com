@@ -3,7 +3,7 @@ import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel} from './pipeline-config.mjs';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=automatic-speed-20261007';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -16,6 +16,14 @@ function persist(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{try{localSt
 function setControls(){for(const k of keys){if(!$(k))continue;if(booleans.includes(k))$(k).checked=config[k];else $(k).value=config[k];}$('uncertainty').value=uncertainty;}
 function readControls(){const next={};for(const k of keys){if(!$(k))continue;next[k]=booleans.includes(k)?$(k).checked:typeof DEFAULTS[k]==='number'?Number($(k).value):$(k).value;}return {...config,...next};}
 function getTask(id){return result.tasks.find(t=>t.id===id);}
+function renderGenerationSpeed(){
+  const speed=generationSpeed(plan,evidence);
+  $('generationRate').value=speed.highest===null?'Not measured':speed.highest.toFixed(1);
+  $('generationRateNote').textContent=speed.highest===null?'No completed generation-speed measurement for this timing profile. Choose a measured resolution.':
+    `Highest tested: ${speed.label}. Warm delivery includes preparation and saving; startup is separate.`+
+    (speed.isFastest?'':` Current manual setup: ${speed.current.toFixed(1)} images/min; the schedule uses that rate.`);
+  $('fastestGPU').disabled=speed.highest===null||speed.isFastest;
+}
 function labelChapter(n){return n===0?'Project / intro':`Chapter ${String(n).padStart(2,'0')}`;}
 function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(next==='gpus')renderGPUs();}
 function rebuild(){
@@ -26,6 +34,7 @@ function rebuild(){
     if(result.diagnostics.length)throw Error(result.diagnostics.join('; '));
     $('error').hidden=true;
     config=plan.config;
+    renderGenerationSpeed();
     $('sampleField').hidden=config.qc!=='sampled';$('introFields').hidden=!config.intro;
     $('modeNote').textContent=config.policy==='proposed'?'Planning experiment: separates GPU work from retrieval and overlaps chapter rendering. This is not deployed production behavior.':config.policy==='current'?'Installed cloud overlap: Luna lookahead and QC share API slots. The image lane includes preparation through retrieval. Rendering begins after image work.':'Every task runs sequentially. This is the comparison baseline, not a speed recommendation.';
     $('scheduleDescription').textContent=`${config.policy==='proposed'?'Proposed':config.policy==='current'?'Installed overlap model':'Sequential baseline'} · ${plan.imageCount} images · ${result.tasks.length} operations · ${Object.keys(preferences).length} manual moves`;
@@ -184,21 +193,23 @@ async function start(){
     const choices=gpuChoices(evidence);
     $('gpu').innerHTML=choices.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
     const measuredDefault={...DEFAULTS,gpu:'5090',resolution:'720p',encodingProfile:'fresh',executionMode:'hybrid',measurementAttempt:'5090-attempt-8'};
-    try{buildPlan(measuredDefault,evidence);config={...measuredDefault};}catch{config={...DEFAULTS};}
+    try{config=selectGPUConfig(measuredDefault,evidence,measuredDefault.gpu);}catch{config={...DEFAULTS};}
+    const resetDefault={...config};
     try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved){const state=importSnapshot(saved,evidence);config=state.config;preferences=state.preferences;uncertainty=Number.isFinite(saved.uncertainty)?Math.max(0,Math.min(100,saved.uncertainty)):20;}}catch{toast('Saved planner settings were invalid; using the default plan. Studio projects are unaffected.');}
     setControls();rebuild();
     for(const k of [...keys,'uncertainty'])if($(k))$(k).addEventListener('change',()=>{
       let next=readControls();if(['gpu','resolution','encodingProfile','executionMode'].includes(k))next.measurementAttempt='latest';
       // Never silently change the user's check level to satisfy installed overlap.
       if(next.policy==='current'&&!['practical','strict'].includes(next.qc)){toast('Installed overlap needs Practical/Strict checks. Choose those checks, or use Proposed mode.');setControls();return;}
-      try{if(k==='gpu')next=selectGPUConfig(next,evidence,next.gpu);buildPlan(next,evidence);const u=Number($('uncertainty').value);if(!Number.isFinite(u)||u<0||u>100)throw Error('Sensitivity must be 0–100%.');checkpoint();config=next;uncertainty=u;preferences={};selected=null;setControls();rebuild();if(k==='gpu')toast('Selected measured configuration: '+executionLabel(plan));}catch(e){toast(e.message);setControls();}
+      try{if(['gpu','resolution','encodingProfile'].includes(k))next=selectGPUConfig(next,evidence,next.gpu);buildPlan(next,evidence);const u=Number($('uncertainty').value);if(!Number.isFinite(u)||u<0||u>100)throw Error('Sensitivity must be 0–100%.');checkpoint();config=next;uncertainty=u;preferences={};selected=null;setControls();rebuild();if(['gpu','resolution','encodingProfile'].includes(k))toast('Automatically selected fastest tested settings: '+executionLabel(plan));}catch(e){toast(e.message);setControls();}
     });
+    $('fastestGPU').onclick=()=>{try{const next=selectGPUConfig(config,evidence,config.gpu);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();toast('Fastest tested settings applied: '+executionLabel(plan));}catch(e){toast(e.message);}};
     document.querySelectorAll('[data-view]').forEach((b,i)=>{b.onclick=()=>switchView(b.dataset.view);b.onkeydown=e=>{const tabs=[...document.querySelectorAll('[data-view]')];const next=e.key==='ArrowRight'?tabs[(i+1)%tabs.length]:e.key==='ArrowLeft'?tabs[(i+tabs.length-1)%tabs.length]:null;if(next){e.preventDefault();next.focus();switchView(next.dataset.view);}};});
     $('chapterFocus').onchange=()=>{focus=$('chapterFocus').value;renderTimeline();};$('zoom').onchange=renderTimeline;
     $('processSearch').oninput=renderProcesses;$('pairA').onchange=pairResult;$('pairB').onchange=pairResult;
     $('undo').onclick=()=>{const last=history.pop();if(!last)return;config=last.config;preferences=last.preferences;uncertainty=last.uncertainty;setControls();rebuild();$('undo').disabled=!history.length;toast('Previous plan restored.');};
     $('optimize').onclick=()=>{checkpoint();preferences={};rebuild();$('moveFeedback').textContent='Tasks repacked at their earliest available dependency/resource slot. This is a feasible heuristic, not a proof of the global optimum.';};
-    $('reset').onclick=()=>{checkpoint();config={...measuredDefault};preferences={};uncertainty=20;selected=null;setControls();rebuild();toast('Default planning scenario restored.');};
+    $('reset').onclick=()=>{checkpoint();config={...resetDefault};preferences={};uncertainty=20;selected=null;setControls();rebuild();toast('Default planning scenario restored with fastest tested settings.');};
     $('play').onclick=()=>{if(playing){stopPlay();return;}if(matchMedia('(prefers-reduced-motion: reduce)').matches){toast('Animation disabled by your reduced-motion setting. Task details remain available.');return;}playing=true;playStarted=performance.now();$('play').textContent='Stop simulation';playFrame=requestAnimationFrame(tick);};
     $('export').onclick=()=>{
       const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,totalUSD:result.totalUSD},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};

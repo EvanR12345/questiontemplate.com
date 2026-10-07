@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {DEFAULTS,buildPlan,schedule} from './pipeline-engine.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel} from './pipeline-config.mjs';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs';
 const evidence=JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url)));
 evidence.concurrency=JSON.parse(fs.readFileSync(new URL('./pipeline-concurrency.json',import.meta.url)));
 const config={...DEFAULTS,resolution:'720p',encodingProfile:'fresh',executionMode:'hybrid',measurementAttempt:'5090-attempt-8'};
@@ -51,4 +51,26 @@ test('incomplete and control rounds cannot win selection',()=>{
   g.hybridProfiles=[{...source,executionMode:'hybrid',workers:6,clientSlots:6,imagesPerSecond:999,rounds:1},
     {...source,executionMode:'hybrid',workers:6,clientSlots:6,imagesPerSecond:999,postControl:true}];
   assert.equal(selectGPUConfig(config,modified,'a6000').executionMode,'resident');
+});
+
+test('automatic speed shows the best measured delivery rate without changing video cadence',()=>{
+  const p=buildPlan({...config,executionMode:'resident',measurementAttempt:'latest',imageWorkers:'1'},evidence);
+  const speed=generationSpeed(p,evidence);
+  assert.equal(speed.highest.toFixed(1),'38.0');
+  assert.ok(speed.current<speed.highest);assert.equal(speed.isFastest,false);
+  assert.equal(p.config.cadence,config.cadence);assert.equal(p.imageCount,buildPlan(config,evidence).imageCount);
+});
+test('automatic speed changes with GPU and resolution',()=>{
+  const a6000=generationSpeed(buildPlan(selectGPUConfig(config,evidence,'a6000'),evidence),evidence);
+  assert.equal(a6000.highest.toFixed(1),'11.8');assert.equal(a6000.isFastest,true);
+  const p720=buildPlan(selectGPUConfig(config,evidence,'4090'),evidence);
+  const p1080=buildPlan(selectGPUConfig({...config,resolution:'1080p'},evidence,'4090'),evidence);
+  assert.ok(generationSpeed(p720,evidence).highest>generationSpeed(p1080,evidence).highest);
+  assert.equal(p720.config.cadence,p1080.config.cadence);
+});
+test('legacy profiles do not invent a highest possible speed',()=>{
+  const chosen=selectGPUConfig({...config,resolution:'legacy'},evidence,'5090');
+  assert.equal(chosen.executionMode,'resident');
+  const speed=generationSpeed(buildPlan(chosen,evidence),evidence);
+  assert.equal(speed.highest,null);assert.equal(speed.current,null);
 });

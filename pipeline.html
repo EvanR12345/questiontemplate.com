@@ -17,7 +17,10 @@
       <aside class="settings" aria-label="Production settings">
         <h2>Production setup</h2><p class="caption">Same model. Same image frequency.</p>
         <label>Final video length <span>minutes</span><input id="minutes" type="number" min="1" max="360" value="120"></label>
-        <div class="fieldpair"><label>Chapters<input id="chapters" type="number" min="1" max="40" value="14"></label><label>Images / min<input id="cadence" type="number" min="1" max="20" step="0.1" value="5.884"></label></div>
+        <div class="fieldpair"><label>Chapters<input id="chapters" type="number" min="1" max="40" value="14"></label><label>Images / video min<input id="cadence" type="number" min="1" max="20" step="0.1" value="5.884" aria-describedby="cadenceNote"></label></div>
+        <p class="caption" id="cadenceNote">Visual frequency in the finished video. GPU speed updates separately below.</p>
+        <label>Images / min · automatic<input id="generationRate" type="text" value="Loading measurements…" readonly aria-describedby="generationRateNote"><small id="generationRateNote">Highest tested generation speed for the selected GPU and image settings.</small></label>
+        <button id="fastestGPU" class="button full" disabled>Use fastest tested settings</button>
         <label>Cloud GPU<select id="gpu"></select></label><label>Image timing profile<select id="resolution"><option value="legacy">Earlier 1344 × 768 · serial</option><option value="720p">Measured 720p</option><option value="1080p">Measured 1080p</option></select></label><label>Conditioning timing<select id="encodingProfile"><option value="fresh">Fresh prompt + reference encoding</option><option value="cached">Reused conditioning · control</option></select></label><label>Image execution<select id="executionMode"><option value="resident">Independent workers</option><option value="pipeline">One worker · pipelined requests</option><option value="hybrid">Multiple workers · buffered requests</option></select></label><label id="workerField" hidden>Worker count / request slots<select id="imageWorkers"><option value="best">Best tested count</option><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option></select><small>Only completed two-round results can calibrate the schedule.</small></label>
         <label>Scheduling mode<select id="policy"><option value="proposed">Proposed streaming overlap</option><option value="current">Installed cloud overlap</option><option value="serial">Fully sequential baseline</option></select></label>
         <div id="modeNote" class="inline-note"></div>
@@ -62,5 +65,5 @@
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script type="module" src="./pipeline-ui.mjs?v=gpu-selection-20261007"></script>
+  <script type="module" src="./pipeline-ui.mjs?v=automatic-speed-20261007"></script>
 </body></html>
