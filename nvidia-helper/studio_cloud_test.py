@@ -43,6 +43,18 @@ class CloudSaveTests(unittest.TestCase):
         Image.new('RGB',(640,360),'red').save(self.image);self.obj.fail=True
         with self.assertRaises(RuntimeError):self.a.sync(self.p['id'])
         self.assertEqual(self.obj.data[key],old);self.assertEqual(self.store.load(self.p['id'])['name'],'Keep me')
+    def test_dashboard_preserves_pending_files_and_does_not_label_local_edits_cloud_saved(self):
+        before={r['path']:r for r in self.a.files(self.p['id'])['files']}
+        self.assertIn('art.png',before);self.assertFalse(before['art.png']['cloud'])
+        self.a.sync(self.p['id'])
+        Image.new('RGB',(640,360),'red').save(self.image)
+        added=self.store.folder(self.p['id'])/'new.wav';added.write_bytes(b'new pending narration')
+        hidden=self.store.folder(self.p['id'])/'working';hidden.mkdir();(hidden/'private.json').write_text('{}')
+        pending={r['path']:r for r in self.a.files(self.p['id'])['files']}
+        self.assertFalse(pending['art.png']['cloud']);self.assertFalse(pending['new.wav']['cloud'])
+        self.assertNotIn('working/private.json',pending)
+        self.a.sync(self.p['id'])
+        self.assertTrue(all(r['cloud'] for r in self.a.files(self.p['id'])['files']))
     def test_restore_rejects_newer_local_work_and_recovers_missing_asset(self):
         self.a.sync(self.p['id']);expected=self.image.read_bytes();self.image.unlink()
         self.assertEqual(self.store.asset(self.p['id'],'art.png').read_bytes(),expected)

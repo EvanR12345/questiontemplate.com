@@ -230,12 +230,25 @@ class R2Archive:
                     'category':{'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(path.suffix[1:].lower(),'Images')})
             return {'files':rows, 'cloud':False}
         manifest,_=self.manifest(pid)
-        rows=[]
+        rows={}
         for name,r in (manifest or {}).get('files',{}).items():
             self.store.asset_local(pid,name)
-            rows.append({'path':name,'bytes':r['bytes'],'sha256':r['sha256'],'cloud':True,
-                         'category': {'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(Path(name).suffix[1:].lower(),'Images')})
-        return {'files':rows,'cloud':True,'revision':(manifest or {}).get('project',{}).get('revision')}
+            rows[name]={'path':name,'bytes':r['bytes'],'sha256':r['sha256'],'cloud':True,
+                        'category': {'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(Path(name).suffix[1:].lower(),'Images')}
+        # A cloud connection must not hide newly generated or edited files while
+        # the immutable snapshot is still uploading. Show their local status.
+        folder=self.store.folder(pid)
+        for path in folder.rglob('*'):
+            if not path.is_file() or path.is_symlink() or path.suffix.lower() not in MEDIA:continue
+            name=path.relative_to(folder).as_posix()
+            if any(x.startswith('.') or x=='working' for x in path.relative_to(folder).parts) or '.writing.' in name or '.partial.' in name:continue
+            if path.name in ('project.json','revision.json','project.previous.json'):continue
+            self.store.asset_local(pid,name)
+            record=(manifest or {}).get('files',{}).get(name,{})
+            if record.get('stamp')==list(stable_file(path)):continue
+            rows[name]={'path':name,'bytes':path.stat().st_size,'cloud':False,
+                        'category':{'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(path.suffix[1:].lower(),'Images')}
+        return {'files':[rows[name] for name in sorted(rows)],'cloud':True,'revision':(manifest or {}).get('project',{}).get('revision')}
 
     def list_projects(self):
         with self.catalogue_lock:
