@@ -6,14 +6,47 @@ import tempfile
 import io
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
-from server import make_handler
+from server import make_handler, main
 from studio_data import new_project
 
 KEY = 'a' * 64
 ORIGIN = 'https://questiontemplate.com'
+
+
+class StartupTest(unittest.TestCase):
+    def check_startup(self, hidden):
+        with tempfile.TemporaryDirectory() as directory:
+            key_path = Path(directory) / '.pairing-key'
+            key_path.write_text(KEY)
+            output = io.StringIO()
+            with patch('server.__file__', str(Path(directory) / 'server.py')), \
+                    patch('server.CudaEngine') as engine, \
+                    patch('server.make_handler'), \
+                    patch('server.ThreadingHTTPServer'), \
+                    patch('subprocess.run'), \
+                    patch('server.webbrowser.open') as browser, \
+                    patch.dict('os.environ', {'QT_NO_BROWSER': '1' if hidden else '0'}), \
+                    redirect_stdout(output):
+                engine.return_value.gpu = 'Test GPU'
+                main()
+            self.assertEqual(key_path.read_text(), KEY)
+            if hidden:
+                self.assertNotIn(KEY, output.getvalue())
+                self.assertNotIn('#native=', output.getvalue())
+                browser.assert_not_called()
+            else:
+                self.assertIn('#native=' + KEY, output.getvalue())
+                browser.assert_called_once_with('https://questiontemplate.com/studio.html#native=' + KEY)
+
+    def test_hidden_startup_keeps_pairing_key_out_of_redirected_output(self):
+        self.check_startup(True)
+
+    def test_interactive_startup_preserves_pairing_and_saved_key(self):
+        self.check_startup(False)
 
 
 class FakeEngine:

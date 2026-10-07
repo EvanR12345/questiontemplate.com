@@ -573,14 +573,19 @@ def main():
     server.daemon_threads = True
     site = 'https://questiontemplate.com/studio.html'
     link = site + '#native=' + key
+    hidden_launch = os.environ.get('QT_NO_BROWSER') == '1'
+    pairing_message = (
+        'Saved connection is available; the pairing key remains in its private file.'
+        if hidden_launch else 'Open this link once to pair:\n' + link
+    )
     print(
         '\nReady on ' + audio_engine.gpu +
         '. Audio and Studio now share this one helper.\n'
         'Keep this window open. Refreshing or switching pages will reconnect automatically.\n'
-        'Open this link once to pair:\n' + link,
+        + pairing_message,
         flush=True
     )
-    if os.environ.get('QT_NO_BROWSER') != '1':
+    if not hidden_launch:
         webbrowser.open(link)
     try:
         server.serve_forever()
