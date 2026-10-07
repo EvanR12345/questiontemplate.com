@@ -1,6 +1,6 @@
 import { pairingKey, helperJson } from "./helper-connection.mjs?v=queue-1";
 import { nativeRequest } from "./native-client.mjs?v=queue-1";
-import {engagementForm, engagementValues, filesPanel, wireFiles} from './studio-cloud-ui.mjs?v=r2-5';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink} from './studio-cloud-ui.mjs?v=r2-6';
 import {
   loadProjectState,
   saveStudioProject,
@@ -107,18 +107,16 @@ async function cache() {
     localStorage.setItem("qt-production-project", project.id);
   }
 }
-async function media(path) {
-  if (!path) return "";
-  const k = project.id + "/" + path;
-  if (mediaCache.get(k)?.expires > Date.now()) return mediaCache.get(k).url;
-  const result = await api("media-link", { project: project.id, path });
-  mediaCache.set(k, { url: result.url, expires: Date.now() + 3000000 });
-  return result.url;
+async function media(path, projectId=project.id) {
+  return cachedMediaLink(mediaCache,projectId,path,api);
 }
 async function fillMedia() {
+  const projectId=project.id;
   for (const node of root.querySelectorAll("[data-asset]")) {
+    if(!node.isConnected)continue;
     try {
-      node.src = await media(node.dataset.asset);
+      const url=await media(node.dataset.asset,projectId);
+      if(node.isConnected)node.src=url;
     } catch (error) {
       node.alt = "Asset preview unavailable: " + error.message;
     }
@@ -131,6 +129,7 @@ async function connect() {
   key = pairingKey();
   try {
     health = await api("health");
+    mediaCache.clear(); // Restarted helpers no longer know old local tickets.
     connected = true;
     queue = health.queue;
     await refreshProjects();
@@ -892,9 +891,22 @@ async function submit(kind, selected, options) {
   note("Added to the production queue. Completed results save immediately.");
 }
 function wire() {
-  if(tab==='files') void action(()=>wireFiles({p:project,api,action,note,media,
-    submit:(kind,options)=>submit(kind,undefined,options),
-    reload:async()=>{project=await api('project?id='+project.id);render();}}));
+  if(tab==='files') {
+    const filesProject=project;
+    const filesAction=fn=>action(()=>{
+      if(tab!=='files'||project?.id!==filesProject.id)return;
+      return fn();
+    });
+    void filesAction(()=>wireFiles({p:filesProject,api,action:filesAction,note,
+      media:path=>media(path,filesProject.id),
+      submit:(kind,options)=>submit(kind,undefined,options),
+      reload:async()=>{
+        const before=project;
+        const updated=await api('project?id='+filesProject.id);
+        if(project!==before||project?.id!==filesProject.id||dirty)return;
+        project=updated;mediaCache.clear();render();
+      }}));
+  }
   $('#prepareOutro')?.addEventListener('click',()=>action(async()=>{await saveSettings();await submit('outro-audio');}));
   $("#productionOverlap").onchange = (event) => { overlapRequested = event.target.checked; };
   $("#productionFullVideo").onclick = () =>

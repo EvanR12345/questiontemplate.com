@@ -1,9 +1,21 @@
 // Cloud storage and finishing controls share the existing Studio connection.
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bytes=n=>n>=2**30?(n/2**30).toFixed(2)+' GiB':n>=2**20?(n/2**20).toFixed(1)+' MiB':(n/1024).toFixed(1)+' KiB';
-let rows=[], page=0, filter='All', term='';
 const transferring=new Set();
 const starting=new Set();
+const publishingDrafts=new Map();
+export async function cachedMediaLink(cache,projectId,path,api,now=Date.now){
+  if(!path)return '';
+  const key=projectId+'/'+path,cached=cache.get(key);
+  if(cached?.expires>now())return cached.url;
+  cache.delete(key);
+  const result=await api('media-link',{project:projectId,path});
+  // The helper may reuse a ticket nearing expiry. Never grant it a fresh
+  // client-side lifetime longer than the actual signed/local capability.
+  const expires=Math.min(Number(result.expires)*1000-1000,now()+3000000);
+  if(expires>now())cache.set(key,{url:result.url,expires});
+  return result.url;
+}
 export function engagementForm(p){
   const s={popupEnabled:false,minMinutes:10,maxMinutes:15,popupDuration:5,popupText:'Enjoying the story? Subscribe for the next part.',dingEnabled:true,dingVolume:.12,position:'bottom-right',outroEnabled:false,outroDuration:15,outroText:'Subscribe for more fantasy stories, and tell us your favorite moment in the comments.',nextPartTeaser:'',splitEnabled:false,partMinutes:120,...p.settings.engagement};
   return `<div class="section-box" id="settings-engagement"><h3>Subscribe reminders & closing narration</h3><label class="inline"><input id="engPopup" type="checkbox" ${s.popupEnabled?'checked':''}>Show subscribe reminder</label><div class="two-col"><label>Minimum interval (minutes)<input id="engMin" type="number" min="1" max="180" value="${s.minMinutes}"></label><label>Maximum interval (minutes)<input id="engMax" type="number" min="1" max="180" value="${s.maxMinutes}"></label><label>Show for (seconds)<input id="engDuration" type="number" min="2" max="15" value="${s.popupDuration}"></label><label>Corner<select id="engPosition"><option value="bottom-right" ${s.position==='bottom-right'?'selected':''}>Bottom right</option><option value="bottom-left" ${s.position==='bottom-left'?'selected':''}>Bottom left</option></select></label></div><label>Reminder message<input id="engText" maxlength="160" value="${esc(s.popupText)}"></label><label class="inline"><input id="engDing" type="checkbox" ${s.dingEnabled?'checked':''}>Play a quiet ding</label><label>Ding volume (%)<input id="engVolume" type="number" min="0" max="30" value="${Math.round(s.dingVolume*100)}"></label><p class="muted">Intervals vary within your range. Retrying keeps the same timings. Chapter narration masters stay unchanged.</p><label class="inline"><input id="engOutro" type="checkbox" ${s.outroEnabled?'checked':''}>Add spoken outro to the finished video</label><label>Outro narration<textarea id="engOutroText" maxlength="800" rows="3">${esc(s.outroText)}</textarea></label><label>Next-part teaser · only story facts you approve<textarea id="engTeaser" maxlength="800" rows="2">${esc(s.nextPartTeaser)}</textarea></label><label>Minimum outro duration (seconds)<input id="engOutroDuration" type="number" min="5" max="60" value="${s.outroDuration}"></label><p class="muted">Uses the selected narrator. Longer speech extends the outro instead of cutting it off. The full story receives one outro; a separately exported chapter can receive its own.</p><button id="prepareOutro">Prepare outro audio</button><label class="inline"><input id="engSplit" type="checkbox" ${s.splitEnabled?'checked':''}>Split the full video into parts automatically</label><label>Minutes per part<input id="engPartMinutes" type="number" min="1" max="1440" value="${s.partMinutes}"></label><p class="muted">120 minutes makes six parts from a 12-hour story. Cuts use nearby keyframes and reuse the original quality. The Files tab shows actual boundaries.</p></div>`;
@@ -17,6 +29,9 @@ export function filesPanel(p){
 }
 export async function wireFiles({p,api,action,note,media,submit,reload}){
   const $=id=>document.getElementById(id);
+  let rows=[],page=0,filter='All',term='',refreshVersion=0;
+  const view=$('cloudStatus');
+  const active=()=>$('cloudStatus')===view;
   const open=async name=>{const url=await media(name); const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';a.click();};
   function bindOpen(){document.querySelectorAll('[data-cloud-open]').forEach(b=>b.onclick=()=>action(()=>open(b.dataset.cloudOpen)));}
   function paint(){
@@ -26,32 +41,49 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
     $('filePrev').onclick=()=>{page--;paint();};$('fileNext').onclick=()=>{page++;paint();};bindOpen();
   }
   async function refresh(){
+    const version=++refreshVersion;
     const [status,files,publisher]=await Promise.all([api('storage?project='+p.id),api('files?project='+p.id),api('publisher').catch(()=>({configured:false,connected:false}))]);
     const state=status.projects[p.id]??{};
-    if(!$('cloudStatus'))return;
+    if(!active()||version!==refreshVersion)return;
     $('cloudStatus').textContent=status.enabled?`${status.provider||'Cloud storage'} · ${state.status??'Not yet synced'} · ${state.files??0} cloud files · ${bytes(state.bytes??0)}${state.error?' · '+state.error:''}${status.error?' · '+status.error:''}`:status.error||'Cloud storage is not connected yet. Existing helper files remain safe.';
     rows=files.files;paint();
     const publishedJobs=await Promise.all((p.publishing??[]).map(async job=>{
       if(!publisher.configured||['COMPLETE','CANCELLED'].includes(job.status))return job;
       try{return await api('publish',{project:p.id,operation:'status',options:{id:job.id}});}catch{return job;}
     }));
+    if(!active()||version!==refreshVersion)return;
     const yt=$('youtubeStatus');
     if(yt){
       yt.textContent=publisher.connected?'YouTube connected. Uploads travel from R2 to YouTube; this laptop sends only control messages.':publisher.configured?'Cloud publisher ready. Connect your YouTube channel.':'Cloud publisher deployment and Google OAuth setup are still pending.';
       if(publisher.configured){
+        const remember=()=>{
+          if(!active()||!$('publisherControls'))return;
+          publishingDrafts.set(p.id,{source:$('publishSource').value,title:$('publishTitle').value,
+            description:$('publishDescription').value,privacy:$('publishPrivacy').value,kids:$('publishKids').checked});
+        };
+        remember();
         const controls=document.createElement('div');controls.id='publisherControls';
-        controls.innerHTML=`<button id="youtubeConnect">Connect YouTube</button><label>Saved cloud video<select id="publishSource">${rows.filter(r=>r.category==='Video'&&r.cloud).map(r=>`<option value="${esc(r.path)}">${esc(r.path)}</option>`).join('')}</select></label><label>YouTube title<input id="publishTitle" maxlength="100" value="${esc(p.name.slice(0,100))}"></label><label>Description<textarea id="publishDescription" maxlength="5000" rows="3"></textarea></label><label>Visibility<select id="publishPrivacy"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></label><label class="inline"><input type="checkbox" id="publishKids">This video is made for kids</label><button id="publishStart" ${publisher.connected?'':'disabled'}>Upload selected cloud video</button><div id="publishProgress" role="status"></div>${publishedJobs.map(j=>`<p>${esc(j.title)} · ${esc(j.status)} · ${Math.round(100*j.uploaded/j.total)}% ${j.status==='COMPLETE'?`<a href="https://www.youtube.com/watch?v=${encodeURIComponent(j.videoId)}" target="_blank" rel="noopener">Open video</a>`:`<button data-upload-resume="${esc(j.id)}">Resume upload</button><button data-upload-cancel="${esc(j.id)}">Cancel upload</button>`}</p>`).join('')}`;
+        controls.innerHTML=`<button id="youtubeConnect">Connect YouTube</button><label>Saved cloud video<select id="publishSource">${rows.filter(r=>r.category==='Video'&&r.cloud).map(r=>`<option value="${esc(r.path)}">${esc(r.path)}</option>`).join('')}</select></label><label>YouTube title<input id="publishTitle" maxlength="100" value="${esc(p.name.slice(0,100))}"></label><label>Description<textarea id="publishDescription" maxlength="5000" rows="3"></textarea></label><label>Visibility<select id="publishPrivacy"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></label><label class="inline"><input type="checkbox" id="publishKids">This video is made for kids</label><button id="publishStart" ${publisher.connected&&rows.some(r=>r.category==='Video'&&r.cloud)?'':'disabled'}>Upload selected cloud video</button><div id="publishProgress" role="status"></div>${publishedJobs.map(j=>`<p>${esc(j.title)} · ${esc(j.status)} · ${Math.round(100*j.uploaded/j.total)}% ${j.status==='COMPLETE'?`<a href="https://www.youtube.com/watch?v=${encodeURIComponent(j.videoId)}" target="_blank" rel="noopener">Open video</a>`:j.status==='CANCELLED'?'':`<button data-upload-resume="${esc(j.id)}">Resume upload</button><button data-upload-cancel="${esc(j.id)}">Cancel upload</button>`}</p>`).join('')}`;
         $('publisherControls')?.remove();yt.after(controls);
+        const draft=publishingDrafts.get(p.id);
+        if(draft){
+          if(rows.some(r=>r.category==='Video'&&r.cloud&&r.path===draft.source))$('publishSource').value=draft.source;
+          $('publishTitle').value=draft.title;$('publishDescription').value=draft.description;
+          $('publishPrivacy').value=draft.privacy;$('publishKids').checked=draft.kids;
+        }
+        controls.oninput=remember;controls.onchange=remember;
         controls.insertAdjacentHTML('beforeend','<p class="muted">Choose a video part for uploads over 12 hours. YouTube may keep a new unaudited app\'s uploads private; final visibility is confirmed after upload. <a href="https://developers.google.com/youtube/v3/docs/videos/insert" target="_blank" rel="noopener">YouTube requirements</a></p>');
         controls.insertAdjacentHTML('beforeend','<p class="muted">During Google OAuth Testing mode, reconnect the channel after seven days. Saved videos and upload progress remain in cloud storage. <a href="https://developers.google.com/identity/protocols/oauth2#expiration" target="_blank" rel="noopener">Google authorization lifetime</a></p>');
         $('youtubeConnect').onclick=()=>action(async()=>{const result=await api('publish',{operation:'connect'});const a=document.createElement('a');a.href=result.url;a.target='_blank';a.rel='noopener';a.click();});
         async function runUpload(job){
           if(transferring.has(job.id))return;transferring.add(job.id);
           try{
-            while(!['COMPLETE','CANCELLED'].includes(job.status)){
+            while(active()&&!['COMPLETE','CANCELLED'].includes(job.status)){
               job=await api('publish',{project:p.id,operation:'next',options:{id:job.id}});
+              if(!active())return;
               if($('publishProgress'))$('publishProgress').textContent=`${job.title} · ${Math.round(100*job.uploaded/job.total)}% · ${job.status}`;
             }
+            if(!active())return;
             await reload();note(job.status==='COMPLETE'?'YouTube upload completed. '+(job.actualPrivacy?'Visibility: '+job.actualPrivacy:'Check final visibility in YouTube Studio.'):'Upload cancelled; source video remains in R2.');
           }finally{transferring.delete(job.id);}
         }
@@ -62,7 +94,7 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
           starting.add(p.id);const button=$('publishStart');button.disabled=true;
           try{
             const job=await api('publish',{project:p.id,operation:'start',options:{path:$('publishSource').value,title:$('publishTitle').value,description:$('publishDescription').value,privacy,madeForKids:$('publishKids').checked}});await runUpload(job);
-          }finally{starting.delete(p.id);if(button.isConnected)button.disabled=false;}
+          }finally{starting.delete(p.id);if(button.isConnected)button.disabled=!publisher.connected||!rows.some(r=>r.category==='Video'&&r.cloud);}
         });
         controls.querySelectorAll('[data-upload-resume]').forEach(b=>b.onclick=()=>action(async()=>{const job=await api('publish',{project:p.id,operation:'status',options:{id:b.dataset.uploadResume}});await runUpload(job);}));
         controls.querySelectorAll('[data-upload-cancel]').forEach(b=>b.onclick=()=>action(async()=>{await api('publish',{project:p.id,operation:'cancel',options:{id:b.dataset.uploadCancel}});await reload();}));

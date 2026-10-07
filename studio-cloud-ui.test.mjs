@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {engagementForm,engagementValues,filesPanel} from './studio-cloud-ui.mjs';
+import {engagementForm,engagementValues,filesPanel,wireFiles,cachedMediaLink} from './studio-cloud-ui.mjs';
 const project={id:'pr-0123456789abcdef',name:'Story <script>',settings:{engagement:{}},chapters:[{scenes:[{shots:[{id:'shot-1',imagePath:'art.png',action:'A < b'}]}]}],render:{parts:[{number:1,path:'part1.mp4',start:0,end:7200}]}};
 test('finishing form exposes every value that is persisted',()=>{
   const html=engagementForm(project),inputs={};
@@ -12,4 +12,128 @@ test('finishing form exposes every value that is persisted',()=>{
 test('file dashboard escapes story metadata and shows parts without modifying it',()=>{
   const original=JSON.stringify(project);const html=filesPanel(project);
   assert.ok(html.includes('Story &lt;script&gt;'));assert.ok(html.includes('A &lt; b'));assert.ok(html.includes('Part 1'));assert.ok(html.includes('120.00 min'));assert.ok(!html.includes('Story <script>'));assert.equal(JSON.stringify(project),original);
+});
+
+// Minimal mounted-element harness for asynchronous dashboard integration.
+// Detached controls do not replace live IDs until inserted, like browser DOM.
+function filesDOM(){
+  const nodes=new Map();
+  class Element{
+    constructor(id='',value=''){this.id=id;this.value=value;this.children=[];this.textContent='';this.checked=false;this.disabled=false;this.html='';}
+    get isConnected(){return nodes.get(this.id)===this;}
+    mount(){if(this.id)nodes.set(this.id,this);this.children.forEach(e=>e.mount());}
+    remove(){if(this.isConnected)nodes.delete(this.id);this.children.forEach(e=>e.remove());}
+    set innerHTML(html){
+      const live=this.isConnected;this.children.forEach(e=>e.remove());this.html=html;this.children=[];
+      for(const match of html.matchAll(/<(\w+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)){
+        const [,tag,attrs,id]=match;let value=/\bvalue="([^"]*)"/.exec(attrs)?.[1]??'';
+        if(tag==='select')value=/<option[^>]*value="([^"]+)"/.exec(html.slice(match.index))?.[1]??'';
+        const child=new Element(id,value);child.disabled=/\bdisabled\b/.test(attrs);this.children.push(child);if(live)child.mount();
+      }
+    }
+    get innerHTML(){return this.html;}
+    after(child){child.mount();}
+    insertAdjacentHTML(_,html){this.html+=html;}
+    querySelectorAll(){return [];}
+  }
+  const reset=()=>{
+    nodes.clear();
+    for(const id of ['cloudStatus','cloudFiles','cloudSearch','cloudCategory','cloudRefresh','cloudSync','cloudSyncAll','cloudSplit','splitMinutes','makeThumbnail','youtubeStatus'])new Element(id).mount();
+  };
+  reset();
+  return {nodes,reset,document:{getElementById:id=>nodes.get(id)??null,querySelectorAll:()=>[],createElement:()=>new Element()}};
+}
+function dashboardAPI({files=[],publisher={configured:false,connected:false}}={}){
+  return async path=>path.startsWith('storage?')?{enabled:true,projects:{}}:path.startsWith('files?')?{files}:publisher;
+}
+const options=(p,api)=>({p,api,action:fn=>fn(),note:()=>{},media:async()=>'',submit:async()=>{},reload:async()=>{}});
+const video=path=>({path,category:'Video',cloud:true,bytes:100});
+
+test('preview cache respects original reused-ticket expiry and isolates project paths',async()=>{
+  const cache=new Map();let now=3000000,calls=0;
+  const api=async (_,body)=>{calls++;return {url:body.project+'/ticket'+calls,expires:3600};};
+  assert.equal(await cachedMediaLink(cache,'one','video.mp4',api,()=>now),'one/ticket1');
+  now=3500000;assert.equal(await cachedMediaLink(cache,'one','video.mp4',api,()=>now),'one/ticket1');assert.equal(calls,1);
+  assert.equal(await cachedMediaLink(cache,'two','video.mp4',api,()=>now),'two/ticket2');
+  now=3599500;assert.equal(await cachedMediaLink(cache,'one','video.mp4',api,()=>now),'one/ticket3');
+  assert.equal(cache.has('one/video.mp4'),false);
+});
+
+test('preview without a verified expiry is not cached beyond an unknown lifetime',async()=>{
+  const cache=new Map();let calls=0;const api=async()=>({url:'ticket'+(++calls)});
+  assert.equal(await cachedMediaLink(cache,'one','art.png',api),'ticket1');
+  assert.equal(await cachedMediaLink(cache,'one','art.png',api),'ticket2');assert.equal(cache.size,0);
+});
+
+test('late responses from a previous project cannot overwrite the new dashboard',async()=>{
+  const dom=filesDOM(),original=globalThis.document;globalThis.document=dom.document;
+  try{
+    let release;const pending=new Promise(resolve=>{release=resolve;});
+    const run=wireFiles(options(project,async path=>path.startsWith('storage?')?pending:path.startsWith('files?')?{files:[video('old.mp4')]}:{configured:false}));
+    dom.reset();dom.nodes.get('cloudStatus').textContent='New project';dom.nodes.get('cloudFiles').innerHTML='New files';
+    release({enabled:true,projects:{}});await run;
+    assert.equal(dom.nodes.get('cloudStatus').textContent,'New project');assert.equal(dom.nodes.get('cloudFiles').innerHTML,'New files');
+  }finally{globalThis.document=original;}
+});
+
+test('refresh preserves entered publishing metadata and cancelled jobs have no resume controls',async()=>{
+  const dom=filesDOM(),original=globalThis.document;globalThis.document=dom.document;
+  try{
+    const p={...project,id:'pr-1111111111111111',publishing:[{id:'cancelled',title:'Old upload',status:'CANCELLED',uploaded:25,total:100}]};
+    await wireFiles(options(p,dashboardAPI({files:[video('part1.mp4'),video('part2.mp4')],publisher:{configured:true,connected:true}})));
+    for(const [id,value] of Object.entries({publishSource:'part2.mp4',publishTitle:'My edited title',publishDescription:'My description',publishPrivacy:'unlisted'}))dom.nodes.get(id).value=value;
+    dom.nodes.get('publishKids').checked=true;dom.nodes.get('publisherControls').oninput();
+    await dom.nodes.get('cloudRefresh').onclick();
+    assert.equal(dom.nodes.get('publishSource').value,'part2.mp4');assert.equal(dom.nodes.get('publishTitle').value,'My edited title');
+    assert.equal(dom.nodes.get('publishDescription').value,'My description');assert.equal(dom.nodes.get('publishPrivacy').value,'unlisted');assert.equal(dom.nodes.get('publishKids').checked,true);
+    assert.ok(!dom.nodes.get('publisherControls').innerHTML.includes('data-upload-resume="cancelled"'));
+  }finally{globalThis.document=original;}
+});
+
+test('file search belongs to its dashboard and upload requires a cloud video',async()=>{
+  const dom=filesDOM(),original=globalThis.document;globalThis.document=dom.document;
+  try{
+    await wireFiles(options(project,dashboardAPI({files:[video('first.mp4')]})));
+    dom.nodes.get('cloudSearch').oninput({target:{value:'no-match'}});assert.ok(!dom.nodes.get('cloudFiles').innerHTML.includes('first.mp4'));
+    dom.reset();await wireFiles(options({...project,id:'pr-2222222222222222'},dashboardAPI({files:[video('next.mp4')],publisher:{configured:true,connected:true}})));
+    assert.ok(dom.nodes.get('cloudFiles').innerHTML.includes('next.mp4'));
+    dom.reset();await wireFiles(options({...project,id:'pr-3333333333333333'},dashboardAPI({publisher:{configured:true,connected:true}})));
+    assert.equal(dom.nodes.get('publishStart').disabled,true);
+  }finally{globalThis.document=original;}
+});
+
+test('a slower earlier refresh cannot replace a newer file list in the same project',async()=>{
+  const dom=filesDOM(),original=globalThis.document;globalThis.document=dom.document;
+  try{
+    let cycle=0,release;const slow=new Promise(resolve=>{release=resolve;});
+    const api=async path=>{
+      if(path.startsWith('storage?')){cycle++;return cycle===2?slow:{enabled:true,projects:{}};}
+      if(path.startsWith('files?'))return {files:[video(cycle===2?'old.mp4':'new.mp4')]};
+      return {configured:false};
+    };
+    await wireFiles(options(project,api));const older=dom.nodes.get('cloudRefresh').onclick();await dom.nodes.get('cloudRefresh').onclick();
+    release({enabled:true,projects:{}});await older;
+    assert.ok(dom.nodes.get('cloudFiles').innerHTML.includes('new.mp4'));assert.ok(!dom.nodes.get('cloudFiles').innerHTML.includes('old.mp4'));
+  }finally{globalThis.document=original;}
+});
+
+test('leaving the dashboard stops chunk dispatch after the in-flight request and preserves resumable progress',async()=>{
+  const dom=filesDOM(),original=globalThis.document,previousConfirm=globalThis.confirm;
+  globalThis.document=dom.document;globalThis.confirm=()=>true;
+  try{
+    let release,started,nextCalls=0,reloads=0;
+    const chunk=new Promise(resolve=>{release=resolve;}),dispatch=new Promise(resolve=>{started=resolve;});
+    const base=dashboardAPI({files:[video('story.mp4')],publisher:{configured:true,connected:true}});
+    const api=async(path,body)=>{
+      if(path!=='publish')return base(path);
+      if(body.operation==='start')return {id:'nav-test',title:'Story',uploaded:0,total:100,status:'UPLOADING'};
+      if(body.operation==='next'){nextCalls++;started();return chunk;}
+      throw Error('Unexpected operation');
+    };
+    await wireFiles({...options({...project,id:'pr-4444444444444444'},api),reload:async()=>{reloads++;}});
+    const upload=dom.nodes.get('publishStart').onclick();await dispatch;
+    dom.reset();dom.nodes.get('cloudStatus').textContent='Another tab';
+    release({id:'nav-test',title:'Story',uploaded:25,total:100,status:'UPLOADING'});await upload;
+    assert.equal(nextCalls,1);assert.equal(reloads,0);assert.equal(dom.nodes.get('cloudStatus').textContent,'Another tab');
+  }finally{globalThis.document=original;globalThis.confirm=previousConfirm;}
 });
