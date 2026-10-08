@@ -272,7 +272,7 @@ def new_project(name="My story"):
             "video": {
                 "width": 1280,
                 "height": 720,
-                "fps": 24,
+                "fps": 30,
                 "crf": 21,
                 "imageFit": "cover",
                 "motionMode": "gentle",
@@ -490,6 +490,7 @@ class ProjectStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self.archive = None
+        self._summaries = {}
 
     def folder(self, id):
         if not re.fullmatch(r"pr-[a-f0-9]{16}", str(id)):
@@ -533,8 +534,11 @@ class ProjectStore:
             )
             temp.replace(path)
             metadata = folder / "revision.tmp"
+            stamp = path.stat()
             metadata.write_text(
-                json.dumps({"revision": p["revision"], "updated": p["updated"]}),
+                json.dumps({"revision": p["revision"], "updated": p["updated"],
+                    "summary": {k:p[k] for k in ('id','name','revision','updated')} | {'chapters':len(p['chapters'])},
+                    "projectFile": [stamp.st_ino,stamp.st_size,stamp.st_mtime_ns,stamp.st_ctime_ns]}),
                 encoding="utf-8",
             )
             metadata.replace(folder / "revision.json")
@@ -575,11 +579,24 @@ class ProjectStore:
         result = []
         with self.lock:
             for f in self.root.glob("pr-*/project.json"):
-                p = json.loads(f.read_text(encoding="utf-8"))
-                result.append(
-                    {k: p[k] for k in ("id", "name", "revision", "updated")}
-                    | {"chapters": len(p["chapters"])}
-                )
+                stamp = f.stat()
+                fingerprint = (stamp.st_ino,stamp.st_size,stamp.st_mtime_ns,stamp.st_ctime_ns)
+                cached = self._summaries.get(f)
+                if cached and cached[0] == fingerprint:
+                    summary = cached[1]
+                else:
+                    summary = None
+                    try:
+                        metadata = json.loads((f.parent/'revision.json').read_text(encoding='utf-8'))
+                        if metadata.get('projectFile') == list(fingerprint): summary = metadata.get('summary')
+                    except (OSError,ValueError): pass
+                    if not isinstance(summary,dict) or not all(k in summary for k in ('id','name','revision','updated','chapters')):
+                        p = json.loads(f.read_text(encoding='utf-8'))
+                        summary = {k:p[k] for k in ('id','name','revision','updated')} | {'chapters':len(p['chapters'])}
+                    self._summaries[f] = (fingerprint,summary)
+                result.append(dict(summary))
+            if len(self._summaries)>256:
+                self._summaries = {f:self._summaries[f] for f in list(self._summaries)[-256:]}
         return sorted(result, key=lambda p: p["updated"], reverse=True)
 
     def asset(self, id, name):

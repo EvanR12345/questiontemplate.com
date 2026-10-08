@@ -1,15 +1,17 @@
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=continuous-unbounded-20261007';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=continuous-unbounded-20261007';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=720p30-large-20261008';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=720p30-large-20261008';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=continuous-unbounded-20261007';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=continuous-unbounded-20261007';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=720p30-large-20261008';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=720p30-large-20261008';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
 const keys=Object.keys(DEFAULTS),booleans=keys.filter(k=>typeof DEFAULTS[k]==='boolean');
 let gpuExplorer;
+let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
+let computeWorker,computeGeneration=0;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
 const snapshot=()=>({type:'studio-pipeline-plan',version:VERSION,config:{...config},preferences:structuredClone(preferences),uncertainty});
 function checkpoint(){history.push(snapshot());if(history.length>40)history.shift();$('undo').disabled=false;}
@@ -27,12 +29,21 @@ function renderGenerationSpeed(){
   $('fastestGPU').disabled=speed.highest===null||speed.isFastest;
 }
 function labelChapter(n){return n===0?'Project / intro':`Chapter ${String(n).padStart(2,'0')}`;}
-function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(next==='gpus')renderGPUs();}
-function rebuild(){
+function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(['gpus','processes','observed'].includes(next))void loadOptionalPanels();if(next==='gpus'){mountGPUPanels();if(result)renderGPUs();}}
+async function rebuild(){
   stopPlay();
+  const generation=++computeGeneration;computeWorker?.terminate();
+  const startupHost=$('startTradeoffs');startupHost._startupGeneration=(startupHost._startupGeneration||0)+1;startupHost._startupWorker?.terminate();startupHost._startupWorker=null;startupHost._startupKey=null;
+  $('saved').textContent='Calculating in the background…';
   try{
-    plan=buildPlan(config,evidence);result=schedule(plan,preferences);
-    serial=schedule(buildPlan({...config,policy:'serial'},evidence));
+    const computed=await new Promise((resolve,reject)=>{
+      const worker=new Worker(new URL('./pipeline-worker.mjs',import.meta.url),{type:'module'});computeWorker=worker;
+      worker.onmessage=({data})=>{worker.terminate();if(data.type==='error')reject(Error(data.message));else resolve(data);};
+      worker.onerror=()=>{worker.terminate();reject(Error('The background planner could not load. Refresh the page to load its updated files.'));};
+      worker.postMessage({type:'plan',config,evidence,preferences});
+    });
+    if(generation!==computeGeneration)return;
+    ({plan,result,serial}=computed);computeWorker=null;
     if(result.diagnostics.length)throw Error(result.diagnostics.join('; '));
     $('error').hidden=true;
     config=plan.config;
@@ -50,7 +61,8 @@ function rebuild(){
     $('metricBusyLabel').textContent=plan.measurement?'Image pipeline / rented':'GPU work / rented';$('metricBusy').textContent=`${Math.round(result.gpuWork/result.rentalSeconds*100)}%`;
     $('metricImages').textContent=`${formatTime(result.rentalSeconds)} rented · ${plan.attemptCount} image attempts`;
     $('taskCount').textContent=`${result.tasks.length} tasks · ${plan.measurement?plan.measurement.workers+' measured workers on one GPU'+(config.executionMode!=='resident'?' · '+plan.measurement.clientSlots+' request slots':''):'one inference lane'}`;
-    $('profileScope').textContent=plan.measurement?`${config.resolution} image pipeline · ${plan.measurement.workers} workers${config.executionMode!=='resident'?' · '+plan.measurement.clientSlots+' request slots':''} · ${config.encodingProfile} conditioning · renderer remains 720p/24fps`:'Historical 1344 × 768 images · one worker · renderer 720p/24fps';
+    $('profileScope').textContent=(plan.measurement?`${config.resolution} image pipeline · ${plan.measurement.workers} workers${config.executionMode!=='resident'?' · '+plan.measurement.clientSlots+' request slots':''} · ${config.encodingProfile} conditioning`:'Historical 1344 × 768 images · one worker')+` · video ${config.videoResolution}/${config.videoFps}fps`;
+    $('renderTimingNote').textContent=plan.renderScope;
     $('workerField').hidden=config.resolution==='legacy';
     if(plan.measurement)$('modeNote').textContent+=` Measured worker groups include image preparation through saving once. Internal stages cannot be moved separately from these aggregate measurements. ${plan.renderScope}`;
     const oldFocus=focus;
@@ -60,7 +72,7 @@ function rebuild(){
     renderTimeline();renderBreakdown();renderProcesses();renderPairs();renderEvidence();renderInspector();
     mountStartupTradeoffs($('startTradeoffs'),config,evidence,settings=>{checkpoint();config={...config,...settings,earlyGpu:false,policy:'proposed'};preferences={};setControls();rebuild();toast('GPU startup timing applied to the planner. Production settings remain unchanged.');});
     if(view==='gpus')renderGPUs();persist();
-  }catch(e){$('error').textContent=e.message;$('error').hidden=false;}
+  }catch(e){if(generation!==computeGeneration)return;$('error').textContent=e.message;$('error').hidden=false;}
 }
 function renderTimeline(){
   if(!result||view!=='schedule')return;
@@ -109,9 +121,9 @@ function beginDrag(event){
   const cancel=()=>{button.removeEventListener('pointermove',onMove);button.removeEventListener('pointerup',finish);button.removeEventListener('pointercancel',cancel);renderTimeline();};
   button.addEventListener('pointermove',onMove);button.addEventListener('pointerup',finish);button.addEventListener('pointercancel',cancel);
 }
-function moveTask(id,target){
+async function moveTask(id,target){
   if(!Number.isFinite(target)||target<0){toast('Choose a finite, nonnegative start time.');return;}
-  target=Math.max(0,target);const why=explainMove(plan,result,id,target);checkpoint();preferences[id]={...preferences[id],notBefore:target};selected=id;rebuild();const moved=getTask(id);
+  target=Math.max(0,target);const why=explainMove(plan,result,id,target);checkpoint();preferences[id]={...preferences[id],notBefore:target};selected=id;await rebuild();const moved=getTask(id);if(!moved)return;
   $('moveFeedback').textContent=`${id}: requested ${formatTime(target)}, scheduled ${formatTime(moved.start)}. ${moved.start>target+.1?why+' Dependencies or capacity pushed it later.':'Dependent tasks were re-scheduled; all resource checks pass.'}`;
 }
 function renderInspector(){
@@ -170,7 +182,7 @@ function renderGPUs(){
   $('gpuCards').querySelectorAll('[data-gpu]').forEach(b=>b.onclick=()=>{const chosen=comparisons.find(x=>x.g.id===b.dataset.gpu);checkpoint();config=chosen.c;preferences={};selected=null;setControls();rebuild();toast('Schedule updated: '+executionLabel(plan));});
 }
 function renderEvidence(){
-  $('evidence').innerHTML=`<div class="evidence-block"><h3>What the matched test controlled</h3><p>${esc(evidence.imageSettings)}. Same prompts, character references and seeds. Each GPU made nine images; five warm landscape reference images calibrate this schedule. One host per GPU, different regions and network conditions.</p><p>Original 96 GB and MIG 48 GB profiles are separate historical runs. They are not normalized into a matched benchmark. Full 6000 detail splits and startup are assumptions.</p></div><div class="evidence-block"><h3>Startup and client stages</h3><div class="evidence-table"><table><thead><tr><th>GPU</th><th>Boot</th><th>Download / hash</th><th>Cold overhead</th><th>Client mean</th><th>Scope</th></tr></thead><tbody>${evidence.gpus.map(g=>`<tr><td>${esc(g.name)}</td><td>${sec(g.boot)}</td><td>${sec(g.download)}</td><td>${sec(g.cold)}</td><td>${sec(g.meanClient)}</td><td>${g.basis==='measured'?'Matched · cold overhead derived':'Historical + allowances'}</td></tr>`).join('')}</tbody></table></div><p>Cold overhead is the cold-server/warm-server difference, not isolated model-loading instrumentation. Download includes hash checking. Warm cache skips download, but first load still remains.</p></div><div class="evidence-block"><h3>No invented correction factor</h3><p>The ±${uncertainty}% range is a sensitivity assumption you can edit. It is not a statistical error bar or confidence interval. A shared matched benchmark would be needed to reliably adjust different old test conditions. Nine images per GPU cannot establish a population-wide error rate.</p></div><div class="evidence-block"><h3>Director, audio and rendering</h3><ul><li>Luna: 471.46s for 1,050.23s narration, 48 confirmed calls. Pass durations here allocate this measured aggregate by explicit weights; individual pass timings are estimates.</li><li>Local narration: 13.47s to generate a 135.515s excerpt; scaled conservatively. Short tests cannot guarantee a two-hour voice result.</li><li>Renderer: 3,459.59s for a two-hour fixture, 700 unique clip records, repeated saved assets, 720p24 and at most two workers. Nested motion, transitions and chapter assembly are included, not billed twice.</li><li>Vision QC: 8.11s mean across 12 calls. Practical and Strict have the same latency estimate here; review decisions and repair frequency can differ.</li><li>Routine preflight, intro planning, cleaning, alignment, timeline and final probe are explicit allowances. Manual review, chapter acquisition, outages, new character sheets and unbounded retries are excluded.</li></ul></div><div class="evidence-block"><h3>Installed constraints versus proposed improvements</h3><ul><li>Installed cloud overlap requires Practical/Strict checks, one image lane, a shared three-slot API pool and bounded shot admission. The provider holds its lane through retrieval; chapter rendering waits for image work.</li><li>Proposed mode separates preparation, upload, inference, polling, download and commits, with at most three in-flight scheduling groups. It overlaps chapter rendering and next-chapter planning. These queue changes are not deployed by this planner.</li><li>Next chapter’s story analysis waits for the preceding planned handoff. Images may arrive later; intended story facts remain authoritative.</li><li>Audio uses the laptop GPU; images use the cloud GPU. They do not compete for the same VRAM. Audio/render CPU overlap is an uncalibrated experiment with potential throughput loss.</li><li>The legacy profile keeps one worker. Measured profiles use the tested worker count inside one delivered-image group. New worker profiles are enabled only from completed matched cohorts. More VRAM alone cannot predict their combined throughput.</li></ul></div><div class="evidence-block"><h3>Costs and retries</h3><p>GPU cost covers Boot → Stop, including downloads and idle gaps. API cost uses historical receipt-based assumptions; daily storage is separate and editable. No free tokens are assumed. Extra image attempts are a configured count allowance, not a measured failure probability. No auto-repair is claimed with checks off. An API repair check or manual review could add more time/cost than this simple allowance.</p></div><div class="evidence-block"><h3>Source records and code</h3><ul><li>2026-10-05-four-gpu: summary, GPU receipts, model hashes and client component timings.</li><li>2026-10-05-three-model-comparison: MIG warm 4B cases.</li><li>cloud-setup/PERFORMANCE-AUDIT.md: original 96 GB completed job timings and price.</li><li>2026-10-03: fresh-director-results and local-voice-overlap-results.</li><li>2026-10-04-two-hour: render-transition-recovery-results.</li><li>2026-10-04-live-comparison: serial QC receipts.</li><li>Backend: studio_overlap.py, studio_execution.py, image_provider.py, studio_service.py and studio_render.py.</li></ul><p>Sanitized calibration is served from pipeline-evidence.json. No private story, portrait, project identifier, credentials or API key is included.</p></div>`;
+  $('evidence').innerHTML=`<div class="evidence-block"><h3>What the matched test controlled</h3><p>${esc(evidence.imageSettings)}. Same prompts, character references and seeds. Each GPU made nine images; five warm landscape reference images calibrate this schedule. One host per GPU, different regions and network conditions.</p><p>Original 96 GB and MIG 48 GB profiles are separate historical runs. They are not normalized into a matched benchmark. Full 6000 detail splits and startup are assumptions.</p></div><div class="evidence-block"><h3>Startup and client stages</h3><div class="evidence-table"><table><thead><tr><th>GPU</th><th>Boot</th><th>Download / hash</th><th>Cold overhead</th><th>Client mean</th><th>Scope</th></tr></thead><tbody>${evidence.gpus.map(g=>`<tr><td>${esc(g.name)}</td><td>${sec(g.boot)}</td><td>${sec(g.download)}</td><td>${sec(g.cold)}</td><td>${sec(g.meanClient)}</td><td>${g.basis==='measured'?'Matched · cold overhead derived':'Historical + allowances'}</td></tr>`).join('')}</tbody></table></div><p>Cold overhead is the cold-server/warm-server difference, not isolated model-loading instrumentation. Download includes hash checking. Warm cache skips download, but first load still remains.</p></div><div class="evidence-block"><h3>No invented correction factor</h3><p>The ±${uncertainty}% range is a sensitivity assumption you can edit. It is not a statistical error bar or confidence interval. A shared matched benchmark would be needed to reliably adjust different old test conditions. Nine images per GPU cannot establish a population-wide error rate.</p></div><div class="evidence-block"><h3>Director, audio and rendering</h3><ul><li>Luna: 471.46s for 1,050.23s narration, 48 confirmed calls. Pass durations here allocate this measured aggregate by explicit weights; individual pass timings are estimates.</li><li>Local narration: 13.47s to generate a 135.515s excerpt; scaled conservatively. Short tests cannot guarantee a two-hour voice result.</li><li>Renderer: selected ${config.videoResolution}/${config.videoFps}fps uses ${plan.renderProfile.clips} fresh matched clips in three rounds, one clip worker. Median ${plan.renderProfile.wallSeconds.toFixed(2)}s per ${plan.renderProfile.videoSeconds}s of motion; observed round totals ${plan.renderProfile.minWallSeconds.toFixed(2)}–${plan.renderProfile.maxWallSeconds.toFixed(2)}s. Old repeated-asset 720p24 evidence is retained for history, not substituted into this forecast. Chapter mux, overlays, cloud delivery and long production are not fully calibrated.</li><li>Vision QC: 8.11s mean across 12 calls. Practical and Strict have the same latency estimate here; review decisions and repair frequency can differ.</li><li>Routine preflight, intro planning, cleaning, alignment, timeline and final probe are explicit allowances. Manual review, chapter acquisition, outages, new character sheets and unbounded retries are excluded.</li></ul></div><div class="evidence-block"><h3>Installed constraints versus proposed improvements</h3><ul><li>Installed cloud overlap requires Practical/Strict checks, one image lane, a shared three-slot API pool and bounded shot admission. The provider holds its lane through retrieval; chapter rendering waits for image work.</li><li>Proposed mode separates preparation, upload, inference, polling, download and commits, with at most three in-flight scheduling groups. It overlaps chapter rendering and next-chapter planning. These queue changes are not deployed by this planner.</li><li>Next chapter’s story analysis waits for the preceding planned handoff. Images may arrive later; intended story facts remain authoritative.</li><li>Audio uses the laptop GPU; images use the cloud GPU. They do not compete for the same VRAM. Audio/render CPU overlap is an uncalibrated experiment with potential throughput loss.</li><li>The legacy profile keeps one worker. Measured profiles use the tested worker count inside one delivered-image group. New worker profiles are enabled only from completed matched cohorts. More VRAM alone cannot predict their combined throughput.</li></ul></div><div class="evidence-block"><h3>Costs and retries</h3><p>GPU cost covers Boot → Stop, including downloads and idle gaps. API cost uses historical receipt-based assumptions; daily storage is separate and editable. No free tokens are assumed. Extra image attempts are a configured count allowance, not a measured failure probability. No auto-repair is claimed with checks off. An API repair check or manual review could add more time/cost than this simple allowance.</p></div><div class="evidence-block"><h3>Source records and code</h3><ul><li>2026-10-05-four-gpu: summary, GPU receipts, model hashes and client component timings.</li><li>2026-10-05-three-model-comparison: MIG warm 4B cases.</li><li>cloud-setup/PERFORMANCE-AUDIT.md: original 96 GB completed job timings and price.</li><li>2026-10-03: fresh-director-results and local-voice-overlap-results.</li><li>2026-10-04-two-hour: render-transition-recovery-results.</li><li>2026-10-04-live-comparison: serial QC receipts.</li><li>Backend: studio_overlap.py, studio_execution.py, image_provider.py, studio_service.py and studio_render.py.</li></ul><p>Sanitized calibration is served from pipeline-evidence.json. No private story, portrait, project identifier, credentials or API key is included.</p></div>`;
 }
 function stopPlay(){playing=false;cancelAnimationFrame(playFrame);$('play').textContent='Play simulation';if($('playhead'))$('playhead').hidden=true;$('timeline').querySelectorAll('.active').forEach(b=>b.classList.remove('active'));}
 function tick(now){
@@ -189,6 +201,8 @@ async function start(){
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
     if(concurrencyResponse.ok){
       evidence.concurrency=await concurrencyResponse.json();
+      mountGPUPanels=()=>{
+      if(gpuExplorer)return;
       gpuExplorer=mountGPUExplorer($('gpuExplorer'),evidence.concurrency,settings=>{
         const next={...config,...settings,policy:config.policy==='serial'?'serial':'proposed'};
         try{buildPlan(next,evidence);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();switchView('schedule');toast('Exact measured GPU configuration applied. Production settings remain unchanged.');}catch(error){toast(error.message);}
@@ -197,6 +211,8 @@ async function start(){
         const next={...config,...settings,policy:config.policy==='serial'?'serial':'proposed'};
         try{buildPlan(next,evidence);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();switchView('schedule');toast('Measured throughput applied to the planning schedule. Production settings remain unchanged.');}catch(error){toast(error.message);}
       });
+      gpuExplorer.updateProject(config,evidence);
+      };
     }
     const choices=gpuChoices(evidence);
     $('gpu').innerHTML=choices.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
@@ -227,6 +243,8 @@ async function start(){
     };
     $('import').onclick=()=>$('importFile').click();$('importFile').onchange=async()=>{const file=$('importFile').files[0];if(!file)return;try{if(file.size>16_000_000)throw Error('Plan export must be smaller than 16 MB.');const input=JSON.parse(await file.text()),state=importSnapshot(input,evidence);checkpoint();config=state.config;preferences=state.preferences;uncertainty=Number.isFinite(input.uncertainty)?Math.max(0,Math.min(100,input.uncertainty)):20;selected=null;setControls();rebuild();toast('Plan imported. Paid execution and Studio projects remain unchanged.');}catch(e){toast('Could not import: '+e.message);}finally{$('importFile').value='';}};
     let resizeTimer;new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(renderTimeline,120);}).observe($('timeline'));
+    loadOptionalPanels=async()=>{
+    if(optionalPanelsStarted)return;optionalPanelsStarted=true;
     try {
       const response=await fetch('./pipeline-serverless.json');
       if(response.ok){const data=await response.json();const panel=document.createElement('section');panel.id='serverlessLab';panel.innerHTML=serverlessHTML(data);$('concurrencyLab').insertAdjacentElement('afterend',panel);}
@@ -243,6 +261,7 @@ async function start(){
       $('functionIndex').textContent='Source inventory unavailable. Process-level explanations remain available.';
       $('observedRuns').textContent='Recorded timing file unavailable; no trace is substituted.';
     }
+    };
   }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('saved').textContent='Planner could not initialize';}
 }
 start();

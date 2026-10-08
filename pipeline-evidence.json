@@ -155,7 +155,142 @@
     "qcCalls": 12,
     "exhaustiveDecodeSeconds": 1244.5669935,
     "directorUSDPerTwoHours": 0.38798,
-    "qcUSDPerImage": 0.0003
+    "qcUSDPerImage": 0.0003,
+    "renderProfiles": [
+      {
+        "resolution": "720p",
+        "fps": 24,
+        "videoSeconds": 15,
+        "wallSeconds": 14.298258099937811,
+        "minWallSeconds": 14.135110100032762,
+        "maxWallSeconds": 14.460322000086308,
+        "roundWallSeconds": [
+          14.460322000086308,
+          14.135110100032762,
+          14.298258099937811
+        ],
+        "rounds": 3,
+        "clips": 9,
+        "clipWorkers": 1,
+        "filterThreads": 2,
+        "encoderThreads": 2,
+        "encoder": "libx264",
+        "preset": "veryfast",
+        "crf": 21,
+        "scope": "Fresh local motion/encoding clips. Chapter mux, overlays, transfers, cloud rendering and production contention are not measured by this calibration."
+      },
+      {
+        "resolution": "720p",
+        "fps": 30,
+        "videoSeconds": 15,
+        "wallSeconds": 17.54553860006854,
+        "minWallSeconds": 17.498125899815932,
+        "maxWallSeconds": 17.98022629984189,
+        "roundWallSeconds": [
+          17.98022629984189,
+          17.54553860006854,
+          17.498125899815932
+        ],
+        "rounds": 3,
+        "clips": 9,
+        "clipWorkers": 1,
+        "filterThreads": 2,
+        "encoderThreads": 2,
+        "encoder": "libx264",
+        "preset": "veryfast",
+        "crf": 21,
+        "scope": "Fresh local motion/encoding clips. Chapter mux, overlays, transfers, cloud rendering and production contention are not measured by this calibration."
+      },
+      {
+        "resolution": "720p",
+        "fps": 60,
+        "videoSeconds": 15,
+        "wallSeconds": 34.595327100134455,
+        "minWallSeconds": 34.52949330001138,
+        "maxWallSeconds": 35.13710080005694,
+        "roundWallSeconds": [
+          34.595327100134455,
+          35.13710080005694,
+          34.52949330001138
+        ],
+        "rounds": 3,
+        "clips": 9,
+        "clipWorkers": 1,
+        "filterThreads": 2,
+        "encoderThreads": 2,
+        "encoder": "libx264",
+        "preset": "veryfast",
+        "crf": 21,
+        "scope": "Fresh local motion/encoding clips. Chapter mux, overlays, transfers, cloud rendering and production contention are not measured by this calibration."
+      },
+      {
+        "resolution": "1080p",
+        "fps": 24,
+        "videoSeconds": 15,
+        "wallSeconds": 31.464608099893667,
+        "minWallSeconds": 31.254343800013885,
+        "maxWallSeconds": 31.939073499990627,
+        "roundWallSeconds": [
+          31.254343800013885,
+          31.939073499990627,
+          31.464608099893667
+        ],
+        "rounds": 3,
+        "clips": 9,
+        "clipWorkers": 1,
+        "filterThreads": 2,
+        "encoderThreads": 2,
+        "encoder": "libx264",
+        "preset": "veryfast",
+        "crf": 21,
+        "scope": "Fresh local motion/encoding clips. Chapter mux, overlays, transfers, cloud rendering and production contention are not measured by this calibration."
+      },
+      {
+        "resolution": "1080p",
+        "fps": 30,
+        "videoSeconds": 15,
+        "wallSeconds": 39.37273580010515,
+        "minWallSeconds": 38.72884910006542,
+        "maxWallSeconds": 39.51094690000173,
+        "roundWallSeconds": [
+          38.72884910006542,
+          39.37273580010515,
+          39.51094690000173
+        ],
+        "rounds": 3,
+        "clips": 9,
+        "clipWorkers": 1,
+        "filterThreads": 2,
+        "encoderThreads": 2,
+        "encoder": "libx264",
+        "preset": "veryfast",
+        "crf": 21,
+        "scope": "Fresh local motion/encoding clips. Chapter mux, overlays, transfers, cloud rendering and production contention are not measured by this calibration."
+      },
+      {
+        "resolution": "1080p",
+        "fps": 60,
+        "videoSeconds": 15,
+        "wallSeconds": 76.65442589996383,
+        "minWallSeconds": 76.38246879994404,
+        "maxWallSeconds": 77.24609020003118,
+        "roundWallSeconds": [
+          77.24609020003118,
+          76.38246879994404,
+          76.65442589996383
+        ],
+        "rounds": 3,
+        "clips": 9,
+        "clipWorkers": 1,
+        "filterThreads": 2,
+        "encoderThreads": 2,
+        "encoder": "libx264",
+        "preset": "veryfast",
+        "crf": 21,
+        "scope": "Fresh local motion/encoding clips. Chapter mux, overlays, transfers, cloud rendering and production contention are not measured by this calibration."
+      }
+    ],
+    "renderProfileDate": "2026-10-08"
   },
   "notes": [
     "Timings from different hosts and small samples. No guarantee of future stock, prices or throughput.",
@@ -163,6 +298,7 @@
     "No new cloud generation is performed by this planner.",
     "Vision QC off still keeps decode/black-frame checks and durable saving.",
     "API cost estimates use historical receipts, not live prices.",
-    "Original full 6000 timing is a different production workload; component splits are estimates."
+    "Original full 6000 timing is a different production workload; component splits are estimates.",
+    "Selected output default is 720p at 30 fps. Render projections use matched fresh local clips with one worker; long production and concurrent audio/render remain extrapolations, not completion guarantees."
   ]
 }

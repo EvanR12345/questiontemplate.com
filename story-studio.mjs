@@ -1,5 +1,6 @@
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=queue-2";
 import { nativeRequest } from "./native-client.mjs?v=queue-1";
+import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
 import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=r2-14';
 import {
   loadProjectState,
@@ -42,6 +43,8 @@ let key = pairingKey(),
   overlapRequested = false,
   saveTimer;
 const mediaCache = new Map();
+const progressReader=createProgressReader(qualityDecision);
+let mediaGeneration=0;
 const root = document.createElement("section");
 root.id = "productionStudio";
 root.className = "production";
@@ -111,16 +114,20 @@ async function media(path, projectId=project.id) {
   return cachedMediaLink(mediaCache,projectId,path,api);
 }
 async function fillMedia() {
-  const projectId=project.id;
-  for (const node of root.querySelectorAll("[data-asset]")) {
+  const projectId=project.id,generation=++mediaGeneration;
+  const nodes=[...root.querySelectorAll('[data-asset]')];let next=0;
+  for(const node of nodes)if(node.tagName==='IMG'){node.loading='lazy';node.decoding='async';}
+  await Promise.all(Array.from({length:Math.min(4,nodes.length)},async()=>{
+  while(next<nodes.length&&generation===mediaGeneration){
+    const node=nodes[next++];
     if(!node.isConnected)continue;
     try {
       const url=await media(node.dataset.asset,projectId);
-      if(node.isConnected)node.src=url;
+      if(node.isConnected&&generation===mediaGeneration&&project.id===projectId)node.src=url;
     } catch (error) {
       node.alt = "Asset preview unavailable: " + error.message;
     }
-  }
+  }}));
 }
 async function refreshProjects() {
   projects = connected ? await api("projects") : await listStudioProjects();
@@ -370,7 +377,7 @@ function offlineProject() {
       video: {
         width: 1280,
         height: 720,
-        fps: 24,
+        fps: 30,
         crf: 21,
         imageFit: "cover",
         motionMode: "gentle",
@@ -455,6 +462,7 @@ function refreshBackgroundSummary() {
   // Update progress without replacing the story/narration editor or its selection.
 }
 function render() {
+  progressReader.clear();
   if (!project) {
     root.innerHTML =
       '<div class="notice">Connecting to your shared helper…</div>';
@@ -737,8 +745,7 @@ function renderQueue() {
   const run = project.production,
     runStatus = $("#fullVideoStatus");
   if (runStatus && run) {
-    const reviewCount = project.chapters.flatMap(c => c.scenes.flatMap(s => s.shots))
-      .filter(s => qualityDecision(s).blocking).length;
+    const reviewCount = progressReader.read(project).blocking;
     const ready =
       run.status === "COMPLETE" && !!project.render?.path && !project.renderStale && !activeFullRun;
     const status =
@@ -841,13 +848,13 @@ function renderQueue() {
     pending =
       counts?.all.QUEUED ?? jobs.filter((j) => j.status === "QUEUED").length,
     current = jobs.find((j) => j.id === queue.current),
-    plannedImages = project.chapters.flatMap(c => c.scenes.flatMap(s => s.shots)),
-    imageDone = plannedImages.filter(s => !!s.imagePath).length,
-    imageTotal = plannedImages.length,
+    progress = progressReader.read(project),
+    imageDone = progress.imageDone,
+    imageTotal = progress.imageTotal,
     total = counts
       ? Object.values(counts.all).reduce((a, b) => a + b, 0)
       : jobs.length,
-    failureCount = plannedImages.filter(s => qualityDecision(s).blocking || s.generationError && !s.imagePath).length,
+    failureCount = progress.failures,
     currentShot = shots(
       project.chapters.find((c) => c.id === current?.chapter),
     ).find((s) => s.id === current?.shot),

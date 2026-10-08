@@ -1,4 +1,4 @@
-import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=continuous-unbounded-20261007';
+import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=720p30-large-20261008';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const seconds=n=>Number.isFinite(n)?n.toFixed(3)+'s':'Not measured',money=n=>'$'+n.toFixed(3);
 const phaseNames={preparationSeconds:'Build request',referenceUploadSeconds:'Reference upload/cache',submissionSeconds:'Submit operation',waitAndPollingSeconds:'Wait / poll (includes server)',retrievalAndValidationSeconds:'Retrieve / decode check',pngEncodeAndDurableSaveSeconds:'PNG encode / durable save',historyAndMetadataReceiptSeconds:'History / metadata receipt',provisionAndReadinessSeconds:'Provision / readiness',downloadAndHashSeconds:'Download / verify hashes',timedCohortWallSeconds:'Timed image cohorts',experimentalWarmupClientSeconds:'Experimental warmups'};
@@ -8,12 +8,16 @@ export function startupBoundaries(config){
  return config.chapters<=64?Array.from({length:config.chapters},(_,i)=>i+1):
   [...new Set([1,config.chapters,config.readyChapters,...Array.from({length:64},(_,i)=>1+Math.round(i*(config.chapters-1)/63))])].sort((a,b)=>a-b);
 }
-function* startupSearch(config,evidence){
+export function* startupSearch(config,evidence,compact=false){
  const evaluate=(n,gpuStartSeconds=0)=>{
   const p=buildPlan({...config,policy:'proposed',earlyGpu:false,readyChapters:n,gpuStartSeconds},evidence),r=schedule(p);
   const directorEnd=Math.max(...r.tasks.filter(t=>t.kind==='handoff'||t.kind==='introPlan').map(t=>t.end));
   const imageEnd=Math.max(...r.tasks.filter(t=>['delivered','save'].includes(t.kind)).map(t=>t.end));
-  return {readyChapters:n,gpuStartSeconds,result:r,plan:p,directorEnd,imageEnd,gap:imageEnd-directorEnd,bootStart:r.tasks.find(t=>t.id==='boot').start};
+  const boot=r.tasks.find(t=>t.id==='boot');
+  // The startup table needs aggregates, not 150 duplicate multi-chapter timelines.
+  const result=compact?Object.fromEntries(Object.entries(r).filter(([k])=>k!=='tasks')):r;
+  const plan=compact?{config:p.config,gpu:p.gpu,attemptCount:p.attemptCount,tasks:[p.tasks.find(t=>t.id==='boot')]}:p;
+  return {readyChapters:n,gpuStartSeconds,result,plan,directorEnd,imageEnd,gap:imageEnd-directorEnd,bootStart:boot.start};
  };
  const boundaries=startupBoundaries(config);
  const values=[];for(const n of boundaries){values.push(evaluate(n));yield `Comparing ${boundaries.length===config.chapters?'all':'sampled'} chapter boundaries · ${values.length} / ${boundaries.length}`;}
@@ -59,8 +63,20 @@ export function mountStartupTradeoffs(host,config,evidence,onApply){
  if(host._startupKey!==cacheKey){
   host._startupKey=cacheKey;host._startupValues=null;
   const generation=(host._startupGeneration||0)+1;host._startupGeneration=generation;
+  host._startupWorker?.terminate();
   host.innerHTML='<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption" role="status" data-start-progress>Comparing startup timings… Controls remain available.</p>';
-  const search=startupSearch(config,evidence);
+  if(typeof Worker!=='undefined'){
+   const worker=new Worker(new URL('./pipeline-worker.mjs',import.meta.url),{type:'module'});host._startupWorker=worker;
+   worker.onmessage=({data})=>{
+    if(host._startupGeneration!==generation)return;
+    if(data.type==='progress')host.querySelector('[data-start-progress]').textContent=data.message+' · controls remain available.';
+    else if(data.type==='complete'){worker.terminate();host._startupWorker=null;host._startupValues=data.values;mountStartupTradeoffs(host,config,evidence,onApply);}
+    else{worker.terminate();host._startupWorker=null;host.innerHTML=`<p class="caption">Startup comparison unavailable: ${esc(data.message)}</p>`;}
+   };
+   worker.onerror=()=>{worker.terminate();if(host._startupGeneration===generation)host.innerHTML='<p class="caption">Background startup comparison could not load. The main schedule remains available.</p>';};
+   worker.postMessage({type:'startup',config,evidence});return;
+  }
+  const search=startupSearch(config,evidence,true);
   host._startupTask=(async()=>{
    try{for(;;){await new Promise(resolve=>setTimeout(resolve,0));if(host._startupGeneration!==generation)return;
     const step=search.next();if(step.done){host._startupValues=step.value;mountStartupTradeoffs(host,config,evidence,onApply);return;}

@@ -19,7 +19,7 @@ test('measured parallel groups use delivered throughput once, without multiplyin
   assert.ok(!p.tasks.some(t=>['prepare','upload','infer','poll','download','save'].includes(t.kind)));
   assert.deepEqual(r.diagnostics,[]);
   assert.equal(r.gpuUSD,r.rentalSeconds/3600);
-  assert.match(p.renderScope,/1080p.*not calibrated/);
+  assert.match(p.renderScope,/720p\/30fps.*one worker/);
 });
 
 test('absent resolution and worker measurements are rejected instead of pixel scaling',()=>{
@@ -156,8 +156,26 @@ test('delay inside rental increases billed interval and price',()=>{
 test('cache saves download time but does not remove model loading',()=>{
   const p=buildPlan({...DEFAULTS,warmCache:true},evidence);assert.equal(p.tasks.find(t=>t.id==='models').duration,1);assert.ok(p.tasks.find(t=>t.id==='cold').duration>0);
 });
-test('optional full video decode adds an explicitly measured stage',()=>{
-  const p=buildPlan({...DEFAULTS,exhaustive:true},evidence),r=schedule(p),base=schedule(buildPlan(DEFAULTS,evidence));assert.equal(r.tasks.find(t=>t.id==='decode').duration,evidence.calibration.exhaustiveDecodeSeconds);assert.ok(r.end>base.end);
+test('optional full video decode labels selected-format scaling as an estimate',()=>{
+  const p=buildPlan({...DEFAULTS,exhaustive:true},evidence),r=schedule(p),base=schedule(buildPlan(DEFAULTS,evidence));assert.ok(Math.abs(r.tasks.find(t=>t.id==='decode').duration-evidence.calibration.exhaustiveDecodeSeconds*30/24)<1e-8);assert.match(r.tasks.find(t=>t.id==='decode').basis,/not measured/);assert.ok(r.end>base.end);
+});
+
+test('output timing follows measured 720p30 rather than the older repeated-asset 24fps fixture',()=>{
+ const p=buildPlan(DEFAULTS,evidence),rate=p.renderProfile.wallSeconds/p.renderProfile.videoSeconds;
+ assert.equal(p.config.videoResolution,'720p');assert.equal(p.config.videoFps,30);
+ assert.ok(Math.abs(p.tasks.filter(t=>t.kind==='render').reduce((n,t)=>n+t.duration,0)-rate*120*60)<1e-6);
+ assert.notEqual(rate,evidence.calibration.renderWallSeconds/evidence.calibration.renderVideoSeconds);
+ assert.throws(()=>buildPlan({...DEFAULTS,videoFps:120},evidence),/calibrated/);
+});
+
+test('90 minute through 24 hour plans preserve 80 chapters, output work and duration-scaled delivery allowances',()=>{
+ for(const minutes of [90,120,720,1440]){
+  const p=buildPlan({...DEFAULTS,minutes,chapters:80},evidence);
+  assert.equal(p.tasks.filter(t=>t.kind==='handoff').length,80);
+  assert.ok(Math.abs(p.tasks.filter(t=>t.kind==='render').reduce((n,t)=>n+t.videoSeconds,0)-minutes*60)<1e-6);
+  assert.equal(p.tasks.find(t=>t.kind==='join').duration,45*minutes/120);
+  assert.equal(p.tasks.find(t=>t.kind==='probe').duration,45*minutes/120);
+ }
 });
 test('public evidence and export inputs contain no credentials and reject invalid times',()=>{
   assert.ok(!/sk-[a-zA-Z0-9]|rpa_|@gmail|promptSHA256|secretKey/i.test(JSON.stringify(evidence)));

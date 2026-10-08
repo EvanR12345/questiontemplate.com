@@ -40,13 +40,25 @@ def policy(settings):
     level = settings.get('qcCheckLevel')
     return level if level in ('practical', 'strict') else settings.get('qcPolicy', 'practical')
 
-def review_signature(project, shot, store):
+def asset_hash(store, pid, name, context=None):
+    """Memoize only inside one view request; later requests recheck changed bytes."""
+    key = (pid, name)
+    if context is not None and key in context['files']:
+        return context['files'][key]
+    path = store.asset(pid, name)
+    value = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+    if context is not None: context['files'][key] = value
+    return value
+
+def review_signature(project, shot, store, context=None):
     """Bind manual decisions to story/identity inputs as well as image bytes."""
     fields = ('prompt','negativePrompt','imageProvider','imageModel','workflow','characters',
               'camera','location','action','pose','expression','lighting','narrationSegment',
               'continuity','intentionalAppearanceChanges','generationSettings')
-    is_intro = any(s.get('id')==shot.get('id') for s in project.get('intro',{}).get('shots',[]))
-    chapter = None if is_intro else get_chapter(project, shot['chapterId'])
+    if context is not None and shot['id'] in context['reviews']:
+        return context['reviews'][shot['id']]
+    is_intro = (shot['id'] in context['intro'] if context is not None else any(s.get('id')==shot.get('id') for s in project.get('intro',{}).get('shots',[])))
+    chapter = None if is_intro else (context['chapters'][shot['chapterId']] if context is not None else get_chapter(project, shot['chapterId']))
     selected = {c['id'] for c in shot.get('characters', [])}
     people = [c for c in project['characters']+(chapter.get('people', []) if chapter else []) if c['id'] in selected]
     references = [r for c in people for r in c.get('references', [])]
@@ -56,21 +68,22 @@ def review_signature(project, shot, store):
     fingerprints = []
     for ref in references:
         if ref.get('path'):
-            path = store.asset(project['id'], ref['path'])
-            fingerprints.append({'path':ref['path'], 'sha256':hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None})
+            fingerprints.append({'path':ref['path'], 'sha256':asset_hash(store,project['id'],ref['path'],context)})
     source = ({k:project['intro'].get(k) for k in ('voiceText','sourceBrief','duration')} if is_intro else chapter.get('sourceText',''))
-    return digest({'shot':{k:shot.get(k) for k in fields}, 'source':source,
+    value = digest({'shot':{k:shot.get(k) for k in fields}, 'source':source,
                    'people':[{k:c.get(k) for k in ('id','description','permanentIdentity','references')} for c in people],
                    'references':fingerprints, 'style':project['settings'].get('style'),
                    'constraints':project['settings'].get('imageVisualConstraints', project['settings'].get('visualConstraints',''))})
+    if context is not None: context['reviews'][shot['id']] = value
+    return value
 
-def valid_acceptance(project, shot, store):
+def valid_acceptance(project, shot, store, context=None):
     override = shot.get('qcOverride', {})
     if (override.get('decision')!='accepted' or shot.get('generationStale')
             or not shot.get('imagePath') or override.get('imagePath')!=shot['imagePath']): return False
-    path = store.asset(project['id'], shot['imagePath'])
-    return (path.is_file() and override.get('imageSHA256')==hashlib.sha256(path.read_bytes()).hexdigest()
-            and override.get('reviewSpecSignature')==review_signature(project, shot, store))
+    actual = asset_hash(store,project['id'],shot['imagePath'],context)
+    return (actual is not None and override.get('imageSHA256')==actual
+            and override.get('reviewSpecSignature')==review_signature(project, shot, store,context))
 
 def issue_levels(qc):
     """Structured new findings; narrow fallback for saved older review text."""
@@ -91,11 +104,11 @@ def issue_levels(qc):
             levels.append('uncertain')
     return levels
 
-def decision(project, shot, store):
+def decision(project, shot, store, context=None):
     qc = shot.get('qc', {})
     mode = policy(project['settings'])
     if qc.get('status')=='PENDING': return {'disposition':'pending','blocking':True,'policy':mode}
-    if valid_acceptance(project, shot, store): return {'disposition':'accepted','blocking':False,'policy':mode}
+    if valid_acceptance(project, shot, store,context): return {'disposition':'accepted','blocking':False,'policy':mode}
     if qc.get('pass') is True: return {'disposition':'passed','blocking':False,'policy':mode}
     if qc.get('pass') is not False:
         # Preserve prior semantics for deliberately disabled/unavailable vision.
@@ -139,14 +152,15 @@ def repair_budget_reason(settings):
 
 def project_view(store, pid):
     project = store.load(pid)
+    context = {'files':{},'reviews':{},'chapters':{c['id']:c for c in project['chapters']},'intro':{s['id'] for s in project.get('intro',{}).get('shots',[])}}
     for chapter in project['chapters']:
         for scene in chapter['scenes']:
             for shot in scene['shots']:
-                shot['qcDecision'] = decision(project,shot,store)
-                if shot.get('imagePath'):shot['qcReviewSignature']=review_signature(project,shot,store)
+                shot['qcDecision'] = decision(project,shot,store,context)
+                if shot.get('imagePath'):shot['qcReviewSignature']=review_signature(project,shot,store,context)
     for shot in project.get('intro',{}).get('shots',[]):
-        shot['qcDecision'] = decision(project,shot,store)
-        if shot.get('imagePath'):shot['qcReviewSignature']=review_signature(project,shot,store)
+        shot['qcDecision'] = decision(project,shot,store,context)
+        if shot.get('imagePath'):shot['qcReviewSignature']=review_signature(project,shot,store,context)
     reason=repair_budget_reason(project['settings'])
     project['qcRepairBudget']={'allowed':reason is None,'reason':reason,'overheadLimitPercent':project['settings'].get('qcOverheadLimitPercent',10)}
     return project

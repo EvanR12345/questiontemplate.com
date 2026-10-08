@@ -5,7 +5,7 @@ export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intr
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'off', sample:20,
   retries:0, warmCache:false, apiSlots:3, cpuOverlap:false, batch:24,
   exhaustive:false, earlyGpu:false, directorCost:.38798, qcCost:.0003, storageDaily:.168,
-  resolution:'legacy', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0 };
+  resolution:'legacy', videoResolution:'720p', videoFps:30, imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0 };
 
 export const LANES = [
   ['setup','Cloud startup','Boot · models · shutdown'],
@@ -16,7 +16,7 @@ export const LANES = [
   ['transfer','Transfer & validation','Network · decoded pixels'],
   ['qc','Visual checks','Same API pool as Luna'],
   ['save','Durable saves','Images · JSON · state'],
-  ['render','Video rendering','Local FFmpeg · 2 workers'],
+  ['render','Video rendering','Matched local clip timing'],
   ['finish','Final delivery','Join · probe · receipts']
 ];
 
@@ -50,7 +50,7 @@ export const CATALOG = [
   ['vision','Luna visual QC','qc','Review story fidelity, identity, appearance, held objects, anatomy and intentional changes. No endless repair loop.','Saved output and expected shot.','Shares API slots with directing; can check earlier images while the GPU works.','Mean of 12 historical calls. Off skips vision, not decode/black-image validation.'],
   ['repair','Bounded extra image attempts','gpu','An assumed fraction of images gets one more image/edit attempt; same provider settings, bounded retry budget.','First attempt plus configured review or deliberate replacement.','Extra attempts are counted; automatic visual repair cannot be inferred when vision QC is off.','User-entered attempt allowance, not measured failure probability.'],
   ['timeline','Chapter timeline','save','Map images onto real narration boundaries, apply cover framing, motion and approved transitions.','Saved chapter assets and required review decisions.','Can begin while later chapters generate in the proposed scheduler.','Allowance. Existing renderer caches unchanged clips.'],
-  ['render','Motion clips and chapter assembly','render','Encode still-image zoom/pan clips using max two local workers; crossfade, mux narration and cache chapter MP4.','Chapter timeline, images and audio.','Can overlap cloud work; audio/render CPU overlap is conservative and requires measurement if enabled.','Two-hour 720p24 renderer fixture scaled by chapter duration; clips/mux not added again.'],
+  ['render','Motion clips and chapter assembly','render','Encode smooth still-image zoom/pan clips, mux narration and cache chapter MP4. Output resolution and frame rate select matched timing evidence.','Chapter timeline, images and audio.','Can overlap cloud work; audio/render CPU overlap requires measurement if enabled.','Matched fresh local motion/encoding clips, one worker. Chapter mux and overlays are not measured; full production is extrapolated.'],
   ['stop','Stop and reconcile GPU','setup','Stop compute, confirm worker removed/exited and reconcile rental receipts. Saved outputs remain local.','All paid image attempts and output transfers completed.','Independent local rendering and Luna work can continue. Storage can still bill.','Eight-second shutdown allowance, distinct from actual last test lease upper bound.'],
   ['join','Join full story','finish','Join ordered cached chapter videos and optional intro once; no chapter-label narration or title overlay.','Rendered chapters and intro.','Must follow every required chapter render.','Part of explicit 2-minute auxiliary allowance, not a measured two-hour mux stage.'],
   ['probe','Routine output checks','finish','Probe duration, codecs, chapter boundaries and a few black/border samples; publish completed file and cost/time report.','Full story MP4.','These technical checks are separate from image vision QC.','Allowance; sampled checks do not certify every story image.'],
@@ -77,6 +77,9 @@ export function validateConfig(input, evidence) {
   if(typeof c.measurementAttempt!=='string'||!/^[-a-zA-Z0-9]{1,80}$/.test(c.measurementAttempt))throw Error('Unknown measurement attempt.');
   if(c.executionMode!=='resident'&&c.resolution==='legacy')throw Error('Pipeline timing requires a measured resolution.');
   if(!['legacy','720p','1080p'].includes(c.resolution))throw Error('Unknown image resolution.');
+  if(!['720p','1080p'].includes(c.videoResolution))throw Error('Unknown video resolution.');
+  c.videoFps=Number(c.videoFps);
+  if(![24,30,60].includes(c.videoFps))throw Error('Choose a calibrated video frame rate: 24, 30 or 60.');
   if(!['best','1','2','3','4','6'].includes(String(c.imageWorkers)))throw Error('Unknown worker count.');
   c.imageWorkers=String(c.imageWorkers);
   if(c.resolution!=='legacy'&&c.policy==='current')throw Error('Measured worker groups are an experiment. Use Proposed or Sequential scheduling.');
@@ -93,6 +96,8 @@ export function validateConfig(input, evidence) {
 
 export function buildPlan(input, evidence) {
   const c=validateConfig(input,evidence),cal=evidence.calibration;
+  const renderProfile=cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
+  if(!renderProfile)throw Error(`No matched ${c.videoResolution}/${c.videoFps}fps render calibration. Reload the updated evidence; no old 24fps timing is substituted.`);
   let g=evidence.gpus.find(g=>g.id===c.gpu),measurement=null;
   if(c.resolution!=='legacy'){
     const tested=evidence.concurrency?.gpus.find(g=>g.id===c.gpu);
@@ -185,7 +190,10 @@ export function buildPlan(input, evidence) {
     }
     saves.push(...finalSaves);reviews.push(...finalReviews);
     const timeline=add(`c${i}-timeline`,'timeline',i,.8,[...finalSaves,...finalReviews,...(i===0?['intro-voice']:[audio[i]])],{disk:1});
-    renders.push(add(`c${i}-render`,'render',i,cal.renderWallSeconds/cal.renderVideoSeconds*(i===0?c.introSeconds:chapterSec),[timeline],{cpu:1},{videoSeconds:i===0?c.introSeconds:chapterSec}));
+    const videoSeconds=i===0?c.introSeconds:chapterSec;
+    renders.push(add(`c${i}-render`,'render',i,renderProfile.wallSeconds/renderProfile.videoSeconds*videoSeconds,[timeline],{cpu:1},{videoSeconds,
+      timingRange:{min:renderProfile.minWallSeconds/renderProfile.videoSeconds*videoSeconds,max:renderProfile.maxWallSeconds/renderProfile.videoSeconds*videoSeconds},
+      basis:`${c.videoResolution}/${c.videoFps}fps, ${renderProfile.clips} fresh clips in ${renderProfile.rounds} rounds, one clip worker; median ${renderProfile.wallSeconds.toFixed(2)}s per ${renderProfile.videoSeconds}s of motion. ${renderProfile.scope} Longer videos scale motion work, not GPU generation. Two-worker speedup is not assumed.`}));
   }
   if(c.policy!=='proposed') {
     for(const r of renders){const task=tasks.find(t=>t.id===r);task.deps.push(...saves,...reviews);}
@@ -198,9 +206,12 @@ export function buildPlan(input, evidence) {
       if(i>2)tasks.find(t=>t.id===`c${i}-voice`).deps.push(...tasks.filter(t=>t.chapter===i-2&&['save','vision'].includes(t.kind)).map(t=>t.id));
     }
   }
-  add('join','join',0,45,renders,{cpu:.3,disk:1});
-  add('probe','probe',0,45,['join','stop'],{cpu:.2,disk:1});
-  if(c.exhaustive)add('decode','decode',0,cal.exhaustiveDecodeSeconds*c.minutes/120,['probe'],{cpu:1,disk:1});
+  // Keep long-video delivery allowances proportional rather than treating a
+  // 24-hour output as the same 45-second join/probe as a two-hour output.
+  const lengthScale=c.minutes/120;
+  add('join','join',0,45*lengthScale,renders,{cpu:.3,disk:1},{basis:'Allowance: 45 seconds per two output hours, scaled by length. Not a measured long-video join; filesystem and chapter count can change it.'});
+  add('probe','probe',0,45*lengthScale,['join','stop'],{cpu:.2,disk:1},{basis:'Allowance: 45 seconds per two output hours, scaled by length. Cloud upload and platform processing are separate and not timed.'});
+  if(c.exhaustive)add('decode','decode',0,cal.exhaustiveDecodeSeconds*lengthScale*(c.videoFps/24)*(c.videoResolution==='1080p'?2.25:1),['probe'],{cpu:1,disk:1},{basis:'Estimate from a historical 720p24 full-decode sample, scaled by output frames and pixels. The selected-format full-decode rate is not measured.'});
   if(c.policy==='serial') {
     // Topological order first: renderer nodes also wait for later chapters' saves.
     const left=[...tasks],done=new Set();let previous=null;
@@ -212,7 +223,7 @@ export function buildPlan(input, evidence) {
     }
   }
   return {version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
-    renderScope:'Historical 720p/24fps rendering, regardless of image resolution. Full 1080p video rendering is not calibrated.'};
+    renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · matched fresh local clip timing, one worker. Long-video mux, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
 }
 
 function fits(task,start,allocations,capacities) {
@@ -231,6 +242,10 @@ function fits(task,start,allocations,capacities) {
 
 export function schedule(plan, preferences={}) {
   const pending=new Set(plan.tasks),completed=new Map(),allocations={},out=[];
+  // A candidate's earliest slot remains valid until a newly allocated shared
+  // resource overlaps it. Avoid rescheduling every ready chapter after unrelated work.
+  const earliest=new Map();
+  const dirtySlots=new Set();
   const ids=new Set(plan.tasks.map(t=>t.id));if(ids.size!==pending.size)throw Error('Duplicate task IDs.');
   const ready=new Set(),remaining=new Map(),followers=new Map();
   for(const task of plan.tasks){
@@ -240,11 +255,20 @@ export function schedule(plan, preferences={}) {
   while(pending.size) {
     let choices=[];
     for(const task of ready) {
-      const requested=Math.max(task.notBefore||0,preferences[task.id]?.notBefore||0);
-      let start=Math.max(requested,0,...task.deps.map(d=>completed.get(d).end));
-      for(let guard=0;;guard++){
-        if(guard>plan.tasks.length*3+20)throw Error('Resource allocation failed.');
-        const next=fits(task,start,allocations,plan.capacities);if(next<=start+1e-7)break;start=next;
+      let start=earliest.get(task);
+      if(start===undefined||dirtySlots.has(task)){
+        if(start===undefined){
+          const requested=Math.max(task.notBefore||0,preferences[task.id]?.notBefore||0);
+          start=Math.max(requested,0,...task.deps.map(d=>completed.get(d).end));
+        }
+        // Allocations are only added: an invalidated earliest slot cannot move
+        // earlier. Resume from that bound instead of replaying all past conflicts.
+        for(let guard=0;;guard++){
+          if(guard>plan.tasks.length*3+20)throw Error('Resource allocation failed.');
+          const next=fits(task,start,allocations,plan.capacities);if(next<=start+1e-7)break;start=next;
+        }
+        earliest.set(task,start);
+        dirtySlots.delete(task);
       }
       choices.push({task,start,priority:preferences[task.id]?.priority??task.priority});
     }
@@ -252,6 +276,13 @@ export function schedule(plan, preferences={}) {
     choices.sort((a,b)=>a.start-b.start||a.priority-b.priority||a.task.priority-b.task.priority);
     const {task,start}=choices[0],item={...task,start,end:start+task.duration,manual:Boolean(preferences[task.id])};
     out.push(item);completed.set(item.id,item);pending.delete(task);ready.delete(task);
+    earliest.delete(task);
+    dirtySlots.delete(task);
+    for(const candidate of ready){
+      const at=earliest.get(candidate);
+      if(at!==undefined&&item.end>at+1e-7&&item.start<at+candidate.duration-1e-7&&
+          Object.keys(task.resources).some(pool=>task.resources[pool]&&candidate.resources[pool]))dirtySlots.add(candidate);
+    }
     for(const follower of followers.get(item.id)||[]){const left=remaining.get(follower.id)-1;remaining.set(follower.id,left);if(left===0)ready.add(follower);}
     for(const [pool,units] of Object.entries(task.resources))(allocations[pool]||=[]).push({id:item.id,start:item.start,end:item.end,units});
   }
@@ -275,8 +306,14 @@ export function validateSchedule(plan,tasks) {
   for(const [pool,capacity] of Object.entries(plan.capacities)){
     const events=[];
     for(const t of tasks)if(t.resources[pool]){events.push([t.start,t.resources[pool]]);events.push([t.end,-t.resources[pool]]);}
-    events.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);let count=0;
-    for(const [at,delta] of events){count+=delta;if(count>capacity+1e-6){errors.push(`Resource collision: ${pool} at ${at.toFixed(1)}s`);break;}}
+    events.sort((a,b)=>a[0]-b[0]);let count=0;
+    for(let i=0;i<events.length;){
+      const at=events[i][0];let delta=0;
+      // Scheduling accepts touching boundaries within 1e-7 seconds. The validator
+      // must use the same tolerance instead of reporting nanosecond false collisions.
+      while(i<events.length&&events[i][0]-at<=1e-7)delta+=events[i++][1];
+      count+=delta;if(count>capacity+1e-6){errors.push(`Resource collision: ${pool} at ${at.toFixed(1)}s`);break;}
+    }
   }
   return errors;
 }
