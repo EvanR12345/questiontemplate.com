@@ -11,8 +11,15 @@ import re
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.wav', '.m4a', '.mp4', '.json', '.flac'}
+
+def attachment_disposition(name):
+    if not isinstance(name,str) or not name or len(name)>240 or any(ord(c)<32 or ord(c)==127 for c in name) or any(c in name for c in '\\/:') or name in ('.','..'):
+        raise ValueError('Enter a plain download filename without folders or control characters.')
+    fallback=re.sub(r'[^a-zA-Z0-9 ._-]','_',name)
+    return 'attachment; filename="'+fallback+'"; filename*=UTF-8\'\''+quote(name,safe='')
 
 def sha(path):
     h = hashlib.sha256()
@@ -78,8 +85,10 @@ class S3Objects:
         for page in self.client.get_paginator('list_objects_v2').paginate(Bucket=self.bucket,Prefix=prefix):
             for x in page.get('Contents',[]): yield x['Key']
 
-    def url(self, key):
-        return self.client.generate_presigned_url('get_object',Params={'Bucket':self.bucket,'Key':key},ExpiresIn=3600)
+    def url(self, key, download_name=None):
+        params={'Bucket':self.bucket,'Key':key}
+        if download_name is not None:params['ResponseContentDisposition']=attachment_disposition(download_name)
+        return self.client.generate_presigned_url('get_object',Params=params,ExpiresIn=3600)
 
 class R2Archive:
     def __init__(self, store, secret_path, objects=None):
@@ -241,14 +250,14 @@ class R2Archive:
             tmp.unlink(missing_ok=True); raise ValueError('Cloud asset checksum failed. Existing assets preserved.')
         tmp.replace(target); return target
 
-    def media_url(self, pid, name):
+    def media_url(self, pid, name, download_name=None):
         manifest,_=self.manifest(pid)
         record=(manifest or {}).get('files',{}).get(name.replace('\\','/'))
         local=self.store.asset_local(pid,name)
         if not record or (local.exists() and record.get('stamp')!=list(stable_file(local))): return None
         if not re.fullmatch(r'[a-f0-9]{64}',record.get('sha256','')) or record.get('key') != f'studio/assets/{pid}/{record["sha256"]}/{name.replace(chr(92),"/")}':
             raise ValueError('Invalid cloud asset identity.')
-        return self.objects.url(record['key'])
+        return self.objects.url(record['key'],download_name=download_name) if download_name is not None else self.objects.url(record['key'])
 
     def files(self, pid):
         """Credential-free dashboard data; URLs are created only on request."""

@@ -297,7 +297,8 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             nonlocal next_media_cleanup
             if path=='/studio/media-link':
                 if getattr(studio,'storage',None) and studio.storage.enabled:
-                    url=studio.storage.media_url(body['project'],body['path'])
+                    options={'download_name':body['download']} if 'download' in body else {}
+                    url=studio.storage.media_url(body['project'],body['path'],**options)
                     if url:return {'url':url,'expires':time.time()+3600,'provider':studio.storage.provider}
                 file=studio.store.asset(body['project'],body['path'])
                 if not file.is_file():raise ValueError('Asset is unavailable.')

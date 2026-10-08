@@ -75,6 +75,21 @@ class Client:
 
 
 class GoogleStorageTests(unittest.TestCase):
+    def test_attachment_links_sign_safe_unicode_filename_without_fetching_asset(self):
+        from studio_storage import S3Objects,attachment_disposition
+        from unittest.mock import Mock
+        filename='Chapter 1 — fantasy.mp4'
+        self.objects.url('cloud-only-video',download_name=filename)
+        disposition=self.client.signed['response_disposition']
+        self.assertTrue(disposition.startswith('attachment;'))
+        self.assertIn('filename*=UTF-8\'\'Chapter%201%20%E2%80%94%20fantasy.mp4',disposition)
+        self.assertEqual(self.client.data,{})
+        s3=S3Objects.__new__(S3Objects);s3.bucket='private';s3.client=Mock()
+        s3.url('cloud-only-video',download_name=filename)
+        self.assertEqual(s3.client.generate_presigned_url.call_args.kwargs['Params']['ResponseContentDisposition'],disposition)
+        for invalid in ['../video.mp4','folder\\video.mp4','evil\r\nHeader: bad','',True,'x'*241]:
+            with self.assertRaises(ValueError):attachment_disposition(invalid)
+
     def test_streamed_import_verifies_hash_and_reuses_only_matching_content(self):
         import hashlib
         body=b'story asset in cloud';checksum=hashlib.sha256(body).hexdigest()

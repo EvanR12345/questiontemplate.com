@@ -10,6 +10,7 @@ import mimetypes
 import re
 import hashlib
 import io
+from studio_storage import attachment_disposition
 
 
 class HashingReader(io.RawIOBase):
@@ -163,6 +164,8 @@ class GCSObjects:
         for blob in self.client.list_blobs(self.bucket, prefix=prefix, timeout=60):
             yield blob.name
 
-    def url(self, key):
+    def url(self, key, download_name=None):
+        options={}
+        if download_name is not None:options['response_disposition']=attachment_disposition(download_name)
         return self.bucket.blob(key).generate_signed_url(
-            version='v4', expiration=datetime.timedelta(hours=1), method='GET')
+            version='v4', expiration=datetime.timedelta(hours=1), method='GET', **options)

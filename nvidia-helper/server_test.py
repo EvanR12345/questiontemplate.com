@@ -66,6 +66,18 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_cloud_attachment_link_does_not_restore_video_to_laptop(self):
+        from unittest.mock import Mock
+        service=self.server.RequestHandlerClass.studio_service
+        storage=Mock(enabled=True,provider='Google Cloud Storage')
+        storage.media_url.return_value='https://storage.googleapis.com/private/signed'
+        with patch.object(service,'storage',storage),patch.object(service.store,'asset') as restore:
+            code,_,raw=self.request('/studio/media-link',{'project':'pr-0123456789abcdef','path':'story.mp4','download':'Part 1.mp4'})
+            self.assertEqual(code,200)
+            self.assertEqual(json.loads(raw)['provider'],'Google Cloud Storage')
+            storage.media_url.assert_called_once_with('pr-0123456789abcdef','story.mp4',download_name='Part 1.mp4')
+            restore.assert_not_called()
+
     def test_new_project_reuses_selected_cloud_profile_without_old_story_or_audio_assets(self):
         service=self.server.RequestHandlerClass.studio_service
         original=new_project('Existing story')

@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {engagementForm,engagementValues,filesPanel,wireFiles,cachedMediaLink} from './studio-cloud-ui.mjs';
+import {engagementForm,engagementValues,filesPanel,wireFiles,cachedMediaLink,directCloudDownload} from './studio-cloud-ui.mjs';
+test('cloud download navigates directly to signed attachment without fetching video bytes',async()=>{
+  const calls=[],link={click(){calls.push('download');}},document={createElement(tag){assert.equal(tag,'a');return link;}};
+  const api=async(operation,body)=>{calls.push({operation,body});return {provider:'Google Cloud Storage',url:'https://storage.googleapis.com/private/signed'};};
+  assert.equal(await directCloudDownload('project','cloud-only.mp4','Part 1.mp4',api,document),true);
+  assert.deepEqual(calls,[{operation:'media-link',body:{project:'project',path:'cloud-only.mp4',download:'Part 1.mp4'}},'download']);
+  assert.equal(link.referrerPolicy,'no-referrer');assert.equal(link.download,'Part 1.mp4');
+  assert.equal(await directCloudDownload('project','local.wav','Audio.wav',async()=>({url:'http://127.0.0.1:8765/studio/media?ticket=local'}),document),false);
+  await assert.rejects(()=>directCloudDownload('project','video','Video',async()=>({provider:'Google Cloud Storage',url:'http://unsafe.example/video'}),document),/HTTPS/);
+});
 const project={id:'pr-0123456789abcdef',name:'Story <script>',settings:{engagement:{}},chapters:[{scenes:[{shots:[{id:'shot-1',imagePath:'art.png',action:'A < b'}]}]}],render:{parts:[{number:1,path:'part1.mp4',start:0,end:7200}]}};
 test('finishing form exposes every value that is persisted',()=>{
   const html=engagementForm(project),inputs={};

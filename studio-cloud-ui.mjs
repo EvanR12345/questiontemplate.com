@@ -5,6 +5,17 @@ const bytes=n=>n>=2**30?(n/2**30).toFixed(2)+' GiB':n>=2**20?(n/2**20).toFixed(1
 const transferring=new Set();
 const starting=new Set();
 const publishingDrafts=new Map();
+export async function directCloudDownload(projectId,path,name,api,document=globalThis.document){
+  const result=await api('media-link',{project:projectId,path,download:name});
+  if(!['Google Cloud Storage','Cloudflare R2'].includes(result.provider))return false;
+  const url=new URL(result.url);
+  if(url.protocol!=='https:')throw new Error('Cloud download requires a private HTTPS link.');
+  // The signed attachment response starts a native browser download. It does
+  // not fetch the video into JavaScript or restore it to the helper's cache.
+  const link=document.createElement('a');link.href=url.href;link.download=name;
+  link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';link.click();
+  return true;
+}
 export async function cachedMediaLink(cache,projectId,path,api,now=Date.now){
   if(!path)return '';
   const key=projectId+'/'+path,cached=cache.get(key);

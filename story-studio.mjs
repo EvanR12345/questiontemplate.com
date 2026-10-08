@@ -1,6 +1,6 @@
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=queue-2";
 import { nativeRequest } from "./native-client.mjs?v=queue-1";
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink} from './studio-cloud-ui.mjs?v=r2-12';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload} from './studio-cloud-ui.mjs?v=r2-13';
 import {
   loadProjectState,
   saveStudioProject,
@@ -1609,6 +1609,7 @@ function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 async function downloadAsset(path, name) {
+  if(await directCloudDownload(project.id,path,name,api))return;
   const response = await nativeRequest(
     "/studio/asset?project=" +
       project.id +
