@@ -1,5 +1,6 @@
 // Private GCS equivalent of the small R2 interface used by the publisher.
 // No public bucket URLs or credentials are returned to the browser.
+import {federatedAccessToken} from './federation.mjs';
 const tokens=new Map();
 const b64=bytes=>btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
 const encode=value=>b64(new TextEncoder().encode(JSON.stringify(value)));
@@ -76,6 +77,8 @@ export function publisherBucket(env,fetcher){
   const provider=env.STUDIO_STORAGE_PROVIDER??'r2';
   if(provider==='r2')return env.STUDIO;
   if(provider!=='gcs')throw Error('Unsupported publisher storage provider.');
+  if(env.STUDIO_GCS_AUTH_MODE==='federated')return new GoogleBucket(env.STUDIO_GCS_BUCKET,null,fetcher,()=>federatedAccessToken(env,fetcher));
+  if(env.STUDIO_GCS_AUTH_MODE&&env.STUDIO_GCS_AUTH_MODE!=='service-account')throw Error('Unsupported private Google authentication mode.');
   let credentials;try{credentials=JSON.parse(env.STUDIO_GCS_SERVICE_ACCOUNT??'');}catch{throw Error('Configure the private Google storage credential.');}
   return new GoogleBucket(env.STUDIO_GCS_BUCKET,credentials,fetcher);
 }

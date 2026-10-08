@@ -3,11 +3,20 @@ import io
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 from google_storage import GCSObjects
 from studio_data import ProjectStore, new_project
 from studio_storage import R2Archive, sha
+try:
+    import google.auth
+    from google.cloud import storage as google_sdk_storage
+    from google.oauth2.credentials import Credentials as SourceCredentials
+    from google.auth.credentials import Signing
+    GOOGLE_SDK_AVAILABLE=True
+except ImportError:
+    GOOGLE_SDK_AVAILABLE=False
 
 
 class Blob:
@@ -82,6 +91,48 @@ class GoogleStorageTests(unittest.TestCase):
     def setUp(self):
         self.client = Client()
         self.objects = GCSObjects({'bucket':'private-test'}, client=self.client)
+
+    @staticmethod
+    def federated_config():
+        email='studio-storage@test-project.iam.gserviceaccount.com'
+        issuer='https://private-studio.example.workers.dev'
+        return {'bucket':'private-test','projectId':'test-project','authMode':'federated',
+            'identityIssuer':issuer,'serviceAccountEmail':email,
+            'externalAccount':{'type':'external_account',
+                'audience':'//iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/studio/providers/publisher',
+                'subject_token_type':'urn:ietf:params:oauth:token-type:jwt',
+                'token_url':'https://sts.googleapis.com/v1/token',
+                'service_account_impersonation_url':'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/'+email+':generateAccessToken',
+                'credential_source':{'url':issuer+'/identity/token','headers':{'Authorization':'Bearer fake-private-publisher'},
+                                     'format':{'type':'json','subject_token_field_name':'token'}}}}
+
+    @unittest.skipUnless(GOOGLE_SDK_AVAILABLE,'Optional Google authentication SDK required')
+    def test_federated_sdk_uses_single_identity_with_managed_signing_without_a_private_google_key(self):
+        config=self.federated_config()
+        with patch('google.auth.load_credentials_from_dict',return_value=(SourceCredentials('fake-source'),None)) as load, \
+             patch('google.cloud.storage.Client',return_value=self.client) as client:
+            objects=GCSObjects(config)
+            self.assertIs(objects.client,self.client)
+            self.assertNotIn('service_account_impersonation_url',load.call_args.args[0])
+            self.assertEqual(load.call_args.kwargs['scopes'],['https://www.googleapis.com/auth/cloud-platform'])
+            credential=client.call_args.kwargs['credentials']
+            self.assertIsInstance(credential,Signing)
+            self.assertEqual(credential.service_account_email,config['serviceAccountEmail'])
+            self.assertEqual(credential._target_scopes,['https://www.googleapis.com/auth/devstorage.read_write'])
+
+    @unittest.skipUnless(GOOGLE_SDK_AVAILABLE,'Optional Google authentication SDK required')
+    def test_federation_rejects_extra_credential_routes_and_untrusted_hosts_before_loading_credentials(self):
+        changes=[lambda c:c.update(identityIssuer='https://attacker.example'),
+                 lambda c:c['externalAccount'].update(token_url='https://attacker.example'),
+                 lambda c:c['externalAccount'].update(token_info_url='https://attacker.example'),
+                 lambda c:c['externalAccount']['credential_source'].update(executable={'command':'bad'}),
+                 lambda c:c['externalAccount']['credential_source'].update(url='https://attacker.example'),
+                 lambda c:c['externalAccount'].update(service_account_impersonation_url='https://attacker.example')]
+        with patch('google.auth.load_credentials_from_dict') as load:
+            for change in changes:
+                config=self.federated_config();change(config)
+                with self.assertRaisesRegex(ValueError,'workload identity configuration'):GCSObjects(config)
+            load.assert_not_called()
 
     def test_stale_and_create_only_manifest_writes_preserve_newer_revision(self):
         self.assertEqual(self.objects.read('manifest'), (None, None))

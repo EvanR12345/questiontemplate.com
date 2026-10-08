@@ -1,4 +1,5 @@
 import {publisherBucket} from './google-bucket.mjs';
+import {identityToken} from './federation.mjs';
 // Private cloud-storage -> YouTube transfer. Video bytes never pass through Studio.
 // Select the same private archive as Studio. Store credentials as Worker secrets.
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
@@ -43,6 +44,12 @@ export async function handle(request,env,fetcher=fetch){
   const url=new URL(request.url);
   try{
     if(url.pathname!=='/oauth/callback'&&!await authorized(request,env))return json({error:'Private publisher authorization required.'},401);
+    // Called only by the private server-side Google SDK credential source.
+    // This is not a public browser login or a replacement publisher credential.
+    if(url.pathname==='/identity/token'){
+      if(request.method!=='GET')return json({error:'Method not allowed.'},405);
+      return json({token:await identityToken(env)});
+    }
     env={...env,STUDIO:publisherBucket(env,fetcher)};
     if(url.pathname==='/oauth/callback'){
       const state=url.searchParams.get('state');

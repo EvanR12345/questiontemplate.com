@@ -35,10 +35,47 @@ class GCSObjects:
             raise ValueError('Enter a valid private bucket name.')
         if client is None:
             from google.cloud import storage
-            info = config.get('serviceAccount', {})
-            if info.get('type') != 'service_account' or not info.get('private_key') or not info.get('client_email'):
-                raise ValueError('A private service-account credential is required.')
-            client = storage.Client.from_service_account_info(info)
+            if config.get('authMode') == 'federated':
+                import google.auth
+                from urllib.parse import urlparse
+                info = config.get('externalAccount', {})
+                issuer = urlparse(config.get('identityIssuer', ''))
+                source = info.get('credential_source', {})
+                impersonation = info.get('service_account_impersonation_url', '')
+                email = config.get('serviceAccountEmail', '')
+                if (issuer.scheme != 'https' or not issuer.hostname or not issuer.hostname.endswith('.workers.dev') or
+                    issuer.username or issuer.password or issuer.path not in ('','/') or issuer.query or issuer.fragment or
+                    not re.fullmatch(r'[a-z][a-z0-9-]{4,62}',config.get('projectId','')) or
+                    info.get('type') != 'external_account' or
+                    set(info) != {'type','audience','subject_token_type','token_url','service_account_impersonation_url','credential_source'} or
+                    info.get('token_url') != 'https://sts.googleapis.com/v1/token' or
+                    source.get('url') != issuer.geturl().rstrip('/')+'/identity/token' or
+                    source.get('format') != {'type':'json','subject_token_field_name':'token'} or
+                    set(source) != {'url','headers','format'} or
+                    set(source.get('headers', {})) != {'Authorization'} or
+                    not isinstance(source['headers']['Authorization'], str) or
+                    not source['headers']['Authorization'].startswith('Bearer ') or
+                    not re.fullmatch(r'[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com', email) or
+                    impersonation != 'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/'+email+':generateAccessToken' or
+                    not re.fullmatch(r'//iam\.googleapis\.com/projects/\d+/locations/global/workloadIdentityPools/[a-z0-9-]+/providers/[a-z0-9-]+',info.get('audience','')) or
+                    info.get('subject_token_type') != 'urn:ietf:params:oauth:token-type:jwt'):
+                    raise ValueError('Invalid private Studio workload identity configuration.')
+                from google.auth import impersonated_credentials
+                source_info = dict(info)
+                source_info.pop('service_account_impersonation_url')
+                source_credentials, _ = google.auth.load_credentials_from_dict(source_info, scopes=['https://www.googleapis.com/auth/cloud-platform'])
+                # Explicit impersonation exposes Google's managed signBlob signer
+                # for existing private preview URLs; no downloaded signing key.
+                credentials = impersonated_credentials.Credentials(source_credentials=source_credentials,
+                    target_principal=email, target_scopes=['https://www.googleapis.com/auth/devstorage.read_write'], lifetime=3600)
+                client = storage.Client(project=config.get('projectId'), credentials=credentials)
+            else:
+                if config.get('authMode') not in (None,'service-account'):
+                    raise ValueError('Unsupported private Google authentication mode.')
+                info = config.get('serviceAccount', {})
+                if info.get('type') != 'service_account' or not info.get('private_key') or not info.get('client_email'):
+                    raise ValueError('A private service-account credential is required.')
+                client = storage.Client.from_service_account_info(info)
         self.client = client
         self.bucket = client.bucket(name)
 
