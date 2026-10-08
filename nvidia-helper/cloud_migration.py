@@ -3,7 +3,7 @@ import hashlib
 import io
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import PurePosixPath
 from studio_data import validate_project
 
@@ -37,12 +37,22 @@ def migrate_to_google(source, target, progress=None, workers=1):
         try:return key,match[1],obj['bytes'],target.import_stream(key,obj,match[1])
         finally:obj['body'].close()
 
-    # Only independent immutable assets overlap. All futures finish before
-    # publishing any history/project records, even when one transfer fails.
+    # Submit only the bounded active window. A failure must not keep consuming
+    # the entire archive queue, and a slow asset must not hide completed ones.
+    # Active transfers finish before any history/project record is published.
     with ThreadPoolExecutor(max_workers=workers,thread_name_prefix='archive-copy') as pool:
-        for key,checksum,size,generation in pool.map(copy_asset,assets):
-            verified[key]=(checksum,size,generation)
-            result['assets']+=1;result['bytes']+=size;emit()
+        remaining=iter(assets)
+        active={pool.submit(copy_asset,key) for key in [next(remaining,None) for _ in range(workers)] if key is not None}
+        while active:
+            completed,active=wait(active,return_when=FIRST_COMPLETED)
+            # Check the whole finished window before submitting further work.
+            for future in completed:
+                key,checksum,size,generation=future.result()
+                verified[key]=(checksum,size,generation)
+                result['assets']+=1;result['bytes']+=size;emit()
+            for _ in completed:
+                key=next(remaining,None)
+                if key is not None:active.add(pool.submit(copy_asset,key))
 
     def copy_record(key,body):
         old,_=target.read(key)

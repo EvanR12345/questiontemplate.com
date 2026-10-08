@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import unittest
+import threading
 from cloud_migration import migrate_to_google
 from google_storage import GCSObjects
 from google_storage_test import Client
@@ -54,6 +55,36 @@ class MigrationTests(unittest.TestCase):
         self.source.data[self.asset]=b'wrong source data'
         with self.assertRaisesRegex(ValueError,'source checksum mismatch'):migrate_to_google(self.source,self.target)
         self.assertNotIn(self.manifest,self.client.data);self.assertIn(self.asset,self.source.data)
+
+    def test_failed_transfer_does_not_drain_remaining_archive_queue(self):
+        for n in range(20):
+            self.source.data[f'studio/assets/{self.pid}/{self.sha}/extra-{n}.png']=self.body
+        calls=[]
+        def fail(key):
+            calls.append(key)
+            raise OSError('Transfer failed')
+        self.source.open_object=fail
+        with self.assertRaises(OSError):migrate_to_google(self.source,self.target,workers=1)
+        self.assertEqual(len(calls),1)
+        self.assertNotIn(self.manifest,self.client.data)
+
+    def test_completed_parallel_asset_reports_progress_while_earlier_asset_is_slow(self):
+        second=f'studio/assets/{self.pid}/{self.sha}/second.png'
+        self.source.data[second]=self.body
+        first=sorted((self.asset,second))[0];release=threading.Event();events=[]
+        original=self.source.open_object
+        def delay(key):
+            if key==first and not release.wait(3):raise TimeoutError('Progress was blocked behind a slow asset')
+            return original(key)
+        def progress(value):
+            events.append(value)
+            if value['assets']==1:release.set()
+        self.source.open_object=delay
+        try:result=migrate_to_google(self.source,self.target,progress,workers=2)
+        finally:release.set()
+        self.assertEqual(result['assets'],2)
+        self.assertEqual(events[0]['assets'],1)
+        self.assertEqual(result['projects'],1)
     def test_target_project_conflict_preserves_both_archives(self):
         self.target.put_json(self.manifest,{'newer':True})
         original=self.target.read(self.manifest)[0]
