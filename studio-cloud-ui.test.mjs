@@ -147,3 +147,33 @@ test('Google archive requires a matching Google publisher before enabling upload
     assert.equal(dom.nodes.get('publishStart').disabled,true);assert.match(dom.nodes.get('youtubeStatus').textContent,/does not match/);
   }finally{globalThis.document=original;}
 });
+
+test('offline file load ends the loading state and disables mutations; refresh recovers',async()=>{
+  const dom=filesDOM(),original=globalThis.document;globalThis.document=dom.document;
+  try{
+    let offline=true;
+    const api=async path=>{if(offline)throw Error('offline');return dashboardAPI({files:[video('saved.mp4')]})(path);};
+    await wireFiles(options(project,api));
+    assert.match(dom.nodes.get('cloudStatus').textContent,/could not be loaded/);
+    assert.ok(!dom.nodes.get('cloudStatus').textContent.includes('Checking'));
+    for(const id of ['cloudSync','cloudSyncAll','cloudSplit','makeThumbnail'])assert.equal(dom.nodes.get(id).disabled,true);
+    offline=false;await dom.nodes.get('cloudRefresh').onclick();
+    assert.ok(dom.nodes.get('cloudFiles').innerHTML.includes('saved.mp4'));
+    assert.equal(dom.nodes.get('cloudSync').disabled,false);
+    assert.equal(dom.nodes.get('makeThumbnail').disabled,false);
+  }finally{globalThis.document=original;}
+});
+
+test('a failed earlier refresh cannot replace a newer successful file list',async()=>{
+  const dom=filesDOM(),original=globalThis.document;globalThis.document=dom.document;
+  try{
+    let cycle=0,reject;const slow=new Promise((_,fail)=>{reject=fail;});
+    const base=dashboardAPI({files:[video('current.mp4')]});
+    const api=async path=>{if(path.startsWith('storage?')){cycle++;if(cycle===2)return slow;}return base(path);};
+    await wireFiles(options(project,api));const older=dom.nodes.get('cloudRefresh').onclick();
+    await dom.nodes.get('cloudRefresh').onclick();reject(Error('old failure'));await older;
+    assert.ok(dom.nodes.get('cloudFiles').innerHTML.includes('current.mp4'));
+    assert.ok(!dom.nodes.get('cloudStatus').textContent.includes('could not be loaded'));
+    assert.equal(dom.nodes.get('cloudSync').disabled,false);
+  }finally{globalThis.document=original;}
+});

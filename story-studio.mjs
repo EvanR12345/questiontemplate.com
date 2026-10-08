@@ -1,6 +1,6 @@
-import { pairingKey, helperJson } from "./helper-connection.mjs?v=queue-1";
+import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=queue-2";
 import { nativeRequest } from "./native-client.mjs?v=queue-1";
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink} from './studio-cloud-ui.mjs?v=r2-7';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink} from './studio-cloud-ui.mjs?v=r2-8';
 import {
   loadProjectState,
   saveStudioProject,
@@ -124,6 +124,28 @@ async function fillMedia() {
 }
 async function refreshProjects() {
   projects = connected ? await api("projects") : await listStudioProjects();
+}
+async function connectHelper() {
+  if (pairingKey()) { await connect(); if (connected) return; }
+  document.getElementById('helperPairingDialog')?.remove();
+  const dialog=document.createElement('dialog');
+  dialog.id='helperPairingDialog';dialog.setAttribute('aria-labelledby','helperPairingTitle');
+  dialog.style.cssText='max-width:520px;width:calc(100% - 40px);padding:24px;border-radius:14px;';
+  dialog.innerHTML=`<h2 id="helperPairingTitle">Connect your shared helper</h2><p>Select the private helper pairing file. Its key stays in this browser and is sent only to your local helper. This does not grant access to another computer.</p><label>Helper pairing file<input id="helperPairingFile" type="file"></label><p class="muted">Use the helper’s .pairing-key file or its saved pairing text file. You can also open the helper’s normal pairing link.</p><label>Or enter helper pairing key<input id="helperPairingInput" type="password" autocomplete="off" spellcheck="false"></label><p id="helperPairingStatus" role="status"></p><div class="toolbar"><button id="helperPairingSubmit">Connect helper</button><button id="helperPairingCancel">Cancel</button></div>`;
+  document.body.append(dialog);
+  const status=dialog.querySelector('#helperPairingStatus'),input=dialog.querySelector('#helperPairingInput'),file=dialog.querySelector('#helperPairingFile');
+  const pair=async value=>{
+    try{importHelperPairing(value);input.value='';file.value='';await connect();if(connected){dialog.close();dialog.remove();}else status.textContent='The helper did not connect. Keep it running and allow this site’s local network access in Chrome.';}
+    catch(error){status.textContent=error.message;}
+  };
+  file.onchange=async()=>{
+    const selected=file.files[0];if(!selected)return;
+    if(selected.size>2048){status.textContent='Choose the small helper pairing file, not a project or API credential.';file.value='';return;}
+    try{await pair(await selected.text());}catch{status.textContent='The pairing file could not be read. Select it again.';}
+  };
+  dialog.querySelector('#helperPairingSubmit').onclick=()=>pair(input.value);
+  dialog.querySelector('#helperPairingCancel').onclick=()=>{dialog.close();dialog.remove();};
+  dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();
 }
 async function connect() {
   key = pairingKey();
@@ -919,7 +941,7 @@ function wire() {
         "Full video queued. Keep the shared helper running. Pause, cancel or retry here; completed work is saved and reused.",
       );
     });
-  $("#productionConnect").onclick = () => action(connect);
+  $("#productionConnect").onclick = () => action(connectHelper);
   $("#productionNewProject").onclick = () => action(newProject);
   $("#productionProject").onchange = (e) =>
     action(async () => {

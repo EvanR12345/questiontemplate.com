@@ -42,10 +42,22 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
   }
   async function refresh(){
     const version=++refreshVersion;
-    const [status,files,publisher]=await Promise.all([api('storage?project='+p.id),api('files?project='+p.id),api('publisher').catch(()=>({configured:false,connected:false}))]);
+    let status,files,publisher;
+    try{
+      [status,files,publisher]=await Promise.all([api('storage?project='+p.id),api('files?project='+p.id),api('publisher').catch(()=>({configured:false,connected:false}))]);
+    }catch{
+      if(!active()||version!==refreshVersion)return;
+      $('cloudStatus').textContent='Files could not be loaded. Connect the shared helper using Project actions, then Refresh files. Existing cloud saves are unchanged.';
+      if(!rows.length)$('cloudFiles').innerHTML='<p class="muted">The file list will appear after the helper connects.</p>';
+      for(const id of ['cloudSync','cloudSyncAll','cloudSplit','makeThumbnail','publishStart'])if($(id))$(id).disabled=true;
+      return;
+    }
     const state=status.projects[p.id]??{};
     const publisherMatches=(publisher.storageProvider??'r2')===(status.provider==='Google Cloud Storage'?'gcs':'r2');
     if(!active()||version!==refreshVersion)return;
+    $('cloudSync').disabled=!status.enabled;$('cloudSyncAll').disabled=!status.enabled;
+    $('cloudSplit').disabled=!p.render?.path;
+    $('makeThumbnail').disabled=!p.chapters.some(c=>c.scenes.some(s=>s.shots.some(shot=>shot.imagePath)));
     $('cloudStatus').textContent=status.enabled?`${status.provider||'Cloud storage'} · ${state.status??'Not yet synced'} · ${state.files??0} cloud files · ${bytes(state.bytes??0)}${state.error?' · '+state.error:''}${status.error?' · '+status.error:''}`:status.error||'Cloud storage is not connected yet. Existing helper files remain safe.';
     rows=files.files;paint();
     const publishedJobs=await Promise.all((p.publishing??[]).map(async job=>{
