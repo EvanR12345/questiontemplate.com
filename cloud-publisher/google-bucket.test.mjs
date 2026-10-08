@@ -26,6 +26,13 @@ test('Google upload-state leases use generation conditions and report collisions
   },async()=>'test');
   assert.equal(await bucket.put('publisher/jobs/job.json','{"uploaded":123}',{onlyIf:{etagMatches:'17'}}),null);
 });
+test('new cloud job and project-lock records use create-only Google preconditions',async()=>{
+  const bucket=new GoogleBucket('private-test',null,async(url)=>{
+    assert.equal(new URL(url).searchParams.get('ifGenerationMatch'),'0');
+    return new Response(null,{status:412});
+  },async()=>'test');
+  assert.equal(await bucket.put('studio/render-locks/project.json','{}',{onlyIf:{etagDoesNotMatch:'*'}}),null);
+});
 
 test('unexpected full-body replies cannot become an upload chunk',async()=>{
   const bucket=new GoogleBucket('private-test',null,async url=>url.includes('alt=media')?new Response(new Uint8Array(100)):Response.json({generation:'1',size:'100'}),async()=>'test');

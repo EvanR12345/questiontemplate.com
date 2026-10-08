@@ -1,5 +1,23 @@
 # Private Studio cloud publisher
 
+## Optional cloud rendering
+
+`render-control.mjs` adds authenticated start/status/cancel routes for a pinned
+Google Cloud Run job. It is disabled unless the publisher uses the matching GCS
+archive, keyless federation and a configured `STUDIO_RENDER_JOB`. It preflights
+saved narration/images, preserves the requested project revision and destination,
+locks each project against duplicate execution, and records uncertain start
+responses without automatically repeating a paid call. It does not expose a
+public cloud-render endpoint or silently fall back to laptop rendering.
+
+The render identity requires Jobs Executor With Overrides **on studio-render
+only** before these routes can start anything. This is a new compute grant;
+the existing bucket identity approval does not imply it. Container sources,
+build allowlist, progress/cancellation behavior and deployment limitations are
+documented in `nvidia-helper/CLOUD-RENDER.md`. These sources are tested but cloud
+deployment, live compute verification and frontend cloud-render controls remain
+pending. Existing R2/YouTube production is preserved when rendering is disabled.
+
 ## Google storage compatibility
 
 ### Keyless option when Google disallows downloaded keys

@@ -1,6 +1,6 @@
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=queue-2";
 import { nativeRequest } from "./native-client.mjs?v=queue-1";
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink} from './studio-cloud-ui.mjs?v=r2-8';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink} from './studio-cloud-ui.mjs?v=r2-9';
 import {
   loadProjectState,
   saveStudioProject,

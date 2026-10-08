@@ -64,6 +64,8 @@ export class GoogleBucket{
     if(options.onlyIf?.etagMatches){
       if(!/^\d+$/.test(String(options.onlyIf.etagMatches)))throw Error('Invalid Google storage revision.');
       u.searchParams.set('ifGenerationMatch',String(options.onlyIf.etagMatches));
+    }else if(options.onlyIf?.etagDoesNotMatch==='*'){
+      u.searchParams.set('ifGenerationMatch','0');
     }
     const r=await this.request(u.href,{method:'POST',headers:{'Content-Type':options.httpMetadata?.contentType??'application/json'},body});
     if(r.status===412)return null;

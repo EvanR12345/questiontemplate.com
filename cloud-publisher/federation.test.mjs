@@ -14,6 +14,19 @@ test('workload tokens preserve exact issuer, sole subject, audience and five-min
   assert.equal(claims.iss,env.STUDIO_WIF_ISSUER);assert.equal(claims.sub,'studio-publisher');assert.equal(claims.aud,env.STUDIO_WIF_AUDIENCE);assert.equal(claims.exp-claims.iat,300);
   assert.ok(await crypto.subtle.verify('RSASSA-PKCS1-v1_5',pair.publicKey,Buffer.from(signature,'base64url'),new TextEncoder().encode(header+'.'+payload)));
 });
+test('render tokens have a separate cache and scope from bucket-only tokens',async()=>{
+  const {env}=await fixture();const scopes=[];
+  const fetcher=async(url,options)=>{
+    if(url==='https://sts.googleapis.com/v1/token')return Response.json({access_token:'test-federated'});
+    const scope=JSON.parse(options.body).scope[0];scopes.push(scope);
+    return Response.json({accessToken:'test-'+scopes.length,expireTime:new Date(Date.now()+3600000).toISOString()});
+  };
+  assert.equal(await federatedAccessToken(env,fetcher),'test-1');
+  assert.equal(await federatedAccessToken(env,fetcher,'render'),'test-2');
+  assert.equal(await federatedAccessToken(env,fetcher),'test-1');
+  assert.deepEqual(scopes,['https://www.googleapis.com/auth/devstorage.read_write','https://www.googleapis.com/auth/cloud-platform']);
+  await assert.rejects(federatedAccessToken(env,fetcher,'arbitrary'));
+});
 test('private identity endpoint requires existing publisher authentication and never calls Google itself',async()=>{
   const {env}=await fixture();let calls=0;
   const fetcher=async()=>{calls++;throw Error('No network permitted');};
@@ -49,4 +62,19 @@ test('invalid identity endpoints and failed federation cannot silently fall back
   await assert.rejects(federatedAccessToken(env,async()=>new Response(null,{status:403})),/exchange failed/);
   const bucket=publisherBucket({...env,STUDIO_STORAGE_PROVIDER:'gcs',STUDIO_GCS_AUTH_MODE:'federated',STUDIO_GCS_BUCKET:'private-test',STUDIO:{}},async()=>new Response(null,{status:403}));
   await assert.rejects(bucket.head('anything'),/exchange failed/);
+});
+test('public discovery exposes only verification material while token issuance stays private',async()=>{
+  const {pair,env}=await fixture();
+  const publicKey=await crypto.subtle.exportKey('jwk',pair.publicKey);
+  const key={kty:publicKey.kty,n:publicKey.n,e:publicKey.e,alg:'RS256',use:'sig',kid:env.STUDIO_WIF_KEY_ID};
+  env.STUDIO_WIF_PUBLIC_JWKS=JSON.stringify({keys:[key]});
+  const fetcher=async()=>{throw Error('No network permitted');};
+  const metadata=await handle(new Request(env.STUDIO_WIF_ISSUER+'/.well-known/openid-configuration'),env,fetcher);
+  assert.equal(metadata.status,200);assert.equal((await metadata.json()).jwks_uri,env.STUDIO_WIF_ISSUER+'/identity/jwks');
+  const jwks=await handle(new Request(env.STUDIO_WIF_ISSUER+'/identity/jwks'),env,fetcher);
+  assert.deepEqual(await jwks.json(),{keys:[key]});
+  assert.equal((await handle(new Request(env.STUDIO_WIF_ISSUER+'/identity/token'),env,fetcher)).status,401);
+  env.STUDIO_WIF_PUBLIC_JWKS=JSON.stringify({keys:[{...key,d:'must-never-be-public'}]});
+  const invalid=await handle(new Request(env.STUDIO_WIF_ISSUER+'/identity/jwks'),env,fetcher);
+  assert.equal(invalid.status,400);assert.ok(!(await invalid.text()).includes('must-never-be-public'));
 });

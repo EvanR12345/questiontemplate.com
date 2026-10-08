@@ -1,0 +1,12 @@
+**
+!cloud-render.Dockerfile
+!cloud-render-build.yaml
+!studio_cloud_render.py
+!studio_render.py
+!studio_data.py
+!studio_storage.py
+!google_storage.py
+!studio_qc.py
+!studio_branding.py
+!studio_engagement.py
+!render_queue.py

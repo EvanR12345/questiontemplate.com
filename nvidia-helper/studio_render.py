@@ -1,6 +1,6 @@
 """Bounded-memory FFmpeg assembly with cached chapters and separate intro."""
 
-import hashlib, json, math, os, shutil, subprocess, time, wave
+import copy, hashlib, json, math, os, shutil, subprocess, time, wave
 from pathlib import Path
 from studio_qc import decision as qc_decision
 from studio_data import digest
@@ -170,6 +170,8 @@ class VideoRenderer:
                 )
             if not multiple_outputs:
                 staging.replace(destination)
+                completed=getattr(self,'on_output',None)
+                if callable(completed):completed(destination)
         finally:
             # This invocation owns its staging path. Keep completed clip caches
             # and previous selected videos; a failed partial cannot be resumed.
@@ -796,8 +798,8 @@ class VideoRenderer:
             self.prepare_outro(p); s=settings(p)
         events=schedule(p,result['duration'],namespace)
         if not events and not s['outroEnabled']:
-            final=self.watermark_export(p,result,gate)
-            if s['splitEnabled']:final=final|{'parts':self.split_export(p,final,gate,s['partMinutes'])}
+            final=self.watermark_export(p,result,gate) | {'exportDestination':s['exportDestination']}
+            if s['splitEnabled']:final=final|{'parts':self.export_parts(p,final,gate,s,namespace)}
             return final
         from studio_branding import identity as branding_identity, bitmap, coordinates
         branding=branding_identity(p,self.store)
@@ -865,10 +867,44 @@ class VideoRenderer:
             if not target.exists(): self.concat([decorated,outro],target,gate,target.with_suffix('.log'),[duration,outro_duration])
             duration+=outro_duration
         final=result | {'path':target.name,'duration':duration,'signature':signature,
-                         'engagementEvents':events,'engagementIdentity':identity,'narrationRender':result,'watermarkIdentity':branding}
+                         'engagementEvents':events,'engagementIdentity':identity,'narrationRender':result,'watermarkIdentity':branding,
+                         'exportDestination':s['exportDestination']}
         if s['splitEnabled']:
-            final['parts']=self.split_export(p,final,gate,s['partMinutes'])
+            final['parts']=self.export_parts(p,final,gate,s,namespace)
         return final
+
+    def export_parts(self,p,result,gate,s,namespace='full'):
+        if s['splitMode']=='chapters':
+            return self.split_chapters(p,gate,s['chaptersPerPart']) if namespace=='full' else []
+        return self.split_export(p,result,gate,s['partMinutes'])
+
+    def split_chapters(self,p,gate,chapters_per_part=1):
+        """Assemble complete chapters; never cut narration at approximate keyframes.
+
+        Reuses cached shot/chapter footage. Each part receives the selected
+        destination's ending. A full-story-only intro belongs to the first part.
+        """
+        if isinstance(chapters_per_part,bool) or not isinstance(chapters_per_part,int) or chapters_per_part<1:
+            raise ValueError('Chapters per part must be a positive whole number.')
+        chapters=[ch for ch in p['chapters'] if ch['sourceText'].strip()]
+        if not chapters:raise ValueError('Add and generate a chapter first.')
+        parts=[];cursor=0
+        for offset in range(0,len(chapters),chapters_per_part):
+            gate('Assembling chapter-aligned part')
+            partial=copy.deepcopy(p)
+            group=chapters[offset:offset+chapters_per_part]
+            partial['chapters']=copy.deepcopy(group)
+            partial['settings'].setdefault('engagement',{})['splitEnabled']=False
+            if offset and partial['intro']['placement']=='full_story_only':
+                partial['intro']['enabled']=False
+            result=self.full(partial,gate)
+            end=cursor+result['duration']
+            parts.append(result | {'number':len(parts)+1,'start':cursor,'end':end,
+                'chapterIds':[ch['id'] for ch in group], 'chapterNames':[ch['name'] for ch in group],
+                'chapterAligned':True,'keyframeAligned':True,
+                'downloadName':f'{p["name"]}-{result["exportDestination"]}-part-{len(parts)+1:02d}.mp4'})
+            cursor=end
+        return parts
 
     def split_export(self,p,result,gate,minutes):
         """Keyframe-aware stream-copy parts: no new image/director/audio calls."""

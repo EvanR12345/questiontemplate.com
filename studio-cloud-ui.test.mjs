@@ -13,6 +13,27 @@ test('file dashboard escapes story metadata and shows parts without modifying it
   const original=JSON.stringify(project);const html=filesPanel(project);
   assert.ok(html.includes('Story &lt;script&gt;'));assert.ok(html.includes('A &lt; b'));assert.ok(html.includes('Part 1'));assert.ok(html.includes('120.00 min'));assert.ok(!html.includes('Story <script>'));assert.equal(JSON.stringify(project),original);
 });
+test('destination and chapter grouping controls retain independent export settings',()=>{
+  const original=globalThis.document;
+  const inputs={engDestination:{value:'patreon'},engPatreonOutro:{checked:false},
+    engPatreonPopup:{checked:false},engSplitMode:{value:'chapters'},engSplitChapters:{value:'3'}};
+  // Existing controls still serialize through the same form.
+  const values={engMin:'10',engMax:'15',engDuration:'5',engPosition:'bottom-right',
+    engText:'Subscribe',engVolume:'12',engOutroText:'Visit Patreon',engTeaser:'',
+    engOutroDuration:'15',engPartMinutes:'120'};
+  for(const [id,value] of Object.entries(values))inputs[id]={value};
+  for(const id of ['engPopup','engDing','engOutro','engSplit'])inputs[id]={checked:true};
+  globalThis.document={getElementById:id=>inputs[id]};
+  try{
+    const s=engagementValues({outroAudioPath:'master.wav'});
+    assert.equal(s.exportDestination,'patreon');assert.equal(s.splitMode,'chapters');
+    assert.equal(s.chaptersPerPart,3);assert.equal(s.outroEnabled,true);
+    assert.equal(s.patreonOutroEnabled,false);assert.equal(s.patreonPopupEnabled,false);
+    const html=engagementForm({...project,settings:{engagement:s}});
+    assert.ok(html.includes('value="patreon" selected'));assert.ok(html.includes('Chapter boundaries'));
+    assert.ok(filesPanel(project).includes('id="fileSplitChapters"'));
+  }finally{globalThis.document=original;}
+});
 
 // Minimal mounted-element harness for asynchronous dashboard integration.
 // Detached controls do not replace live IDs until inserted, like browser DOM.

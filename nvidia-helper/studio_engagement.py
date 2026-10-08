@@ -16,17 +16,30 @@ DEFAULTS = {
     'outroText': 'Subscribe for more fantasy stories, and tell us your favorite moment in the comments.',
     'nextPartTeaser': '', 'outroAudioPath': '', 'outroAudioSignature': '',
     'splitEnabled': False, 'partMinutes': 120,
+    'splitMode': 'duration', 'chaptersPerPart': 1,
+    'exportDestination': 'youtube', 'patreonOutroEnabled': False, 'patreonPopupEnabled': False,
 }
 
 def settings(p):
-    return validate(p['settings'].get('engagement', {}))
+    s = validate(p['settings'].get('engagement', {}))
+    # Destination rules apply to an export, never to the narration masters.
+    if s['exportDestination'] == 'patreon':
+        s['outroEnabled'] = s['patreonOutroEnabled']
+        s['popupEnabled'] = s['patreonPopupEnabled']
+    return s
 
 def validate(value):
     if not isinstance(value, dict):
         raise ValueError('Video engagement settings must be an object.')
     s = DEFAULTS | value
-    for k in ('popupEnabled', 'dingEnabled', 'outroEnabled', 'splitEnabled'):
+    for k in ('popupEnabled', 'dingEnabled', 'outroEnabled', 'splitEnabled', 'patreonOutroEnabled', 'patreonPopupEnabled'):
         if not isinstance(s[k], bool): raise ValueError(f'{k} must be on or off.')
+    if s['exportDestination'] not in ('youtube', 'patreon'):
+        raise ValueError('Choose YouTube or Patreon for this export.')
+    if s['splitMode'] not in ('duration', 'chapters'):
+        raise ValueError('Choose duration or chapter boundaries for parts.')
+    if isinstance(s['chaptersPerPart'], bool) or not isinstance(s['chaptersPerPart'], int) or s['chaptersPerPart'] < 1:
+        raise ValueError('Chapters per part must be a positive whole number.')
     for k, lo, hi in [('minMinutes', 1, 180), ('maxMinutes', 1, 180),
                       ('popupDuration', 2, 15), ('dingVolume', 0, .3),
                       ('outroDuration', 5, 60), ('partMinutes', 1, 1440)]:
@@ -38,7 +51,8 @@ def validate(value):
     for k, limit in [('popupText', 160), ('outroText', 800), ('nextPartTeaser', 800)]:
         if not isinstance(s[k], str) or len(s[k]) > limit:
             raise ValueError(f'{k} exceeds {limit} characters.')
-    if s['outroEnabled'] and not s['outroText'].strip(): raise ValueError('Enter the spoken outro text.')
+    if (s['patreonOutroEnabled'] if s['exportDestination']=='patreon' else s['outroEnabled']) and not s['outroText'].strip():
+        raise ValueError('Enter the spoken outro text.')
     name = s['outroAudioPath']
     if not isinstance(name, str) or (name and (Path(name).is_absolute() or '..' in Path(name).parts or ':' in name)):
         raise ValueError('Outro audio must be a project asset.')

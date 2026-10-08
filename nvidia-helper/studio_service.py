@@ -866,11 +866,18 @@ class StudioService:
                         self.providers["existing"].unload()
                         if job['kind'] == 'split-video':
                             if not p.get('render',{}).get('path'): raise ValueError('Render a full video before splitting it.')
+                            from studio_engagement import settings as engagement_settings
+                            splitting=engagement_settings(p)
+                            splitting['splitMode']=options.get('mode',splitting['splitMode'])
+                            splitting['chaptersPerPart']=options.get('chaptersPerPart',splitting['chaptersPerPart'])
+                            if splitting['splitMode'] not in ('duration','chapters'):
+                                raise ValueError('Choose duration or chapter boundaries for parts.')
                             minutes=options.get('minutes',p['settings'].get('engagement',{}).get('partMinutes',120))
                             if isinstance(minutes,bool) or not isinstance(minutes,(int,float)) or not math.isfinite(minutes) or not 1 <= minutes <= 1440:
                                 raise ValueError('Part length must be 1–1440 minutes.')
                             original=p['render']['path']
-                            parts=self.renderer.split_export(p,p['render'],self.gate,minutes)
+                            splitting['partMinutes']=minutes
+                            parts=self.renderer.export_parts(p,p['render'],self.gate,splitting)
                             def split_saved(q):
                                 if q.get('render',{}).get('path')!=original: raise ValueError('Video changed during splitting; completed parts retained.')
                                 q['render']['parts']=parts
@@ -896,6 +903,7 @@ class StudioService:
                                         q["render"]
                                     )
                                 q.update(render=result, renderStale=False)
+                                q.setdefault('exports',{})[result.get('exportDestination','youtube')]=result
                                 if q.get('production'):
                                     q['production'].update(status='COMPLETE', stage='Full video ready', message='Full video ready', updated=time.time())
                                 return True

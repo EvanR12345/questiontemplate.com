@@ -1,5 +1,6 @@
 import {publisherBucket} from './google-bucket.mjs';
-import {identityToken} from './federation.mjs';
+import {identityToken, publicFederationDocument} from './federation.mjs';
+import {renderControl,renderSettings} from './render-control.mjs';
 // Private cloud-storage -> YouTube transfer. Video bytes never pass through Studio.
 // Select the same private archive as Studio. Store credentials as Worker secrets.
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
@@ -43,6 +44,12 @@ export async function handle(request,env,fetcher=fetch){
   };
   const url=new URL(request.url);
   try{
+    // Standard OIDC discovery publishes only public verification material.
+    // It grants no token issuance, file access, storage or upload permissions.
+    if(['/identity/jwks','/.well-known/openid-configuration'].includes(url.pathname)){
+      if(request.method!=='GET')return json({error:'Method not allowed.'},405);
+      return json(publicFederationDocument(env,url.pathname));
+    }
     if(url.pathname!=='/oauth/callback'&&!await authorized(request,env))return json({error:'Private publisher authorization required.'},401);
     // Called only by the private server-side Google SDK credential source.
     // This is not a public browser login or a replacement publisher credential.
@@ -65,9 +72,10 @@ export async function handle(request,env,fetcher=fetch){
       await write(env.STUDIO,'publisher/private/youtube.json',{refreshToken:credentials.refresh_token,connectedAt:Date.now()});
       return new Response('<!doctype html><meta charset="utf-8"><title>Studio connected</title><h1>YouTube connected</h1><p>Return to Studio and refresh publishing status. New uploads are private by default.</p>',{headers:{'Content-Type':'text/html;charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"}});
     }
-    if(url.pathname==='/status')return json({configured:true,connected:!!(await read(env.STUDIO,'publisher/private/youtube.json'))?.value.refreshToken,chunkBytes:CHUNK,cloudTransfer:true,storageProvider:env.STUDIO_STORAGE_PROVIDER??'r2'});
+    if(url.pathname==='/status')return json({configured:true,connected:!!(await read(env.STUDIO,'publisher/private/youtube.json'))?.value.refreshToken,chunkBytes:CHUNK,cloudTransfer:true,storageProvider:env.STUDIO_STORAGE_PROVIDER??'r2',cloudRendering:renderSettings(env).configured});
     if(request.method!=='POST')return json({error:'Method not allowed.'},405);
     const body=await request.json();
+    if(['/renders/start','/renders/status','/renders/cancel'].includes(url.pathname))return json(await renderControl(url.pathname,env,body,fetcher));
     if(url.pathname==='/oauth/start'){
       if(!env.GOOGLE_CLIENT_ID||!env.GOOGLE_CLIENT_SECRET)throw Error('Configure the Google OAuth client before connecting your channel.');
       const random=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');
