@@ -1,5 +1,6 @@
-// Private R2 -> YouTube resumable transfer. Video bytes never pass through Studio.
-// Bind the same private R2 bucket as STUDIO. Store the three credentials as secrets.
+import {publisherBucket} from './google-bucket.mjs';
+// Private cloud-storage -> YouTube transfer. Video bytes never pass through Studio.
+// Select the same private archive as Studio. Store credentials as Worker secrets.
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 const CHUNK=16*1024*1024;
 const allowedUpload=url=>{const u=new URL(url);return u.protocol==='https:'&&u.hostname==='www.googleapis.com'&&u.pathname.startsWith('/upload/youtube/');};
@@ -33,9 +34,16 @@ async function authorized(request,env){
 }
 export async function handle(request,env,fetcher=fetch){
   const transport=fetcher;
-  fetcher=(url,options={})=>transport(url,{...options,signal:AbortSignal.timeout(100000)});
+  const deadline=Date.now()+100000;
+  fetcher=(url,options={})=>{
+    const remaining=deadline-Date.now();
+    if(remaining<=0)throw Error('Cloud transfer timed out. Resume the saved upload.');
+    return transport(url,{...options,signal:AbortSignal.timeout(remaining)});
+  };
   const url=new URL(request.url);
   try{
+    if(url.pathname!=='/oauth/callback'&&!await authorized(request,env))return json({error:'Private publisher authorization required.'},401);
+    env={...env,STUDIO:publisherBucket(env,fetcher)};
     if(url.pathname==='/oauth/callback'){
       const state=url.searchParams.get('state');
       if(!/^[a-f0-9]{64}$/.test(state??''))return json({error:'Invalid sign-in state.'},400);
@@ -50,8 +58,7 @@ export async function handle(request,env,fetcher=fetch){
       await write(env.STUDIO,'publisher/private/youtube.json',{refreshToken:credentials.refresh_token,connectedAt:Date.now()});
       return new Response('<!doctype html><meta charset="utf-8"><title>Studio connected</title><h1>YouTube connected</h1><p>Return to Studio and refresh publishing status. New uploads are private by default.</p>',{headers:{'Content-Type':'text/html;charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"}});
     }
-    if(!await authorized(request,env))return json({error:'Private publisher authorization required.'},401);
-    if(url.pathname==='/status')return json({configured:true,connected:!!(await read(env.STUDIO,'publisher/private/youtube.json'))?.value.refreshToken,chunkBytes:CHUNK,cloudTransfer:true});
+    if(url.pathname==='/status')return json({configured:true,connected:!!(await read(env.STUDIO,'publisher/private/youtube.json'))?.value.refreshToken,chunkBytes:CHUNK,cloudTransfer:true,storageProvider:env.STUDIO_STORAGE_PROVIDER??'r2'});
     if(request.method!=='POST')return json({error:'Method not allowed.'},405);
     const body=await request.json();
     if(url.pathname==='/oauth/start'){

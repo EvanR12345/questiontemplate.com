@@ -345,8 +345,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 if operation=='connect':return studio.publisher.call(operation,{})
                 pid=body['project'];project=studio.store.load(pid)
                 if operation=='start':
-                    if not studio.storage.publisher_compatible:
-                        raise ValueError('This publisher uses R2. Copy and verify this video in R2 before publishing; no upload started.')
+                    studio.publisher.validate_storage(studio.storage)
                     result=studio.publisher.call('start',options|{'project':pid})
                     save_upload_snapshot(studio.store,pid,result,initial=True)
                 else:

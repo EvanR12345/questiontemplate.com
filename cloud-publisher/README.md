@@ -1,5 +1,13 @@
 # Private Studio cloud publisher
 
+## Google storage compatibility
+
+The publisher can use the same private Google bucket for both videos and its saved upload/OAuth state. Configure `STUDIO_STORAGE_PROVIDER=gcs`, `STUDIO_GCS_BUCKET` and the encrypted Worker secret `STUDIO_GCS_SERVICE_ACCOUNT` (the approved bucket-only JSON identity). Retain existing YouTube OAuth client secrets and the private publisher credential; no new YouTube scope is requested. The R2 binding is ignored in GCS mode, and invalid Google configuration never falls back to R2. Until live migration and provider verification finish, keep production on the existing R2 configuration.
+
+`google-bucket.mjs` uses scoped service-account OAuth, generation-pinned reads, exact range checks and generation-conditional upload leases. Video chunks stream directly from cloud storage to YouTube. `/status` reports the real configured storage provider; the helper and Files UI block an archive/publisher mismatch. No credential is returned in status. All outbound requests within one control operation share a100second deadline, below the helper timeout and saved120second lease.
+
+Migration preserves source objects and existing Google records. `cloud_migration.py` streams immutable assets without creating laptop download files, validates canonical checksums and project identities, preserves history/upload records, and publishes manifests only after their assets are verified. Existing target objects are hashed rather than trusted from custom metadata. Restored-project and live publishing checks are required before switching the active archive. This is storage/publisher compatibility, not a completed all-cloud narration/rendering deployment.
+
 This Worker streams 16 MiB ranges directly from the private R2 bucket into a YouTube resumable-upload session. The helper sends only JSON control messages; video bytes do not pass through the laptop. Progress is saved in R2 and every resume queries YouTube for the actual committed byte offset. Concurrent requests are guarded by a conditional R2 lease. The original file is never deleted. Uploads default to private.
 
 ## Deployment prerequisites

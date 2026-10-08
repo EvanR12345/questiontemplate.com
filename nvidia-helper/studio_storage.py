@@ -68,6 +68,12 @@ class S3Objects:
     def download(self, key, target):
         self.client.download_file(self.bucket, key, str(target))
 
+    def open_object(self, key):
+        """Streaming migration source: never creates a laptop download file."""
+        r = self.client.get_object(Bucket=self.bucket, Key=key)
+        return {'body':r['Body'], 'bytes':r['ContentLength'], 'etag':r['ETag'],
+                'contentType':r.get('ContentType', 'application/octet-stream')}
+
     def keys(self, prefix):
         for page in self.client.get_paginator('list_objects_v2').paginate(Bucket=self.bucket,Prefix=prefix):
             for x in page.get('Contents',[]): yield x['Key']

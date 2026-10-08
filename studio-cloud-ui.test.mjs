@@ -137,3 +137,13 @@ test('leaving the dashboard stops chunk dispatch after the in-flight request and
     assert.equal(nextCalls,1);assert.equal(reloads,0);assert.equal(dom.nodes.get('cloudStatus').textContent,'Another tab');
   }finally{globalThis.document=original;globalThis.confirm=previousConfirm;}
 });
+
+test('Google archive requires a matching Google publisher before enabling upload',async()=>{
+  const dom=filesDOM(),original=globalThis.document;globalThis.document=dom.document;
+  try{
+    const base=dashboardAPI({files:[video('story.mp4')],publisher:{configured:true,connected:true,storageProvider:'r2'}});
+    const api=async path=>path.startsWith('storage?')?{enabled:true,provider:'Google Cloud Storage',projects:{}}:base(path);
+    await wireFiles(options({...project,id:'pr-5555555555555555'},api));
+    assert.equal(dom.nodes.get('publishStart').disabled,true);assert.match(dom.nodes.get('youtubeStatus').textContent,/does not match/);
+  }finally{globalThis.document=original;}
+});

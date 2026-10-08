@@ -1,4 +1,5 @@
 import copy
+import io
 import json
 import tempfile
 import unittest
@@ -31,6 +32,14 @@ class Blob:
     def upload_from_filename(self, name, **kwargs):
         self.upload_from_string(Path(name).read_bytes(), **kwargs)
 
+    def upload_from_file(self, stream, **kwargs):
+        data=bytearray()
+        while part:=stream.read(3):data.extend(part)
+        self.upload_from_string(bytes(data), **kwargs)
+
+    def open(self, mode, if_generation_match=None, **kwargs):
+        return io.BytesIO(self.download_as_bytes(if_generation_match=if_generation_match))
+
     def download_as_bytes(self, if_generation_match=None, **kwargs):
         row = self.bucket.data[self.name]
         if if_generation_match != row['generation']:
@@ -57,6 +66,19 @@ class Client:
 
 
 class GoogleStorageTests(unittest.TestCase):
+    def test_streamed_import_verifies_hash_and_reuses_only_matching_content(self):
+        import hashlib
+        body=b'story asset in cloud';checksum=hashlib.sha256(body).hexdigest()
+        source={'body':io.BytesIO(body),'bytes':len(body)}
+        generation=self.objects.import_stream('asset',source,checksum)
+        self.assertTrue(self.objects.matches_verified('asset',checksum,len(body),generation))
+        self.assertEqual(self.objects.verify_object('asset',checksum,len(body)),generation)
+        self.client.data['asset']['body']=b'X'*len(body)
+        with self.assertRaisesRegex(ValueError,'checksum mismatch'):
+            self.objects.import_stream('asset',{'body':io.BytesIO(body),'bytes':len(body)},checksum)
+    def test_corrupt_stream_does_not_return_successful_migration_receipt(self):
+        with self.assertRaisesRegex(ValueError,'source checksum mismatch'):
+            self.objects.import_stream('asset',{'body':io.BytesIO(b'wrong'),'bytes':5},'a'*64)
     def setUp(self):
         self.client = Client()
         self.objects = GCSObjects({'bucket':'private-test'}, client=self.client)
@@ -94,7 +116,7 @@ class GoogleStorageTests(unittest.TestCase):
             restored = ProjectStore(second)
             cloud = R2Archive(restored, Path(second)/'absent', objects=self.objects);cloud.close()
             self.assertEqual(cloud.status()['provider'], 'Google Cloud Storage')
-            self.assertFalse(cloud.status()['publisherCompatible'])
+            self.assertTrue(cloud.status()['publisherCompatible'])
             self.assertEqual(restored.load(p['id'])['name'], 'Google story')
             self.assertEqual(restored.asset(p['id'], 'art.png').read_bytes(), asset.read_bytes())
             self.assertTrue(asset.exists())

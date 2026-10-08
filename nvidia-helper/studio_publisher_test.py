@@ -1,10 +1,20 @@
 import io,json,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
+from types import SimpleNamespace
 from studio_publisher import CloudPublisher,save_upload_snapshot
 from studio_data import ProjectStore,new_project
 
 class PublisherTests(unittest.TestCase):
+    def test_google_upload_requires_google_publisher_and_never_uses_r2_fallback(self):
+        provider=CloudPublisher('unused')
+        google=SimpleNamespace(provider='Google Cloud Storage')
+        with patch.object(provider,'status',return_value={'storageProvider':'r2'}):
+            with self.assertRaisesRegex(ValueError,'does not match'):provider.validate_storage(google)
+        with patch.object(provider,'status',return_value={'storageProvider':'gcs'}):
+            provider.validate_storage(google)
+            with self.assertRaisesRegex(ValueError,'does not match'):
+                provider.validate_storage(SimpleNamespace(provider='Cloudflare R2'))
     def test_chunk_progress_does_not_archive_whole_project_but_completion_is_saved(self):
         with tempfile.TemporaryDirectory() as tmp:
             store=ProjectStore(tmp);project=store.save(new_project('Upload story'));pid=project['id']

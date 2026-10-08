@@ -10,3 +10,6 @@ nvidia-helper/outputs/
 **/.r2-secrets.json.tmp
 **/.youtube-secrets.json
 **/.publisher-secrets.json
+**/.storage-secrets.json
+**/.storage-secrets.json.tmp
+**/google-storage.json

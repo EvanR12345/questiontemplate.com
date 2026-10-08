@@ -45,6 +45,12 @@ class CloudPublisher:
     def status(self):
         if not self.secret_path.exists():return {'configured':False,'connected':False,'cloudTransfer':True}
         return self.request('/status')
+    def validate_storage(self, archive):
+        """Require the publisher to read the same archive, never stale fallback data."""
+        expected = 'gcs' if archive.provider == 'Google Cloud Storage' else 'r2'
+        actual = self.status().get('storageProvider', 'r2')
+        if actual != expected:
+            raise ValueError('Publisher storage does not match the project archive. Connect the matching private publisher before uploading; no upload started.')
     def call(self,operation,body):
         routes={'connect':'/oauth/start','start':'/uploads/start','next':'/uploads/next','status':'/uploads/status','cancel':'/uploads/cancel'}
         if operation not in routes:raise ValueError('Unknown publishing operation.')
