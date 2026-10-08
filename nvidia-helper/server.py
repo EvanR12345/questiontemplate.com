@@ -339,6 +339,10 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             if path=='/studio/thumbnail':
                 from studio_thumbnails import make
                 return make(studio.store,body['project'],body.get('options',{}))
+            if path=='/studio/cloud-render':
+                studio.store.load(body['project'])
+                studio.publisher.validate_storage(studio.storage)
+                return studio.publisher.render(body['operation'],body['project'],body.get('options'))
             if path=='/studio/publish':
                 from studio_publisher import save_upload_snapshot
                 operation=body['operation'];options=body.get('options',{})

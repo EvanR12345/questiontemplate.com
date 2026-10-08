@@ -37,10 +37,17 @@ function preflight(manifest,body){
 export async function renderControl(path,env,body,fetcher=fetch,access=federatedAccessToken){
   const config=renderSettings(env);
   if(!config.configured)throw Error('Cloud rendering has not been deployed. No local fallback was started.');
+  if(path==='/renders/status'&&!body?.id){
+    if(!projectOK(body?.project))throw Error('Choose a saved project.');
+    const lock=await read(env.STUDIO,'studio/render-locks/'+body.project+'.json');
+    if(!lock)return {project:body.project,status:'NOT_STARTED'};
+    body={...body,id:lock.value.id};
+  }
   if(!idOK(body?.id))throw Error('Invalid cloud render identity.');
   const key=jobKey(body.id),existing=await read(env.STUDIO,key);
   if(path==='/renders/status'||path==='/renders/cancel'){
     if(!existing)throw Error('Cloud render was not found.');
+    if(body.project&&existing.value.project!==body.project)throw Error('This cloud render belongs to another project.');
     if(path==='/renders/cancel'&&!terminal.has(existing.value.status)){
       existing.value.cancelRequested=true;existing.value.updated=Date.now()/1000;
       await write(env.STUDIO,key,existing.value,existing.etag);

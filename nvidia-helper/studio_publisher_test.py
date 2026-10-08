@@ -6,6 +6,17 @@ from studio_publisher import CloudPublisher,save_upload_snapshot
 from studio_data import ProjectStore,new_project
 
 class PublisherTests(unittest.TestCase):
+    def test_cloud_render_control_keeps_project_and_nonce_without_mutating_assets(self):
+        provider=CloudPublisher('unused');pid='pr-0123456789abcdef';nonce='a'*32
+        with patch.object(provider,'request',return_value={'project':pid,'id':nonce,'status':'QUEUED'}) as transport:
+            provider.render('start',pid,{'id':nonce,'revision':4,'destination':'patreon','ignored':'never transmit'})
+            transport.assert_called_once_with('/renders/start',{'project':pid,'id':nonce,'revision':4,'destination':'patreon'})
+        with patch.object(provider,'request',return_value={'project':'pr-1111111111111111'}) as transport:
+            with self.assertRaisesRegex(ValueError,'does not match'):provider.render('status',pid)
+        with patch.object(provider,'request') as transport:
+            with self.assertRaises(ValueError):provider.render('start',pid,{'id':nonce,'revision':True,'destination':'patreon'})
+            with self.assertRaises(ValueError):provider.render('cancel',pid)
+            transport.assert_not_called()
     def test_google_upload_requires_google_publisher_and_never_uses_r2_fallback(self):
         provider=CloudPublisher('unused')
         google=SimpleNamespace(provider='Google Cloud Storage')

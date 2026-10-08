@@ -5,6 +5,14 @@ the laptop until the Google archive, private control routes, build and deployed
 job have all passed a live smoke test. This worker uses existing narration and
 images; cloud narration synthesis is a separate remaining stage.
 
+The Files dashboard now includes private cloud render start, refresh, cancel
+and saved-output controls. They remain disabled until the publisher advertises
+a configured matching Google job. Refresh discovers progress from the project's
+cloud lock, so browser state is not the only record of an execution. A lost
+launch reply retains its request identity and never automatically launches a
+second execution. The helper relay sends control JSON only and never invokes
+local FFmpeg as a fallback.
+
 Build the explicit allowlisted sources using `cloud-render-build.yaml` in Google
 Cloud Build, with `_IMAGE` set to the dedicated Artifact Registry image. No
 laptop Docker installation, Torch/CUDA download or model replacement is needed.

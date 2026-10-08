@@ -24,6 +24,15 @@ test('rendering remains disabled until matching Google archive and job are confi
   assert.equal(renderSettings({}).configured,false);
   assert.throws(()=>renderSettings({STUDIO_RENDER_JOB:'https://attacker.example/run'}));
 });
+test('refresh discovers the active cloud job without needing browser-local state',async()=>{
+  const {env,body}=await fixture();
+  assert.equal((await renderControl('/renders/status',env,{project:body.project})).status,'NOT_STARTED');
+  await renderControl('/renders/start',env,body,async()=>Response.json({}),async()=> 'test');
+  const state=await renderControl('/renders/status',env,{project:body.project});
+  assert.equal(state.id,body.id);assert.equal(state.status,'QUEUED');
+  await assert.rejects(renderControl('/renders/cancel',env,{id:body.id,project:'pr-1111111111111111'}),/another project/);
+  assert.equal((await renderControl('/renders/status',env,{project:body.project})).cancelRequested,false);
+});
 test('starts one pinned cloud render with only a job ID override and no media transfer',async()=>{
   const {env,body}=await fixture();let calls=0;
   const access=async(e,f,purpose)=>{assert.equal(purpose,'render');return 'test-only-access';};

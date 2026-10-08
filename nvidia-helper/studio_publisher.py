@@ -1,5 +1,6 @@
 """Small control messages to the cloud publisher; never downloads video bytes."""
 import json
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request,urlopen
@@ -58,4 +59,27 @@ class CloudPublisher:
         if operation=='connect':
             u=urlparse(result.get('url',''))
             if u.scheme!='https' or u.hostname!='accounts.google.com':raise ValueError('Invalid YouTube sign-in destination.')
+        return result
+    def render(self,operation,project,options=None):
+        """Small private control messages only; never starts the local renderer."""
+        if operation not in ('start','status','cancel'):
+            raise ValueError('Unknown cloud rendering operation.')
+        if not re.fullmatch(r'pr-[a-f0-9]{16}',project):
+            raise ValueError('Choose a saved project.')
+        options=options or {}
+        body={'project':project}
+        if options.get('id') is not None:
+            if not re.fullmatch(r'[a-f0-9]{32}',str(options['id'])):
+                raise ValueError('Invalid cloud render identity.')
+            body['id']=options['id']
+        if operation=='start':
+            revision=options.get('revision')
+            if 'id' not in body or type(revision) is not int or revision<0 or options.get('destination') not in ('youtube','patreon'):
+                raise ValueError('Choose a saved revision and export version.')
+            body.update(revision=revision,destination=options['destination'])
+        if operation=='cancel' and 'id' not in body:
+            raise ValueError('Choose the cloud render to cancel.')
+        result=self.request('/renders/'+operation,body)
+        if result.get('project')!=project:
+            raise ValueError('Cloud render response does not match this project.')
         return result
