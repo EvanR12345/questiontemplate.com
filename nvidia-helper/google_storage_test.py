@@ -158,6 +158,25 @@ class GoogleStorageTests(unittest.TestCase):
                 self.objects.upload('asset', path, digest)
             self.assertEqual(path.read_bytes(), b'story-image')
 
+    def test_bounded_upload_configuration_preserves_immutable_asset_receipts(self):
+        for invalid in (True, 0, 7, 128, '8'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                GCSObjects({'bucket':'private-test','uploadChunkMiB':invalid}, client=self.client)
+        self.assertEqual(self.client.data, {})
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'narration.wav';path.write_bytes(b'completed chapter narration')
+            digest=sha(path)
+            for chunk in (8,16,32,64):
+                with self.subTest(chunk=chunk):
+                    objects=GCSObjects({'bucket':'private-test','uploadChunkMiB':chunk}, client=self.client)
+                    with patch.object(self.client,'blob',wraps=self.client.blob) as make_blob:
+                        objects.upload('chapter-'+str(chunk),path,digest)
+                    self.assertEqual(make_blob.call_args.kwargs['chunk_size'],chunk*1024*1024)
+                    before=copy.deepcopy(self.client.data['chapter-'+str(chunk)])
+                    objects.upload('chapter-'+str(chunk),path,digest)
+                    self.assertEqual(self.client.data['chapter-'+str(chunk)],before)
+            self.assertEqual(path.read_bytes(),b'completed chapter narration')
+
     def test_project_restore_and_assets_survive_complete_cache_restart(self):
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
             store = ProjectStore(first);p = store.save(new_project('Google story'))

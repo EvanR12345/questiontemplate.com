@@ -33,6 +33,10 @@ class GCSObjects:
         name = config.get('bucket', '')
         if not re.fullmatch(r'[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]', name):
             raise ValueError('Enter a valid private bucket name.')
+        chunk_mib=config.get('uploadChunkMiB',8)
+        if type(chunk_mib) is not int or chunk_mib not in (8,16,32,64):
+            raise ValueError('Google upload chunks must be 8, 16, 32 or 64 MiB.')
+        self.upload_chunk_size=chunk_mib*1024*1024
         if client is None:
             from google.cloud import storage
             if config.get('authMode') == 'federated':
@@ -105,11 +109,11 @@ class GCSObjects:
         if existing is not None:
             self._verify(existing, path, checksum)
             return
-        blob = self.bucket.blob(key, chunk_size=64 * 1024 * 1024)
+        blob = self.bucket.blob(key, chunk_size=self.upload_chunk_size)
         blob.metadata = {'sha256': checksum}
         blob.upload_from_filename(str(path),
             content_type=mimetypes.guess_type(path.name)[0] or 'application/octet-stream',
-            if_generation_match=0, timeout=60, checksum='auto')
+            if_generation_match=0, timeout=120, checksum='auto')
         blob.reload(timeout=60)
         self._verify(blob, path, checksum)
 
