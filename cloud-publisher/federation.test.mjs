@@ -8,6 +8,19 @@ async function fixture(){
   const pair=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
   return {pair,env:{STUDIO_WIF_ISSUER:'https://private-studio.example.workers.dev',STUDIO_WIF_AUDIENCE:'//iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/studio/providers/publisher',STUDIO_GCS_SERVICE_ACCOUNT_EMAIL:'studio-storage@test-project.iam.gserviceaccount.com',STUDIO_WIF_KEY_ID:'test-'+crypto.randomUUID(),STUDIO_WIF_PRIVATE_KEY:`-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey('pkcs8',pair.privateKey)).toString('base64')}\n-----END PRIVATE KEY-----`,PUBLISHER_TOKEN:'x'.repeat(64)}};
 }
+
+test('federation rejects redirects at both token hops without forwarding credentials',async()=>{
+  for(const redirectHop of [1,2]){
+    const {env}=await fixture();let calls=0;
+    const fetcher=async(url,options)=>{
+      calls++;assert.equal(options.redirect,'manual');
+      if(calls===redirectHop)return new Response(null,{status:307,headers:{Location:'https://untrusted.example/token'}});
+      return Response.json({access_token:'test-only-source-token'});
+    };
+    await assert.rejects(federatedAccessToken(env,fetcher),/exchange failed|impersonation failed/);
+    assert.equal(calls,redirectHop);
+  }
+});
 test('workload tokens preserve exact issuer, sole subject, audience and five-minute expiry',async()=>{
   const {pair,env}=await fixture(),token=await identityToken(env),[header,payload,signature]=token.split('.');
   const claims=JSON.parse(Buffer.from(payload,'base64url'));
@@ -40,7 +53,7 @@ test('private identity endpoint requires existing publisher authentication and n
 test('keyless access exchanges only with Google STS and the single bucket identity, caches the resulting token',async()=>{
   const {env}=await fixture();let calls=0;
   const fetcher=async(url,options)=>{
-    calls++;assert.equal(options.redirect,'error');
+    calls++;assert.equal(options.redirect,'manual');
     const body=JSON.parse(options.body);
     if(url==='https://sts.googleapis.com/v1/token'){
       assert.equal(body.audience,env.STUDIO_WIF_AUDIENCE);assert.equal(body.subjectTokenType,'urn:ietf:params:oauth:token-type:jwt');

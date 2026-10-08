@@ -3,10 +3,21 @@ import assert from 'node:assert/strict';
 import {GoogleBucket,publisherBucket} from './google-bucket.mjs';
 import {handle} from './worker.mjs';
 
+test('Google object requests reject redirects without following bearer credentials',async()=>{
+  let calls=0;
+  const bucket=new GoogleBucket('private-test',null,async(url,options)=>{
+    calls++;assert.equal(new URL(url).hostname,'storage.googleapis.com');
+    assert.equal(options.redirect,'manual');
+    return new Response(null,{status:302,headers:{Location:'https://untrusted.example/file'}});
+  },async()=>'test-private-access');
+  await assert.rejects(bucket.head('video'),/read failed/);
+  assert.equal(calls,1);
+});
+
 test('private Google reads pin JSON and video ranges to the metadata generation',async()=>{
   const calls=[];
   const fetcher=async(url,options)=>{
-    calls.push({url,options});assert.equal(options.headers.Authorization,'Bearer test-access');assert.equal(options.redirect,'error');
+    calls.push({url,options});assert.equal(options.headers.Authorization,'Bearer test-access');assert.equal(options.redirect,'manual');
     if(!url.includes('alt=media'))return Response.json({generation:'42',size:'100',metadata:{sha256:'a'.repeat(64)}});
     if(options.headers.Range)return new Response(new Uint8Array(10),{status:206,headers:{'Content-Range':'bytes 20-29/100'}});
     return Response.json({revision:3});

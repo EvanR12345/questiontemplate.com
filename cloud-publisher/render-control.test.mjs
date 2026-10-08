@@ -38,7 +38,7 @@ test('starts one pinned cloud render with only a job ID override and no media tr
   const access=async(e,f,purpose)=>{assert.equal(purpose,'render');return 'test-only-access';};
   const run=async(url,options)=>{
     calls++;assert.equal(url,'https://run.googleapis.com/v2/'+env.STUDIO_RENDER_JOB+':run');
-    assert.equal(options.redirect,'error');assert.deepEqual(JSON.parse(options.body),{
+    assert.equal(options.redirect,'manual');assert.deepEqual(JSON.parse(options.body),{
       overrides:{taskCount:1,containerOverrides:[{env:[{name:'STUDIO_RENDER_JOB_ID',value:body.id}]}]}});
     return Response.json({name:'test-operation'});
   };

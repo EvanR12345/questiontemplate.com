@@ -40,10 +40,10 @@ export async function federatedAccessToken(env,fetcher=fetch,purpose='storage'){
   const settings=federationSettings(env),cacheKey=settings.audience+'|'+settings.email+'|'+settings.kid+'|'+purpose;
   const old=accessTokens.get(cacheKey);if(old?.expires>Date.now()+60000)return old.value;
   const token=await identityToken(env);
-  const exchanged=await fetcher('https://sts.googleapis.com/v1/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audience:settings.audience,grantType:'urn:ietf:params:oauth:grant-type:token-exchange',requestedTokenType:'urn:ietf:params:oauth:token-type:access_token',scope:'https://www.googleapis.com/auth/cloud-platform',subjectTokenType:'urn:ietf:params:oauth:token-type:jwt',subjectToken:token}),redirect:'error'});
+  const exchanged=await fetcher('https://sts.googleapis.com/v1/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audience:settings.audience,grantType:'urn:ietf:params:oauth:grant-type:token-exchange',requestedTokenType:'urn:ietf:params:oauth:token-type:access_token',scope:'https://www.googleapis.com/auth/cloud-platform',subjectTokenType:'urn:ietf:params:oauth:token-type:jwt',subjectToken:token}),redirect:'manual'});
   if(!exchanged.ok)throw Error('Google workload identity exchange failed. Verify the private issuer grant.');
   const exchangedToken=await exchanged.json();if(!exchangedToken.access_token)throw Error('Google workload identity returned no access token.');
-  const result=await fetcher('https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/'+encodeURIComponent(settings.email)+':generateAccessToken',{method:'POST',headers:{Authorization:'Bearer '+exchangedToken.access_token,'Content-Type':'application/json'},body:JSON.stringify({scope:[scope],lifetime:'3600s'}),redirect:'error'});
+  const result=await fetcher('https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/'+encodeURIComponent(settings.email)+':generateAccessToken',{method:'POST',headers:{Authorization:'Bearer '+exchangedToken.access_token,'Content-Type':'application/json'},body:JSON.stringify({scope:[scope],lifetime:'3600s'}),redirect:'manual'});
   if(!result.ok)throw Error('Google bucket identity impersonation failed. Check the service-account-only grant.');
   const value=await result.json(),expires=Date.parse(value.expireTime);
   if(!value.accessToken||!Number.isFinite(expires)||expires<=Date.now())throw Error('Google bucket authorization is expired.');

@@ -94,7 +94,7 @@ export async function renderControl(path,env,body,fetcher=fetch,access=federated
   let response;
   try{
     response=await fetcher('https://run.googleapis.com/v2/'+config.job+':run',{
-      method:'POST',redirect:'error',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      method:'POST',redirect:'manual',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
       body:JSON.stringify({overrides:{taskCount:1,containerOverrides:[{env:[{name:'STUDIO_RENDER_JOB_ID',value:body.id}]}]}})});
   }catch{return publicState(saved.value);}
   const current=await read(env.STUDIO,key);

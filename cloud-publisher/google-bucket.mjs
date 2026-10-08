@@ -30,7 +30,10 @@ export class GoogleBucket{
   }
   objectURL(key){return 'https://storage.googleapis.com/storage/v1/b/'+encodeURIComponent(this.bucket)+'/o/'+encodeURIComponent(key);}
   async request(url,options={}){
-    return this.fetcher(url,{...options,headers:{...options.headers,Authorization:'Bearer '+await this.accessToken()},redirect:'error'});
+    // Workers supports manual/follow, not the standard fetch error mode.
+    // Manual keeps bearer credentials on the pinned Google origin; callers
+    // reject every non-success redirect response instead of following it.
+    return this.fetcher(url,{...options,headers:{...options.headers,Authorization:'Bearer '+await this.accessToken()},redirect:'manual'});
   }
   async metadata(key){
     const r=await this.request(this.objectURL(key));if(r.status===404)return null;
