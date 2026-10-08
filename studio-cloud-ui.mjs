@@ -5,6 +5,16 @@ const bytes=n=>n>=2**30?(n/2**30).toFixed(2)+' GiB':n>=2**20?(n/2**20).toFixed(1
 const transferring=new Set();
 const starting=new Set();
 const publishingDrafts=new Map();
+export function videoDeliveryStatus(project,storage){
+  if(!project.render?.path)return null;
+  if(!storage)return {cloudReady:false,retry:false,label:'Cloud save status unavailable'};
+  if(!storage.enabled)return {cloudReady:false,retry:false,label:'Saved in helper · cloud archive unavailable'};
+  const state=storage.projects?.[project.id]??{};
+  if(state.status==='SYNCED'&&Number.isSafeInteger(state.revision)&&state.revision>=project.revision)
+    return {cloudReady:true,retry:false,label:'Saved in '+storage.provider};
+  if(state.status==='FAILED')return {cloudReady:false,retry:true,label:'Video ready in helper · cloud save failed; retry cloud save'};
+  return {cloudReady:false,retry:false,label:'Video ready in helper · saving to '+storage.provider};
+}
 export async function directCloudDownload(projectId,path,name,api,document=globalThis.document){
   const result=await api('media-link',{project:projectId,path,download:name});
   if(!['Google Cloud Storage','Cloudflare R2'].includes(result.provider))return false;

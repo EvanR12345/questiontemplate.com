@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {engagementForm,engagementValues,filesPanel,wireFiles,cachedMediaLink,directCloudDownload} from './studio-cloud-ui.mjs';
+import {engagementForm,engagementValues,filesPanel,wireFiles,cachedMediaLink,directCloudDownload,videoDeliveryStatus} from './studio-cloud-ui.mjs';
+test('finished video shows cloud save progress and never treats an older revision as fully saved',()=>{
+  const p={id:'project',revision:12,render:{path:'story.mp4'}};
+  const storage={enabled:true,provider:'Google Cloud Storage',projects:{project:{status:'SYNCED',revision:11}}};
+  assert.equal(videoDeliveryStatus(p,storage).cloudReady,false);
+  storage.projects.project.revision=12;
+  assert.equal(videoDeliveryStatus(p,storage).cloudReady,true);
+  storage.projects.project.status='UPLOADING';assert.match(videoDeliveryStatus(p,storage).label,/saving/);
+  storage.projects.project.status='FAILED';assert.equal(videoDeliveryStatus(p,storage).retry,true);
+  assert.equal(videoDeliveryStatus(p,{enabled:false}).cloudReady,false);
+  assert.equal(videoDeliveryStatus(p,undefined).cloudReady,false);
+  assert.equal(videoDeliveryStatus({id:'project'},storage),null);
+});
 test('cloud download navigates directly to signed attachment without fetching video bytes',async()=>{
   const calls=[],link={click(){calls.push('download');}},document={createElement(tag){assert.equal(tag,'a');return link;}};
   const api=async(operation,body)=>{calls.push({operation,body});return {provider:'Google Cloud Storage',url:'https://storage.googleapis.com/private/signed'};};

@@ -437,6 +437,7 @@ class StudioService:
                 "outputFolder": str(self.store.root),
                 "executions": (self.execution_journal.recent()
                     if hasattr(self,'execution_journal') else []),
+                "storage": self.storage.status(),
             }
 
     def enqueue(self, pid, chapter, kind, shots=None, options=None):
@@ -1492,6 +1493,7 @@ class StudioService:
             ):
                 latest.setdefault("renderHistory", []).append(latest["render"])
             latest.update(render=result, renderStale=False)
+            latest.setdefault('exports',{})[result.get('exportDestination','youtube')]=result
             latest["production"].update(
                 status="COMPLETE",
                 stage="Full video ready",

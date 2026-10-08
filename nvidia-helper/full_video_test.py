@@ -155,6 +155,17 @@ class Harness(StudioService):
 
 
 class FullVideoTest(unittest.TestCase):
+    def test_full_production_retains_separate_patreon_and_youtube_exports(self):
+        old={'path':'previous-youtube.mp4','exportDestination':'youtube'}
+        self.service.store.mutate(self.project['id'],lambda p:p.update(exports={'youtube':old}))
+        render=self.service.renderer.full
+        self.service.renderer.full=lambda p,gate:render(p,gate)|{'exportDestination':'patreon'}
+        self.service.produce_story(self.project['id'],{})
+        saved=self.service.store.load(self.project['id'])
+        self.assertEqual(saved['exports']['youtube'],old)
+        self.assertEqual(saved['exports']['patreon'],saved['render'])
+        self.assertFalse(self.service.snapshot()['storage']['enabled'])
+
     def cloud_mode(self):
         cloud = Provider()
         cloud.id = 'comfyui'

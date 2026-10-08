@@ -1,6 +1,6 @@
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=queue-2";
 import { nativeRequest } from "./native-client.mjs?v=queue-1";
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload} from './studio-cloud-ui.mjs?v=r2-13';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=r2-14';
 import {
   loadProjectState,
   saveStudioProject,
@@ -756,7 +756,11 @@ function renderQueue() {
             : ["FAILED", "CANCELLED"].includes(run.status)
               ? run.status + " · " + run.message
               : run.stage || run.message || run.status;
-    runStatus.innerHTML = `<span>${escape(status)}</span>${ready ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}`;
+    const delivery=ready?videoDeliveryStatus(project,queue.storage):null;
+    runStatus.innerHTML = `<span>${escape(status)}${delivery?' · '+escape(delivery.label):''}</span>${ready ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}${delivery?.retry?'<button id="retryVideoCloudSave">Retry cloud save</button>':''}`;
+    $('#retryVideoCloudSave')?.addEventListener('click',()=>action(async()=>{
+      await api('storage-sync',{project:project.id});queue=await api('queue');renderQueue();
+    }));
     const open = $("#openFullVideo");
     if (open)
       open.onclick = () =>
