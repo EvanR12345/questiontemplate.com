@@ -41,6 +41,7 @@ export async function wireCloudRender({p,api,action,active,open,enabled}){
   const mount={};mounts.set(view,mount);
   const mounted=()=>active()&&$('cloudRenderStatus')===view&&mounts.get(view)===mount;
   const start=$('cloudRenderStart'),refresh=$('cloudRenderRefresh'),cancel=$('cloudRenderCancel');
+  for(const button of [start,refresh,cancel]){button.disabled=true;button.onclick=null;}
   if(!enabled){view.textContent='Cloud rendering is not connected yet. No local rendering starts from this button.';return;}
   const client=new CloudRenderClient(p,api);let timer;
   const paint=state=>{

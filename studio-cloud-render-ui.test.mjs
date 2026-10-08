@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {CloudRenderClient,cloudRenderForm} from './studio-cloud-render-ui.mjs';
+import {CloudRenderClient,cloudRenderForm,wireCloudRender} from './studio-cloud-render-ui.mjs';
 const project={id:'pr-0123456789abcdef',revision:4,settings:{engagement:{exportDestination:'patreon'}}};
 test('an ambiguous start retains its exact nonce and sends only control JSON',async()=>{
   const calls=[];let lost=true;
@@ -36,4 +36,23 @@ test('a delayed progress reply cannot erase a newer cancellation request',async(
   const earlier=client.refresh();await client.cancel();
   release({id:'b'.repeat(32),status:'RENDERING',cancelRequested:false});await earlier;
   assert.equal(client.state.cancelRequested,true);
+});
+
+test('disconnecting cloud rendering disables previous controls and late replies cannot re-enable them',async()=>{
+  const original=globalThis.document,nodes=new Map();
+  for(const id of ['cloudRenderStatus','cloudRenderStart','cloudRenderRefresh','cloudRenderCancel','cloudRenderResults'])
+    nodes.set(id,{disabled:false,onclick:()=>{},textContent:'',innerHTML:'',querySelectorAll:()=>[]});
+  globalThis.document={getElementById:id=>nodes.get(id)};
+  let release;const delayed=new Promise(resolve=>{release=resolve;});let calls=0;
+  const options={p:project,api:async()=>{calls++;return delayed;},action:fn=>fn(),active:()=>true,open:()=>{}};
+  try{
+    const earlier=wireCloudRender({...options,enabled:true});
+    await wireCloudRender({...options,enabled:false});
+    release({status:'NOT_STARTED'});await earlier;
+    for(const id of ['cloudRenderStart','cloudRenderRefresh','cloudRenderCancel']){
+      assert.equal(nodes.get(id).disabled,true);assert.equal(nodes.get(id).onclick,null);
+    }
+    assert.match(nodes.get('cloudRenderStatus').textContent,/not connected/);
+    assert.equal(calls,1);
+  }finally{globalThis.document=original;}
 });

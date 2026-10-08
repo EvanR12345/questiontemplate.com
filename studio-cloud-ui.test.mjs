@@ -123,6 +123,25 @@ test('file search belongs to its dashboard and upload requires a cloud video',as
   }finally{globalThis.document=original;}
 });
 
+test('loss of publisher configuration removes stale upload controls and retains the draft on reconnect',async()=>{
+  const dom=filesDOM(),original=globalThis.document;globalThis.document=dom.document;
+  let configured=true;
+  const api=async path=>path.startsWith('storage?')?{enabled:true,projects:{}}:
+    path.startsWith('files?')?{files:[video('part1.mp4')]}:{configured,connected:configured};
+  try{
+    await wireFiles(options({...project,id:'pr-4444444444444444'},api));
+    dom.nodes.get('publishTitle').value='Keep my title';
+    dom.nodes.get('publishDescription').value='Keep my description';
+    configured=false;await dom.nodes.get('cloudRefresh').onclick();
+    assert.equal(dom.nodes.has('publisherControls'),false);
+    assert.equal(dom.nodes.has('publishStart'),false);
+    configured=true;await dom.nodes.get('cloudRefresh').onclick();
+    assert.equal(dom.nodes.get('publishTitle').value,'Keep my title');
+    assert.equal(dom.nodes.get('publishDescription').value,'Keep my description');
+    assert.equal(dom.nodes.get('publishStart').disabled,false);
+  }finally{globalThis.document=original;}
+});
+
 test('a slower earlier refresh cannot replace a newer file list in the same project',async()=>{
   const dom=filesDOM(),original=globalThis.document;globalThis.document=dom.document;
   try{

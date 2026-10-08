@@ -1,5 +1,5 @@
 // Cloud storage and finishing controls share the existing Studio connection.
-import {cloudRenderForm,wireCloudRender} from './studio-cloud-render-ui.mjs?v=cloud-render-2';
+import {cloudRenderForm,wireCloudRender} from './studio-cloud-render-ui.mjs?v=cloud-render-3';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bytes=n=>n>=2**30?(n/2**30).toFixed(2)+' GiB':n>=2**20?(n/2**20).toFixed(1)+' MiB':(n/1024).toFixed(1)+' KiB';
 const transferring=new Set();
@@ -80,14 +80,14 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
     if(!active()||version!==refreshVersion)return;
     const yt=$('youtubeStatus');
     if(yt){
+      const remember=()=>{
+        if(!active()||!$('publisherControls'))return;
+        publishingDrafts.set(p.id,{source:$('publishSource').value,title:$('publishTitle').value,
+          description:$('publishDescription').value,privacy:$('publishPrivacy').value,kids:$('publishKids').checked});
+      };
+      remember();
       yt.textContent=publisher.configured&&!publisherMatches?'Publisher storage does not match this archive. Connect the matching private publisher before uploading.':publisher.connected?'YouTube connected. Uploads travel from cloud storage to YouTube; this laptop sends only control messages.':publisher.configured?'Cloud publisher ready. Connect your YouTube channel.':'Cloud publisher deployment and Google OAuth setup are still pending.';
       if(publisher.configured){
-        const remember=()=>{
-          if(!active()||!$('publisherControls'))return;
-          publishingDrafts.set(p.id,{source:$('publishSource').value,title:$('publishTitle').value,
-            description:$('publishDescription').value,privacy:$('publishPrivacy').value,kids:$('publishKids').checked});
-        };
-        remember();
         const controls=document.createElement('div');controls.id='publisherControls';
         controls.innerHTML=`<button id="youtubeConnect">Connect YouTube</button><label>Saved cloud video<select id="publishSource">${rows.filter(r=>r.category==='Video'&&r.cloud).map(r=>`<option value="${esc(r.path)}">${esc(r.path)}</option>`).join('')}</select></label><label>YouTube title<input id="publishTitle" maxlength="100" value="${esc(p.name.slice(0,100))}"></label><label>Description<textarea id="publishDescription" maxlength="5000" rows="3"></textarea></label><label>Visibility<select id="publishPrivacy"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></label><label class="inline"><input type="checkbox" id="publishKids">This video is made for kids</label><button id="publishStart" ${publisher.connected&&publisherMatches&&rows.some(r=>r.category==='Video'&&r.cloud)?'':'disabled'}>Upload selected cloud video</button><div id="publishProgress" role="status"></div>${publishedJobs.map(j=>`<p>${esc(j.title)} · ${esc(j.status)} · ${Math.round(100*j.uploaded/j.total)}% ${j.status==='COMPLETE'?`<a href="https://www.youtube.com/watch?v=${encodeURIComponent(j.videoId)}" target="_blank" rel="noopener">Open video</a>`:j.status==='CANCELLED'?'':`<button data-upload-resume="${esc(j.id)}">Resume upload</button><button data-upload-cancel="${esc(j.id)}">Cancel upload</button>`}</p>`).join('')}`;
         $('publisherControls')?.remove();yt.after(controls);
@@ -124,7 +124,7 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
         });
         controls.querySelectorAll('[data-upload-resume]').forEach(b=>b.onclick=()=>action(async()=>{const job=await api('publish',{project:p.id,operation:'status',options:{id:b.dataset.uploadResume}});await runUpload(job);}));
         controls.querySelectorAll('[data-upload-cancel]').forEach(b=>b.onclick=()=>action(async()=>{await api('publish',{project:p.id,operation:'cancel',options:{id:b.dataset.uploadCancel}});await reload();}));
-      }
+      }else $('publisherControls')?.remove();
     }
   }
   $('cloudSearch').oninput=e=>{term=e.target.value.toLowerCase();page=0;paint();};$('cloudCategory').onchange=e=>{filter=e.target.value;page=0;paint();};
