@@ -1625,7 +1625,8 @@ async function downloadAsset(path, name) {
   } else downloadBlob(await response.blob(), name);
 }
 async function newProject() {
-  if (connected) project = await api("create", { name: "My story" });
+  await saveSettingsIfVisible();
+  if (connected) project = await api("create", { name: "My story", sourceProject: project?.id });
   else project = offlineProject();
   chapterId = project.chapters[0].id;
   tab = "write";

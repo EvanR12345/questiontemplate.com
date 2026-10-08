@@ -322,6 +322,20 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 p['settings']['engagement'].update(popupEnabled=True,outroEnabled=True)
                 if studio.config.get('fluxValidated') and not legacy:
                     p['settings']['image'].update(studio.providers['native-flux'].getRecommendedSettings(),provider='native-flux',model='flux2-klein-4b-q4',workflow='text-to-image')
+                if body.get('sourceProject') and not legacy:
+                    previous=studio.store.load(body['sourceProject'])['settings']
+                    # Reuse the chosen production profile without borrowing
+                    # story facts or project-specific generated media paths.
+                    for key in ('style','layoutMode','generationMode','voice','speed','narrationDelivery',
+                                'soundEffects','emphasisPhrases','director','video','customLayout','budget',
+                                'continuityStrictness','appearanceHandling','maxImageRetries','visionQC',
+                                'qcSampleEvery','automaticRepair','qcPolicy','focusedPrompts'):
+                        if key in previous:p['settings'][key]=copy.deepcopy(previous[key])
+                    for key in ('provider','model','workflow','preset','width','height','steps','sampler',
+                                'scheduler','guidance','referenceStrength','fallbackEnabled','fallback'):
+                        if key in previous['image']:p['settings']['image'][key]=copy.deepcopy(previous['image'][key])
+                    p['settings']['engagement']=copy.deepcopy(previous.get('engagement',p['settings']['engagement']))
+                    for key in ('outroAudioPath','outroAudioSignature'):p['settings']['engagement'].pop(key,None)
                 if legacy:
                     p['legacyComic']=legacy;p['chapters'][0]['sourceText']=legacy.get('story','');p['chapters'][0]['cleanNarrationText']=clean_narration(legacy.get('story',''))
                     for c in legacy.get('characters',[]):p['characters'].append(character(c.get('name','Character'),c.get('description','')))

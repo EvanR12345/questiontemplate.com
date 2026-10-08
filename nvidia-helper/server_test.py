@@ -66,6 +66,32 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_new_project_reuses_selected_cloud_profile_without_old_story_or_audio_assets(self):
+        service=self.server.RequestHandlerClass.studio_service
+        original=new_project('Existing story')
+        original['settings']['director']['provider']='openai-luna'
+        original['settings']['image'].update(provider='comfyui',model='flux2-klein-4b',workflow='saved-cloud-workflow')
+        original['settings']['video']['fps']=60
+        original['settings']['engagement'].update(outroAudioPath='old-outro.wav',outroAudioSignature='old-signature')
+        original['settings']['image']['controlnets']=[{'image':'old-pose.png'}]
+        original['chapters'][0]['sourceText']='Keep the existing story.'
+        original['intro'].update(enabled=True,audioPath='old-intro.wav')
+        original=service.store.save(original)
+        code,_,raw=self.request('/studio/create',{'name':'New story','sourceProject':original['id']})
+        self.assertEqual(code,200)
+        created=json.loads(raw)
+        self.assertEqual(created['settings']['director']['provider'],'openai-luna')
+        self.assertEqual(created['settings']['image']['provider'],'comfyui')
+        self.assertEqual(created['settings']['image']['model'],'flux2-klein-4b')
+        self.assertEqual(created['settings']['video']['fps'],60)
+        self.assertEqual(created['settings']['image']['controlnets'],[])
+        self.assertNotIn('outroAudioPath',created['settings']['engagement'])
+        self.assertEqual(created['chapters'][0]['sourceText'],'')
+        self.assertFalse(created['intro']['enabled'])
+        self.assertEqual(created['intro']['audioPath'],'')
+        self.assertNotEqual(created['id'],original['id'])
+        self.assertEqual(service.store.load(original['id']),original)
+
     def test_changing_intro_placement_invalidates_old_chapter_exports(self):
         service=self.server.RequestHandlerClass.studio_service
         project=new_project();project['intro'].update(enabled=True,placement='every_chapter')
