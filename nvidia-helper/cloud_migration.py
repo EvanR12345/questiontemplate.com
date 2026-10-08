@@ -54,21 +54,24 @@ def migrate_to_google(source, target, progress=None, workers=1):
                 key=next(remaining,None)
                 if key is not None:active.add(pool.submit(copy_asset,key))
 
-    def copy_record(key,body):
+    def copy_record(key,body,content_type='application/json'):
         old,_=target.read(key)
         if old is not None and old!=body:
             raise ValueError('Target record conflicts with source; both archives retained.')
-        obj={'body':io.BytesIO(body),'bytes':len(body),'contentType':'application/json'}
+        obj={'body':io.BytesIO(body),'bytes':len(body),'contentType':content_type}
         try:target.import_stream(key,obj,digest_bytes(body))
         finally:obj['body'].close()
         result['records']+=1;result['bytes']+=len(body);emit()
 
     for key in records:
-        if not key.endswith('.json'):
+        verification_text=bool(re.fullmatch(r'studio/verification/[a-f0-9]{32}\.txt',key))
+        if not key.endswith('.json') and not verification_text:
             raise ValueError('Unexpected non-asset source object; review before migration.')
         body,_=source.read(key)
         if body is None:raise ValueError('Source changed during migration; retry from the preserved archive.')
-        copy_record(key,body)
+        if verification_text and len(body)>4096:
+            raise ValueError('Unexpected verification record size; review before migration.')
+        copy_record(key,body,'text/plain' if verification_text else 'application/json')
 
     for key in manifests:
         body,etag=source.read(key)

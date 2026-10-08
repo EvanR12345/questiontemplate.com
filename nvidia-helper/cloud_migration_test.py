@@ -40,6 +40,18 @@ class MigrationTests(unittest.TestCase):
     def test_resume_verifies_existing_objects_and_is_idempotent(self):
         migrate_to_google(self.source,self.target);generation=self.client.data[self.asset]['generation']
         migrate_to_google(self.source,self.target);self.assertEqual(self.client.data[self.asset]['generation'],generation)
+    def test_retains_known_small_connection_verification_text_without_accepting_arbitrary_files(self):
+        key='studio/verification/'+'b'*32+'.txt';body=b'Previous private storage connection check.'
+        self.source.data[key]=body
+        migrate_to_google(self.source,self.target)
+        self.assertEqual(self.target.read(key)[0],body)
+        self.assertEqual(self.source.data[key],body)
+        self.source.data['studio/unexpected/script.exe']=b'Unreviewed content'
+        with self.assertRaisesRegex(ValueError,'Unexpected non-asset'):migrate_to_google(self.source,self.target)
+        self.assertNotIn('studio/unexpected/script.exe',self.client.data)
+        self.source.data.pop('studio/unexpected/script.exe')
+        self.source.data[key]=b'x'*4097
+        with self.assertRaisesRegex(ValueError,'verification record size'):migrate_to_google(self.source,self.target)
     def test_bounded_parallel_assets_finish_before_publishing_manifest(self):
         second_body=b'second saved reference';second_sha=hashlib.sha256(second_body).hexdigest()
         second=f'studio/assets/{self.pid}/{second_sha}/reference.png';self.source.data[second]=second_body
