@@ -1,5 +1,5 @@
 // Cloud storage and finishing controls share the existing Studio connection.
-import {cloudRenderForm,wireCloudRender} from './studio-cloud-render-ui.mjs?v=cloud-render-1';
+import {cloudRenderForm,wireCloudRender} from './studio-cloud-render-ui.mjs?v=cloud-render-2';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bytes=n=>n>=2**30?(n/2**30).toFixed(2)+' GiB':n>=2**20?(n/2**20).toFixed(1)+' MiB':(n/1024).toFixed(1)+' KiB';
 const transferring=new Set();

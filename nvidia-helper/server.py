@@ -342,7 +342,11 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             if path=='/studio/cloud-render':
                 studio.store.load(body['project'])
                 studio.publisher.validate_storage(studio.storage)
-                return studio.publisher.render(body['operation'],body['project'],body.get('options'))
+                result=studio.publisher.render(body['operation'],body['project'],body.get('options'))
+                if result.get('status')=='COMPLETE':
+                    # Refresh cloud files without overwriting local manual project edits.
+                    studio.storage.manifests.pop(body['project'],None)
+                return result
             if path=='/studio/publish':
                 from studio_publisher import save_upload_snapshot
                 operation=body['operation'];options=body.get('options',{})

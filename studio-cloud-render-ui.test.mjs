@@ -28,3 +28,12 @@ test('render controls begin disabled and keep the destination choice explicit',(
   assert.match(html,/id="cloudRenderStart" disabled/);assert.match(html,/value="patreon" selected/);
   assert.ok(html.includes('trial compute credits'));assert.ok(!html.includes('apiKey'));
 });
+test('a delayed progress reply cannot erase a newer cancellation request',async()=>{
+  let release;const delayed=new Promise(resolve=>{release=resolve;});
+  const client=new CloudRenderClient(project,async(_,body)=>body.operation==='status'?delayed:
+    {id:'b'.repeat(32),project:project.id,status:'RENDERING',cancelRequested:true});
+  client.state={id:'b'.repeat(32),status:'RENDERING'};
+  const earlier=client.refresh();await client.cancel();
+  release({id:'b'.repeat(32),status:'RENDERING',cancelRequested:false});await earlier;
+  assert.equal(client.state.cancelRequested,true);
+});

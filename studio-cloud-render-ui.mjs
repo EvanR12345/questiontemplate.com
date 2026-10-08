@@ -2,15 +2,17 @@ const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>'
 const terminal=new Set(['COMPLETE','FAILED','CANCELLED','NOT_STARTED']);
 const mounts=new WeakMap();
 export function cloudRenderForm(p){
-  return `<div class="section-box"><h3>Render in Google Cloud</h3><p class="muted">Uses your saved narration, artwork and finishing settings. Completed videos stay in private Google storage. This control becomes available after the cloud worker has been deployed and tested.</p><label>Video version<select id="cloudRenderDestination"><option value="youtube" ${p.settings.engagement?.exportDestination==='patreon'?'':'selected'}>YouTube</option><option value="patreon" ${p.settings.engagement?.exportDestination==='patreon'?'selected':''}>Patreon</option></select></label><div class="toolbar"><button id="cloudRenderStart" disabled>Render full story in cloud</button><button id="cloudRenderRefresh" disabled>Refresh rendering</button><button id="cloudRenderCancel" disabled>Cancel cloud render</button></div><p id="cloudRenderStatus" role="status">Checking cloud renderer…</p><div id="cloudRenderResults"></div><p class="muted">Progress normally updates about every four seconds. An MP4 becomes playable when encoding and saving finish. The chapter split settings above also apply. Rendering uses trial compute credits beyond any free allowance.</p></div>`;
+  return `<div class="section-box"><h3>Render in Google Cloud</h3><p class="muted">Uses your saved narration, artwork and finishing settings. Completed videos stay in private Google storage. This control becomes available after the cloud worker has been deployed and tested.</p><label>Video version<select id="cloudRenderDestination"><option value="youtube" ${p.settings.engagement?.exportDestination==='patreon'?'':'selected'}>YouTube</option><option value="patreon" ${p.settings.engagement?.exportDestination==='patreon'?'selected':''}>Patreon</option></select></label><div class="toolbar"><button id="cloudRenderStart" disabled>Render full story in cloud</button><button id="cloudRenderRefresh" disabled>Refresh rendering</button><button id="cloudRenderCancel" disabled>Cancel cloud render</button></div><p id="cloudRenderStatus" role="status">Checking cloud renderer…</p><div id="cloudRenderResults"></div><p class="muted">Progress normally updates about every four seconds. An MP4 becomes playable when encoding and saving finish. Your saved chapter-split settings also apply. Rendering uses trial compute credits beyond any free allowance.</p></div>`;
 }
 export class CloudRenderClient{
   constructor(project,api,newId=()=>crypto.randomUUID().replaceAll('-','')){
-    this.project=project;this.api=api;this.newId=newId;this.pending=null;this.state={status:'NOT_STARTED'};this.busy=false;
+    this.project=project;this.api=api;this.newId=newId;this.pending=null;this.state={status:'NOT_STARTED'};this.busy=false;this.version=0;
   }
   async refresh(){
+    if(this.busy)return this.state;
+    const version=++this.version;
     const state=await this.api('cloud-render',{project:this.project.id,operation:'status'});
-    this.state=state;return state;
+    if(version===this.version)this.state=state;return this.state;
   }
   async start(destination){
     if(this.busy||!terminal.has(this.state.status))throw Error('A cloud render is already active. Refresh its progress.');
@@ -19,14 +21,17 @@ export class CloudRenderClient{
     this.pending??={id:this.newId(),revision:this.project.revision,destination};
     if(this.pending.destination!==destination)throw Error('Refresh the pending render before changing its version.');
     this.busy=true;
+    const version=++this.version;
     try{
       const result=await this.api('cloud-render',{project:this.project.id,operation:'start',options:this.pending});
-      this.state=result;this.pending=null;return result;
+      if(version===this.version)this.state=result;this.pending=null;return this.state;
     }finally{this.busy=false;}
   }
   async cancel(){
     if(!this.state.id||terminal.has(this.state.status))return this.state;
-    this.state=await this.api('cloud-render',{project:this.project.id,operation:'cancel',options:{id:this.state.id}});
+    const version=++this.version;
+    const result=await this.api('cloud-render',{project:this.project.id,operation:'cancel',options:{id:this.state.id}});
+    if(version===this.version)this.state=result;
     return this.state;
   }
 }
