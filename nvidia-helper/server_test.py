@@ -66,6 +66,29 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_changing_intro_placement_invalidates_old_chapter_exports(self):
+        service=self.server.RequestHandlerClass.studio_service
+        project=new_project();project['intro'].update(enabled=True,placement='every_chapter')
+        project['chapters'][0].update(renderStale=False,render={'path':'saved.mp4'})
+        project=service.store.save(project)
+        intro=project['intro'] | {'placement':'full_story_only'}
+        code,_,_=self.request('/studio/edit',{'project':project['id'],'scope':'project','id':project['id'],'patch':{'intro':intro}})
+        self.assertEqual(code,200)
+        saved=service.store.load(project['id'])
+        self.assertTrue(saved['chapters'][0]['renderStale'])
+        self.assertEqual(saved['chapters'][0]['render']['path'],'saved.mp4')
+
+    def test_editing_legacy_intro_text_records_old_audio_text_identity(self):
+        from studio_data import digest
+        service=self.server.RequestHandlerClass.studio_service
+        project=new_project();project['intro'].update(voiceText='Original hook.',audioPath='intro.wav')
+        project=service.store.save(project)
+        code,_,_=self.request('/studio/edit',{'project':project['id'],'scope':'project','id':project['id'],'patch':{'intro':project['intro'] | {'voiceText':'Rewritten hook.'}}})
+        self.assertEqual(code,200)
+        saved=service.store.load(project['id'])
+        self.assertEqual(saved['intro']['audioTextDigest'],digest('Original hook.'))
+        self.assertEqual(saved['intro']['voiceText'],'Rewritten hook.')
+
     def test_trace_export_is_authenticated_and_does_not_expose_project_text(self):
         service = self.server.RequestHandlerClass.studio_service
         project = service.store.save(new_project())

@@ -11,7 +11,19 @@ Implemented in the existing `studio.html` application. Audio and the original co
 5. Review characters, scene cards, prompts and planned appearance changes. Select **Generate missing images**.
 6. Review images. Use **Edit shot**, **Visual QC**, **Repair**, or **Accept image** where appropriate.
 7. Open **Video** and select **Render chapter**. Add another chapter when ready.
-8. Select **Render full story**. Intro is off by default; project settings allow 10–20 seconds, once before the full story or before every chapter.
+8. Select **Render full story**. Intro is off by default; project settings allow 10–30 seconds, once before the full story or before every chapter.
+
+### Intro timing and editing — October 8
+
+**Settings → Optional intro → End with narration** is on by default, including older projects. With a saved WAV, the selected duration becomes a maximum: rendering ends one quarter-second after the audio, rounded to a video frame, with a ten-second minimum. Turn it off to keep a fixed duration. Narration longer than the selected duration is rejected rather than cut off. This removes padding after the audio file; it does not detect long pauses inside that file.
+
+Editing intro voice text requires regenerating its separate audio before rendering. Regenerating an image at the same filename invalidates the intro cache through its byte fingerprint. Changing intro placement invalidates affected exports while retaining their previous files. Preparation reuses matching intro audio and keeps existing storyboard images and manual edits. Individual chapter narration and story text stay separate from the intro.
+
+New AI intro plans use the supplied duration/style and verified source. They begin with a concrete conflict, progress through four to six purposeful shots, and avoid invented events, unrelated characters, text, borders and spoilers outside the supplied source. This improves future planning; it does not silently rewrite an existing authored hook or regenerate saved pictures.
+
+Verification: targeted regression tests plus an offline real FFmpeg fixture with 10.5 seconds of intro audio and a two-second chapter produced a decoded 12.75-second video. No cloud image generation was used for this check.
+
+Cloud archives and cloud compute remain separate. Google migration must verify all assets and manifests before changing the active provider. Audio and rendering remain on the existing helper until an authorized cloud compute job is deployed and tested. The file dashboard and edit controls do not establish all-cloud production by themselves.
 
 Existing comic projects remain in their original browser database. The import action creates a story project while retaining the old comic snapshot; the original panel images/export tools remain accessible through **Comic & panel tools**.
 

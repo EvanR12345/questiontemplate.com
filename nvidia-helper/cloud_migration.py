@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import PurePosixPath
 from studio_data import validate_project
 
@@ -10,13 +11,15 @@ from studio_data import validate_project
 def digest_bytes(value):return hashlib.sha256(value).hexdigest()
 
 
-def migrate_to_google(source, target, progress=None):
+def migrate_to_google(source, target, progress=None, workers=1):
     """Publish each manifest only after every referenced immutable asset exists.
 
     The caller must hold production idle, verify restored projects and publishing
     parity, then explicitly switch configuration. This function never does so.
     Existing target objects are verified; conflicting records are not overwritten.
     """
+    if type(workers) is not int or not 1<=workers<=3:
+        raise ValueError('Use one to three bounded archive transfer workers.')
     keys=set(source.keys('studio/'))|set(source.keys('publisher/'))
     manifests=sorted(k for k in keys if re.fullmatch(r'studio/manifests/pr-[a-f0-9]{16}\.json',k))
     assets=sorted(k for k in keys if k.startswith('studio/assets/'))
@@ -27,13 +30,19 @@ def migrate_to_google(source, target, progress=None):
     def emit():
         if progress:progress(dict(result))  # Counts only; no OAuth keys/content.
 
-    for key in assets:
+    def copy_asset(key):
         match=re.fullmatch(r'studio/assets/pr-[a-f0-9]{16}/([a-f0-9]{64})/(.+)',key)
         if not match:raise ValueError('Invalid source asset identity; migration stopped safely.')
         obj=source.open_object(key)
-        try:verified[key]=(match[1],obj['bytes'],target.import_stream(key,obj,match[1]))
+        try:return key,match[1],obj['bytes'],target.import_stream(key,obj,match[1])
         finally:obj['body'].close()
-        result['assets']+=1;result['bytes']+=obj['bytes'];emit()
+
+    # Only independent immutable assets overlap. All futures finish before
+    # publishing any history/project records, even when one transfer fails.
+    with ThreadPoolExecutor(max_workers=workers,thread_name_prefix='archive-copy') as pool:
+        for key,checksum,size,generation in pool.map(copy_asset,assets):
+            verified[key]=(checksum,size,generation)
+            result['assets']+=1;result['bytes']+=size;emit()
 
     def copy_record(key,body):
         old,_=target.read(key)

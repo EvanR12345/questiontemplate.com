@@ -140,12 +140,14 @@ class GCSObjects:
         existing=self.bucket.get_blob(key, timeout=60)
         if existing is not None:
             return self.verify_object(key,checksum,source['bytes'])
-        blob=self.bucket.blob(key, chunk_size=64*1024*1024)
+        # Smaller replayable HTTP chunks keep laptop/cloud migration memory low
+        # and avoid sending a single 64 MiB request through an unstable uplink.
+        blob=self.bucket.blob(key, chunk_size=8*1024*1024)
         blob.metadata={'sha256':checksum}
         reader=HashingReader(source['body'])
         blob.upload_from_file(reader, size=source['bytes'], rewind=False,
                              content_type=source.get('contentType','application/octet-stream'),
-                             if_generation_match=0, timeout=60, checksum='auto')
+                             if_generation_match=0, timeout=120, checksum='auto')
         if reader.count!=source['bytes'] or reader.checksum.hexdigest()!=checksum:
             raise ValueError('Migration source checksum mismatch; no project manifest published.')
         blob.reload(timeout=60)

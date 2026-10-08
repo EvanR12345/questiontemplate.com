@@ -399,6 +399,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     patch=body['patch']
                     if not isinstance(patch,dict) or any(k in ('id','schemaVersion','revision','created') for k in patch):raise ValueError('Cannot edit stable identity fields.')
                     changed={k:v for k,v in patch.items() if target.get(k)!=v}
+                    previous_intro=copy.deepcopy(p['intro'])
                     previous_prompt=target.get('prompt','');previous_handoff=copy.deepcopy(target.get('handoff',{}));previous_video=copy.deepcopy(p['settings'].get('video',{}));previous_watermark=copy.deepcopy(p['settings'].get('watermark',{}));previous_engagement=copy.deepcopy(p['settings'].get('engagement',{}))
                     target.update(patch)
                     if changed and scope in ('shot','scene','chapter'):get_chapter(p,id if scope=='chapter' else body['chapter'])['renderStale']=True;p['renderStale']=True
@@ -408,7 +409,13 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         if p['settings'].get('video')!=previous_video or p['settings'].get('watermark',{})!=previous_watermark or p['settings'].get('engagement',{})!=previous_engagement:
                             p['renderStale']=True;p['intro']['renderStale']=True
                             for chapter in p['chapters']:chapter['renderStale']=True
-                    if scope=='project' and 'intro' in changed:p['renderStale']=True
+                    if scope=='project' and 'intro' in changed:
+                        if previous_intro.get('audioPath') and previous_intro.get('voiceText','').strip()!=p['intro'].get('voiceText','').strip():
+                            from studio_data import digest
+                            p['intro']['audioTextDigest']=previous_intro.get('audioTextDigest') or digest(previous_intro.get('voiceText','').strip())
+                        p['renderStale']=True;p['intro']['renderStale']=True
+                        for chapter in p['chapters']:
+                            if p['intro']['placement']=='every_chapter' or previous_intro['placement']=='every_chapter':chapter['renderStale']=True
                     if scope=='chapter' and 'handoff' in patch:
                         from studio_data import warn_dependents
                         warn_dependents(p,target,previous_handoff)

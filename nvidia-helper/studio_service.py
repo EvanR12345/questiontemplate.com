@@ -1104,8 +1104,8 @@ class StudioService:
         p = self.store.load(pid)
         if p['intro']['enabled'] and p['intro'].get('voiceText'):
             self.before_audio()
-            self.measured_stage(pid, 'Intro narration', self.intro_audio, p)
-            if p['intro'].get('sourceBrief'):
+            self.measured_stage(pid, 'Intro narration', self.intro_audio, p, True)
+            if p['intro'].get('sourceBrief') and not p['intro'].get('shots'):
                 self.measured_stage(pid, 'Intro direction', self.plan_intro, self.store.load(pid))
         self.store.mutate(pid, lambda q: q.setdefault('production', {}).update(
             status='READY_FOR_IMAGES', stage='Fresh narration and direction prepared; connect the image worker'))
@@ -1442,7 +1442,7 @@ class StudioService:
         if (
             p["intro"]["enabled"]
             and p["intro"].get("voiceText", "").strip()
-            and not p["intro"].get("audioPath")
+            and (not p["intro"].get("audioPath") or p['intro'].get('audioTextDigest') not in (None,digest(p['intro'].get('voiceText','').strip())))
         ):
             self.production_progress(
                 pid, "Preparing separate intro audio", chapterId=None, shotId=None
@@ -1557,7 +1557,7 @@ class StudioService:
     def intro_submission_signature(self, project):
         intro=project['intro']
         fields={k:intro.get(k) for k in ('enabled','duration','placement','title','subtitle',
-                 'showTitle','voiceText','visualPath','audioPath','motion')}
+                 'showTitle','voiceText','visualPath','audioPath','motion','endOnNarration')}
         def asset(name):
             if not name:return None
             path=self.store.asset(project['id'],name)
@@ -1605,7 +1605,7 @@ class StudioService:
         intro_input=None
         if intro['enabled'] and (chapter_id is None or intro['placement']=='every_chapter'):
             intro_input={k:intro.get(k) for k in ('enabled','duration','placement','title','subtitle',
-                         'showTitle','voiceText','visualPath','audioPath','motion')}
+                         'showTitle','voiceText','visualPath','audioPath','motion','endOnNarration')}
             intro_input.update(visualBytes=asset(intro.get('visualPath')),audioBytes=asset(intro.get('audioPath')),
                 shots=[{'image':asset(s.get('imagePath')),**{k:s.get(k) for k in ('start','end','motion')}}
                        for s in intro.get('shots',[])])
@@ -1860,12 +1860,15 @@ class StudioService:
             "soundEffects": effects,
         }
 
-    def intro_audio(self, p):
+    def intro_audio(self, p, reuse=False):
         text = p["intro"].get("voiceText", "").strip()
         if not text:
             raise ValueError(
                 "Enter explicit intro voice text first. Chapter labels are never inserted."
             )
+        signature=digest({'text':text,'voice':{k:p['settings'].get(k) for k in ('voice','speed','soundEffects','narrationDelivery','emphasisPhrases')},'deliveryVersion':AUDIO_DELIVERY_VERSION})
+        if reuse and p['intro'].get('audioSignature')==signature and p['intro'].get('audioPath') and self.store.asset(p['id'],p['intro']['audioPath']).is_file():
+            return
         result = self.create_audio(
             text,
             p["settings"]["voice"],
@@ -1875,12 +1878,11 @@ class StudioService:
             p['settings'].get('narrationDelivery', 'standard'),
             p['settings'].get('emphasisPhrases', []),
         )
-        self.store.mutate(
-            p["id"],
-            lambda q: q["intro"].update(
-                audioPath="intro.wav", audioDuration=result["duration"], audioSentences=result['sentences']
-            ),
-        )
+        def save_audio(q):
+            q['intro'].update(audioPath='intro.wav',audioDuration=result['duration'],audioSentences=result['sentences'],
+                audioTextDigest=digest(text),audioSignature=signature,renderStale=True)
+            q['renderStale']=True
+        self.store.mutate(p['id'],save_audio)
 
     def plan_intro(self, p):
         """The director visualizes a separately authored, verified recap script."""
@@ -1892,12 +1894,12 @@ class StudioService:
         schema = obj({'shots': arr(obj({'start': number, 'end': number,
             'characters': arr({'type': 'string', 'enum': [c['id'] for c in p['characters']]}),
             'action': STR, 'camera': camera, 'lighting': STR, 'prompt': STR,
-            'motion': {'enum': ['static', 'slow zoom in', 'slow zoom out', 'pan left', 'pan right', 'pan up', 'pan down']}}))})
+            'motion': {'enum': ['static', 'slow zoom in', 'slow zoom out', 'pan left', 'pan right', 'pan up', 'pan down']}})) | {'minItems':4,'maxItems':6}})
         context = {'script': p['intro']['voiceText'], 'duration': p['intro']['duration'],
             'timing': p['intro'].get('audioSentences', []), 'verifiedSource': p['intro']['sourceBrief'],
             'people': [{k:c.get(k) for k in ('id','name','description','permanentIdentity','defaultAppearance')} for c in p['characters']],
             'style': p['settings']['style'], 'visualConstraints': p['settings'].get('visualConstraints', '')}
-        plan = self.director.call('Direct a 30-second fantasy recap teaser from the verified source ONLY. The script was authored by the user-appointed writer and must not change. Choose 4–6 individual landscape shots aligned with narration. Cover 0 to duration exactly, without gaps or overlaps. Attach only relevant supplied character IDs; Christopher before rebirth and Vaan after rebirth are DIFFERENT appearances. No title, labels, borders, collage or captions. Describe one simultaneous moment per prompt; make the illustrations expressive and intentionally composed. Do not include people or events beyond the verified chapter range.', context, schema, self.gate)
+        plan = self.director.call('Direct a recap teaser in the supplied visual style and duration, from the verified source ONLY. The supplied narration script must not change. Open on its strongest concrete conflict or consequential moment, rather than a generic room or landscape. Choose 4–6 individual landscape shots aligned with narration; use purposeful visual escalation and leave an unresolved question only when the script supports it. Cover 0 to duration exactly, without gaps or overlaps. Attach only relevant supplied character IDs and preserve the separate identities and appearance states in the context. No title, labels, borders, collage or captions. Describe one simultaneous moment per prompt; make the illustrations expressive and intentionally composed. Do not invent events, spoil unprovided chapters, or include people beyond the verified chapter range.', context, schema, self.gate)
         cursor = 0
         shots = []
         for item in plan['shots']:

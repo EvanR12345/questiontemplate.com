@@ -527,29 +527,52 @@ class VideoRenderer:
         result = self.full(single, gate)
         return result | {
             "downloadName": base["downloadName"],
-            "introDuration": p["intro"]["duration"],
+            "introDuration": self.intro_duration(p),
             "narrationRender": base,
         }
 
     def intro(self, p, gate):
         path = self.raw_intro(p,gate)
-        result = self.watermark_export(p,{'path':path.name,'duration':p['intro']['duration']},gate)
+        result = self.watermark_export(p,{'path':path.name,'duration':self.intro_duration(p)},gate)
         return self.store.asset(p['id'],result['path'])
+
+    def intro_duration(self, p):
+        """Keep the saved storyboard; remove only unvoiced time at its end."""
+        intro = p['intro']
+        planned = float(intro['duration'])
+        if not math.isfinite(planned) or not 10 <= planned <= 30:
+            raise ValueError('Intro duration must be 10–30 seconds.')
+        if not intro.get('audioPath'):
+            return planned
+        text_digest = intro.get('audioTextDigest')
+        if text_digest and text_digest != digest(intro.get('voiceText', '').strip()):
+            raise ValueError('Intro narration text changed. Generate separate intro voice again before rendering; previous audio and video are retained.')
+        with wave.open(str(self.store.asset(p['id'], intro['audioPath'])), 'rb') as audio:
+            spoken = audio.getnframes() / audio.getframerate()
+        if spoken > planned + .02:
+            raise ValueError(f'Intro narration lasts {spoken:.1f}s, longer than the {planned:g}s intro. Shorten its text or regenerate at a faster speaking speed; narration will not be cut off.')
+        if intro.get('endOnNarration', True) is False:
+            return planned
+        fps = p['settings']['video']['fps']
+        return min(planned, max(10.0, math.ceil((spoken + .25) * fps) / fps))
 
     def raw_intro(self, p, gate):
         intro = p["intro"]
         v = p["settings"]["video"]
-        duration = float(intro["duration"])
-        if not 10 <= duration <= 30:
-            raise ValueError("Intro duration must be 10–30 seconds.")
-        if intro.get('audioPath'):
-            with wave.open(str(self.store.asset(p['id'],intro['audioPath'])), 'rb') as narration:
-                spoken_duration = narration.getnframes()/narration.getframerate()
-            if spoken_duration > duration + .02:
-                raise ValueError(f'Intro narration lasts {spoken_duration:.1f}s, longer than the {duration:g}s intro. Shorten its text or regenerate at a faster speaking speed; narration will not be cut off.')
+        planned_duration = float(intro['duration'])
+        duration = self.intro_duration(p)
+        for index, shot in enumerate(intro.get('shots', [])):
+            if shot.get('imagePath') and not self.store.asset(p['id'], shot['imagePath']).is_file():
+                raise ValueError(f'Generate intro shot {index+1} before rendering. No previous intro was replaced.')
+        if intro.get('visualPath') and not self.store.asset(p['id'], intro['visualPath']).is_file():
+            raise ValueError('Choose or generate the intro background before rendering. No previous intro was replaced.')
         signature = digest(
             {
-                "introRendererVersion": 6,
+                "introRendererVersion": 7,
+                "effectiveDuration": duration,
+                "audioIdentity": self.asset_identity(p['id'], intro.get('audioPath')) if intro.get('audioPath') else None,
+                "visualIdentity": self.asset_identity(p['id'], intro.get('visualPath')) if intro.get('visualPath') else None,
+                "shotImageIdentities": [self.asset_identity(p['id'], s['imagePath']) for s in intro.get('shots',[]) if s.get('imagePath')],
                 "intro": {
                     k: intro.get(k)
                     for k in (
@@ -561,6 +584,7 @@ class VideoRenderer:
                         "motion",
                         "showTitle",
                         "shots",
+                        "endOnNarration",
                     )
                 },
                 "video": v,
@@ -580,20 +604,22 @@ class VideoRenderer:
                 if qc_decision(p,shot,self.store)['blocking']:
                     raise ValueError(f'Intro shot {index+1} needs review. Accept it or request a repair before rendering.')
                 start, end = float(shot['start']), float(shot['end'])
-                if not all(math.isfinite(x) for x in (start, end)) or abs(start-cursor) > .02 or end <= start or end > duration+.02:
+                if not all(math.isfinite(x) for x in (start, end)) or abs(start-cursor) > .02 or end <= start or end > planned_duration+.02:
                     raise ValueError('Intro shots must cover its duration in order without gaps or overlaps.')
                 image = self.store.asset(p['id'], shot.get('imagePath', ''))
                 if not image.is_file():
                     raise ValueError(f'Generate intro shot {index+1} before rendering. No previous intro was replaced.')
-                seconds = end-start
-                clip = folder / ('intro-shot-' + digest({'version': 2, 'shot': shot, 'video': v})[:20] + '.mp4')
+                seconds = max(0, min(end, duration)-start)
+                cursor = end
+                if seconds <= 0:
+                    continue
+                clip = folder / ('intro-shot-' + digest({'version': 3, 'shot': shot, 'seconds':seconds, 'image':self.asset_identity(p['id'],shot['imagePath']), 'video': v})[:20] + '.mp4')
                 if not clip.is_file():
                     visual = self.motion(shot | {'manual': {'motion': True}}, v | {'imageFit': 'cover'}, round(seconds*v['fps']))
                     self.run(['-loop', '1', '-i', str(image), '-vf', visual, '-an', '-t', str(seconds), *self.encoding(p), str(clip)], gate, folder / f'intro-shot-{index+1}.log')
                 clips.append(clip)
                 lengths.append(seconds)
-                cursor = end
-            if abs(cursor-duration) > .02:
+            if abs(cursor-planned_duration) > .02:
                 raise ValueError('Intro shots must reach the end of the intro narration timeline.')
             montage = folder / ('intro-montage-' + signature[:12] + '.mp4')
             if not montage.is_file():
@@ -666,10 +692,11 @@ class VideoRenderer:
 
         def add_intro():
             nonlocal duration
+            intro_seconds = self.intro_duration(p)
             visual = self.raw_intro(p, gate)
             files.append(visual)
-            durations.append(p["intro"]["duration"])
-            duration += p["intro"]["duration"]
+            durations.append(intro_seconds)
+            duration += intro_seconds
             audio = visual.with_suffix(".wav")
             if not audio.exists():
                 inputs = (
@@ -683,7 +710,7 @@ class VideoRenderer:
                         "-af",
                         "apad",
                         "-t",
-                        str(p["intro"]["duration"]),
+                        str(intro_seconds),
                         "-c:a",
                         "pcm_s16le",
                         "-ar",

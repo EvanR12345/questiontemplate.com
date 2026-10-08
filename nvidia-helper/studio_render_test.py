@@ -71,6 +71,68 @@ class MotionTest(unittest.TestCase):
 
 
 class IntroTest(unittest.TestCase):
+    def narrated_project(self, folder, seconds=24):
+        store=ProjectStore(folder);p=store.save(new_project('Teaser'))
+        p['intro'].update(enabled=True,duration=30,voiceText='A story-supported conflict.',audioPath='intro.wav')
+        with wave.open(str(store.asset(p['id'],'intro.wav')),'wb') as output:
+            output.setnchannels(1);output.setsampwidth(2);output.setframerate(24000)
+            output.writeframes(b'\0'*int(seconds*24000*2))
+        return store,p,VideoRenderer(store,{})
+
+    def test_narration_end_removes_padding_and_fixed_duration_is_optional(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,renderer=self.narrated_project(folder)
+            self.assertEqual(renderer.intro_duration(p),24.25)
+            with patch.object(renderer,'run') as run:
+                renderer.intro(p,lambda *_:None)
+            args=run.call_args.args[0]
+            self.assertEqual(args[args.index('-t')+1],'24.25')
+            self.assertEqual(p['intro']['duration'],30)
+            p['intro']['endOnNarration']=False
+            self.assertEqual(renderer.intro_duration(p),30)
+            p['intro'].pop('audioPath')
+            self.assertEqual(renderer.intro_duration(p),30)
+        with tempfile.TemporaryDirectory() as folder:
+            _,p,renderer=self.narrated_project(folder,3)
+            self.assertEqual(renderer.intro_duration(p),10)
+
+    def test_edited_intro_script_cannot_render_old_audio(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,renderer=self.narrated_project(folder)
+            p['intro']['audioTextDigest']=digest(p['intro']['voiceText'])
+            p['intro']['voiceText']='An edited hook.'
+            with self.assertRaisesRegex(ValueError,'narration text changed'), patch.object(renderer,'run') as run:
+                renderer.intro(p,lambda *_:None)
+            run.assert_not_called()
+            self.assertTrue(store.asset(p['id'],'intro.wav').exists())
+
+    def test_montage_trims_last_clip_and_preserves_storyboard(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,renderer=self.narrated_project(folder)
+            for name in ('a.png','b.png'):store.asset(p['id'],name).write_bytes(b'fixture')
+            p['intro']['shots']=[{'start':0,'end':12,'imagePath':'a.png'}, {'start':12,'end':30,'imagePath':'b.png'}]
+            with patch.object(renderer,'run') as run:
+                renderer.intro(p,lambda *_:None)
+            encoding=[c.args[0] for c in run.call_args_list if '-loop' in c.args[0]]
+            self.assertEqual([a[a.index('-t')+1] for a in encoding],['12.0','12.25'])
+            self.assertEqual(p['intro']['shots'][1]['end'],30)
+
+    def test_replaced_intro_image_invalidates_cached_render(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,renderer=self.narrated_project(folder)
+            store.asset(p['id'],'a.png').write_bytes(b'old image')
+            p['intro']['shots']=[{'start':0,'end':30,'imagePath':'a.png'}]
+            with patch.object(renderer,'run',side_effect=RenderReuseTest.save_output) as run:
+                first=renderer.intro(p,lambda *_:None)
+                run.reset_mock()
+                self.assertEqual(first,renderer.intro(p,lambda *_:None))
+                run.assert_not_called()
+                store.asset(p['id'],'a.png').write_bytes(b'new reference-conditioned image')
+                second=renderer.intro(p,lambda *_:None)
+                self.assertNotEqual(first,second)
+                self.assertGreater(run.call_count,0)
+                self.assertTrue(first.exists())
+
     def test_pending_cloud_quality_check_blocks_intro_render(self):
         with tempfile.TemporaryDirectory() as folder:
             store = ProjectStore(folder); p = store.save(new_project())

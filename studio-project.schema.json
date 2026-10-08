@@ -161,6 +161,9 @@
     "intro": {
       "type": "object",
       "properties": {
+        "endOnNarration": {
+          "type": "boolean"
+        },
         "enabled": {
           "type": "boolean"
         },

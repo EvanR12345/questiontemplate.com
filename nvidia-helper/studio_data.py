@@ -291,6 +291,7 @@ def new_project(name="My story"):
             "voiceText": "",
             "visualPath": "",
             "audioPath": "",
+            "endOnNarration": True,
             "motion": "slow zoom in",
         },
         "characters": [],
@@ -358,6 +359,8 @@ def validate_project(p):
         raise ValueError("Intro duration must be 10–30 seconds.")
     if p["intro"]["placement"] not in ("full_story_only", "every_chapter"):
         raise ValueError("Invalid intro placement.")
+    if 'endOnNarration' in p['intro'] and type(p['intro']['endOnNarration']) is not bool:
+        raise ValueError('Intro end-on-narration must be enabled or disabled.')
     if 'focusedPrompts' in p['settings'] and not isinstance(p['settings']['focusedPrompts'], bool):
         raise ValueError('Focused prompts must be enabled or disabled.')
     validate_checks(p['settings'])

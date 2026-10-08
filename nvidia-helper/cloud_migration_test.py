@@ -39,6 +39,17 @@ class MigrationTests(unittest.TestCase):
     def test_resume_verifies_existing_objects_and_is_idempotent(self):
         migrate_to_google(self.source,self.target);generation=self.client.data[self.asset]['generation']
         migrate_to_google(self.source,self.target);self.assertEqual(self.client.data[self.asset]['generation'],generation)
+    def test_bounded_parallel_assets_finish_before_publishing_manifest(self):
+        second_body=b'second saved reference';second_sha=hashlib.sha256(second_body).hexdigest()
+        second=f'studio/assets/{self.pid}/{second_sha}/reference.png';self.source.data[second]=second_body
+        self.value['files']['reference.png']={'key':second,'sha256':second_sha,'bytes':len(second_body)}
+        self.source.data[self.manifest]=json.dumps(self.value).encode()
+        result=migrate_to_google(self.source,self.target,workers=2)
+        self.assertEqual(result['assets'],2);self.assertEqual(result['projects'],1)
+        self.assertEqual(self.target.read(second)[0],second_body)
+        self.assertEqual(self.target.read(self.manifest)[0],self.source.data[self.manifest])
+        for invalid in (0,4,True):
+            with self.assertRaisesRegex(ValueError,'bounded'):migrate_to_google(self.source,self.target,workers=invalid)
     def test_wrong_asset_stops_before_publishing_any_manifest(self):
         self.source.data[self.asset]=b'wrong source data'
         with self.assertRaisesRegex(ValueError,'source checksum mismatch'):migrate_to_google(self.source,self.target)
