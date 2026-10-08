@@ -66,6 +66,65 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_production_readiness_reports_blocks_without_paid_requests(self):
+        from unittest.mock import Mock
+        service=self.server.RequestHandlerClass.studio_service
+        p=service.store.save(new_project('Readiness only'))
+        with patch.object(service,'storage',Mock(status=lambda *_:{'enabled':True,'provider':'Google Cloud Storage'})), \
+             patch('studio_service.LocalQwenDirector.healthCheck',return_value={'installed':True}), \
+             patch.object(service,'provider') as provider:
+            code,_,raw=self.request('/studio/production-readiness?project='+p['id'])
+        self.assertEqual(code,200)
+        report=json.loads(raw)
+        self.assertFalse(report['ready']);self.assertEqual(report['paidRequestsSubmitted'],0)
+        self.assertEqual(report['voiceLocation'],'local')
+        self.assertFalse(next(x for x in report['checks'] if x['name']=='chapters')['ready'])
+        provider.assert_not_called()
+
+    def test_preflight_revision_rejects_changed_story_before_queue_admission(self):
+        service=self.server.RequestHandlerClass.studio_service
+        p=new_project('Changed after checks');p['chapters'][0]['sourceText']='Story.'
+        p=service.store.save(p);revision=p['revision']
+        service.store.mutate(p['id'],lambda q:q.update(name='Later edit'))
+        before=service.snapshot()['jobs']
+        code,_,raw=self.request('/studio/jobs',{'project':p['id'],'kind':'produce-story',
+            'options':{'preflightRevision':revision}})
+        self.assertEqual(code,400)
+        self.assertIn('Project changed',json.loads(raw)['error'])
+        self.assertEqual(service.snapshot()['jobs'],before)
+
+    def test_ready_cloud_project_checks_worker_without_starting_generation(self):
+        from unittest.mock import Mock
+        service=self.server.RequestHandlerClass.studio_service
+        p=new_project('Ready project');p['chapters'][0]['sourceText']='Mira carries the key.'
+        p['settings'].update(cloudImagesOnly=True,qcCheckLevel='off')
+        p['settings']['image']['provider']='comfyui'
+        p['settings']['director']['provider']='openai-luna'
+        p['settings']['budget']={'openaiUSD':1}
+        p=service.store.save(p)
+        worker=Mock();worker.healthCheck.return_value={'installed':True}
+        with patch.object(service,'storage',Mock(status=lambda *_:{'enabled':True,'provider':'Google Cloud Storage'})), \
+             patch('studio_service.OpenAIDirector.healthCheck',return_value={'installed':True}), \
+             patch.object(service,'provider',return_value=worker), \
+             patch.dict(service.config,{'ffmpeg':__file__}):
+            code,_,raw=self.request('/studio/production-readiness?project='+p['id']+'&overlap=true')
+        report=json.loads(raw)
+        self.assertEqual(code,200);self.assertTrue(report['ready'])
+        self.assertEqual(report['paidRequestsSubmitted'],0)
+        worker.healthCheck.assert_called_once();worker.generateImage.assert_not_called()
+
+    def test_unavailable_cloud_worker_blocks_readiness_without_fallback_generation(self):
+        from unittest.mock import Mock
+        service=self.server.RequestHandlerClass.studio_service
+        p=new_project('Unavailable project');p['chapters'][0]['sourceText']='Mira carries the key.'
+        p['settings']['image']['provider']='comfyui';p=service.store.save(p)
+        worker=Mock();worker.healthCheck.side_effect=TimeoutError('private upstream detail')
+        with patch.object(service,'provider',return_value=worker):
+            report=service.production_readiness(p['id'])
+        self.assertFalse(report['ready']);worker.generateImage.assert_not_called()
+        self.assertNotIn('private upstream detail',json.dumps(report))
+        self.assertFalse(next(x for x in report['checks'] if x['name']=='images')['ready'])
+
     def test_cloud_attachment_link_does_not_restore_video_to_laptop(self):
         from unittest.mock import Mock
         service=self.server.RequestHandlerClass.studio_service
@@ -84,6 +143,7 @@ class BridgeTest(unittest.TestCase):
         original['settings']['director']['provider']='openai-luna'
         original['settings']['image'].update(provider='comfyui',model='flux2-klein-4b',workflow='saved-cloud-workflow')
         original['settings']['video']['fps']=60
+        original['settings'].update(cloudImagesOnly=True,qcCheckLevel='sampled')
         original['settings']['engagement'].update(outroAudioPath='old-outro.wav',outroAudioSignature='old-signature')
         original['settings']['image']['controlnets']=[{'image':'old-pose.png'}]
         original['chapters'][0]['sourceText']='Keep the existing story.'
@@ -96,6 +156,8 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(created['settings']['image']['provider'],'comfyui')
         self.assertEqual(created['settings']['image']['model'],'flux2-klein-4b')
         self.assertEqual(created['settings']['video']['fps'],60)
+        self.assertTrue(created['settings']['cloudImagesOnly'])
+        self.assertEqual(created['settings']['qcCheckLevel'],'sampled')
         self.assertEqual(created['settings']['image']['controlnets'],[])
         self.assertNotIn('outroAudioPath',created['settings']['engagement'])
         self.assertEqual(created['chapters'][0]['sourceText'],'')

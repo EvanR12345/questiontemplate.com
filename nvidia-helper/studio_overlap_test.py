@@ -14,6 +14,7 @@ from full_video_test import Harness,Renderer
 from studio_data import new_project,new_chapter,get_chapter,get_shot
 from studio_service import StudioService,JobCancelled
 from studio_overlap import CloudStoryOverlap,validate_overlap,NoLocalGeneration
+from studio_qc import should_check
 
 
 class SyntheticComfy:
@@ -64,6 +65,14 @@ class OverlapHarness(Harness):
                     if getattr(self,'planned_change',False) and ch['number']==2:
                         shot['characters'][0]['appearanceState']['outfit']='red coat'
                         shot['intentionalAppearanceChanges']=[{'field':'outfit','after':'red coat','reason':'source narration'}]
+            if getattr(self,'extra_unchecked_shot',False):
+                scene=ch['scenes'][0]
+                extra=copy.deepcopy(scene['shots'][0])
+                for index in range(100):
+                    extra['id']=scene['shots'][0]['id']+'-sample-'+str(index)
+                    if not should_check(q,extra):break
+                else:raise AssertionError('No unselected sample fixture found')
+                scene['shots'].append(extra)
         self.store.mutate(p['id'],prepare)
         if get_chapter(p,chid)['number']==2:self.signals['secondDirection'].set()
         return result
@@ -162,6 +171,34 @@ class CloudOverlapTest(unittest.TestCase):
         self.assertEqual(len(ledger['receipts']),2);self.assertFalse(ledger['requests'])
         self.assertEqual(self.service.renderer.full_calls,1)
 
+    def test_off_checks_overlap_and_resume_without_paid_vision_calls(self):
+        self.service.store.mutate(self.project['id'],lambda p:p['settings'].update(qcCheckLevel='off'))
+        self.signals['firstQC'].set()
+        self.run_story()
+        self.service.wait_for_overlap=False
+        self.run_story()
+        p=self.service.store.load(self.project['id'])
+        self.assertEqual(p['production']['status'],'COMPLETE')
+        self.assertEqual(len(self.provider.requests),2)
+        self.assertEqual(self.qc_requests,[])
+        for chapter in p['chapters']:
+            self.assertEqual(chapter['scenes'][0]['shots'][0]['qc']['status'],'UNCHECKED')
+
+    def test_sampled_overlap_reviews_only_selected_shots_and_reuses_them(self):
+        self.service.extra_unchecked_shot=True
+        self.service.store.mutate(self.project['id'],lambda p:p['settings'].update(qcCheckLevel='sampled',qcSampleEvery=20))
+        self.run_story()
+        self.service.wait_for_overlap=False
+        self.run_story()
+        p=self.service.store.load(self.project['id'])
+        self.assertEqual(p['production']['status'],'COMPLETE')
+        self.assertEqual(len(self.provider.requests),4)
+        self.assertEqual(len(self.qc_requests),2)
+        for chapter in p['chapters']:
+            checked,unchecked=chapter['scenes'][0]['shots']
+            self.assertTrue(checked['qc']['pass'])
+            self.assertEqual(unchecked['qc']['status'],'UNCHECKED')
+
     def test_qc_failure_runs_existing_automatic_repair_and_checks_the_replacement(self):
         self.service.store.mutate(self.project['id'],lambda p:p['settings'].update(
             qcPolicy='strict',automaticRepair=True,qcCostEstimate={'baselineControlled':True,
@@ -184,10 +221,9 @@ class CloudOverlapTest(unittest.TestCase):
         self.assertTrue(shot['qcHistory']);self.assertEqual(len(self.provider.requests),2)
         self.assertEqual(self.service.renderer.full_calls,0)
 
-    def test_eligibility_requires_full_qc_cap_remote_models_and_bounded_slots(self):
-        for change in ('qc','cap','provider','fallback','slots'):
+    def test_eligibility_requires_cap_remote_models_and_bounded_slots(self):
+        for change in ('cap','provider','fallback','slots'):
             p=copy.deepcopy(self.project);options={'overlap':True}
-            if change=='qc':p['settings']['visionQC']=False;p['settings']['generationMode']='Balanced'
             if change=='cap':p['settings']['budget']={}
             if change=='provider':p['settings']['director']['provider']='local-qwen'
             if change=='fallback':p['settings']['image']['fallbackEnabled']=True

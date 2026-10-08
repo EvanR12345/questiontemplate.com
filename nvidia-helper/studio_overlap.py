@@ -5,7 +5,7 @@ import threading
 from contextlib import contextmanager
 from openai_director import OpenAIDirector
 from studio_data import digest, get_chapter, get_shot, uid
-from studio_qc import decision as qc_decision, automatic_repairs, check_level
+from studio_qc import decision as qc_decision, automatic_repairs
 from studio_execution import (CommitCoordinator, CoordinatedStore, CoordinatedTrace,
     ExecutionJournal, ImageLane, LaneProvider, BoundedExecutions, UnresolvedExecution)
 
@@ -36,8 +36,6 @@ def validate_overlap(project, options):
         raise ValueError('Cloud overlap requires ComfyUI images and the Luna director.')
     if settings.get('economyPanels'):
         raise ValueError('Panel generation does not support cloud overlap.')
-    if check_level(settings) not in ('practical','strict'):
-        raise ValueError('Cloud overlap requires Practical or Strict checks on every image; choose serial production for Off or Sampled checks.')
     cap=settings.get('budget',{}).get('openaiUSD')
     if isinstance(cap,bool) or not isinstance(cap,(int,float)) or not 0<cap<float('inf'):
         raise ValueError('Set an explicit API spending cap before using cloud overlap.')
@@ -224,7 +222,7 @@ class CloudStoryOverlap:
         context=self.admit(snapshot,chapter,shot['id'],'image-qc',signature,self.chapter_dependencies)
         clone=self.clone(context,snapshot=snapshot)
         def execute():
-            status,message='COMPLETE','Image and full QC saved'
+            status,message='COMPLETE','Image saved with the selected check policy'
             try:
                 clone.validate_execution()
                 if review_only:

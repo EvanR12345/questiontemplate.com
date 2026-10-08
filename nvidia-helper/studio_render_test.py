@@ -232,6 +232,47 @@ class RenderReuseTest(unittest.TestCase):
                 self.assertEqual(len(encoding), 1)
                 self.assertIn('first.png', ' '.join(encoding[0].args[0]))
 
+    def test_completed_clip_and_chapter_are_checkpointed_after_atomic_rename(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,ch=self.setup_project(folder)
+            renderer=VideoRenderer(store,{})
+            completed=[]
+            renderer.on_output=lambda path:completed.append((path, path.read_bytes()))
+            with patch.object(renderer,'run',side_effect=self.save_output):
+                result=renderer.chapter(p,ch,lambda *_:None)
+            clips=[path for path,raw in completed if path.name.startswith('clip-')]
+            self.assertEqual(len(clips),2)
+            self.assertTrue(all('.partial.' not in path.name and raw for path,raw in completed))
+            self.assertIn(store.asset(p['id'],result['path']),[path for path,_ in completed])
+
+    def test_fresh_workspace_reuses_cloud_clips_when_one_image_is_changed(self):
+        from studio_storage import R2Archive
+        from studio_cloud_test import Objects
+        with tempfile.TemporaryDirectory() as original, tempfile.TemporaryDirectory() as scratch:
+            store,p,ch=self.setup_project(original)
+            ch['scenes'][0]['id']='scene-cache-test'
+            for shot in ch['scenes'][0]['shots']:
+                shot.update(sceneId='scene-cache-test',chapterId=ch['id'],characters=[],
+                    generationSettings={},camera={},status='COMPLETE')
+            renderer=VideoRenderer(store,{})
+            with patch.object(renderer,'run',side_effect=self.save_output):
+                ch['render']=renderer.chapter(p,ch,lambda *_:None)
+            p=store.save(p)
+            archive=R2Archive(store,Path(original)/'absent');archive.close()
+            archive.objects=Objects();archive.enabled=True;archive.sync(p['id'])
+            cold=ProjectStore(scratch)
+            restored=R2Archive(cold,Path(scratch)/'absent');restored.close()
+            restored.objects=archive.objects;restored.enabled=True;cold.archive=restored
+            current=cold.load(p['id']);chapter=current['chapters'][0]
+            cold.asset(p['id'],'first.png').write_bytes(b'changed image')
+            render=VideoRenderer(cold,{})
+            with patch.object(render,'run',side_effect=self.save_output) as run:
+                render.chapter(current,chapter,lambda *_:None)
+            encodes=[call for call in run.call_args_list if '-frames:v' in call.args[0]]
+            self.assertEqual(len(encodes),1)
+            self.assertIn('first.png',' '.join(encodes[0].args[0]))
+            self.assertEqual((store.folder(p['id'])/'first.png').read_bytes(),b'first.png')
+
     def test_retiming_keeps_unchanged_motion_clip(self):
         with tempfile.TemporaryDirectory() as folder:
             store, p, ch = self.setup_project(folder)

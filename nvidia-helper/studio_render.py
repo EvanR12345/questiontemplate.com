@@ -98,6 +98,21 @@ class VideoRenderer:
             identity['subpixelMotionVersion'] = 1
         return identity
 
+    def cached_asset(self, project_id, path):
+        """Restore only the exact content-addressed cache requested by this plan.
+
+        Cloud jobs start with empty scratch. Local existence checks alone would
+        discard reusable footage in the verified archive on every new job.
+        """
+        relative = Path(path).relative_to(self.store.folder(project_id)).as_posix()
+        target = self.store.asset(project_id, relative)
+        return target.is_file() and target.stat().st_size > 0
+
+    def completed_output(self, path):
+        callback = getattr(self, 'on_output', None)
+        if callable(callback):
+            callback(Path(path))
+
     @staticmethod
     def legacy_is_current(legacy, inputs):
         # Old cache keys did not hash asset bytes. An image or WAV replaced at
@@ -170,8 +185,7 @@ class VideoRenderer:
                 )
             if not multiple_outputs:
                 staging.replace(destination)
-                completed=getattr(self,'on_output',None)
-                if callable(completed):completed(destination)
+                self.completed_output(destination)
         finally:
             # This invocation owns its staging path. Keep completed clip caches
             # and previous selected videos; a failed partial cannot be resumed.
@@ -395,9 +409,10 @@ class VideoRenderer:
             durations.append(duration)
         def render_clip(job, worker_gate):
             clip = Path(job['clip'])
-            if not clip.is_file() or clip.stat().st_size == 0:
+            if not self.cached_asset(p['id'], clip):
                 self.run(job['args'],worker_gate,clip.with_suffix('.log'))
                 clip.with_suffix('.partial.mp4').replace(clip)
+                self.completed_output(clip)
             return clip
         workers = self.config.get('renderWorkers',2)
         clips = render_unique_clips(clip_jobs,render_clip,gate,workers=workers,
@@ -414,7 +429,7 @@ class VideoRenderer:
                                    'fade': fade, 'duration': durations[index], 'video': v})
                 target = folder / f"fade-{boundary[:24]}.mp4"
                 self.reuse_legacy_clip(folder / f"fade-{legacy_signature[:12]}-{index}.mp4", target, [clips[index-1], clip])
-                if not target.exists():
+                if not self.cached_asset(p['id'], target):
                     temporary = target.with_suffix(".partial.mp4")
                     filters = f"[0:v]trim=end_frame=1,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={fade},trim=duration={fade},settb=AVTB,fps={fps}[a];[1:v]setpts=PTS-STARTPTS,settb=AVTB,fps={fps}[b];[a][b]xfade=transition=fade:duration={fade}:offset=0[v]"
                     self.run(
@@ -441,6 +456,7 @@ class VideoRenderer:
                         folder / "render.log",
                     )
                     temporary.replace(target)
+                    self.completed_output(target)
                 assembled.append(target)
             else:
                 assembled.append(clip)
@@ -485,6 +501,7 @@ class VideoRenderer:
             folder / "render.log",
         )
         temp.replace(destination)
+        self.completed_output(destination)
         return {
             "path": str(destination.relative_to(self.store.folder(p["id"]))).replace(
                 "\\", "/"
@@ -504,7 +521,7 @@ class VideoRenderer:
         signature = digest({'branding':branding,'source':self.asset_identity(p['id'],result['path']),
                             'video':p['settings']['video']})
         target = self.store.folder(p['id']) / ('watermarked-'+signature+'.mp4')
-        if not target.exists():
+        if not self.cached_asset(p['id'], target):
             logo = target.with_suffix('.png')
             bitmap(p,self.store,logo)
             x,y = coordinates(p)
@@ -592,7 +609,7 @@ class VideoRenderer:
         )
         folder = self.store.folder(p["id"])
         destination = folder / f"intro-{signature[:12]}.mp4"
-        if destination.exists():
+        if self.cached_asset(p['id'], destination):
             return destination
         montage = None
         if intro.get('shots'):
@@ -614,7 +631,7 @@ class VideoRenderer:
                 if seconds <= 0:
                     continue
                 clip = folder / ('intro-shot-' + digest({'version': 3, 'shot': shot, 'seconds':seconds, 'image':self.asset_identity(p['id'],shot['imagePath']), 'video': v})[:20] + '.mp4')
-                if not clip.is_file():
+                if not self.cached_asset(p['id'], clip):
                     visual = self.motion(shot | {'manual': {'motion': True}}, v | {'imageFit': 'cover'}, round(seconds*v['fps']))
                     self.run(['-loop', '1', '-i', str(image), '-vf', visual, '-an', '-t', str(seconds), *self.encoding(p), str(clip)], gate, folder / f'intro-shot-{index+1}.log')
                 clips.append(clip)
@@ -622,7 +639,7 @@ class VideoRenderer:
             if abs(cursor-planned_duration) > .02:
                 raise ValueError('Intro shots must reach the end of the intro narration timeline.')
             montage = folder / ('intro-montage-' + signature[:12] + '.mp4')
-            if not montage.is_file():
+            if not self.cached_asset(p['id'], montage):
                 self.concat(clips, montage, gate, folder / 'intro-montage.log', lengths, video_only=True)
         title_filter = ''
         if intro.get('showTitle', False):
@@ -760,12 +777,12 @@ class VideoRenderer:
             }
         )
         target = self.store.folder(p["id"]) / f"story-{signature[:12]}.mp4"
-        if not target.exists():
+        if not self.cached_asset(p['id'], target):
             # Join original WAV narration once. Copying separate chapter AAC tracks
             # can accumulate encoder padding at chapter boundaries.
             visual = target.with_name(target.stem + "-visual.mp4")
             log = self.store.folder(p["id"]) / "full-render.log"
-            if not visual.exists():
+            if not self.cached_asset(p['id'], visual):
                 self.concat(files, visual, gate, log, durations, video_only=True)
             listing = target.with_suffix(".audio.txt")
             listing.write_text(
@@ -810,6 +827,7 @@ class VideoRenderer:
                 log,
             )
             temporary.replace(target)
+            self.completed_output(target)
         return self.engagement_export(p,{
             "path": target.name,
             "duration": duration,
@@ -843,7 +861,7 @@ class VideoRenderer:
         decorated=source
         if events:
             decorated=folder/f'reminders-{signature[:20]}.mp4'
-            if not decorated.exists():
+            if not self.cached_asset(p['id'], decorated):
                 logo=decorated.with_suffix('.png'); card(p,logo)
                 inputs=['-i',str(source),'-i',str(logo)]
                 enabled='+'.join(f'between(t,{e["start"]},{e["end"]})' for e in events)
@@ -881,7 +899,7 @@ class VideoRenderer:
             outro=folder/f'outro-{signature[:20]}.mp4'
             with wave.open(str(audio),'rb') as wav: spoken=wav.getnframes()/wav.getframerate()
             outro_duration=max(s['outroDuration'],spoken+.5)
-            if not outro.exists():
+            if not self.cached_asset(p['id'], outro):
                 visual=outro.with_suffix('.png'); card(p,visual,outro=True)
                 inputs=['-loop','1','-i',str(visual),'-i',str(audio)]
                 if branding.get('enabled',True):
@@ -891,7 +909,7 @@ class VideoRenderer:
                     '-t',str(outro_duration),*self.encoding(p),'-c:a','aac','-b:a','128k',
                     '-ar','24000','-ac','1','-movflags','+faststart',str(outro)],gate,outro.with_suffix('.log'))
             target=folder/f'complete-{signature[:20]}.mp4'
-            if not target.exists(): self.concat([decorated,outro],target,gate,target.with_suffix('.log'),[duration,outro_duration])
+            if not self.cached_asset(p['id'], target): self.concat([decorated,outro],target,gate,target.with_suffix('.log'),[duration,outro_duration])
             duration+=outro_duration
         final=result | {'path':target.name,'duration':duration,'signature':signature,
                          'engagementEvents':events,'engagementIdentity':identity,'narrationRender':result,'watermarkIdentity':branding,
@@ -939,7 +957,7 @@ class VideoRenderer:
         signature=digest({'source':self.asset_identity(p['id'],result['path']),'minutes':minutes,'version':1})
         folder=self.store.folder(p['id'])/('parts-'+signature[:16]); folder.mkdir(exist_ok=True)
         receipt=folder/'parts.json'
-        if receipt.exists():
+        if self.cached_asset(p['id'], receipt):
             saved=json.loads(receipt.read_text(encoding='utf-8'))
             if all(self.store.asset(p['id'],x['path']).is_file() for x in saved): return saved
         # FFmpeg segment muxer chooses existing keyframes near the requested time.
@@ -954,8 +972,10 @@ class VideoRenderer:
         for i,row in enumerate(csv.reader(listing.read_text(encoding='utf-8').splitlines()),1):
             file=folder/Path(row[0]).name
             (staging/file.name).replace(file)
+            self.completed_output(file)
             parts.append({'number':i,'path':file.relative_to(self.store.folder(p['id'])).as_posix(),
                 'start':float(row[1]),'end':float(row[2]),'duration':float(row[2])-float(row[1]),
                 'downloadName':f'{p["name"]}-part-{i:02d}.mp4','keyframeAligned':True})
         temp=receipt.with_suffix('.tmp'); temp.write_text(json.dumps(parts),encoding='utf-8'); temp.replace(receipt)
+        self.completed_output(receipt)
         return parts

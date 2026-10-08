@@ -73,6 +73,7 @@ class CloudRenderTests(unittest.TestCase):
             saved=json.loads(obj.read(f'studio/manifests/{p["id"]}.json')[0])
             self.assertEqual(result['status'],'COMPLETE')
             self.assertIn('fixture.mp4',saved['files'])
+            self.assertEqual(obj.uploads,1,'Final publication must not re-upload an already verified checkpoint.')
             self.assertEqual(saved['project']['exports']['patreon']['path'],'fixture.mp4')
             self.assertEqual(job.run()['status'],'COMPLETE')
             self.assertEqual(saved['project']['chapters'],p['chapters'])

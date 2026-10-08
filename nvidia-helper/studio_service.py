@@ -440,10 +440,65 @@ class StudioService:
                 "storage": self.storage.status(),
             }
 
+    def production_readiness(self, pid, options=None):
+        """Read-only checks before the first potentially paid production stage."""
+        import shutil
+        p=self.store.load(pid);options=options or {};checks=[]
+        def check(name, ready, message, blocking=True):
+            checks.append({'name':name,'ready':bool(ready),'message':message,'blocking':blocking})
+        chapters=[c for c in p['chapters'] if c['sourceText'].strip()]
+        check('chapters',bool(chapters),'Story chapters are ready.' if chapters else 'Paste at least one chapter.')
+        unresolved=self.execution_journal.unresolved_project(pid)
+        check('recovery',not unresolved,'Saved remote work is resolved.' if not unresolved else
+              'Reconcile the saved remote request IDs before starting; no automatic duplicate purchases.')
+        try:voice=bool(self.audio.health().get('backend'))
+        except Exception:voice=False
+        check('voice',voice,'Voice generation stays on this laptop.' if voice else 'The local voice helper is unavailable.')
+        check('renderer',Path(self.config.get('ffmpeg','')).is_file(),
+              'Local video renderer must be installed; cloud rendering is an optional separate export.')
+        provider_name=p['settings']['image']['provider']
+        check('cloud-images',not p['settings'].get('cloudImagesOnly') or provider_name=='comfyui',
+              'Cloud-only projects require their configured cloud image provider.')
+        images_needed=any(not c['scenes'] or any(not s.get('imagePath') or s.get('generationStale')
+                          for scene in c['scenes'] for s in scene['shots']) for c in chapters)
+        if p['intro']['enabled']:
+            images_needed |= bool(not p['intro'].get('visualPath') and not p['intro'].get('shots'))
+            images_needed |= any(not s.get('imagePath') for s in p['intro'].get('shots',[]))
+        if images_needed:
+            try:installed=bool(self.provider(provider_name).healthCheck().get('installed'))
+            except Exception:installed=False
+            check('images',installed,'Image worker and workflow are available.' if installed else
+                  'The selected image worker is unavailable. Connect the installed model before generation; no fallback was started.')
+        director_name=p['settings']['director'].get('provider','local-qwen')
+        director=OpenAIDirector(self.config,self.store.root) if director_name=='openai-luna' else LocalQwenDirector(self.config,self.store.root)
+        check('director',director.healthCheck().get('installed'),
+              'Selected director credentials/model must be configured.')
+        if director_name=='openai-luna':
+            cap=p['settings'].get('budget',{}).get('openaiUSD',0)
+            valid=type(cap) in (int,float) and math.isfinite(cap) and cap>0
+            check('api-budget',valid,'Set a positive API spending cap in Advanced settings before production.')
+        if options.get('overlap'):
+            try:
+                from studio_overlap import validate_overlap
+                validate_overlap(p,options);valid=True
+            except ValueError:valid=False
+            check('overlap',valid,'Overlap must match the selected cloud providers, checks and API budget.')
+        free=shutil.disk_usage(self.store.folder(pid)).free
+        check('scratch',free>=512*2**20,
+              f'Local temporary disk: {free/2**30:.2f} GiB free. Long-video space is checked again against actual rendered inputs.')
+        storage=self.storage.status(pid)
+        check('archive',storage.get('enabled') and storage.get('provider')=='Google Cloud Storage',
+              'Permanent project and media archive must be connected to Google storage.')
+        check('rental',False,'A paused Studio queue does not stop a manually rented GPU. Keep its rental window bounded.',False)
+        return {'project':pid,'revision':p['revision'],'ready':all(x['ready'] for x in checks if x['blocking']),
+                'voiceLocation':'local','renderLocation':'local','checks':checks,'paidRequestsSubmitted':0}
+
     def enqueue(self, pid, chapter, kind, shots=None, options=None):
         p = self.store.load(pid)
         self.require_resolved_execution(pid,kind)
         options = options or {}
+        if options.get('preflightRevision') is not None and options['preflightRevision']!=p['revision']:
+            raise ValueError('Project changed after readiness checks. Check the current project before starting.')
         if 'overlap' in options and not isinstance(options['overlap'],bool):
             raise ValueError('Cloud overlap must be explicitly enabled or disabled.')
         ch = get_chapter(p, chapter) if chapter else None
@@ -1379,7 +1434,7 @@ class StudioService:
                 # Cached shots need no per-shot progress writes to the entire
                 # durable project. One chapter update below records completion.
                 if (self.saved_image_ready(p, shot)):
-                    if getattr(self,'_overlap',None):
+                    if getattr(self,'_overlap',None) and should_check(p,shot):
                         qc=shot.get('qc',{})
                         asset_hash=hashlib.sha256(self.store.asset(pid,shot['imagePath']).read_bytes()).hexdigest()
                         if (qc.get('checkedImagePath')!=shot['imagePath'] or qc.get('checkedImageSHA256')!=asset_hash

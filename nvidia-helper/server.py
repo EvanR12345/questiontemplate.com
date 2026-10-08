@@ -238,6 +238,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         self.reply(200,project_view(studio.store,query['id'][0]))
                     elif path=='/studio/revision':self.reply(200,studio.store.revision(query['id'][0]))
                     elif path=='/studio/queue':self.reply(200,studio.snapshot())
+                    elif path=='/studio/production-readiness':self.reply(200,studio.production_readiness(query['project'][0],{'overlap':query.get('overlap',['false'])[0]=='true'}))
                     elif path=='/studio/trace':self.reply(200,studio.trace_report(query['project'][0]))
                     elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
                     elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0]))
@@ -330,7 +331,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     for key in ('style','layoutMode','generationMode','voice','speed','narrationDelivery',
                                 'soundEffects','emphasisPhrases','director','video','customLayout','budget',
                                 'continuityStrictness','appearanceHandling','maxImageRetries','visionQC',
-                                'qcSampleEvery','automaticRepair','qcPolicy','focusedPrompts'):
+                                'qcSampleEvery','qcCheckLevel','automaticRepair','qcPolicy','focusedPrompts','cloudImagesOnly'):
                         if key in previous:p['settings'][key]=copy.deepcopy(previous[key])
                     for key in ('provider','model','workflow','preset','width','height','steps','sampler',
                                 'scheduler','guidance','referenceStrength','fallbackEnabled','fallback'):

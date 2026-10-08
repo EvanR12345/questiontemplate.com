@@ -470,7 +470,6 @@ function render() {
   const openControls = [...root.querySelectorAll('details[data-ui][open]')].map(el => el.dataset.ui);
   const overlapEligible = connected && health?.cloudOverlapAvailable &&
     project.settings.image.provider === "comfyui" && project.settings.director.provider === "openai-luna" &&
-    ["practical", "strict"].includes(checkLevel()) &&
     Number.isFinite(project.settings.budget?.openaiUSD) && project.settings.budget.openaiUSD > 0 &&
     !project.settings.economyPanels;
   root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · your text is saved in this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${options(
@@ -478,7 +477,7 @@ function render() {
     project.id,
   )}</select><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
   <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
-  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong><p class="muted">Add your chapters below, then start the full workflow. Saved results and manual edits are preserved.</p><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && overlapRequested ? "checked" : ""} ${overlapEligible ? "" : "disabled"}> Overlap cloud tasks (preview)</label><p class="muted">Runs direction, images and reviews together. Requires Practical or Strict checks on every image, cloud images, Luna and an API spending cap.</p><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div>
+  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong><p class="muted">Add your chapters below, then start the full workflow. Saved results and manual edits are preserved. Voice generation stays on your computer.</p><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && overlapRequested ? "checked" : ""} ${overlapEligible ? "" : "disabled"}> Overlap cloud tasks (preview)</label><p class="muted">Runs direction and images together, plus only the reviews selected in Settings. Requires cloud images, Luna and an API spending cap.</p><div id="productionReadiness" role="status"></div><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><div class="toolbar"><button id="productionCheckReadiness" ${connected ? "" : "disabled"}>Check readiness</button><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div></div>
   ${project._unsynced ? '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>' : ""}
   ${project.warnings
     .filter((w) => !w.resolved)
@@ -936,11 +935,24 @@ function wire() {
   }
   $('#prepareOutro')?.addEventListener('click',()=>action(async()=>{await saveSettings();await submit('outro-audio');}));
   $("#productionOverlap").onchange = (event) => { overlapRequested = event.target.checked; };
+  const checkReadiness=async()=>{
+    await saveSettingsIfVisible();
+    const overlap=!!$("#productionOverlap")?.checked;
+    const readiness=await api("production-readiness?project="+encodeURIComponent(project.id)+"&overlap="+overlap);
+    $("#productionReadiness").innerHTML=`<details open><summary>${readiness.ready?'Ready to start':'Setup needs attention'}</summary><ul>${readiness.checks.map(x=>`<li>${x.ready?'✓':x.blocking?'Required:':'Note:'} ${escape(x.message)}</li>`).join('')}</ul><p class="muted">These checks do not generate images, rent a GPU or spend API tokens.</p></details>`;
+    return readiness;
+  };
+  $("#productionCheckReadiness").onclick=()=>action(checkReadiness);
   $("#productionFullVideo").onclick = () =>
     action(async () => {
-      await saveSettingsIfVisible();
+      const readiness=await checkReadiness();
+      const overlap=!!$("#productionOverlap")?.checked;
+      if(!readiness.ready){
+        const issues=readiness.checks.filter(x=>x.blocking&&!x.ready).map(x=>x.message);
+        throw Error("Before generation: "+issues.join(" "));
+      }
       queue = await api("jobs", { project: project.id, kind: "produce-story",
-        options: {overlap: !!$("#productionOverlap")?.checked} });
+        options: {overlap,preflightRevision:readiness.revision} });
       renderQueue();
       note(
         "Full video queued. Keep the shared helper running. Pause, cancel or retry here; completed work is saved and reused.",

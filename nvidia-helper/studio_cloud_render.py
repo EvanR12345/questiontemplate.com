@@ -123,7 +123,11 @@ class CloudRenderJob:
             self.update(status='UPLOADING',stage='Verifying and publishing completed video')
             # Pin the original manifest generation: concurrent website edits
             # cannot be replaced even after many local render-cache mutations.
-            archive.manifest=lambda pid,fresh=False:(frozen,original_etag)
+            # Checkpoints were already uploaded and verified. Include their
+            # current local stamps so final publication does not upload every
+            # clip again. The original generation still guards concurrent edits.
+            publication=original | {'files':original['files'] | self.files}
+            archive.manifest=lambda pid,fresh=False:(publication,original_etag)
             archive.sync(self.project_id)
             return self.update(status='COMPLETE',stage='Video ready',result=result,
                 elapsed=time.time()-self.started,files=self.files)
