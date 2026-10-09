@@ -19,6 +19,11 @@ export function strategyDescription(value) {
       : 'Uses the existing workflow and your overlap checkbox. Image admission can wait before directing the next chapter.';
   return detail + ' GPU rental start and stop remain external. Choosing a timed image-dispatch strategy does not schedule a pod or guarantee lower rental cost.';
 }
+export function strategySummary(value) {
+  return (value==='align' ? 'Align image dispatch with ongoing chapter planning using matching history. Without matching history, plan first.' :
+    value==='fastest' ? 'Start images for each ready chapter while Luna plans the next.' : 'Keep the existing workflow and overlap setting.') +
+    ' GPU rental must be started and stopped separately.';
+}
 export function forecastText(report) {
   if (!report) return 'Check readiness to load timing history. Old estimates are retained; incompatible settings are never treated as new measurements.';
   const h = report.history || {}, f = report.forecast || {};
