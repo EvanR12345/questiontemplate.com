@@ -43,6 +43,8 @@ On failure, new admission stops and already submitted sibling responses drain fo
 
 Prompt mappings must contain exactly one nonempty entry per supplied shot. Invalid responses are charged correctly and are never published as reusable successful cache entries. An older damaged/incomplete cache is retained for diagnosis and requires an explicit retry; discovering it does not buy a replacement implicitly.
 
+A cached-result progress save runs outside the shared cache publication lock, so large-project persistence cannot block independent cache readers/writers. A synthetic blocked-save regression verifies this without any API call.
+
 Telemetry separates API-lane wait, connection/headers, first text, stream duration, output limits, attempts, reasoning tokens and visible output tokens. Reasoning tokens already belong to billed output; they are not counted twice. Missing reasoning usage stays unknown. Failed requests report elapsed time, settled cost and unresolved reservations separately without recording payloads or credentials.
 
 ## Why more threads cannot remove the remaining bottleneck

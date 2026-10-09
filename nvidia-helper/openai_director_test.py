@@ -22,6 +22,28 @@ def stream(value='{"summary":"complete"}', status="completed", **extra):
 
 
 class LunaTest(unittest.TestCase):
+    def test_cached_progress_save_does_not_block_other_cache_publishers(self):
+        import openai_director
+        with tempfile.TemporaryDirectory() as folder:
+            director=self.director(folder)
+            with patch('openai_director.urllib.request.urlopen',return_value=stream()):
+                director.call('Test',{},obj({'summary':STR}),lambda *_:None)
+            entered=threading.Event();release=threading.Event()
+            def slow_save(*_):
+                entered.set()
+                if not release.wait(3):raise RuntimeError('Synthetic progress save timed out')
+            director.timing_callback=slow_save
+            with patch('openai_director.urllib.request.urlopen') as request,ThreadPoolExecutor(max_workers=1) as pool:
+                future=pool.submit(director.call,'Test',{},obj({'summary':STR}),lambda *_:None)
+                try:
+                    self.assertTrue(entered.wait(2))
+                    acquired=openai_director._cache_publish_lock.acquire(timeout=.5)
+                    if acquired:openai_director._cache_publish_lock.release()
+                    self.assertTrue(acquired,'A cached progress save held the shared cache lock')
+                finally:release.set()
+                self.assertEqual(future.result(timeout=2),{'summary':'complete'})
+                request.assert_not_called()
+
     def test_incomplete_prompt_mapping_is_charged_but_never_cached(self):
         from cost_control import SpendLedger
         with tempfile.TemporaryDirectory() as folder:

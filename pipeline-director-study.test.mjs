@@ -24,3 +24,15 @@ test('benchmark panel labels projections, varying plans and unchanged GPU calibr
   for(const phrase of ['not a measured long production','different shot counts','not silently substituted','no images','24-hour completion','unchanged grounded draft'])assert.ok(html.includes(phrase));
   assert.ok(html.includes('1440 minutes'));
 });
+
+test('measured pass table retains actual work and receipts without pretending these are serial delays',()=>{
+  const arm=study.wholePlans.find(a=>a.id==='parallel-2');
+  assert.ok(Math.abs(arm.stages.reduce((n,s)=>n+s.workSeconds,0)-arm.workSeconds)<.01);
+  assert.ok(Math.abs(arm.stages.reduce((n,s)=>n+s.estimatedUSD,0)-arm.estimatedUSD)<.000001);
+  const html=directorStudyHTML(study);
+  assert.ok(html.includes('parallel rows overlap'));
+  for(const stage of arm.stages)assert.ok(html.includes(stage.stage));
+  const altered=structuredClone(study);
+  altered.wholePlans.find(a=>a.id==='parallel-2').stages[0].medianFirstTextSeconds=null;
+  assert.ok(directorStudyHTML(altered).includes('Unknown'));
+});

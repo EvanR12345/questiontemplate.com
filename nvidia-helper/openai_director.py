@@ -119,6 +119,7 @@ class OpenAIDirector(DirectorProvider):
         identity = {"provider": "openai-luna", "adapterVersion": 1, "model": self.model,
                     "role": role, "context": context, "schema": schema, "reasoning": reasoning, "vision": vision}
         cache = self.log_root / "director-cache" / (hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest() + ".json")
+        cache_hit = False
         if cache.is_file():
             with _cache_publish_lock:
                 # Recheck under the publisher lock. A sibling may have retained
@@ -131,9 +132,13 @@ class OpenAIDirector(DirectorProvider):
                         cache.replace(cache.with_suffix('.invalid-'+uuid.uuid4().hex+'.json'))
                         raise ValueError('Saved director output was incomplete and retained for diagnosis. '
                             'Retry the analysis for a fresh request; existing images and manual edits were preserved.') from None
-                    if getattr(self, "timing_callback", None):
-                        self.timing_callback(role.split(":")[0].split(".")[0], 0, {"reused": True, "provider": "openai-luna"})
-                    return value
+                    cache_hit = True
+        if cache_hit:
+            # Project persistence can be slow on a large story. It must not
+            # hold the cache publisher lock needed by independent adapters.
+            if getattr(self, "timing_callback", None):
+                self.timing_callback(role.split(":")[0].split(".")[0], 0, {"reused": True, "provider": "openai-luna"})
+            return value
         clean = compact_source_evidence({k: v for k, v in context.items() if not k.startswith("_")})
         content = [{"type": "input_text", "text": json.dumps(clean, ensure_ascii=False)}]
         if vision:
