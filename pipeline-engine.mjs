@@ -1,10 +1,12 @@
 // A local scheduling model. This module never calls a paid provider or changes Studio projects.
 import {latestProfiles} from './pipeline-measurements.mjs';
+import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'off', sample:20,
   retries:0, warmCache:false, apiSlots:3, cpuOverlap:false, batch:24,
   exhaustive:false, earlyGpu:false, directorCost:.38798, qcCost:.0003, storageDaily:.168,
+  pricingBasis:'published',containerGB:20,storageDays:1,quotedGPUHourly:0,quotedGPU:'',
   resolution:'legacy', videoResolution:'720p', videoFps:30, videoRenderer:'auto', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0 };
 
 export const LANES = [
@@ -66,6 +68,11 @@ export const CATALOG = [
 
 export function validateConfig(input, evidence) {
   const c={...DEFAULTS,...input};
+  if(!['published','receipt','quote'].includes(c.pricingBasis))throw Error('Choose published prices, benchmark receipts or your compute quote.');
+  for(const [key,min] of [['containerGB',0],['storageDays',0],['quotedGPUHourly',0]]){
+    c[key]=Number(c[key]);if(!Number.isFinite(c[key])||c[key]<min)throw Error(key+' must be a finite nonnegative number.');
+  }
+  if(typeof c.quotedGPU!=='string'||c.quotedGPU.length>100)throw Error('Invalid quoted GPU identity.');
   for(const [key,lo,hi] of [['minutes',1,Infinity],['chapters',1,Infinity],['readyChapters',1,Infinity],['cadence',1,20],['introSeconds',10,60],['introImages',1,20],['sample',1,100],['retries',0,100],['apiSlots',1,3],['batch',1,Infinity],['directorCost',0,100],['qcCost',0,1],['storageDaily',0,10]]) {
     if(!Number.isFinite(Number(c[key]))||Number(c[key])<lo||Number(c[key])>hi) throw Error(`Invalid ${key}: use ${hi===Infinity?'a finite number of at least '+lo:lo+'–'+hi}.`);
     c[key]=Number(c[key]);
@@ -121,6 +128,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       scope:`${c.resolution}, ${measurement.workers} workers${c.executionMode!=='resident'?`, ${measurement.clientSlots} request slots`:''}, ${measurement.rounds} rounds. ${c.encodingProfile==='fresh'?'Fresh text and reference encoding':'Cached conditioning'}; best tested count is not a hardware maximum.`};
   }
   if(!g)throw Error('This GPU has no legacy timing profile. Select a measured resolution.');
+  g=priceGPU(g,c);
   const capacities={api:c.policy==='serial'?1:c.apiSlots, cloud:1, remote:1, network:1, disk:1, cpu:c.cpuOverlap?2:1, audioGPU:1, imagePipe:1};
   const story=c.minutes*60-(c.intro?c.introSeconds:0);
   const count=Math.ceil(story/60*c.cadence),chapterSec=story/c.chapters;
@@ -300,8 +308,8 @@ export function schedule(plan, preferences={}) {
   const directorUSD=plan.config.directorCost*plan.storySeconds/7200;
   const qcCount=out.filter(t=>t.kind==='vision').reduce((n,t)=>n+(t.images||0),0);
   const qcUSD=qcCount*plan.config.qcCost;
-  return {tasks:out,end,rentalSeconds,gpuWork,gpuIdleSeconds:Math.max(0,rentalSeconds-gpuWork),gpuUSD:rentalSeconds/3600*plan.gpu.hourly,
-    apiUSD:directorUSD+qcUSD,totalUSD:rentalSeconds/3600*plan.gpu.hourly+directorUSD+qcUSD+plan.config.storageDaily,
+  return {tasks:out,end,rentalSeconds,gpuWork,gpuIdleSeconds:Math.max(0,rentalSeconds-gpuWork),
+    ...costParts(rentalSeconds,plan.gpu.hourly,directorUSD,qcUSD,plan.config.storageDaily,plan.config.storageDays),
     qcCount,diagnostics:validateSchedule(plan,out)};
 }
 

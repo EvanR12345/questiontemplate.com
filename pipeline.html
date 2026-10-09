@@ -5,7 +5,7 @@
   <title>Production Planner · QuestionTemplate Studio</title>
   <meta name="description" content="Plan story-video production across Luna, local narration, cloud images and rendering. Compare GPU concurrency and rearrange a dependency-aware timeline.">
   <meta name="theme-color" content="#fafaf8">
-  <link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./pipeline.css?v=render-research-20261009e">
+  <link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./pipeline.css?v=pricing-group-20261009">
   <link rel="stylesheet" href="./pipeline-gpu-explorer.css">
 </head>
 <body>
@@ -42,7 +42,7 @@
           <label class="check"><input id="cpuOverlap" type="checkbox"> Experiment: audio + render</label>
           <label class="check"><input id="exhaustive" type="checkbox"> Decode every video frame</label>
         </details>
-        <details><summary>Cost assumptions</summary><label>Director API / 2 hours <span>USD</span><input id="directorCost" type="number" min="0" max="100" step="0.01" value="0.38798"></label><label>Vision QC / image <span>USD</span><input id="qcCost" type="number" min="0" max="1" step="0.0001" value="0.0003"></label><label>Daily retained storage <span>USD</span><input id="storageDaily" type="number" min="0" max="10" step="0.01" value="0.168"></label><p class="caption">Historical receipt estimates. No free-token eligibility assumed. An existing volume can bill on days without production.</p></details>
+        <details open><summary>Prices & cost assumptions · USD</summary><label>GPU price basis<select id="pricingBasis"><option value="published">Published Pod listings · checked Oct 9</option><option value="receipt">Historical benchmark rental receipts</option><option value="quote">My selected GPU compute quote</option></select></label><label>Running container disk · GB<input id="containerGB" type="number" min="0" step="1" value="20"></label><label>Selected GPU compute quote / hour · excludes disk<input id="quotedGPUHourly" type="number" min="0" step="0.001" value="0" disabled></label><input id="quotedGPU" type="hidden" value=""><p id="pricingNote" class="caption" role="status">Checking rate source…</p><p class="caption"><a href="https://www.runpod.io/pricing" target="_blank" rel="noopener noreferrer">Official prices</a> · Actual deployment quotes depend on region and offer. No current listing means an explicitly labeled historical fallback. Quote mode applies your entered compute rate only to that GPU; other GPUs use published prices where available.</p><label>Director API / 2 story hours <span>USD · historical estimate</span><input id="directorCost" type="number" min="0" max="100" step="0.001" value="0.38798"></label><label>Vision QC / reviewed image <span>USD · historical estimate</span><input id="qcCost" type="number" min="0" max="1" step="0.0001" value="0.0003"></label><label>Shared retained storage / day <span>USD</span><input id="storageDaily" type="number" min="0" max="10" step="0.001" value="0.168"></label><label>Shared storage days allocated to this estimate<input id="storageDays" type="number" min="0" step="0.1" value="1"></label><button id="modelStorage20" class="button">Use 20 GB model-volume allowance</button><p class="caption">20 GB standard network storage is $1.40/month, about $0.0467/day over a 30-day planning month. This button changes the forecast, not your account volume. Add your archive allowance separately to this daily amount. Shared storage continues billing when GPUs are stopped; do not count its full daily charge again for every video made that day.</p><p class="caption">Run cost and allocated storage are shown separately. Local narration/render electricity, Google archive requests/egress, other retained pods, taxes, currency conversion and unplanned repairs are not included. API cost varies with tokens; free-token eligibility and trial credits are not assumed. This is a forecast, not an all-inclusive invoice.</p></details>
         <button id="reset" class="button full">Reset setup and moves</button>
       </aside>
       <section class="workspace" id="plannerWorkspace">
@@ -50,7 +50,7 @@
         <div id="error" class="error" role="alert" hidden></div>
         <section id="scheduleView" class="view" role="tabpanel" aria-labelledby="tab-schedule">
           <div class="schedulebar"><div><h2>My proposed schedule</h2><p class="caption" id="scheduleDescription">Dependency-aware simulation.</p></div><div class="toolbar"><button id="undo" class="button" disabled>Undo</button><button id="optimize" class="button dark">Repack earliest</button><button id="play" class="button">Play simulation</button></div></div>
-          <div class="timeline-controls"><label>Focus chapter<select id="chapterFocus"><option value="all">All chapters</option></select></label><label>Zoom<select id="zoom"><option value="1">Fit</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option><option value="24">24×</option><option value="60">60× · seconds</option></select></label><span id="taskCount"></span><span class="key"><i></i> Proposed <i class="measured"></i> Timing based on receipts</span></div>
+          <div class="timeline-controls"><label>Focus chapter<select id="chapterFocus"><option value="all">All chapters</option></select></label><label>Zoom<select id="zoom"><option value="1">Fit</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option><option value="24">24×</option><option value="60">60× · seconds</option></select></label><label class="compact-preparation-control"><input id="compactPreparation" type="checkbox" checked>Group story state + narration cleaning</label><span id="taskCount"></span><span class="key"><i></i> Proposed <i class="measured"></i> Timing based on receipts</span></div>
           <div id="timeline" class="timeline" aria-label="Draggable production timeline"></div>
           <div class="timeline-help"><span>Drag a task left or right. Dependencies and shared resources stay enforced.</span><span><kbd>←</kbd> <kbd>→</kbd> move 1s · <kbd>Shift</kbd> 30s</span></div>
           <div id="moveFeedback" class="feedback" role="status">Select a task to inspect its exact inputs, resources, timing and blockers.</div>
@@ -68,5 +68,5 @@
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script type="module" src="./pipeline-ui.mjs?v=render-research-20261009e"></script>
+  <script type="module" src="./pipeline-ui.mjs?v=pricing-group-20261009"></script>
 </body></html>

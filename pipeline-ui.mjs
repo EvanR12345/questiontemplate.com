@@ -1,12 +1,14 @@
-import {createWorkerRequest} from './pipeline-worker-request.mjs?v=render-research-20261009e';
+import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pricing-group-20261009';
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=render-research-20261009e';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=render-research-20261009e';
+import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
+import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=pricing-group-20261009';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=pricing-group-20261009';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=render-research-20261009e';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=render-research-20261009e';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=pricing-group-20261009';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=pricing-group-20261009';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -20,18 +22,19 @@ async function loadRenderResearch(){
 }
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=render-research-20261009e',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=render-research-20261009e',import.meta.url),{type:'module'}));
+let preparation,preparationCompact=true;
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pricing-group-20261009',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pricing-group-20261009',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
-const snapshot=()=>({type:'studio-pipeline-plan',version:VERSION,config:{...config},preferences:structuredClone(preferences),uncertainty});
+const snapshot=()=>({pricingChecked:PRICING_DATE,pricingSource:PRICING_URL,type:'studio-pipeline-plan',version:VERSION,config:{...config},preferences:structuredClone(preferences),uncertainty});
 function checkpoint(){history.push(snapshot());if(history.length>40)history.shift();$('undo').disabled=false;}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
 function persist(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{try{localStorage.setItem(STORE,JSON.stringify(snapshot()));$('saved').textContent='Saved on this device';}catch{$('saved').textContent='Device storage unavailable — export your plan';}},180);}
 function setControls(){for(const k of keys){if(!$(k))continue;if(booleans.includes(k))$(k).checked=config[k];else $(k).value=config[k];}$('readyChapters').max=config.chapters;$('uncertainty').value=uncertainty;}
 function readControls(){const next={};for(const k of keys){if(!$(k))continue;next[k]=booleans.includes(k)?$(k).checked:typeof DEFAULTS[k]==='number'?Number($(k).value):$(k).value;}return {...config,...next};}
-function getTask(id){return taskLookup.get(id);}
+function getTask(id){return id===PREPARATION_GROUP?preparation:taskLookup.get(id);}
 function renderGenerationSpeed(){
   const speed=generationSpeed(plan,evidence);
   $('generationRate').value=speed.highest===null?'Not measured':speed.highest.toFixed(1);
@@ -64,7 +67,9 @@ async function rebuild(){
     $('metricRange').textContent=`${formatTime(result.end*(1-uncertainty/100))}–${formatTime(result.end*(1+uncertainty/100))} assumed sensitivity`;
     const saving=1-result.end/serial.end;$('metricSaved').textContent=(saving*100).toFixed(0)+'% '+(saving>=0?'less time':'more time');
     $('metricSerial').textContent=`${formatTime(serial.end)} fully sequential`;
-    $('metricCost').textContent=money(result.totalUSD);$('metricCostParts').textContent=`${money(result.gpuUSD)} rental + ${money(result.apiUSD)} API + ${money(config.storageDaily)} storage`;
+    $('metricCost').textContent=money(result.totalUSD);$('metricCostParts').textContent=`${money(result.productionUSD)} run + ${money(result.storageUSD)} shared storage (${config.storageDays} days)`;
+    $('pricingNote').textContent=plan.gpu.pricing.note;
+    $('quotedGPUHourly').disabled=config.pricingBasis!=='quote';
     $('metricBusyLabel').textContent=plan.measurement?'Image pipeline / rented':'GPU work / rented';$('metricBusy').textContent=`${Math.round(result.gpuWork/result.rentalSeconds*100)}%`;
     $('metricImages').textContent=`${formatTime(result.rentalSeconds)} rented · ${plan.attemptCount} image attempts`;
     $('taskCount').textContent=`${result.tasks.length} tasks · ${plan.measurement?plan.measurement.workers+' measured workers on one GPU'+(config.executionMode!=='resident'?' · '+plan.measurement.clientSlots+' request slots':''):'one inference lane'}`;
@@ -89,15 +94,19 @@ function renderTimeline(){
   for(let t=0;t<=result.end;t+=step)html+=`<span class="tick" style="left:${155+t*scale}px">${Math.round(t/60)}m</span>`;
   html+='</div>';let top=34;
   const visible=result.tasks.filter(t=>focus==='all'||t.chapter===Number(focus)||['boot','models','health','cold','stop','join','probe','decode','preflight'].includes(t.id));
-  const links=selected?new Set([selected,...getTask(selected).deps,...result.tasks.filter(t=>t.deps.includes(selected)).map(t=>t.id)]):new Set();
+  preparation=preparationGroup(visible);
+  const display=compactPreparation(visible,preparationCompact);
+  const links=selected&&getTask(selected)?new Set([selected,...getTask(selected).deps,...result.tasks.filter(t=>t.deps.includes(selected)).map(t=>t.id)]):new Set();
   for(const [id,name,note] of LANES){
-    const laneTasks=visible.filter(t=>t.lane===id).sort((a,b)=>a.start-b.start),trackEnds=[];let bars='';
+    const laneTasks=display.filter(t=>t.lane===id).sort((a,b)=>a.start-b.start),trackEnds=[];let bars='';
     for(const task of laneTasks){
       const left=155+task.start*scale,bw=Math.max(8,task.duration*scale-1);
       let track=trackEnds.findIndex(n=>n<=left-2);if(track<0)track=trackEnds.length;trackEnds[track]=left+bw;
       const y=11+track*32;positions.set(task.id,{x:left,y:top+y,w:bw,h:27});
-      const short=task.chapter===0?'P':`C${String(task.chapter).padStart(2,'0')}`;
-      bars+=`<button class="task ${task.manual?'manual':''} ${task.id===selected?'selected':''} ${links.has(task.id)?'related':''}" data-id="${esc(task.id)}" data-lane="${id}" style="left:${left}px;top:${y}px;width:${bw}px" aria-label="${esc(task.name+' · '+labelChapter(task.chapter)+' · '+task.id)}" title="${esc(task.id+' | '+task.name+' | '+formatTime(task.start)+' → '+formatTime(task.end)+' | '+sec(task.duration))}">${bw>23?`<em>${short}</em>`:''}${bw>85?esc(task.name):''}</button>`;
+      const grouped=task.id===PREPARATION_GROUP,short=grouped?`${task.chapters.length} CH`:task.chapter===0?'P':`C${String(task.chapter).padStart(2,'0')}`;
+      const barWidth=grouped?Math.max(bw,125):bw;
+      trackEnds[track]=left+barWidth;
+      bars+=`<button class="task ${grouped?'preparation-group':''} ${task.manual?'manual':''} ${task.id===selected?'selected':''} ${links.has(task.id)?'related':''}" data-id="${esc(task.id)}" data-lane="${id}" style="left:${left}px;top:${y}px;width:${barWidth}px" aria-label="${esc(grouped?task.name+' · '+task.members.length+' steps · '+task.chapters.length+' chapters':task.name+' · '+labelChapter(task.chapter)+' · '+task.id)}" title="${esc(task.id+' | '+task.name+' | '+formatTime(task.start)+' → '+formatTime(task.end)+' | '+sec(grouped?task.work:task.duration)+(grouped?' total work; span includes gaps. Click to inspect or expand.':''))}">${barWidth>23?`<em>${short}</em>`:''}${barWidth>85?esc(grouped?'Story preparation':task.name):''}</button>`;
     }
     const height=Math.max(53,trackEnds.length*32+20);
     html+=`<div class="lane" style="height:${height}px" data-lane="${id}"><div class="lane-label"><strong>${name}</strong><small>${id==='qc'&&config.qc==='off'?'Vision off · decode stays':note}</small></div>${bars}</div>`;top+=height;
@@ -123,18 +132,20 @@ function beginDrag(event){
   if(event.button!==0)return;
   const button=event.currentTarget,id=button.dataset.id,task=getTask(id),startX=event.clientX,scroll=$('timeline').scrollLeft;
   let delta=0,moved=false;button.setPointerCapture(event.pointerId);
-  const onMove=e=>{delta=e.clientX-startX+$('timeline').scrollLeft-scroll;if(Math.abs(delta)>4)moved=true;if(moved){button.classList.add('dragging');button.style.transform=`translateX(${delta}px)`;const target=Math.max(0,Math.round(task.start+delta/scale));$('moveFeedback').textContent=`${id} → ${formatTime(target)}. ${explainMove(plan,result,id,target,taskLookup)}`;}};
+  const onMove=e=>{delta=e.clientX-startX+$('timeline').scrollLeft-scroll;if(Math.abs(delta)>4)moved=true;if(moved){button.classList.add('dragging');button.style.transform=`translateX(${delta}px)`;const target=Math.max(0,Math.round(task.start+delta/scale));$('moveFeedback').textContent=`${id} → ${formatTime(target)}. ${id===PREPARATION_GROUP?'All member starts shift together; original dependencies and resource limits remain enforced.':explainMove(plan,result,id,target,taskLookup)}`;}};
   const finish=e=>{button.removeEventListener('pointermove',onMove);button.removeEventListener('pointerup',finish);button.removeEventListener('pointercancel',cancel);if(button.hasPointerCapture(event.pointerId))button.releasePointerCapture(event.pointerId);if(moved){e.preventDefault();moveTask(id,Math.max(0,Math.round(task.start+delta/scale)));}else selectTask(id);};
   const cancel=()=>{button.removeEventListener('pointermove',onMove);button.removeEventListener('pointerup',finish);button.removeEventListener('pointercancel',cancel);renderTimeline();};
   button.addEventListener('pointermove',onMove);button.addEventListener('pointerup',finish);button.addEventListener('pointercancel',cancel);
 }
 async function moveTask(id,target){
   if(!Number.isFinite(target)||target<0){toast('Choose a finite, nonnegative start time.');return;}
+  if(id===PREPARATION_GROUP){checkpoint();preferences=preparationMoves(preparation,target,preferences);selected=id;await rebuild();$('moveFeedback').textContent='Preparation members moved together. Original dependencies and shared-resource checks remain enforced; the span includes any waiting gaps.';return;}
   target=Math.max(0,target);const why=explainMove(plan,result,id,target,taskLookup);checkpoint();preferences[id]={...preferences[id],notBefore:target};selected=id;await rebuild();const moved=getTask(id);if(!moved)return;
   $('moveFeedback').textContent=`${id}: requested ${formatTime(target)}, scheduled ${formatTime(moved.start)}. ${moved.start>target+.1?why+' Dependencies or capacity pushed it later.':'Dependent tasks were re-scheduled; all resource checks pass.'}`;
 }
 function renderInspector(){
   const task=selected&&getTask(selected);if(!task)return;
+  if(task.id===PREPARATION_GROUP){renderPreparationInspector(task);return;}
   const meta=CATALOG.find(m=>m.id===task.kind);
   $('inspectorLabel').textContent=task.manual?'MANUAL START':'SCHEDULED';
   const resources=Object.entries(task.resources).map(([r,n])=>`<span class="res-tag">${esc(r)} · ${n} / ${plan.capacities[r]}</span>`).join('')||'<span class="res-tag">No exclusive resource</span>';
@@ -144,11 +155,18 @@ function renderInspector(){
   $('clearMove').onclick=()=>{checkpoint();delete preferences[task.id];rebuild();};
   $('taskInspector').querySelectorAll('[data-select]').forEach(b=>b.onclick=()=>selectTask(b.dataset.select));
 }
+function renderPreparationInspector(group){
+  $('inspectorLabel').textContent='COMPACT GROUP';
+  $('taskInspector').innerHTML=`<h3 class="task-title">Load story state + clean narration</h3><p class="task-desc">${group.members.length} original steps across ${group.chapters.length} chapters, displayed as one block. No work, timing or costs have been removed.</p><div class="task-times"><div><span>Starts</span><strong>${formatTime(group.start)}</strong></div><div><span>Ends</span><strong>${formatTime(group.end)}</strong></div><div><span>Actual work</span><strong>${sec(group.work)}</strong></div></div><p class="caption">The displayed span includes gaps. Its minimum readable width does not extend the actual timing. Dragging shifts all member start constraints; dependencies can push individual members later.</p><label>Group start · seconds<input id="preparationStart" type="number" min="0" step="1" value="${group.start}"></label><button id="movePreparation" class="button">Move preparation group</button><button id="expandPreparation" class="button">Show individual steps</button><details class="inspect-section"><summary>All ${group.members.length} member steps</summary><div class="preparation-members">${group.members.map(t=>`<button class="dep" data-preparation-member="${esc(t.id)}">${esc(t.id)} · ${esc(t.name)}<br>${formatTime(t.start)} → ${formatTime(t.end)} · ${sec(t.duration)}</button>`).join('')}</div></details>`;
+  $('movePreparation').onclick=()=>moveTask(PREPARATION_GROUP,Number($('preparationStart').value));
+  $('expandPreparation').onclick=()=>{$('compactPreparation').checked=false;preparationCompact=false;renderTimeline();};
+  $('taskInspector').querySelectorAll('[data-preparation-member]').forEach(b=>b.onclick=()=>{preparationCompact=false;$('compactPreparation').checked=false;selectTask(b.dataset.preparationMember);});
+}
 function renderBreakdown(){
   const groups=[['Directing',t=>t.lane==='director'],['Narration',t=>t.lane==='audio'],[plan.measurement?'Measured image pipeline':'Cloud GPU work',t=>t.resources.remote],['Preparation & transfer',t=>['prepare','transfer'].includes(t.lane)],['Vision QC',t=>t.lane==='qc'],['Save & state',t=>t.lane==='save'],['Rendering',t=>t.lane==='render'],['Setup & delivery',t=>['setup','finish'].includes(t.lane)]];
   const vals=groups.map(([label,predicate])=>({label,value:result.tasks.filter(predicate).reduce((n,t)=>n+t.duration,0)})),max=Math.max(...vals.map(v=>v.value));
   $('workBreakdown').innerHTML=vals.map(v=>`<div class="workrow"><span>${v.label}</span><div class="bar"><i style="width:${v.value/max*100}%"></i></div><span class="time">${sec(v.value)}</span></div>`).join('')+'<p class="caption">These are task work totals. Overlap makes their sum exceed elapsed production time. Cold loading belongs to image work. Measured worker groups also include transfer and saving; this is not GPU utilization.</p>';
-  $('costBreakdown').innerHTML=[['GPU rental',money(result.gpuUSD)],['Rental time',formatTime(result.rentalSeconds)],['GPU idle/setup time',formatTime(result.gpuIdleSeconds)],['Luna / QC estimate',money(result.apiUSD)],['Retained storage / day',money(config.storageDaily)],['Total estimate',money(result.totalUSD)]].map(([k,v])=>`<div class="costrow"><span>${k}</span><strong>${v}</strong></div>`).join('');
+  $('costBreakdown').innerHTML=[['GPU + running container rental',money(result.gpuUSD)],['Rental time',formatTime(result.rentalSeconds)],['GPU idle/setup time',formatTime(result.gpuIdleSeconds)],['Luna / QC estimate',money(result.apiUSD)],['Run estimate · before shared storage',money(result.productionUSD)],[`Shared storage · ${config.storageDays} days`,money(result.storageUSD)],['Total with allocated storage',money(result.totalUSD)]].map(([k,v])=>`<div class="costrow"><span>${k}</span><strong>${v}</strong></div>`).join('');
 }
 function renderProcesses(){
   $('processCount').textContent=CATALOG.length;const query=$('processSearch').value.toLowerCase();
@@ -194,8 +212,8 @@ async function renderGPUs(){
     finally{if(comparisonPendingKey===key)comparisonPendingKey='';}
   }
   const {comparisons,unavailable}=comparisonSummary,max=Math.max(1,...comparisons.map(x=>x.r.end));
-  $('gpuCards').innerHTML=comparisons.map(({g,r})=>`<article class="gpu-card ${config.gpu===g.id?'active':''}"><span class="badge">${g.basis==='concurrency'?'MATCHED WORKER GROUPS':g.basis==='measured'?'MATCHED · 5 WARM SAMPLES':'HISTORICAL · DIFFERENT CONDITIONS'}</span><h3>${esc(g.name)}</h3><span class="caption">${g.vram} GB VRAM · ${esc(g.region)} · ${g.date}</span><div class="specs"><div><strong>${g.meanClient.toFixed(2)}s</strong><small>mean client / job</small></div><div><strong>${money(g.hourly)}</strong><small>rental / hour</small></div><div><strong>${g.server.toFixed(2)}s</strong><small>backend</small></div></div><p>${esc(g.scope)}</p><button class="button ${config.gpu===g.id?'dark':''}" data-gpu="${g.id}">${config.gpu===g.id?'Selected profile':'Use this GPU'}</button></article>`).join('');
-  $('gpuComparison').innerHTML=comparisons.map(({g,p,r})=>`<div class="compare-row"><div class="label">${esc(g.name)}<small>${esc(executionLabel(p))}</small></div><div class="track"><i style="width:${r.end/max*100}%;background:${g.id===config.gpu?'#89aa8f':'#bdccba'}"><span>${formatTime(r.end)}</span></i></div><div class="cost">${money(r.totalUSD)}</div></div>`).join('')+'<p class="caption">Each GPU uses its fastest completed compatible measurement, including its tested execution method. Same resolution, conditioning, chapter count, checks and cost assumptions; manual timeline moves are excluded from this comparison. Complete simulated time includes setup and rental waiting, director, local voice, rendering and daily storage. Prices and stock are historical, not live quotes.</p>'+(unavailable.length?`<p class="caption">No compatible completed measurement: ${unavailable.map(g=>esc(g.name)).join(', ')}. These GPUs have no substituted speed estimate.</p>`:'');
+  $('gpuCards').innerHTML=comparisons.map(({g,r})=>`<article class="gpu-card ${config.gpu===g.id?'active':''}"><span class="badge">${g.basis==='concurrency'?'MATCHED WORKER GROUPS':g.basis==='measured'?'MATCHED · 5 WARM SAMPLES':'HISTORICAL · DIFFERENT CONDITIONS'}</span><h3>${esc(g.name)}</h3><span class="caption">${g.vram} GB VRAM · ${esc(g.region)} · ${g.date}</span><div class="specs"><div><strong>${g.meanClient.toFixed(2)}s</strong><small>mean client / job</small></div><div><strong>${money(g.hourly)}</strong><small>rental / hour</small></div><div><strong>${g.server.toFixed(2)}s</strong><small>backend</small></div></div><p>${esc(g.scope)}</p><p class="caption">${esc(g.pricing?.note || 'Historical rental receipt')}</p><button class="button ${config.gpu===g.id?'dark':''}" data-gpu="${g.id}">${config.gpu===g.id?'Selected profile':'Use this GPU'}</button></article>`).join('');
+  $('gpuComparison').innerHTML=comparisons.map(({g,p,r})=>`<div class="compare-row"><div class="label">${esc(g.name)}<small>${esc(executionLabel(p))}</small></div><div class="track"><i style="width:${r.end/max*100}%;background:${g.id===config.gpu?'#89aa8f':'#bdccba'}"><span>${formatTime(r.end)}</span></i></div><div class="cost">${money(r.totalUSD)}</div></div>`).join('')+'<p class="caption">Each GPU uses its fastest completed compatible measurement, including its tested execution method. Same resolution, conditioning, chapter count, checks and cost assumptions; manual timeline moves are excluded from this comparison. Complete simulated time includes setup and rental waiting, director, local voice, rendering and daily storage. Timings and stock are historical. Rental uses the selected price basis; public listings and entered quotes are not new speed measurements. Unlisted variants fall back to labeled receipts.</p>'+(unavailable.length?`<p class="caption">No compatible completed measurement: ${unavailable.map(g=>esc(g.name)).join(', ')}. These GPUs have no substituted speed estimate.</p>`:'');
   $('gpuCards').querySelectorAll('[data-gpu]').forEach(b=>b.onclick=()=>{const chosen=comparisons.find(x=>x.g.id===b.dataset.gpu);checkpoint();config=chosen.c;preferences={};selected=null;setControls();rebuild();toast('Schedule updated: '+executionLabel(plan));});
 }
 function renderEvidence(){
@@ -207,14 +225,14 @@ function tick(now){
   if(playAt>result.end){stopPlay();$('playTime').textContent='Simulation complete';return;}
   $('playTime').textContent=formatTime(playAt)+' simulated';const active=result.tasks.filter(t=>t.start<=playAt&&t.end>playAt);
   $('activeWork').innerHTML=active.map(t=>`<div class="active-item"><b>${esc(t.id)}</b>${esc(t.name)}</div>`).join('')||'<p class="caption">Waiting for dependencies.</p>';
-  const ids=new Set(active.map(t=>t.id));$('timeline').querySelectorAll('.task').forEach(b=>b.classList.toggle('active',ids.has(b.dataset.id)));
+  const ids=new Set(active.map(t=>t.id));$('timeline').querySelectorAll('.task').forEach(b=>b.classList.toggle('active',ids.has(b.dataset.id)||b.dataset.id===PREPARATION_GROUP&&preparation?.members.some(t=>ids.has(t.id))));
   if($('playhead')){$('playhead').hidden=false;$('playhead').style.left=(155+playAt*scale)+'px';}
   playFrame=requestAnimationFrame(tick);
 }
 function download(name,value,type){const blob=new Blob([value],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function start(){
   try{
-    const response=await fetch('./pipeline-evidence.json?v=render-research-20261009e');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
+    const response=await fetch('./pipeline-evidence.json?v=pricing-group-20261009');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
     if(concurrencyResponse.ok){
       evidence.concurrency=await concurrencyResponse.json();
@@ -241,6 +259,7 @@ async function start(){
     for(const k of [...keys,'uncertainty'])if($(k)){
       const apply=()=>{
       let next=readControls();if(JSON.stringify(next)===JSON.stringify(config)&&Number($('uncertainty').value)===uncertainty)return;
+      if(k==='quotedGPUHourly')next.quotedGPU=next.gpu;
       if(['gpu','resolution','encodingProfile','executionMode'].includes(k))next.measurementAttempt='latest';
       if(k==='chapters'){next.readyChapters=Math.min(next.readyChapters,next.chapters);}
       if(k!=='gpuStartSeconds'&&k!=='uncertainty'&&next.gpuStartSeconds>0){next.gpuStartSeconds=0;toast('Timed GPU startup cleared after settings changed. Recalculate using Spend less on rented waiting.');}
@@ -253,14 +272,16 @@ async function start(){
     }
     $('fastestGPU').onclick=()=>{try{const next=selectGPUConfig(config,evidence,config.gpu);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();toast('Fastest tested settings applied: '+executionLabel(plan));}catch(e){toast(e.message);}};
     document.querySelectorAll('[data-view]').forEach((b,i)=>{b.onclick=()=>switchView(b.dataset.view);b.onkeydown=e=>{const tabs=[...document.querySelectorAll('[data-view]')];const next=e.key==='ArrowRight'?tabs[(i+1)%tabs.length]:e.key==='ArrowLeft'?tabs[(i+tabs.length-1)%tabs.length]:null;if(next){e.preventDefault();next.focus();switchView(next.dataset.view);}};});
-    $('chapterFocus').onchange=()=>{focus=$('chapterFocus').value;renderTimeline();};$('zoom').onchange=renderTimeline;
+    $('chapterFocus').onchange=()=>{focus=$('chapterFocus').value;renderTimeline();renderInspector();};$('zoom').onchange=renderTimeline;
+    $('compactPreparation').onchange=()=>{preparationCompact=$('compactPreparation').checked;renderTimeline();};
+    $('modelStorage20').onclick=()=>{checkpoint();config={...config,storageDaily:20*.07/30};setControls();rebuild();toast('20 GB model-volume forecast applied. Account storage and archive allowance were not changed.');};
     $('processSearch').oninput=renderProcesses;$('pairA').onchange=pairResult;$('pairB').onchange=pairResult;
     $('undo').onclick=()=>{const last=history.pop();if(!last)return;config=last.config;preferences=last.preferences;uncertainty=last.uncertainty;setControls();rebuild();$('undo').disabled=!history.length;toast('Previous plan restored.');};
     $('optimize').onclick=()=>{checkpoint();preferences={};rebuild();$('moveFeedback').textContent='Tasks repacked at their earliest available dependency/resource slot. This is a feasible heuristic, not a proof of the global optimum.';};
     $('reset').onclick=()=>{checkpoint();config={...resetDefault};preferences={};uncertainty=20;selected=null;setControls();rebuild();toast('Default planning scenario restored with fastest tested settings.');};
     $('play').onclick=()=>{if(playing){stopPlay();return;}if(matchMedia('(prefers-reduced-motion: reduce)').matches){toast('Animation disabled by your reduced-motion setting. Task details remain available.');return;}playing=true;playStarted=performance.now();$('play').textContent='Stop simulation';playFrame=requestAnimationFrame(tick);};
     $('export').onclick=()=>{
-      const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,totalUSD:result.totalUSD},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};
+      const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,productionUSD:result.productionUSD,storageUSD:result.storageUSD,totalUSD:result.totalUSD,pricing:plan.gpu.pricing},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};
       download(`studio-plan-${config.gpu}-${config.minutes}min.json`,JSON.stringify(value,null,2),'application/json');toast('Exported schedule, task IDs, dependencies, resource limits and evidence.');
     };
     $('import').onclick=()=>$('importFile').click();$('importFile').onchange=async()=>{const file=$('importFile').files[0];if(!file)return;try{if(file.size>16_000_000)throw Error('Plan export must be smaller than 16 MB.');const input=JSON.parse(await file.text()),state=importSnapshot(input,evidence);checkpoint();config=state.config;preferences=state.preferences;uncertainty=Number.isFinite(input.uncertainty)?Math.max(0,Math.min(100,input.uncertainty)):20;selected=null;setControls();rebuild();toast('Plan imported. Paid execution and Studio projects remain unchanged.');}catch(e){toast('Could not import: '+e.message);}finally{$('importFile').value='';}};
