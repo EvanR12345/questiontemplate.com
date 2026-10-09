@@ -96,7 +96,7 @@ export function validateConfig(input, evidence) {
 
 export function buildPlan(input, evidence) {
   const c=validateConfig(input,evidence),cal=evidence.calibration;
-  const renderProfile=cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
+  const renderProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps)||cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
   if(!renderProfile)throw Error(`No matched ${c.videoResolution}/${c.videoFps}fps render calibration. Reload the updated evidence; no old 24fps timing is substituted.`);
   let g=evidence.gpus.find(g=>g.id===c.gpu),measurement=null;
   if(c.resolution!=='legacy'){
@@ -193,7 +193,7 @@ export function buildPlan(input, evidence) {
     const videoSeconds=i===0?c.introSeconds:chapterSec;
     renders.push(add(`c${i}-render`,'render',i,renderProfile.wallSeconds/renderProfile.videoSeconds*videoSeconds,[timeline],{cpu:1},{videoSeconds,
       timingRange:{min:renderProfile.minWallSeconds/renderProfile.videoSeconds*videoSeconds,max:renderProfile.maxWallSeconds/renderProfile.videoSeconds*videoSeconds},
-      basis:`${c.videoResolution}/${c.videoFps}fps, ${renderProfile.clips} fresh clips in ${renderProfile.rounds} rounds, one clip worker; median ${renderProfile.wallSeconds.toFixed(2)}s per ${renderProfile.videoSeconds}s of motion. ${renderProfile.scope} Longer videos scale motion work, not GPU generation. Two-worker speedup is not assumed.`}));
+      basis:`${c.videoResolution}/${c.videoFps}fps, ${renderProfile.clips} fresh clips in ${renderProfile.rounds} rounds, one clip worker; reference ${renderProfile.wallSeconds.toFixed(2)}s per ${renderProfile.videoSeconds}s of ${renderProfile.mode==='chapter-export'?'motion and chapter assembly':'motion'}. ${renderProfile.scope} ${renderProfile.hardwareCondition||''} Two-worker speedup is not assumed.`}));
   }
   if(c.policy!=='proposed') {
     for(const r of renders){const task=tasks.find(t=>t.id===r);task.deps.push(...saves,...reviews);}
@@ -209,7 +209,8 @@ export function buildPlan(input, evidence) {
   // Keep long-video delivery allowances proportional rather than treating a
   // 24-hour output as the same 45-second join/probe as a two-hour output.
   const lengthScale=c.minutes/120;
-  add('join','join',0,45*lengthScale,renders,{cpu:.3,disk:1},{basis:'Allowance: 45 seconds per two output hours, scaled by length. Not a measured long-video join; filesystem and chapter count can change it.'});
+  const joinDuration=renderProfile.joinWallSeconds===undefined?45*lengthScale:renderProfile.joinWallSeconds/renderProfile.videoSeconds*c.minutes*60;
+  add('join','join',0,joinDuration,renders,{cpu:.3,disk:1},{basis:renderProfile.joinWallSeconds===undefined?'Allowance: 45 seconds per two output hours, scaled by length. Not a measured long-video join; filesystem and chapter count can change it.':`Instrumented full-story AAC128 mux: ${renderProfile.joinWallSeconds.toFixed(3)}s per ${renderProfile.videoSeconds}s output in the paired fresh export. Excluded from chapter Render, counted once here; long-video rate is extrapolated.`});
   add('probe','probe',0,45*lengthScale,['join','stop'],{cpu:.2,disk:1},{basis:'Allowance: 45 seconds per two output hours, scaled by length. Cloud upload and platform processing are separate and not timed.'});
   if(c.exhaustive)add('decode','decode',0,cal.exhaustiveDecodeSeconds*lengthScale*(c.videoFps/24)*(c.videoResolution==='1080p'?2.25:1),['probe'],{cpu:1,disk:1},{basis:'Estimate from a historical 720p24 full-decode sample, scaled by output frames and pixels. The selected-format full-decode rate is not measured.'});
   if(c.policy==='serial') {
@@ -223,7 +224,7 @@ export function buildPlan(input, evidence) {
     }
   }
   return {version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
-    renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · matched fresh local clip timing, one worker. Long-video mux, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
+    renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.mode==='chapter-export'?'fresh real-media chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
 }
 
 function fits(task,start,allocations,capacities) {

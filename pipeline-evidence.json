@@ -290,7 +290,35 @@
         "scope": "Fresh local motion/encoding clips. Chapter mux, overlays, transfers, cloud rendering and production contention are not measured by this calibration."
       }
     ],
-    "renderProfileDate": "2026-10-08"
+    "renderProfileDate": "2026-10-08",
+    "productionRenderProfiles": [
+      {
+        "resolution": "720p",
+        "fps": 30,
+        "videoSeconds": 120,
+        "wallSeconds": 152.60796379996464,
+        "minWallSeconds": 151.09089430002496,
+        "maxWallSeconds": 152.7190857999958,
+        "roundWallSeconds": [
+          152.7190857999958,
+          151.09089430002496,
+          152.60796379996464
+        ],
+        "fullRenderWallSeconds": 157.32332880003378,
+        "joinWallSeconds": 4.715365000069141,
+        "rounds": 3,
+        "clips": 36,
+        "clipWorkers": 1,
+        "requestedClipWorkers": 2,
+        "chaptersPerRound": 2,
+        "mode": "chapter-export",
+        "encoder": "libx264",
+        "preset": "veryfast",
+        "crf": 21,
+        "hardwareCondition": "RAM-limited adaptive pool: under 1 GiB available during verification; one clip worker observed. Twelve reported CPU threads.",
+        "scope": "Fresh real-media two-chapter exports. Motion, chapter mux and renderer bookkeeping are included; instrumented full-story audio mux is counted separately in Join. Cut transitions and gentle motion, no watermark, intro or engagement overlay. Longer videos, concurrent voice, cloud transfers and platform processing remain unmeasured."
+      }
+    ]
   },
   "notes": [
     "Timings from different hosts and small samples. No guarantee of future stock, prices or throughput.",
@@ -299,6 +327,7 @@
     "Vision QC off still keeps decode/black-frame checks and durable saving.",
     "API cost estimates use historical receipts, not live prices.",
     "Original full 6000 timing is a different production workload; component splits are estimates.",
-    "Selected output default is 720p at 30 fps. Render projections use matched fresh local clips with one worker; long production and concurrent audio/render remain extrapolations, not completion guarantees."
+    "Selected output default is 720p at 30 fps. Render projections use matched fresh local clips with one worker; long production and concurrent audio/render remain extrapolations, not completion guarantees.",
+    "720p30 default forecast uses three fresh 120-second real-media exports on the current RAM-limited laptop. It includes chapter assembly and separately measured full-story mux. Other formats retain the earlier matched clip calibration. Extra branding/reminder work and cloud transfers are not included."
   ]
 }

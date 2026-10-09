@@ -173,7 +173,7 @@ test('90 minute through 24 hour plans preserve 80 chapters, output work and dura
   const p=buildPlan({...DEFAULTS,minutes,chapters:80},evidence);
   assert.equal(p.tasks.filter(t=>t.kind==='handoff').length,80);
   assert.ok(Math.abs(p.tasks.filter(t=>t.kind==='render').reduce((n,t)=>n+t.videoSeconds,0)-minutes*60)<1e-6);
-  assert.equal(p.tasks.find(t=>t.kind==='join').duration,45*minutes/120);
+  assert.ok(Math.abs(p.tasks.find(t=>t.kind==='join').duration-p.renderProfile.joinWallSeconds/p.renderProfile.videoSeconds*minutes*60)<1e-6);
   assert.equal(p.tasks.find(t=>t.kind==='probe').duration,45*minutes/120);
  }
 });

@@ -2,9 +2,11 @@
 
 The selected new-project video default is **1280 × 720 at 30 fps**. Existing project settings and already rendered videos are preserved; an explicitly inherited project profile can still use its saved settings. The planner exposes output resolution and frame rate separately from image generation resolution.
 
-Render estimates use the matched October 8 local test: nine fresh clips per format, three five-second motions per randomized round, three rounds, libx264 veryfast CRF21, one clip worker, two filter/encoder threads. Six output profiles cover 720p/1080p and 24/30/60 fps. The old repeated-asset 720p24 fixture remains historical evidence and is not substituted for 720p30.
+The 720p30 default now uses three fresh 120-second real-media exports: two narration chapters, twelve distinct shot encodes per round, gentle motion and cut transitions. Full render times were 157.40, 155.77 and 157.32 seconds. Chapter work and the instrumented final AAC128 mux are counted separately, without double counting. Under 1 GiB of available RAM limited the adaptive renderer to one observed clip worker despite a two-worker maximum. A different memory/CPU workload may change throughput.
 
-These are **projections**, including duration-scaled delivery allowances. They are not full-production guarantees for 90–1440 minutes. Chapter mux, overlays, cloud transfer, platform processing, production contention and a two-worker speedup are not established by the fresh clip measurements. Optional full-decode timing is explicitly labeled as an estimate at other frame rates/resolutions. Image throughput is unchanged by video frame rate.
+The matched October 8 FPS isolation remains available for other formats: nine fresh clips per format, three five-second motions per randomized round, three rounds, libx264 veryfast CRF21, one clip worker, two filter/encoder threads. Six output profiles cover 720p/1080p and 24/30/60 fps. The old repeated-asset 720p24 fixture remains historical evidence and is not substituted for 720p30.
+
+These are **projections**, including duration-scaled delivery allowances. They are not full-production guarantees for 90–1440 minutes. Long-video mux scaling, overlays, cloud transfer, platform processing, production contention and a two-worker speedup are not established. Optional full-decode timing is explicitly labeled as an estimate at other frame rates/resolutions. Image throughput is unchanged by video frame rate. Controls recalculate after a short typing debounce as well as on committed changes.
 
 For large projects:
 
