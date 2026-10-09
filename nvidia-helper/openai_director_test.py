@@ -22,6 +22,91 @@ def stream(value='{"summary":"complete"}', status="completed", **extra):
 
 
 class LunaTest(unittest.TestCase):
+    def test_incomplete_prompt_mapping_is_charged_but_never_cached(self):
+        from cost_control import SpendLedger
+        with tempfile.TemporaryDirectory() as folder:
+            director=self.director(folder);director.spend_ledger=SpendLedger(Path(folder)/'ledger.json',1)
+            with patch('openai_director.urllib.request.urlopen',return_value=stream('{"prompts":[]}')):
+                with self.assertRaisesRegex(ValueError,'prompt batch'):
+                    director.writeImagePrompt({'shots':[{'shotIndex':0,'draftPrompt':'Mira has the key.'}]},lambda *_:None)
+            self.assertGreater(director.spend_ledger.load()['spentUSD'],0)
+            self.assertFalse(list((Path(folder)/'director-cache').glob('*.json')))
+
+    def test_invalid_old_cache_is_preserved_without_implicit_repurchase(self):
+        from director_provider import DirectorProvider,arr,INT
+        for raw in ('{"prompts":[]}','{corrupted-json'):
+            with self.subTest(raw=raw),tempfile.TemporaryDirectory() as folder:
+                capture=DirectorProvider();captured=[]
+                capture.call=lambda role,context,schema,*args:captured.append((role,schema))
+                context={'shots':[{'shotIndex':0,'draftPrompt':'Mira has the key.'}]}
+                capture.writeImagePrompt(context,lambda *_:None);role,schema=captured[0]
+                director=self.director(folder)
+                identity={'provider':'openai-luna','adapterVersion':1,'model':director.model,
+                    'role':role,'context':context,'schema':schema,'reasoning':'medium','vision':False}
+                cache=Path(folder)/'director-cache'/(hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()+'.json')
+                cache.parent.mkdir();cache.write_text(raw)
+                with patch('openai_director.urllib.request.urlopen') as request:
+                    with self.assertRaisesRegex(ValueError,'retained for diagnosis'):
+                        director.writeImagePrompt(context,lambda *_:None)
+                    request.assert_not_called()
+                retained=list(cache.parent.glob('*.invalid-*.json'))
+                self.assertEqual(len(retained),1);self.assertEqual(retained[0].read_text(),raw)
+                self.assertFalse(cache.exists())
+                with patch('openai_director.urllib.request.urlopen',return_value=stream(
+                    '{"prompts":[{"shotIndex":0,"prompt":"Side light on the held key."}]}')):
+                    value=director.writeImagePrompt(context,lambda *_:None)
+                self.assertEqual(value['prompts'][0]['shotIndex'],0);self.assertTrue(cache.is_file())
+
+    def test_invalid_paid_result_records_failure_time_and_cost_without_payload(self):
+        from cost_control import SpendLedger
+        with tempfile.TemporaryDirectory() as folder:
+            director=self.director(folder);director.spend_ledger=SpendLedger(Path(folder)/'ledger.json',1)
+            timings=[];director.timing_callback=lambda *args:timings.append(args)
+            with patch('openai_director.urllib.request.urlopen',return_value=stream('{"summary":12}')):
+                with self.assertRaises(ValueError):director.call('Test',{},obj({'summary':STR}),lambda *_:None)
+            self.assertEqual(len(timings),1);details=timings[0][2]
+            self.assertEqual(details['status'],'FAILED');self.assertFalse(details['usagePending'])
+            self.assertEqual(details['reservedUSD'],0);self.assertGreater(details['estimatedUSD'],0)
+            self.assertAlmostEqual(details['estimatedUSD'],director.spend_ledger.load()['spentUSD'])
+            self.assertNotIn('summary',json.dumps(details));self.assertNotIn('test-key',json.dumps(details))
+
+    def test_interrupted_paid_stream_reports_reserved_liability_separately(self):
+        from cost_control import SpendLedger
+        with tempfile.TemporaryDirectory() as folder:
+            director=self.director(folder);director.spend_ledger=SpendLedger(Path(folder)/'ledger.json',1)
+            timings=[];director.timing_callback=lambda *args:timings.append(args)
+            response=io.BytesIO(b'data: {"type":"response.created","response":{"id":"synthetic-receipt"}}\n\n')
+            with patch('openai_director.urllib.request.urlopen',return_value=response):
+                with self.assertRaises(RuntimeError):director.call('Test',{},obj({'summary':STR}),lambda *_:None)
+            details=timings[0][2];self.assertTrue(details['usagePending'])
+            self.assertEqual(details['estimatedUSD'],0);self.assertGreater(details['reservedUSD'],0)
+            self.assertTrue(director.spend_ledger.load()['requests'])
+            self.assertNotIn('synthetic-receipt',json.dumps(details))
+
+    def test_latency_separates_visible_reasoning_tokens_and_attempt_limits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            director=self.director(folder);timings=[]
+            director.timing_callback=lambda *args:timings.append(args)
+            response=stream(usage={'input_tokens':100,'output_tokens':40,
+                'output_tokens_details':{'reasoning_tokens':15}})
+            with patch('openai_director.urllib.request.urlopen',return_value=response):
+                director.call('Test',{},obj({'summary':STR}),lambda *_:None)
+            details=timings[0][2]
+            self.assertEqual(details['reasoningTokens'],15);self.assertEqual(details['visibleOutputTokens'],25)
+            attempt=details['latency']['attempts'][0]
+            self.assertGreaterEqual(attempt['firstTextSeconds'],attempt['headersSeconds'])
+            self.assertGreaterEqual(attempt['streamSeconds'],attempt['firstTextSeconds'])
+            self.assertEqual(attempt['outputLimit'],12000);self.assertEqual(attempt['status'],'completed')
+            self.assertNotIn('synthetic',json.dumps(details))
+
+    def test_unreported_reasoning_count_stays_unknown_instead_of_zero(self):
+        with tempfile.TemporaryDirectory() as folder:
+            director=self.director(folder);timings=[];director.timing_callback=lambda *a:timings.append(a)
+            with patch('openai_director.urllib.request.urlopen',return_value=stream()):
+                director.call('Test',{},obj({'summary':STR}),lambda *_:None)
+            self.assertIsNone(timings[0][2]['reasoningTokens'])
+            self.assertIsNone(timings[0][2]['visibleOutputTokens'])
+
     def test_vision_keeps_all_three_supplied_images_and_exposes_its_limit(self):
         with tempfile.TemporaryDirectory() as folder:
             director=self.director(folder)

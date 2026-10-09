@@ -337,7 +337,8 @@ class DirectorProvider:
 
     def writeImagePrompt(self, context, gate):
         from prompt_quality import PROMPT_GUIDANCE
-        guidance = PROMPT_GUIDANCE if getattr(self,"focused_prompts",False) else ""
+        guidance = PROMPT_GUIDANCE if (getattr(self,"focused_prompts",False)
+            or getattr(self,"concise_prompt_supplement",False)) else ""
         return self.call(
             "Image prompt engineer: only supplied visible action, characters, current appearance and camera. Do not add events. Use selected model prompt format. No rendered labels or prose captions." + guidance,
             context,

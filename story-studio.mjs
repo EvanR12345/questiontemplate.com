@@ -692,7 +692,7 @@ function settings() {
       ["openai-luna", "GPT-6 Luna · OpenAI API"],
     ],
     s.director.provider,
-  )}</select></label><label>Director reasoning<select id="settingReasoning">${options(["Fast", "Balanced", "High"], s.director.reasoning)}</select></label><label>Continuity strictness<select id="settingContinuity">${options(["Low", "Medium", "High"], s.continuityStrictness)}</select></label><label>Appearance changes<select id="settingAppearance">${options(["Automatic", "Review changes", "Strict"], s.appearanceHandling)}</select></label><label>Max image retries<input id="settingRetries" type="number" min="0" max="10" value="${s.maxImageRetries}"></label><label>Resolution<select id="settingResolution">${options(
+  )}</select></label><label>Director reasoning<select id="settingReasoning">${options(["Fast", "Balanced", "High"], s.director.reasoning)}</select></label><label>Independent Luna tasks<select id="settingDirectorParallelism" aria-describedby="directorParallelismHelp">${options([["1","1 · serial"],["2","2 · concurrent"],["3","3 · concurrent"]],String(s.director.parallelism || 1))}</select><span id="directorParallelismHelp" class="muted">Applies when Overlap cloud tasks is enabled. Camera, workflow and continuity review can run together; prompt batches can overlap. Story facts and chapter handoffs stay ordered. Luna and image reviews share three API slots. Existing projects stay serial until you choose otherwise.</span></label><label class="inline"><input id="settingConciseDirectorPrompts" type="checkbox" ${s.director.concisePrompts === true ? 'checked' : ''}>Short visual-direction supplements</label><p class="muted">Luna adds composition, expression and lighting without repeating the saved character/story draft. The full grounded image prompt remains intact. Existing shots and manual prompts stay saved. This setting does not change scene count or image-model settings.</p><label>Continuity strictness<select id="settingContinuity">${options(["Low", "Medium", "High"], s.continuityStrictness)}</select></label><label>Appearance changes<select id="settingAppearance">${options(["Automatic", "Review changes", "Strict"], s.appearanceHandling)}</select></label><label>Max image retries<input id="settingRetries" type="number" min="0" max="10" value="${s.maxImageRetries}"></label><label>Resolution<select id="settingResolution">${options(
     [
       ["384x384", "384 × 384 · references / repair"],
       ["448x448", "448 × 448 · native balanced"],
@@ -1885,6 +1885,8 @@ async function saveSettings() {
   s.emphasisPhrases = $('#settingEmphasisPhrases').value.split('\n').map(x=>x.trim()).filter(Boolean);
   s.director.provider = $("#settingDirectorProvider").value;
   s.director.reasoning = $("#settingReasoning").value;
+  s.director.parallelism = Number($("#settingDirectorParallelism").value);
+  s.director.concisePrompts = $('#settingConciseDirectorPrompts').checked;
   s.continuityStrictness = $("#settingContinuity").value;
   s.appearanceHandling = $("#settingAppearance").value;
   s.maxImageRetries = Number($("#settingRetries").value);

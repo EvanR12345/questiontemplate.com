@@ -227,6 +227,8 @@ def new_project(name="My story"):
                 "provider": "local-qwen",
                 "model": "Qwen3.5-4B Q4_K_M",
                 "reasoning": "Balanced",
+                "parallelism": 1,
+                "concisePrompts": False,
                 "vision": False,
             },
             "image": {
@@ -363,6 +365,11 @@ def validate_project(p):
         raise ValueError('Intro end-on-narration must be enabled or disabled.')
     if 'focusedPrompts' in p['settings'] and not isinstance(p['settings']['focusedPrompts'], bool):
         raise ValueError('Focused prompts must be enabled or disabled.')
+    director_parallelism=p['settings'].get('director',{}).get('parallelism',1)
+    if type(director_parallelism) is not int or not 1<=director_parallelism<=3:
+        raise ValueError('Choose one, two or three parallel director calls.')
+    if 'concisePrompts' in p['settings'].get('director',{}) and type(p['settings']['director']['concisePrompts']) is not bool:
+        raise ValueError('Concise director prompts must be enabled or disabled.')
     validate_checks(p['settings'])
     validate_watermark(p['settings'].get('watermark', {}))
     validate_engagement(p['settings'].get('engagement', {}))

@@ -698,6 +698,7 @@ class StudioService:
             self.director.stop()
             self.director = LocalQwenDirector(self.config, self.store.root)
         self.director.focused_prompts = project["settings"].get("focusedPrompts") is True
+        self.director.concise_prompt_supplement = project['settings']['director'].get('concisePrompts') is True
         self.director.reasoning = project["settings"]["director"].get("reasoning", "Balanced")
         if isinstance(self.director, OpenAIDirector):
             from cost_control import SpendLedger
@@ -2481,6 +2482,20 @@ class StudioService:
             'style':project['settings']['style'],'image':project['settings']['image'],
             'referenceAssets':fingerprints})
 
+    def director_calls(self, project, chapter, calls, expected=None):
+        from director_tasks import validate_director_result
+        overlap=getattr(self,'_overlap',None)
+        if (overlap and self is overlap.main
+                and project['settings']['director'].get('parallelism',1)>1):
+            return overlap.director_calls(project,chapter,calls,expected)
+        return [validate_director_result(method,context,getattr(self.director,method)(context,self.gate))
+            for method,context in calls]
+
+    def director_group_limits(self,remote):
+        # Keep production context sizes unchanged. Private matched test services
+        # can override this seam without changing installed project settings.
+        return (9000,48) if remote else (2500,12)
+
     def analyze(self, p, chid, options):
         expected_analysis=self.analysis_input_signature(p,chid)
         self.select_director(p)
@@ -2673,7 +2688,7 @@ class StudioService:
         current = []
         size = 0
         remote_director = isinstance(self.director, OpenAIDirector)
-        group_chars, group_sentences = (9000, 48) if remote_director else (2500, 12)
+        group_chars, group_sentences = self.director_group_limits(remote_director)
         for item in timings:
             if current and (size + len(item["text"]) > group_chars or len(current) >= group_sentences):
                 groups.append(current)
@@ -3010,20 +3025,15 @@ class StudioService:
                 )
             details = expanded
             cameras = {}
+            finishing_calls=[]
             if p["settings"]["generationMode"] != "QUICK":
-                result = self.director.planLayout(
+                finishing_calls.append(('planLayout',
                     {
                         "shots": details,
                         "style": p["settings"]["style"],
                         "mode": p["settings"]["layoutMode"],
-                    },
-                    self.gate,
-                )
-                cameras = {x["shotIndex"]: x for x in result["cameras"]}
-                passes.append(
-                    {"pass": "cinematographer", "group": group_index, "output": result}
-                )
-            workflow = self.director.selectImageWorkflow(
+                    }))
+            finishing_calls.append(('selectImageWorkflow',
                 {
                     "available": [
                         {
@@ -3037,9 +3047,22 @@ class StudioService:
                     "mainCharacterReferences": sum(
                         bool(c["references"]) for c in p["characters"]
                     ),
-                },
-                self.gate,
-            )
+                }))
+            finishing_calls.append(('checkContinuity',
+                {
+                    "knownState": compact_state,
+                    "people": cast,
+                    "objects": analysis["objects"],
+                    "changes": analysis["changes"],
+                    "sentences": text,
+                    "shots": details if p["settings"]["generationMode"] != "QUICK" else [],
+                }))
+            finishing_results=self.director_calls(p,chid,finishing_calls,expected_analysis)
+            if p["settings"]["generationMode"] != "QUICK":
+                result=finishing_results.pop(0)
+                cameras={x["shotIndex"]:x for x in result["cameras"]}
+                passes.append({"pass":"cinematographer","group":group_index,"output":result})
+            workflow,continuity=finishing_results
             if (
                 workflow["provider"] != provider.id
                 or workflow["model"] not in health["models"]
@@ -3054,19 +3077,6 @@ class StudioService:
                     "group": group_index,
                     "output": workflow,
                 }
-            )
-            continuity = self.director.checkContinuity(
-                {
-                    "knownState": compact_state,
-                    "people": cast,
-                    "objects": analysis["objects"],
-                    "changes": analysis["changes"],
-                    "sentences": text,
-                    "shots": (
-                        details if p["settings"]["generationMode"] != "QUICK" else []
-                    ),
-                },
-                self.gate,
             )
             passes.append(
                 {
@@ -3330,9 +3340,12 @@ class StudioService:
         if p["settings"]["generationMode"] != "QUICK":
             planned_shots = [s for scene in scenes for s in scene["shots"]]
             prompt_batch = 12 if remote_director else 4
+            prompt_groups=[]
+            prompt_calls=[]
             for begin in range(0, len(planned_shots), prompt_batch):
                 group = planned_shots[begin : begin + prompt_batch]
-                output = self.director.writeImagePrompt(
+                prompt_groups.append(group)
+                prompt_calls.append(('writeImagePrompt',
                     {
                         "model": p["settings"]["image"]["model"],
                         "promptFormat": provider.getCapabilities()["promptFormat"],
@@ -3345,9 +3358,9 @@ class StudioService:
                             for i, s in enumerate(group)
                         ],
                         "instruction": "Refine the supplied drafts without deleting identity/current appearance constraints or adding any events. Keep each prompt concise. For SD tags, use fewer than 220 words. For natural-language models use complete sentences.",
-                    },
-                    self.gate,
-                )
+                    }))
+            prompt_outputs=self.director_calls(p,chid,prompt_calls,expected_analysis)
+            for group,output in zip(prompt_groups,prompt_outputs):
                 passes.append(
                     {
                         "pass": "image-prompt-engineer",
@@ -3492,7 +3505,8 @@ class StudioService:
         return digest({'chapter':{key:chapter.get(key) for key in fields},
             'audio':chapter.get('audio',{}).get('signature'),'settings':project['settings'],
             'inputState':state_before(project,chid)[0],
-            'identities':[{key:person.get(key) for key in ('id','permanentIdentity','references')}
+            'identities':[{key:person.get(key) for key in ('id','name','description','aliases',
+                'permanentIdentity','defaultAppearance','references')}
                 for person in project['characters']]})
 
     def validate_ranges(self, items, count, label):

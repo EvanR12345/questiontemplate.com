@@ -10,7 +10,9 @@ from contextlib import contextmanager
 
 FIELDS = {'chapter', 'shot', 'intro', 'provider', 'model', 'jobId', 'seed',
           'estimatedUSD', 'serviceTier', 'reused', 'timingSource', 'detail',
-          'executionId', 'inputHash'}
+          'executionId', 'inputHash', 'parallelDirector', 'latency',
+          'inputTokens', 'tokens', 'reasoningTokens', 'visibleOutputTokens',
+          'usagePending', 'reservedUSD'}
 
 
 def interval_union(intervals):

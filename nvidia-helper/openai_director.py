@@ -21,6 +21,13 @@ class OpenAIDirector(DirectorProvider):
     model = "gpt-6-luna"
     max_vision_images = 3
 
+    @staticmethod
+    def validate_result(role,context,value,schema):
+        validate_schema(value,schema)
+        if role.startswith('Image prompt engineer:'):
+            from director_tasks import validate_director_result
+            validate_director_result('writeImagePrompt',context,value)
+
     def __init__(self, config, log_root):
         self.config = config
         self.log_root = Path(log_root)
@@ -58,13 +65,38 @@ class OpenAIDirector(DirectorProvider):
             self.response = None
 
     def call(self, role, context, schema, gate, vision=False):
-        # The service still executes serially. Reject accidental reuse of this
-        # mutable adapter; future lanes need separate adapters and job contexts.
+        # Independent lanes each own an adapter and durable job context. Reject
+        # simultaneous reuse of this mutable adapter, including its live stream.
         if not self._call_lock.acquire(blocking=False):
             raise RuntimeError('This Luna director already has an active request. Concurrent work needs independent request contexts.')
+        self._failure_trace=None
+        self._timing_reported=False
         try:
             return self._call(role, context, schema, gate, vision)
+        except BaseException:
+            report=self._failure_trace
+            if report and not self._timing_reported and getattr(self,'timing_callback',None):
+                # Invalid output and interrupted streams still consumed time.
+                # Settled receipts and unresolved reservations are separate.
+                settled,reserved,pending=0,0,False
+                ledger=getattr(self,'spend_ledger',None)
+                for request_id in report['requests']:
+                    if not ledger:continue
+                    try:row=ledger.request_state(request_id,owner=report['owner'])
+                    except (KeyError,ValueError):continue # Rejected before purchase.
+                    if row['status']=='SETTLED':settled+=row['estimatedUSD']
+                    else:reserved+=row['reservedUSD'];pending=True
+                details={'provider':'openai-luna','model':self.model,'status':'FAILED',
+                    'reasoning':report['reasoning'],'estimatedUSD':settled if ledger else report['cost'],
+                    'usagePending':pending,'reservedUSD':reserved,
+                    'latency':{'apiLaneWaitSeconds':getattr(self,'api_lane_wait_seconds',0),
+                        'attempts':report['attempts']},**report['usage']}
+                self._timing_reported=True
+                try:self.timing_callback(role.split(':')[0].split('.')[0],time.monotonic()-report['began'],details)
+                except Exception:pass # Retain the original error and durable spend ledger.
+            raise
         finally:
+            self._failure_trace=None
             self._call_lock.release()
 
     def _call(self, role, context, schema, gate, vision=False):
@@ -88,11 +120,20 @@ class OpenAIDirector(DirectorProvider):
                     "role": role, "context": context, "schema": schema, "reasoning": reasoning, "vision": vision}
         cache = self.log_root / "director-cache" / (hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest() + ".json")
         if cache.is_file():
-            value = json.loads(cache.read_text(encoding="utf-8"))
-            validate_schema(value, schema)
-            if getattr(self, "timing_callback", None):
-                self.timing_callback(role.split(":")[0].split(".")[0], 0, {"reused": True, "provider": "openai-luna"})
-            return value
+            with _cache_publish_lock:
+                # Recheck under the publisher lock. A sibling may have retained
+                # an invalid file or published a replacement after our exists().
+                if cache.is_file():
+                    try:
+                        value=json.loads(cache.read_text(encoding='utf-8'))
+                        self.validate_result(role,context,value,schema)
+                    except ValueError:
+                        cache.replace(cache.with_suffix('.invalid-'+uuid.uuid4().hex+'.json'))
+                        raise ValueError('Saved director output was incomplete and retained for diagnosis. '
+                            'Retry the analysis for a fresh request; existing images and manual edits were preserved.') from None
+                    if getattr(self, "timing_callback", None):
+                        self.timing_callback(role.split(":")[0].split(".")[0], 0, {"reused": True, "provider": "openai-luna"})
+                    return value
         clean = compact_source_evidence({k: v for k, v in context.items() if not k.startswith("_")})
         content = [{"type": "input_text", "text": json.dumps(clean, ensure_ascii=False)}]
         if vision:
@@ -117,6 +158,9 @@ class OpenAIDirector(DirectorProvider):
         total_usage = {"inputTokens": 0, "tokens": 0, "cachedInputTokens": 0, "cacheWriteTokens": 0}
         estimated_cost = 0
         returned_tiers = []
+        request_timings=[]
+        reasoning_tokens=0
+        reasoning_known=True
         ledger = getattr(self, 'spend_ledger', None)
         observer = getattr(self, 'execution_observer', None)
         if observer is not None and not callable(observer):
@@ -124,11 +168,14 @@ class OpenAIDirector(DirectorProvider):
         wait_for_budget=getattr(self,'wait_for_budget',False)
         if not isinstance(wait_for_budget,bool):raise ValueError('Budget wait mode must be boolean.')
         owner = 'luna-call-' + uuid.uuid4().hex
+        self._failure_trace={'began':began,'reasoning':reasoning,'requests':[],
+            'owner':owner,'attempts':request_timings,'usage':total_usage,'cost':0}
         for attempt in range(2):
             gate("Luna: " + role.split(".")[0])
             req = urllib.request.Request("https://api.openai.com/v1/responses", data=json.dumps(body).encode(),
                     headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"})
             request_id = 'luna-' + uuid.uuid4().hex
+            self._failure_trace['requests'].append(request_id)
             if ledger:
                 while True:
                     try:
@@ -145,6 +192,9 @@ class OpenAIDirector(DirectorProvider):
                         gate('Waiting for reserved API usage to settle')
                         time.sleep(.05)
             submitted = False
+            timing={'attempt':attempt+1,'outputLimit':body['max_output_tokens']}
+            request_timings.append(timing)
+            dispatch_started=None
             try:
                 # Cancellation before dispatch releases only this held request.
                 gate('Luna: ' + role.split('.')[0])
@@ -156,8 +206,10 @@ class OpenAIDirector(DirectorProvider):
                 if observer:
                     observer('submitting', {'operationId': request_id, 'provider': 'openai-luna'})
                 submitted = True
+                dispatch_started=time.monotonic()
                 with urllib.request.urlopen(req, timeout=30) as response:
                     self.response = response
+                    timing['headersSeconds']=time.monotonic()-dispatch_started
                     for line in response:
                         # Pausing should not stall collection of an already
                         # paid response. A caller can provide a receive gate
@@ -177,6 +229,8 @@ class OpenAIDirector(DirectorProvider):
                                 if observer:
                                     observer('accepted', {'operationId': request_id, 'remoteId': response_id})
                         if kind == "response.output_text.delta":
+                            if 'firstTextSeconds' not in timing:
+                                timing['firstTextSeconds']=time.monotonic()-dispatch_started
                             text.append(event["delta"])
                         elif kind in ('response.refusal.delta', 'response.refusal.done'):
                             # A refusal can still have billed usage in the final
@@ -185,6 +239,7 @@ class OpenAIDirector(DirectorProvider):
                             refused = True
                         elif kind in ("response.completed", "response.incomplete", "response.failed"):
                             completed = event["response"]
+                            timing['streamSeconds']=time.monotonic()-dispatch_started
                             break
                         elif kind == "error":
                             raise RuntimeError("OpenAI streaming request failed. Check billing, availability and model settings.")
@@ -211,6 +266,17 @@ class OpenAIDirector(DirectorProvider):
                 # Malformed/missing usage must not erase a completed response or
                 # turn an unknown charge into free work in timing reports.
                 usage = usage if isinstance(usage, dict) else {}
+                output_details=usage.get('output_tokens_details')
+                reasoning_value=output_details.get('reasoning_tokens') if isinstance(output_details,dict) else None
+                if isinstance(reasoning_value,int) and not isinstance(reasoning_value,bool) and reasoning_value>=0:
+                    reasoning_tokens+=reasoning_value
+                else:
+                    reasoning_known=False
+                timing['status']=completed.get('status','unknown')
+                timing['inputTokens']=usage.get('input_tokens')
+                timing['outputTokens']=usage.get('output_tokens')
+                timing['reasoningTokens']=reasoning_value
+                self._failure_trace['cost']=estimated_cost
                 token_details = usage.get('input_tokens_details')
                 token_details = token_details if isinstance(token_details, dict) else {}
                 for field, value in (('inputTokens', usage.get('input_tokens')), ('tokens', usage.get('output_tokens')),
@@ -232,13 +298,18 @@ class OpenAIDirector(DirectorProvider):
                 if completed.get("status") != "completed":
                     raise RuntimeError("Luna did not finish this structured response. Existing successful stages remain saved.")
                 value = json.loads("".join(text))
-                validate_schema(value, schema)
+                self.validate_result(role,context,value,schema)
                 details = {"provider": "openai-luna", "model": self.model, "attempt": attempt + 1,
                            "reasoning": reasoning,
                            "estimatedUSD": estimated_cost,
                            'serviceTiers': returned_tiers,
+                           'latency':{'apiLaneWaitSeconds':getattr(self,'api_lane_wait_seconds',0),
+                                      'attempts':request_timings},
+                           'reasoningTokens':reasoning_tokens if reasoning_known else None,
+                           'visibleOutputTokens':max(0,total_usage['tokens']-reasoning_tokens) if reasoning_known else None,
                            **total_usage}
                 if getattr(self, "timing_callback", None):
+                    self._timing_reported=True
                     self.timing_callback(role.split(":")[0].split(".")[0], time.monotonic() - began, details)
                 cache.parent.mkdir(parents=True, exist_ok=True)
                 temporary = None
@@ -280,6 +351,8 @@ class OpenAIDirector(DirectorProvider):
                 suffix = f' Saved request: {request_id}.' if ledger else ''
                 raise RuntimeError(f"Luna request failed (HTTP {error.code}). " + (detail or 'Check API billing, model access and structured-output settings.') + suffix) from None
             finally:
+                if dispatch_started is not None:
+                    timing.setdefault('streamSeconds',time.monotonic()-dispatch_started)
                 try:
                     if ledger:
                         if submitted:

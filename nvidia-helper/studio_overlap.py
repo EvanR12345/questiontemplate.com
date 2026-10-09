@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import threading
+import time
 from contextlib import contextmanager
 from openai_director import OpenAIDirector
 from studio_data import digest, get_chapter, get_shot, uid
@@ -16,7 +17,9 @@ class LaneDirector(OpenAIDirector):
         self.lane=lane
 
     def _call(self, role, context, schema, gate, vision=False):
+        waiting=time.monotonic()
         with self.lane.acquire(gate):
+            self.api_lane_wait_seconds=time.monotonic()-waiting
             return super()._call(role,context,schema,gate,vision)
 
 
@@ -45,6 +48,9 @@ def validate_overlap(project, options):
     limit=options.get('overlapShots',3)
     if isinstance(limit,bool) or not isinstance(limit,int) or not 2<=limit<=3:
         raise ValueError('Choose two or three in-flight cloud shots.')
+    director_limit=settings['director'].get('parallelism',1)
+    if isinstance(director_limit,bool) or not isinstance(director_limit,int) or not 1<=director_limit<=3:
+        raise ValueError('Choose one, two or three parallel director calls.')
     for chapter in project['chapters']:
         for scene in chapter['scenes']:
             if any(shot['imageProvider']!='comfyui' for shot in scene['shots']):
@@ -168,6 +174,57 @@ class CloudStoryOverlap:
         index=self.chapters.index(chapter)
         for earlier in self.chapters[:max(0,index-1)]:
             self.pool.wait_for(self.chapter_futures.get(earlier,[]))
+
+    def director_calls(self, project, chapter, calls, expected=None):
+        """Only independent finishing/prompt passes, with separate durable owners."""
+        from director_tasks import bounded_director_map,validate_director_result
+        from studio_service import JobCancelled
+        allowed={'planLayout','selectImageWorkflow','checkContinuity','writeImagePrompt'}
+        if any(method not in allowed for method, _ in calls):
+            raise ValueError('This director pass requires ordered story state and cannot run here.')
+        snapshot=copy.deepcopy(project)
+        expected=expected or self.main.analysis_input_signature(self.root.store.load(self.project),chapter)
+        parent=self.main.execution_context
+        def execute(item, stopped):
+            method, payload=item
+            current=self.validate_settings()
+            if self.main.analysis_input_signature(current,chapter)!=expected:
+                raise StaleExecution('Chapter inputs changed before director dispatch; current edits retained.')
+            context=self.admit(snapshot,chapter,None,'director-pass',
+                digest({'method':method,'input':payload,'analysis':expected}),[parent.identity])
+            clone=self.clone(context)
+            ordinary_gate=clone.gate
+            def dispatch_gate(*args,**kwargs):
+                if stopped.is_set():raise JobCancelled()
+                return ordinary_gate(*args,**kwargs)
+            clone.gate=dispatch_gate
+            status,message='COMPLETE','Director pass saved in validated cache'
+            try:
+                clone.select_director(snapshot)
+                # A sibling failure stops new dispatch/retries, but must not
+                # discard a paid response's receipt or completed cached result.
+                clone.director.receive_gate=lambda message:ordinary_gate(message,wait_paused=False)
+                clone.director.timing_callback=lambda stage,seconds,details:clone.record_timing(
+                    self.project,stage,seconds,details | {'chapter':get_chapter(snapshot,chapter)['number'],
+                        'detail':True,'parallelDirector':True})
+                result=getattr(clone.director,method)(copy.deepcopy(payload),dispatch_gate)
+                validate_director_result(method,payload,result)
+                latest=self.validate_settings()
+                if self.main.analysis_input_signature(latest,chapter)!=expected:
+                    raise StaleExecution('Chapter changed during direction; earlier result cached and current edits retained.')
+                return result
+            except BaseException as error:
+                status='SUPERSEDED' if isinstance(error,StaleExecution) else (
+                    'CANCELLED' if isinstance(error,JobCancelled) else 'FAILED')
+                message=str(error)[:1800]
+                raise
+            finally:
+                actual=self.coordinator.call(self.journal.finish,context.identity,status,message)
+                with self.root.cv:self.root.active_executions.pop(context.identity,None)
+                if actual=='UNKNOWN' and status=='COMPLETE':
+                    raise UnresolvedExecution('Director pass has unresolved remote usage; reconcile its saved ID before retrying.')
+        return bounded_director_map(calls,execute,self.main.gate,
+            self.settings['director'].get('parallelism',1))
 
     @contextmanager
     def stage(self, stage, args, details):

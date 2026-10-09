@@ -15,6 +15,15 @@ const STORE='questiontemplate-production-planner-v1';
 const keys=Object.keys(DEFAULTS),booleans=keys.filter(k=>typeof DEFAULTS[k]==='boolean');
 let gpuExplorer;
 let renderResearchStarted=false;
+let directorStudy,directorStudyLoading=false;
+async function loadDirectorStudy(){
+  if(directorStudyLoading||directorStudy)return;directorStudyLoading=true;
+  try{
+    const {mountDirectorStudy}=await import('./pipeline-director-study.mjs?v=luna-20261009');
+    directorStudy=await mountDirectorStudy($('directorResearch'),config.minutes);
+  }catch{$('directorResearch').textContent='Director study unavailable. The existing planner remains usable.';}
+  finally{directorStudyLoading=false;}
+}
 async function loadRenderResearch(){
   if(renderResearchStarted)return;renderResearchStarted=true;
   try{const {mountRenderResearch}=await import('./pipeline-render-research.mjs?v=render-research-20261009');await mountRenderResearch($('renderResearch'));}
@@ -44,7 +53,7 @@ function renderGenerationSpeed(){
   $('fastestGPU').disabled=speed.highest===null||speed.isFastest;
 }
 function labelChapter(n){return n===0?'Project / intro':`Chapter ${String(n).padStart(2,'0')}`;}
-function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(['gpus','processes','observed'].includes(next))void loadOptionalPanels();if(next==='gpus'){void loadRenderResearch();mountGPUPanels();if(result)renderGPUs();}}
+function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(['gpus','processes','observed'].includes(next))void loadOptionalPanels();if(next==='evidence')void loadDirectorStudy();if(next==='gpus'){void loadRenderResearch();mountGPUPanels();if(result)renderGPUs();}}
 async function rebuild(){
   stopPlay();
   const generation=++computeGeneration;plannerRequest.cancel();comparisonRequest.cancel();comparisonPendingKey='';
@@ -82,6 +91,7 @@ async function rebuild(){
     focus=oldFocus==='all'||Number(oldFocus)<=config.chapters?oldFocus:'all';$('chapterFocus').value=focus;
     if(selected&&!getTask(selected))selected=null;
     renderTimeline();renderBreakdown();renderProcesses();renderPairs();renderEvidence();renderInspector();
+    directorStudy?.update(config.minutes);
     mountStartupTradeoffs($('startTradeoffs'),config,evidence,settings=>{checkpoint();config={...config,...settings,earlyGpu:false,policy:'proposed'};preferences={};setControls();rebuild();toast('GPU startup timing applied to the planner. Production settings remain unchanged.');});
     if(view==='gpus')renderGPUs();persist();
   }catch(e){if(generation!==computeGeneration)return;$('error').textContent=e.message;$('error').hidden=false;}

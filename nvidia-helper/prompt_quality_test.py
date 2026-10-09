@@ -75,4 +75,14 @@ class PromptQualityTest(unittest.TestCase):
         result['providerTimings']['totalClientSeconds']=float('nan');self.assertIsNone(generation_measurements(p,'x',result)['estimatedImageIntervalRentalUSD'])
         result['provider']='existing';self.assertIsNone(generation_measurements(p,'x',result)['recordedRentalHourlyUSD'])
 
+    def test_short_visual_supplements_can_be_selected_without_changing_scene_fact_guidance(self):
+        director=DirectorProvider();director.call=Mock(return_value={'shots':[]})
+        director.planScenes({'people':[]},lambda *a:None);original_scene_role=director.call.call_args.args[0]
+        director.concise_prompt_supplement=True
+        director.planScenes({'people':[]},lambda *a:None)
+        self.assertEqual(director.call.call_args.args[0],original_scene_role)
+        director.writeImagePrompt({},lambda *a:None)
+        self.assertIn('Return only a short',director.call.call_args.args[0])
+        self.assertIn('grounded draft is retained',director.call.call_args.args[0])
+
 if __name__=='__main__':unittest.main()
