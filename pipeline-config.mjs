@@ -1,4 +1,4 @@
-import {buildPlan} from './pipeline-engine.mjs?v=native-render-20261009';
+import {buildPlan} from './pipeline-engine.mjs?v=native-render-20261009b';
 
 export function gpuChoices(evidence) {
   const measured=(evidence.concurrency?.gpus||[]).filter(g=>

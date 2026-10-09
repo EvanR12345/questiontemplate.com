@@ -161,7 +161,7 @@ test('optional full video decode labels selected-format scaling as an estimate',
 });
 
 test('output timing follows measured 720p30 rather than the older repeated-asset 24fps fixture',()=>{
- const p=buildPlan(DEFAULTS,evidence),rate=p.renderProfile.wallSeconds/p.renderProfile.videoSeconds;
+ const p=buildPlan({...DEFAULTS,intro:false},evidence),rate=p.renderProfile.wallSeconds/p.renderProfile.videoSeconds;
  assert.equal(p.config.videoResolution,'720p');assert.equal(p.config.videoFps,30);
  assert.ok(Math.abs(p.tasks.filter(t=>t.kind==='render').reduce((n,t)=>n+t.duration,0)-rate*120*60)<1e-6);
  assert.notEqual(rate,evidence.calibration.renderWallSeconds/evidence.calibration.renderVideoSeconds);
@@ -173,6 +173,7 @@ test('native rendering uses the measured local GPU path and reserves the voice G
  assert.equal(native.renderProfile.backend,'native');assert.equal(cpu.renderProfile.backend,'cpu');
  assert.ok(cpu.renderProfile.fullRenderWallSeconds/native.renderProfile.fullRenderWallSeconds>10);
  assert.ok(native.tasks.filter(t=>t.kind==='render').every(t=>t.resources.audioGPU===1));
+ assert.match(native.tasks.find(t=>t.id==='c0-render').basis,/Intro remains on the CPU/);
  const result=schedule({...native,config:{...native.config,cpuOverlap:true}});
  assert.deepEqual(result.diagnostics,[]);
  assert.throws(()=>buildPlan({...DEFAULTS,videoRenderer:'native',videoResolution:'1080p'},evidence),/No matched/);

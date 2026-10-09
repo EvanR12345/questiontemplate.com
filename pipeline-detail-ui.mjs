@@ -1,4 +1,4 @@
-import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=native-render-20261009';
+import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=native-render-20261009b';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const seconds=n=>Number.isFinite(n)?n.toFixed(3)+'s':'Not measured',money=n=>'$'+n.toFixed(3);
 const phaseNames={preparationSeconds:'Build request',referenceUploadSeconds:'Reference upload/cache',submissionSeconds:'Submit operation',waitAndPollingSeconds:'Wait / poll (includes server)',retrievalAndValidationSeconds:'Retrieve / decode check',pngEncodeAndDurableSaveSeconds:'PNG encode / durable save',historyAndMetadataReceiptSeconds:'History / metadata receipt',provisionAndReadinessSeconds:'Provision / readiness',downloadAndHashSeconds:'Download / verify hashes',timedCohortWallSeconds:'Timed image cohorts',experimentalWarmupClientSeconds:'Experimental warmups'};
@@ -66,7 +66,7 @@ export function mountStartupTradeoffs(host,config,evidence,onApply){
   host._startupWorker?.terminate();
   host.innerHTML='<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption" role="status" data-start-progress>Comparing startup timings… Controls remain available.</p>';
   if(typeof Worker!=='undefined'){
-   const worker=new Worker(new URL('./pipeline-worker.mjs?v=native-render-20261009',import.meta.url),{type:'module'});host._startupWorker=worker;
+   const worker=new Worker(new URL('./pipeline-worker.mjs?v=native-render-20261009b',import.meta.url),{type:'module'});host._startupWorker=worker;
    worker.onmessage=({data})=>{
     if(host._startupGeneration!==generation)return;
     if(data.type==='progress')host.querySelector('[data-start-progress]').textContent=data.message+' · controls remain available.';

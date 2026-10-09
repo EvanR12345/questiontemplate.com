@@ -194,9 +194,10 @@ export function buildPlan(input, evidence) {
     saves.push(...finalSaves);reviews.push(...finalReviews);
     const timeline=add(`c${i}-timeline`,'timeline',i,.8,[...finalSaves,...finalReviews,...(i===0?['intro-voice']:[audio[i]])],{disk:1});
     const videoSeconds=i===0?c.introSeconds:chapterSec;
-    renders.push(add(`c${i}-render`,'render',i,renderProfile.wallSeconds/renderProfile.videoSeconds*videoSeconds,[timeline],renderProfile.backend==='native'?{cpu:1,audioGPU:1}:{cpu:1},{videoSeconds,
-      timingRange:{min:renderProfile.minWallSeconds/renderProfile.videoSeconds*videoSeconds,max:renderProfile.maxWallSeconds/renderProfile.videoSeconds*videoSeconds},
-      basis:`${c.videoResolution}/${c.videoFps}fps, ${renderProfile.clips} fresh clips in ${renderProfile.rounds} rounds, one clip worker; reference ${renderProfile.wallSeconds.toFixed(2)}s per ${renderProfile.videoSeconds}s of ${renderProfile.mode==='chapter-export'?'motion and chapter assembly':'motion'}. ${renderProfile.scope} ${renderProfile.hardwareCondition||''} Two-worker speedup is not assumed.`}));
+    const stageProfile=i===0&&renderProfile.backend==='native'?cpuProfile:renderProfile;
+    renders.push(add(`c${i}-render`,'render',i,stageProfile.wallSeconds/stageProfile.videoSeconds*videoSeconds,[timeline],renderProfile.backend==='native'?{cpu:1,audioGPU:1}:{cpu:1},{videoSeconds,
+      timingRange:{min:stageProfile.minWallSeconds/stageProfile.videoSeconds*videoSeconds,max:stageProfile.maxWallSeconds/stageProfile.videoSeconds*videoSeconds},
+      basis:`${i===0&&renderProfile.backend==='native'?'Intro remains on the CPU compatibility path; its fades are not separately calibrated. ':''}${c.videoResolution}/${c.videoFps}fps, ${stageProfile.clips} fresh clips in ${stageProfile.rounds} rounds, one clip worker; reference ${stageProfile.wallSeconds.toFixed(2)}s per ${stageProfile.videoSeconds}s of ${stageProfile.mode==='chapter-export'?'motion and chapter assembly':'motion'}. ${stageProfile.scope} ${stageProfile.hardwareCondition||''} Two-worker speedup is not assumed.`}));
   }
   if(c.policy!=='proposed') {
     for(const r of renders){const task=tasks.find(t=>t.id===r);task.deps.push(...saves,...reviews);}
