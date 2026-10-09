@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "checkedAt": "2026-10-09",
+  "scope": "Rendering research, not new Studio cloud export measurements",
+  "priceSource": "https://www.runpod.io/pricing",
+  "priceNote": "Public Pod prices checked October 9. Not an account quote or availability guarantee; storage, startup, transfer and idle rental are additional. Serverless rates differ.",
+  "candidates": [
+    {"id":"pro6000","name":"RTX PRO 6000 Blackwell · full server","vramGB":96,"encoders":4,"generation":9,"hourlyUSD":2.49,"role":"Maximum aggregate capacity candidate","caveat":"Verify actual server edition and full GPU. MIG encoder access and performance are not inferred from the full card.","source":"https://www.nvidia.com/en-us/data-center/rtx-pro-6000-blackwell-server-edition/"},
+    {"id":"5090","name":"RTX 5090","vramGB":32,"encoders":3,"generation":9,"hourlyUSD":1.19,"role":"Primary speed candidate","caveat":"Three engines do not triple one H.264 export. Complete Studio cloud speed is unmeasured.","source":"https://www.nvidia.com/en-gb/geforce/graphics-cards/50-series/rtx-5090/"},
+    {"id":"5080","name":"RTX 5080","vramGB":16,"encoders":2,"generation":9,"hourlyUSD":null,"role":"Value candidate if a suitable rental exists","caveat":"No public Runpod quote verified. Missing price is not zero cost.","source":"https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5080/"},
+    {"id":"4090","name":"RTX 4090","vramGB":24,"encoders":2,"generation":8,"hourlyUSD":0.89,"role":"Older-generation baseline","caveat":"Lower rental rate alone cannot establish cost per completed export.","source":"https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4090/"},
+    {"id":"l40s","name":"L40S","vramGB":48,"encoders":3,"generation":8,"hourlyUSD":1.09,"role":"Datacenter encoding candidate","caveat":"Compositor, CPU preparation and transfer still need matched tests.","source":"https://www.nvidia.com/en-us/data-center/l40s/"},
+    {"id":"l4","name":"L4","vramGB":24,"encoders":2,"generation":8,"hourlyUSD":0.59,"role":"Low-cost rendering candidate","caveat":"Lower-power CUDA compositor may limit total throughput. Marketing multi-GPU stream counts are not this export.","source":"https://www.nvidia.com/en-us/data-center/l4/"}
+  ],
+  "applicationComparison": {
+    "name":"PugetBench for DaVinci Resolve · public result group 33",
+    "source":"https://www.pugetsystems.com/pugetbench/results/compare/Puget%20Bench%20for%20DaVinci%20Resolve/33/GPU/NVIDIA%20GeForce%20RTX%203090/NVIDIA%20GeForce%20RTX%205090/",
+    "limitations":"Comparable benchmark group, different public host CPUs/RAM and clocks. The database requires at least ten results per shown component. These UHD application subtests do not predict Studio 720p30 time or rental cost.",
+    "rows":[
+      {"name":"H.264 encoding · 50 Mbps · 8-bit UHD","unit":"fps","values":[{"name":"RTX 3090","value":89.93},{"name":"RTX 5090","value":129.36}]},
+      {"name":"HEVC encoding · 50 Mbps · 8-bit UHD","unit":"fps","values":[{"name":"RTX 3090","value":94.58},{"name":"RTX 5090","value":260.23}]}
+    ]
+  },
+  "sources": [
+    {"name":"NVIDIA: per-engine throughput and multi-session limits","url":"https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/nvenc-application-note/index.html"},
+    {"name":"Puget: application and benchmark versions matter","url":"https://www.pugetsystems.com/labs/articles/puget-bench-for-premiere-pro-and-davinci-resolve-2-0-analysis/"},
+    {"name":"GPU Battle: AI generation methodology, a different workload","url":"https://gpubattle.com/guides/methodology"}
+  ],
+  "testGate":"Research shortlist ready. No new cloud render test started: a fresh paid-test cap is still required. Planned tests use identical 720p30 media, clean/effects exports, three rounds and 1/2/3 independent encoding sessions; include setup, storage, transfer, validation and shutdown. Preserve existing stopped resources.",
+  "localBaseline":{"durationSeconds":120,"cpuSeconds":150.1764,"nativeSeconds":14.2826,"scope":"Previously measured local clean full export, three runs per path. Effects and cloud transfer excluded; no cloud GPU speed inferred."}
+}

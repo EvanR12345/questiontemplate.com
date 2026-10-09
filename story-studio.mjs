@@ -1,7 +1,11 @@
+import {checkpointProject,backupSnapshot,canApplyBackgroundProject} from './studio-project-safety.mjs?v=safety-20261009';
+import {createMediaLoader} from './studio-media-loader.mjs?v=media-20261009';
+import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009';
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=queue-2";
 import { nativeRequest } from "./native-client.mjs?v=queue-1";
+import {rendererPlacement} from './studio-render-status.mjs?v=render-research-20261009';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=r2-14';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=media-20261009';
 import {
   loadProjectState,
   saveStudioProject,
@@ -42,9 +46,10 @@ let key = pairingKey(),
   scenePage = 0,
   overlapRequested = false,
   saveTimer;
+let cacheWarning="";
 const mediaCache = new Map();
 const progressReader=createProgressReader(qualityDecision);
-let mediaGeneration=0;
+const mediaLoader=createMediaLoader({resolve:(path,projectId)=>media(path,projectId)});
 const root = document.createElement("section");
 root.id = "productionStudio";
 root.className = "production";
@@ -103,31 +108,21 @@ async function api(path, body) {
   return helperJson("/studio/" + path, key, body);
 }
 async function cache() {
-  if (project) {
-    // Cloud-connected projects keep their data in the helper/R2. Retain an
-    // existing offline edit in IndexedDB until the user explicitly syncs it.
-    if (!connected || !health?.storage?.enabled || project._unsynced) await saveStudioProject(project);
-    localStorage.setItem("qt-production-project", project.id);
-  }
+  if(!project)return;
+  const warnings=[];
+  await checkpointProject(project,{
+    connected,cloudEnabled:Boolean(health?.storage?.enabled),save:saveStudioProject,
+    remember:projectId=>localStorage.setItem('qt-production-project',projectId),
+    warn:message=>warnings.push(message),
+  });
+  cacheWarning=warnings.join(' ');
+  if(cacheWarning)note(cacheWarning,true);
 }
 async function media(path, projectId=project.id) {
   return cachedMediaLink(mediaCache,projectId,path,api);
 }
 async function fillMedia() {
-  const projectId=project.id,generation=++mediaGeneration;
-  const nodes=[...root.querySelectorAll('[data-asset]')];let next=0;
-  for(const node of nodes)if(node.tagName==='IMG'){node.loading='lazy';node.decoding='async';}
-  await Promise.all(Array.from({length:Math.min(4,nodes.length)},async()=>{
-  while(next<nodes.length&&generation===mediaGeneration){
-    const node=nodes[next++];
-    if(!node.isConnected)continue;
-    try {
-      const url=await media(node.dataset.asset,projectId);
-      if(node.isConnected&&generation===mediaGeneration&&project.id===projectId)node.src=url;
-    } catch (error) {
-      node.alt = "Asset preview unavailable: " + error.message;
-    }
-  }}));
+  mediaLoader.load(root,project.id);
 }
 async function refreshProjects() {
   projects = connected ? await api("projects") : await listStudioProjects();
@@ -210,7 +205,7 @@ async function connect() {
   } catch (error) {
     connected = false;
     if (!project) {
-      projects = await listStudioProjects();
+      try{projects = await listStudioProjects();}catch{projects=[];}
       if (projects.length) project = projects[0];
     }
     render();
@@ -234,7 +229,6 @@ async function patch(scope, item, values, redraw = false) {
         { scope, id: item, chapter: chapterId, patch: values },
         redraw,
       );
-      dirty = false;
     } catch (error) {
       if (!error.message.includes("Cannot reach the NVIDIA helper"))
         throw error;
@@ -256,7 +250,6 @@ async function patch(scope, item, values, redraw = false) {
     Object.assign(target, values);
     project._unsynced = true;
     await cache();
-    dirty = false;
     if (redraw) render();
   }
   const state = $("#productionSaveState");
@@ -273,13 +266,16 @@ async function action(fn) {
     note(error.message, true);
   }
 }
+const editorSave=createEditorSave(persistEditor);
 async function flush() {
-  if (dirty) {
-    clearTimeout(saveTimer);
-    await saveEditor();
-  }
+  clearTimeout(saveTimer);
+  await saveEditor();
 }
 async function saveEditor() {
+  try { await editorSave.flush(); }
+  finally { dirty=editorSave.dirty; }
+}
+async function persistEditor() {
   const c = ch();
   if (!c) return;
   if (tab === "write") {
@@ -305,9 +301,10 @@ async function saveEditor() {
 }
 function dirtyEditor() {
   delete project._connectionPlaceholder;
+  editorSave.markDirty();
   dirty = true;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => action(saveEditor), 600);
+  saveTimer = setTimeout(() => void saveEditor().catch(error=>note(error.message,true)), 600);
   if (tab === "write")
     $("#wordCount").textContent = wordStats($("#chapterStory").value);
 }
@@ -444,10 +441,9 @@ function stats() {
   return `<div class="stats"><div><strong>${time(c.audio.duration)}</strong><small>Narration duration</small></div><div><strong>${c.scenes.length}</strong><small>Scenes</small></div><div><strong>${shots().length}</strong><small>Shots</small></div><div><strong>${shots().filter((s) => s.imagePath).length}</strong><small>Images saved</small></div><div><strong>${c.people.filter((p) => p.type !== "main").length}</strong><small>Supporting / temporary</small></div></div>`;
 }
 function refreshBackgroundSummary() {
+  const chapterLookup = new Map(project.chapters.map(chapter=>[chapter.id,chapter]));
   for (const button of root.querySelectorAll("[data-chapter]")) {
-    const chapter = project.chapters.find(
-      (item) => item.id === button.dataset.chapter,
-    );
+    const chapter = chapterLookup.get(button.dataset.chapter);
     if (!chapter) continue;
     button.querySelector("strong").textContent = chapter.name;
     button.querySelector("small").textContent =
@@ -480,12 +476,13 @@ function render() {
     project.settings.image.provider === "comfyui" && project.settings.director.provider === "openai-luna" &&
     Number.isFinite(project.settings.budget?.openaiUSD) && project.settings.budget.openaiUSD > 0 &&
     !project.settings.economyPanels;
+  const placement = rendererPlacement(connected,health);
   root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · your text is saved in this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${options(
     projects.map((p) => [p.id, p.name]),
     project.id,
   )}</select><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
   <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
-  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong><p class="muted">Add your chapters below, then start the full workflow. Saved results and manual edits are preserved. Voice generation stays on your computer.</p><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && overlapRequested ? "checked" : ""} ${overlapEligible ? "" : "disabled"}> Overlap cloud tasks (preview)</label><p class="muted">Runs direction and images together, plus only the reviews selected in Settings. Requires cloud images, Luna and an API spending cap.</p><div id="productionReadiness" role="status"></div><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><div class="toolbar"><button id="productionCheckReadiness" ${connected ? "" : "disabled"}>Check readiness</button><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div></div>
+  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong><p class="muted">Add your chapters below, then start the full workflow. Saved results and manual edits are preserved. Voice generation stays on your computer.</p><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && overlapRequested ? "checked" : ""} ${overlapEligible ? "" : "disabled"}> Overlap cloud tasks (preview)</label><p class="muted">Runs direction and images together, plus only the reviews selected in Settings. Requires cloud images, Luna and an API spending cap.</p><details data-ui="render-placement"><summary>${escape(placement.title)}</summary><p class="muted">${escape(placement.detail)}</p></details><div id="productionReadiness" role="status"></div><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><div class="toolbar"><button id="productionCheckReadiness" ${connected ? "" : "disabled"}>Check readiness</button><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div></div>
   ${project._unsynced ? '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>' : ""}
   ${project.warnings
     .filter((w) => !w.resolved)
@@ -515,6 +512,7 @@ function render() {
   renderQueue();
   for (const detail of root.querySelectorAll('details[data-ui]')) detail.open = openControls.includes(detail.dataset.ui);
   void fillMedia();
+  if(cacheWarning)note(cacheWarning,true);
 }
 function content() {
   const c = ch();
@@ -1045,18 +1043,18 @@ function wire() {
       "Delete this chapter from the project? Generated files remain on disk and in project backups.",
       () => mutate("chapter", { id: chapterId, action: "delete" }),
     );
-  $("#productionBackup").onclick = () =>
-    action(async () => {
-      downloadBlob(
-        new Blob([JSON.stringify(project, null, 2)], {
-          type: "application/json",
-        }),
-        project.name + ".json",
-      );
-      note(
-        "Project JSON exported. Generated files remain in the helper output folder; copy that project folder for a complete asset backup.",
-      );
-    });
+  $("#productionBackup").onclick = () => {
+    try {
+      // Export must remain available even when browser or helper saving fails.
+      const backup=backupSnapshot(project,chapterId,tab,{
+        sourceText:$('#chapterStory')?.value,name:$('#chapterName')?.value,
+        cleanNarrationText:$('#narrationScript')?.value,narrationMode:$('#narrationMode')?.value,
+        includeChapterLabel:$('#includeChapterHeading')?.checked,
+      });
+      downloadBlob(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}),project.name+'.json');
+      note('Project JSON exported with the current editor text and saved generation settings. Media files remain in their existing helper/cloud archive.');
+    } catch(error){note(error.message,true);}
+  };
   $("#productionImport").onclick = () => $("#productionImportFile").click();
   $("#productionImportFile").onchange = (e) =>
     action(async () => {
@@ -1793,7 +1791,7 @@ function wireSettings() {
     const ready = health?.directorProviders?.["openai-luna"]?.installed;
     formDialog(
       "Cloud setup",
-      `<p>Luna directs your story. Runpod runs the image workflow; its GPU and storage are billed separately.</p><ol><li><a href="https://platform.openai.com/" target="_blank" rel="noopener">Create your OpenAI API account</a>, add API billing, and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">create a project API key</a>.</li><li>Enter that key below to connect Luna. Your key stays in the local helper, outside project exports and browser storage.</li><li><a href="https://console.runpod.io/" target="_blank" rel="noopener">Configure Runpod billing</a> and use one account for both the image worker and persistent storage. Choose an available RTX 5090 or RTX PRO 6000 after checking its live rate and region. See the <a href="./CLOUD-SETUP.md" target="_blank" rel="noopener">cloud setup guide</a> before deployment.</li></ol><p><a href="./CLOUD-IMAGE-EVALUATION.md" target="_blank" rel="noopener">Image model comparison and character-reference tests</a>: Qwen-Image-Edit-2511 is the first character and repair candidate. The cloud workflow must pass generation and reference-edit tests before it becomes active.</p><label>OpenAI API key ${ready ? "(already saved; leave blank to retain)" : ""}<input id="cloudOpenAIKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label><label>Runpod API key (optional; leave blank to retain)<input id="cloudRunpodKey" type="password" autocomplete="off" spellcheck="false" placeholder="Runpod API key"></label><p class="muted">Keys stay in your local helper and are excluded from project exports and browser storage. Saving an OpenAI key verifies Luna access and selects it for this project. Saving a Runpod key prepares worker management; it does not rent a GPU or download a model. Image generation remains on your current provider until a cloud workflow passes generation tests.</p>`,
+      `<p>Luna directs your story. Runpod runs the image workflow; its GPU and storage are billed separately.</p><ol><li><a href="https://platform.openai.com/" target="_blank" rel="noopener">Create your OpenAI API account</a>, add API billing, and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">create a project API key</a>.</li><li>Enter that key below to connect Luna. Your key stays in the local helper, outside project exports and browser storage.</li><li><a href="https://console.runpod.io/" target="_blank" rel="noopener">Configure Runpod billing</a> and use one account for both the image worker and persistent storage. Choose an available RTX 5090 or RTX PRO 6000 after checking its live rate and region. See the <a href="./CLOUD-SETUP.md" target="_blank" rel="noopener">cloud setup guide</a> before deployment.</li></ol><p><a href="./CLOUD-IMAGE-EVALUATION.md" target="_blank" rel="noopener">Image model comparison and character-reference tests</a>: FLUX.2 Klein 4B is the current tested default for fantasy story images with character references. Alternative models remain configurable; changing a model requires its own generation and reference tests.</p><label>OpenAI API key ${ready ? "(already saved; leave blank to retain)" : ""}<input id="cloudOpenAIKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label><label>Runpod API key (optional; leave blank to retain)<input id="cloudRunpodKey" type="password" autocomplete="off" spellcheck="false" placeholder="Runpod API key"></label><p class="muted">Keys stay in your local helper and are excluded from project exports and browser storage. Saving an OpenAI key verifies Luna access and selects it for this project. Saving a Runpod key prepares worker management; it does not rent a GPU or download a model. Image generation remains on your current provider until a cloud workflow passes generation tests.</p>`,
       async () => {
         const key = $("#cloudOpenAIKey").value.trim();
         const runpodKey = $("#cloudRunpodKey").value.trim();
@@ -1959,22 +1957,23 @@ async function testStory() {
 async function poll() {
   if (!connected || polling || !project) return;
   polling = true;
+  const requestedProjectId=project.id;
   try {
     queue = await api("queue");
     renderQueue();
     if (
-      !dirty &&
+      !dirty && !project._unsynced && project.id===requestedProjectId &&
       !root.querySelector(".dialog-backdrop") &&
       tab !== "settings"
     ) {
-      const revision = await api("revision?id=" + project.id);
+      const revision = await api("revision?id=" + requestedProjectId);
       if (revision.revision !== project.revision) {
-        const latest = await api("project?id=" + project.id);
+        const latest = await api("project?id=" + requestedProjectId);
         const active = document.activeElement;
-        if (
-          !root.contains(active) ||
-          !["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)
-        ) {
+        if (canApplyBackgroundProject(project,latest,{
+          requestedId:requestedProjectId,dirty,
+          editing:root.contains(active)&&["INPUT","TEXTAREA","SELECT"].includes(active.tagName),
+        })) {
           project = latest;
           await cache();
           if (["review", "cast", "timeline"].includes(tab)) render();
@@ -1993,15 +1992,17 @@ async function poll() {
     polling = false;
   }
 }
-const savedId = localStorage.getItem("qt-production-project");
-if (savedId) project = await loadStudioProject(savedId);
+let savedId;
+try{savedId=localStorage.getItem('qt-production-project');}catch{cacheWarning='Browser selection storage is unavailable.';}
+try{if(savedId)project=await loadStudioProject(savedId);}catch{cacheWarning='Browser project recovery is unavailable. Connect the helper to access its saved projects.';}
 if (!project) {
-  const existing = await listStudioProjects();
+  let existing=[];
+  try{existing=await listStudioProjects();}catch{cacheWarning='Browser project recovery is unavailable. Connect the helper to access its saved projects.';}
   project = existing[0] || {...offlineProject(), _connectionPlaceholder:true};
   if (existing.length) projects = existing;
 }
 chapterId = project.chapters[0].id;
-await cache();
+try{await cache();}catch(error){cacheWarning=error.message;}
 render();
 if (key) await connect();
 setInterval(() => void poll(), 1800);

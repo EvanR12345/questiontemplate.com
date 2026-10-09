@@ -1,15 +1,21 @@
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=native-render-20261009b';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=native-render-20261009b';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=render-research-20261009c';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=render-research-20261009c';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=native-render-20261009b';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=native-render-20261009b';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=render-research-20261009c';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=render-research-20261009c';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
 const keys=Object.keys(DEFAULTS),booleans=keys.filter(k=>typeof DEFAULTS[k]==='boolean');
 let gpuExplorer;
+let renderResearchStarted=false;
+async function loadRenderResearch(){
+  if(renderResearchStarted)return;renderResearchStarted=true;
+  try{const {mountRenderResearch}=await import('./pipeline-render-research.mjs?v=render-research-20261009');await mountRenderResearch($('renderResearch'));}
+  catch{$('renderResearch').textContent='Video-render research unavailable. Existing planner remains usable.';}
+}
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let computeWorker,computeGeneration=0,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -29,7 +35,7 @@ function renderGenerationSpeed(){
   $('fastestGPU').disabled=speed.highest===null||speed.isFastest;
 }
 function labelChapter(n){return n===0?'Project / intro':`Chapter ${String(n).padStart(2,'0')}`;}
-function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(['gpus','processes','observed'].includes(next))void loadOptionalPanels();if(next==='gpus'){mountGPUPanels();if(result)renderGPUs();}}
+function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(['gpus','processes','observed'].includes(next))void loadOptionalPanels();if(next==='gpus'){void loadRenderResearch();mountGPUPanels();if(result)renderGPUs();}}
 async function rebuild(){
   stopPlay();
   const generation=++computeGeneration;computeWorker?.terminate();
@@ -37,7 +43,7 @@ async function rebuild(){
   $('saved').textContent='Calculating in the background…';
   try{
     const computed=await new Promise((resolve,reject)=>{
-      const worker=new Worker(new URL('./pipeline-worker.mjs?v=native-render-20261009b',import.meta.url),{type:'module'});computeWorker=worker;
+      const worker=new Worker(new URL('./pipeline-worker.mjs?v=render-research-20261009c',import.meta.url),{type:'module'});computeWorker=worker;
       worker.onmessage=({data})=>{worker.terminate();if(data.type==='error')reject(Error(data.message));else resolve(data);};
       worker.onerror=()=>{worker.terminate();reject(Error('The background planner could not load. Refresh the page to load its updated files.'));};
       worker.postMessage({type:'plan',config,evidence,preferences});
@@ -197,7 +203,7 @@ function tick(now){
 function download(name,value,type){const blob=new Blob([value],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function start(){
   try{
-    const response=await fetch('./pipeline-evidence.json?v=native-render-20261009b');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
+    const response=await fetch('./pipeline-evidence.json?v=render-research-20261009c');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
     if(concurrencyResponse.ok){
       evidence.concurrency=await concurrencyResponse.json();

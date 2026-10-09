@@ -5,7 +5,7 @@
   <title>Production Planner · QuestionTemplate Studio</title>
   <meta name="description" content="Plan story-video production across Luna, local narration, cloud images and rendering. Compare GPU concurrency and rearrange a dependency-aware timeline.">
   <meta name="theme-color" content="#fafaf8">
-  <link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./pipeline.css">
+  <link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./pipeline.css?v=render-research-20261009c">
   <link rel="stylesheet" href="./pipeline-gpu-explorer.css">
 </head>
 <body>
@@ -58,7 +58,7 @@
           <div class="bottom-grid"><section class="panel"><div class="section-head"><h3>Where time goes</h3><span>Work ≠ elapsed time</span></div><div id="workBreakdown"></div></section><section class="panel"><div class="section-head"><h3>Overlapping right now</h3><span id="playTime">Simulation not running</span></div><div id="activeWork"><p class="caption">Play the schedule to watch independent tasks run together.</p></div><div id="costBreakdown"></div></section></div>
         </section>
         <section id="processesView" class="view" role="tabpanel" aria-labelledby="tab-processes" hidden><div class="schedulebar"><div><h2>Every production process</h2><p class="caption">Nested steps are documented without adding their parent timing twice.</p></div><label class="search">Find a process<input id="processSearch" type="search" placeholder="References, VAE, audio, retry…"></label></div><div id="processList"></div><section id="functionIndex" class="panel"></section><div id="pairTest" class="pair-test"><h3>Can these two run together?</h3><div class="fieldpair"><label>First task<select id="pairA"></select></label><label>Second task<select id="pairB"></select></label></div><div id="pairResult" class="inline-note" aria-live="polite"></div></div></section>
-        <section id="gpusView" class="view" role="tabpanel" aria-labelledby="tab-gpus" hidden><section id="gpuExplorer" class="panel gpu-explorer"></section><hr class="lab-divider"><div id="concurrencyLab"></div><hr class="lab-divider"><div class="schedulebar"><div><h2>Earlier serial reference profiles</h2><p class="caption">Four matched trials, two historical profiles. Choose a GPU to compare the complete schedule.</p></div></div><div id="gpuCards" class="gpu-grid"></div><div class="panel comparison"><h3>Complete schedule comparison</h3><p class="caption">Same chapter count, checks, intro, model and scheduling rules. Different historical hardware timings.</p><div id="gpuComparison"></div></div><div class="inline-note">More VRAM can fit more models. It does not establish faster simultaneous inference. Measured worker groups preserve the tested model-copy and request-slot counts. Untested counts have no timing estimate.</div></section>
+        <section id="gpusView" class="view" role="tabpanel" aria-labelledby="tab-gpus" hidden><section id="renderResearch" class="panel render-research"></section><hr class="lab-divider"><section id="gpuExplorer" class="panel gpu-explorer"></section><hr class="lab-divider"><div id="concurrencyLab"></div><hr class="lab-divider"><div class="schedulebar"><div><h2>Earlier serial reference profiles</h2><p class="caption">Four matched trials, two historical profiles. Choose a GPU to compare the complete schedule.</p></div></div><div id="gpuCards" class="gpu-grid"></div><div class="panel comparison"><h3>Complete schedule comparison</h3><p class="caption">Same chapter count, checks, intro, model and scheduling rules. Different historical hardware timings.</p><div id="gpuComparison"></div></div><div class="inline-note">More VRAM can fit more models. It does not establish faster simultaneous inference. Measured worker groups preserve the tested model-copy and request-slot counts. Untested counts have no timing estimate.</div></section>
         <section id="observedView" class="view" role="tabpanel" aria-labelledby="tab-observed" hidden><div id="observedRuns"></div></section>
         <section id="evidenceView" class="view" role="tabpanel" aria-labelledby="tab-evidence" hidden><div class="schedulebar"><div><h2>Evidence before promises.</h2><p class="caption">Measured totals, component assumptions and unsupported overlaps stay separate.</p></div></div><div id="evidence"></div></section>
       </section>
@@ -68,5 +68,5 @@
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script type="module" src="./pipeline-ui.mjs?v=native-render-20261009b"></script>
+  <script type="module" src="./pipeline-ui.mjs?v=render-research-20261009c"></script>
 </body></html>

@@ -29,14 +29,23 @@ export async function directCloudDownload(projectId,path,name,api,document=globa
 export async function cachedMediaLink(cache,projectId,path,api,now=Date.now){
   if(!path)return '';
   const key=projectId+'/'+path,cached=cache.get(key);
+  if(cached?.pending)return cached.pending;
   if(cached?.expires>now())return cached.url;
-  cache.delete(key);
-  const result=await api('media-link',{project:projectId,path});
-  // The helper may reuse a ticket nearing expiry. Never grant it a fresh
-  // client-side lifetime longer than the actual signed/local capability.
-  const expires=Math.min(Number(result.expires)*1000-1000,now()+3000000);
-  if(expires>now())cache.set(key,{url:result.url,expires});
-  return result.url;
+  const entry={};
+  cache.set(key,entry);
+  entry.pending=(async()=>{
+    try {
+      const result=await api('media-link',{project:projectId,path});
+      const expires=Math.min(Number(result.expires)*1000-1000,now()+3000000);
+      // A reconnect clears tickets. A late reply must not restore an old capability.
+      if(cache.get(key)===entry){
+        if(expires>now())cache.set(key,{url:result.url,expires});
+        else cache.delete(key);
+      }
+      return result.url;
+    } catch(error){if(cache.get(key)===entry)cache.delete(key);throw error;}
+  })();
+  return entry.pending;
 }
 function destinationControls(s){
   return `<label>Export version<select id="engDestination"><option value="youtube" ${s.exportDestination!=='patreon'?'selected':''}>YouTube</option><option value="patreon" ${s.exportDestination==='patreon'?'selected':''}>Patreon</option></select></label><p class="muted">Both versions reuse your narration and story footage. Patreon leaves out promotional reminders and the outro by default. Earlier exports remain saved.</p><label class="inline"><input id="engPatreonOutro" type="checkbox" ${s.patreonOutroEnabled?'checked':''}>Also include the spoken outro in Patreon exports</label><label class="inline"><input id="engPatreonPopup" type="checkbox" ${s.patreonPopupEnabled?'checked':''}>Also include subscribe reminders in Patreon exports</label>`;

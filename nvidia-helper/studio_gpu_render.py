@@ -23,7 +23,7 @@ class PhotoPreparation:
     def __init__(self,renderer,project,jobs):
         self.renderer=renderer;self.project_id=project['id'];self.video=project['settings']['video'];self.stop=threading.Event()
         self.pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='studio-photo-fit')
-        self.jobs={};self.paths=[];self.next=None
+        self.jobs={};self.paths=[];self.next=None;self.last=None
         for _,job in jobs:
             if renderer.cached_asset(project['id'],Path(job['clip'])):continue
             args=job['args'];path=args[args.index('-i')+1]
@@ -57,6 +57,10 @@ class PhotoPreparation:
                 try:proc.communicate(timeout=3)
                 except subprocess.TimeoutExpired:proc.kill();proc.communicate()
     def take(self,path,gate):
+        # Adjacent shots often use the same still with different camera motion.
+        # Keep one fitted frame; do not cancel the next photo's prefetch to refit it.
+        # The owning clip checks the immutable source digest before/after use.
+        if self.last and self.last[0]==path:return self.last[1]
         if self.next and self.next[0]==path:raw=self.next[1].result();self.next=None
         else:
             # An unexpected cache change cannot leave an unbounded chain of fits.
@@ -65,11 +69,12 @@ class PhotoPreparation:
         index=self.positions[path]
         if index+1<len(self.paths):
             upcoming=self.paths[index+1];self.next=(upcoming,self.pool.submit(self.prepare,upcoming,gate))
+        self.last=(path,raw)
         return raw
     def close(self):
         self.stop.set()
         if self.next:self.next[1].cancel()
-        self.pool.shutdown(wait=True,cancel_futures=True);self.next=None
+        self.pool.shutdown(wait=True,cancel_futures=True);self.next=None;self.last=None
 
 class NativeVideoRenderer(VideoRenderer):
     allow_legacy_render_reuse=False

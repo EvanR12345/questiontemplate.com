@@ -1,4 +1,4 @@
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=native-render-20261009b';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=render-research-20261009c';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const missing=value=>value===null||value===undefined||value===''||(typeof value==='number'&&!Number.isFinite(value));
 const GROUPS={profiles:'resident',productionProfiles:'resident',pipelineProfiles:'pipeline',hybridProfiles:'hybrid'};

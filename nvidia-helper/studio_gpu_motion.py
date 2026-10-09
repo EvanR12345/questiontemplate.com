@@ -3,6 +3,7 @@ import ctypes as C
 import math,os,threading
 from pathlib import Path
 import torch
+from studio_gpu_runtime import load_nvrtc
 
 _PTX_CACHE={}
 _PTX_LOCK=threading.Lock()
@@ -91,7 +92,7 @@ class NativeMotion:
         self.driver=C.WinDLL('nvcuda.dll') if os.name=='nt' else C.CDLL('libcuda.so.1')
         lib=Path(torch.__file__).parent/'lib'
         self.dll_handle=os.add_dll_directory(str(lib)) if os.name=='nt' else None
-        self.rtc=C.CDLL(str(lib/'nvrtc64_120_0.dll')) if os.name=='nt' else C.CDLL('libnvrtc.so.12')
+        self.rtc=load_nvrtc(torch.__file__)
         self.driver.cuCtxGetCurrent.argtypes=[C.POINTER(C.c_void_p)]
         self.driver.cuModuleLoadData.argtypes=[C.POINTER(C.c_void_p),C.c_void_p]
         self.driver.cuModuleGetFunction.argtypes=[C.POINTER(C.c_void_p),C.c_void_p,C.c_char_p]
