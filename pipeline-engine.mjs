@@ -5,7 +5,7 @@ export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intr
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'off', sample:20,
   retries:0, warmCache:false, apiSlots:3, cpuOverlap:false, batch:24,
   exhaustive:false, earlyGpu:false, directorCost:.38798, qcCost:.0003, storageDaily:.168,
-  resolution:'legacy', videoResolution:'720p', videoFps:30, imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0 };
+  resolution:'legacy', videoResolution:'720p', videoFps:30, videoRenderer:'auto', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0 };
 
 export const LANES = [
   ['setup','Cloud startup','Boot · models · shutdown'],
@@ -78,6 +78,7 @@ export function validateConfig(input, evidence) {
   if(c.executionMode!=='resident'&&c.resolution==='legacy')throw Error('Pipeline timing requires a measured resolution.');
   if(!['legacy','720p','1080p'].includes(c.resolution))throw Error('Unknown image resolution.');
   if(!['720p','1080p'].includes(c.videoResolution))throw Error('Unknown video resolution.');
+  if(!['auto','cpu','native'].includes(c.videoRenderer))throw Error('Choose a tested local video renderer.');
   c.videoFps=Number(c.videoFps);
   if(![24,30,60].includes(c.videoFps))throw Error('Choose a calibrated video frame rate: 24, 30 or 60.');
   if(!['best','1','2','3','4','6'].includes(String(c.imageWorkers)))throw Error('Unknown worker count.');
@@ -96,7 +97,9 @@ export function validateConfig(input, evidence) {
 
 export function buildPlan(input, evidence) {
   const c=validateConfig(input,evidence),cal=evidence.calibration;
-  const renderProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps)||cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
+  const nativeProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&p.backend==='native');
+  const cpuProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&(p.backend||'cpu')==='cpu')||cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
+  const renderProfile=c.videoRenderer==='native'?nativeProfile:c.videoRenderer==='cpu'?cpuProfile:nativeProfile||cpuProfile;
   if(!renderProfile)throw Error(`No matched ${c.videoResolution}/${c.videoFps}fps render calibration. Reload the updated evidence; no old 24fps timing is substituted.`);
   let g=evidence.gpus.find(g=>g.id===c.gpu),measurement=null;
   if(c.resolution!=='legacy'){
@@ -191,7 +194,7 @@ export function buildPlan(input, evidence) {
     saves.push(...finalSaves);reviews.push(...finalReviews);
     const timeline=add(`c${i}-timeline`,'timeline',i,.8,[...finalSaves,...finalReviews,...(i===0?['intro-voice']:[audio[i]])],{disk:1});
     const videoSeconds=i===0?c.introSeconds:chapterSec;
-    renders.push(add(`c${i}-render`,'render',i,renderProfile.wallSeconds/renderProfile.videoSeconds*videoSeconds,[timeline],{cpu:1},{videoSeconds,
+    renders.push(add(`c${i}-render`,'render',i,renderProfile.wallSeconds/renderProfile.videoSeconds*videoSeconds,[timeline],renderProfile.backend==='native'?{cpu:1,audioGPU:1}:{cpu:1},{videoSeconds,
       timingRange:{min:renderProfile.minWallSeconds/renderProfile.videoSeconds*videoSeconds,max:renderProfile.maxWallSeconds/renderProfile.videoSeconds*videoSeconds},
       basis:`${c.videoResolution}/${c.videoFps}fps, ${renderProfile.clips} fresh clips in ${renderProfile.rounds} rounds, one clip worker; reference ${renderProfile.wallSeconds.toFixed(2)}s per ${renderProfile.videoSeconds}s of ${renderProfile.mode==='chapter-export'?'motion and chapter assembly':'motion'}. ${renderProfile.scope} ${renderProfile.hardwareCondition||''} Two-worker speedup is not assumed.`}));
   }
@@ -224,7 +227,7 @@ export function buildPlan(input, evidence) {
     }
   }
   return {version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
-    renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.mode==='chapter-export'?'fresh real-media chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
+    renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.backend==='native'?'local GTX 1650 GPU motion, one worker; shared narration GPU; full-story mux timed separately':renderProfile.mode==='chapter-export'?'fresh real-media CPU chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local CPU clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
 }
 
 function fits(task,start,allocations,capacities) {

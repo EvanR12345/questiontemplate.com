@@ -17,6 +17,7 @@ from image_provider import (
     data_url,
 )
 from studio_render import VideoRenderer
+from studio_gpu_render import create_renderer
 from studio_qc import decision as qc_decision, production_status, automatic_repairs, repair_budget_reason, check_level, should_check, policy as qc_policy
 from prompt_quality import generation_measurements
 from production_trace import ProductionTrace
@@ -67,7 +68,7 @@ class StudioService:
             "native-flux": NativeFluxProvider(self.config, self.store.root),
             "comfyui": ComfyImageProvider(self.config),
         }
-        self.renderer = VideoRenderer(self.store, self.config)
+        self.renderer = create_renderer(self.store, self.config)
         self.renderer.prepare_outro = self.prepare_outro
         from studio_storage import R2Archive
         storage_config = self.config_path.with_name('.storage-secrets.json')
@@ -278,7 +279,9 @@ class StudioService:
                 }
                 for k, v in self.providers.items()
             },
-            "renderer": {"installed": Path(self.config.get("ffmpeg", "")).is_file()},
+            "renderer": {"installed": Path(self.config.get("ffmpeg", "")).is_file(),
+                         "backend": 'native' if not self.renderer.allow_legacy_render_reuse else 'cpu',
+                         "note": getattr(self.renderer,'backend_note','CPU photo-motion renderer.')},
             "outputFolder": str(self.store.root),
             "queue": self.snapshot(),
         }
@@ -302,6 +305,7 @@ class StudioService:
             "comfyGenerationTimeoutSeconds",
             "ffmpeg",
             "renderWorkers",
+            "renderBackend",
             "font",
             "openaiApiKey",
             "openaiPromptCacheMode",
@@ -313,6 +317,8 @@ class StudioService:
         if 'renderWorkers' in data and (isinstance(data['renderWorkers'],bool)
                 or not isinstance(data['renderWorkers'],int) or not 1 <= data['renderWorkers'] <= 3):
             raise ValueError('Choose one to three render workers.')
+        if 'renderBackend' in data and data['renderBackend'] not in ('cpu','native'):
+            raise ValueError('Choose CPU or local NVIDIA GPU rendering.')
         if 'openaiPromptCacheMode' in data and data['openaiPromptCacheMode'] not in ('explicit', 'implicit'):
             raise ValueError('Choose explicit or implicit prompt caching.')
         if 'openaiServiceTier' in data and data['openaiServiceTier'] not in ('default', 'flex'):
@@ -363,7 +369,14 @@ class StudioService:
             self.director.config = self.config
             self.providers["native-flux"].config = self.config
             self.providers["comfyui"] = ComfyImageProvider(self.config)
-            self.renderer.config = self.config
+            if 'renderBackend' in data:
+                previous_renderer=self.renderer
+                self.renderer=create_renderer(self.store,self.config)
+                self.renderer.prepare_outro=self.prepare_outro
+                if callable(getattr(previous_renderer,'on_output',None)):
+                    self.renderer.on_output=previous_renderer.on_output
+            else:
+                self.renderer.config=self.config
         return self.health()
 
     def prepare_outro(self, p):

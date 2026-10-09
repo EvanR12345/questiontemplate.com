@@ -22,7 +22,8 @@ test('a partial round cannot generate a two-hour rate claim',()=>{
 test('serial and overlap include all stages and label cost estimates',()=>{
   const p=projectMatched(mode,data,evidence),s=projectMatched(mode,data,evidence,'serial');
   assert.ok(s.wallSeconds>=p.wallSeconds);
-  assert.ok(p.stages.render>3000&&p.stages.voice>500&&p.stages.prompt>0);
+  assert.ok(p.stages.render>0&&p.stages.voice>500&&p.stages.prompt>0);
+  assert.ok(p.stages.render<1000); // New measured local GPU calibration; no slow CPU floor.
   assert.ok(p.totalUpperUSD>p.estimatedDirectorUSD);
   assert.match(matchedHTML(data,evidence),/not a measured two-hour production/);
 });

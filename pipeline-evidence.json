@@ -293,6 +293,64 @@
     "renderProfileDate": "2026-10-08",
     "productionRenderProfiles": [
       {
+        "backend": "cpu",
+        "resolution": "720p",
+        "fps": 30,
+        "videoSeconds": 120,
+        "wallSeconds": 145.64898620010354,
+        "minWallSeconds": 144.04679499997292,
+        "maxWallSeconds": 153.61786809994373,
+        "roundWallSeconds": [
+          144.04679499997292,
+          153.61786809994373,
+          145.64898620010354
+        ],
+        "fullRenderWallSeconds": 150.17636920011137,
+        "joinWallSeconds": 4.527383000007831,
+        "rounds": 3,
+        "clips": 36,
+        "clipWorkers": 1,
+        "chaptersPerRound": 2,
+        "mode": "chapter-export",
+        "encoder": "libx264",
+        "preset": "veryfast",
+        "qp": null,
+        "crf": 21,
+        "hardwareCondition": "Current laptop, adaptive CPU pool limited to one clip worker by available RAM.",
+        "scope": "Actual fresh two-chapter/12-photo exports; original saved narration. Includes fit/upload/encoder and chapter assembly. Final original-WAV AAC128 mux counted once in Join. Cut transitions and smooth fractional-coordinate movement; no intro, watermark, reminder, cloud transfer or website startup. Different encoders are not bit-identical; separate geometry, reference-similarity and narration-sample checks passed. Longer production is extrapolated.",
+        "measurementDate": "2026-10-09"
+      },
+      {
+        "backend": "native",
+        "resolution": "720p",
+        "fps": 30,
+        "videoSeconds": 120,
+        "wallSeconds": 12.607511299895123,
+        "minWallSeconds": 11.829504999914207,
+        "maxWallSeconds": 13.36773100006394,
+        "roundWallSeconds": [
+          13.36773100006394,
+          12.607511299895123,
+          11.829504999914207
+        ],
+        "fullRenderWallSeconds": 14.282631199923344,
+        "joinWallSeconds": 1.6751199000282213,
+        "rounds": 3,
+        "clips": 36,
+        "clipWorkers": 1,
+        "chaptersPerRound": 2,
+        "mode": "chapter-export",
+        "encoder": "native_nvenc",
+        "preset": "P4",
+        "qp": 24,
+        "crf": null,
+        "hardwareCondition": "Current laptop, GTX 1650 4GB; warm helper. GPU path retains only current and next prepared photo and caches the compiled motion program.",
+        "scope": "Actual fresh two-chapter/12-photo exports; original saved narration. Includes fit/upload/encoder and chapter assembly. Final original-WAV AAC128 mux counted once in Join. Cut transitions and smooth fractional-coordinate movement; no intro, watermark, reminder, cloud transfer or website startup. Different encoders are not bit-identical; separate geometry, reference-similarity and narration-sample checks passed. Longer production is extrapolated.",
+        "measurementDate": "2026-10-09"
+      }
+    ],
+    "historicalProductionRenderProfiles": [
+      {
         "resolution": "720p",
         "fps": 30,
         "videoSeconds": 120,
@@ -328,6 +386,7 @@
     "API cost estimates use historical receipts, not live prices.",
     "Original full 6000 timing is a different production workload; component splits are estimates.",
     "Selected output default is 720p at 30 fps. Render projections use matched fresh local clips with one worker; long production and concurrent audio/render remain extrapolations, not completion guarantees.",
-    "720p30 default forecast uses three fresh 120-second real-media exports on the current RAM-limited laptop. It includes chapter assembly and separately measured full-story mux. Other formats retain the earlier matched clip calibration. Extra branding/reminder work and cloud transfers are not included."
+    "720p30 default forecast uses three fresh 120-second real-media exports on the current RAM-limited laptop. It includes chapter assembly and separately measured full-story mux. Other formats retain the earlier matched clip calibration. Extra branding/reminder work and cloud transfers are not included.",
+    "2026-10-09: new local GPU rendering at 720p30 is measured separately from cloud image generation. Auto forecast selects the available measured GPU profile. Voice and native render reserve the same laptop GPU; no concurrent GPU voice speedup is assumed. Optional overlays still use compatibility rendering and are excluded from this calibration."
   ]
 }

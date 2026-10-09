@@ -678,7 +678,7 @@ function settings() {
       ["60", "60 · smoother motion"],
     ],
     String(s.video.fps),
-  )}</select></label></div></details>  <details><summary>Advanced AI settings</summary><div class="two-col"><label>Director provider<select id="settingDirectorProvider">${options(
+  )}</select></label></div><div class="toolbar"><label>Local video renderer<select id="localRenderBackend" ${connected ? '' : 'disabled'}>${options([["native","NVIDIA GPU · photo motion"],["cpu","CPU · compatibility"]],health?.renderer?.backend || "cpu")}</select></label><button id="applyRenderBackend" ${connected ? '' : 'disabled'}>Apply renderer</button></div><p class="muted">${escape(health?.renderer?.note || 'Connect the shared helper to choose the local renderer.')} Image generation, narration, projects and previous videos stay saved. GPU mode needs the optional NVIDIA codec library. If it cannot initialize, choose CPU compatibility; completed assets stay saved.</p></details>  <details><summary>Advanced AI settings</summary><div class="two-col"><label>Director provider<select id="settingDirectorProvider">${options(
     [
       ["local-qwen", "Local Qwen3.5-4B Q4_K_M"],
       ["openai-luna", "GPT-6 Luna · OpenAI API"],
@@ -1699,6 +1699,11 @@ function wireSettings() {
     await saveSettings(); render();
   });
   $('#settingsCloudBudget').onclick = () => $('#configureCloud').click();
+  $('#applyRenderBackend').onclick = () => action(async () => {
+    await saveSettings();
+    health=await api('config',{renderBackend:$('#localRenderBackend').value});
+    render();note(health.renderer.note);
+  });
   $('#voicePreviewGenerate').onclick = () => action(async () => {
     const text = $('#voicePreviewText').value.trim();
     if (!text || text.length > 1800) throw new Error('Enter 1–1800 characters for the audition.');

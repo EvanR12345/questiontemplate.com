@@ -18,7 +18,7 @@
       <aside class="settings" aria-label="Production settings">
         <h2>Production setup</h2><p class="caption">Same model. Same image frequency.</p>
         <label>Final video length <span>minutes</span><input id="minutes" type="number" min="1" value="120"></label>
-        <div class="fieldpair"><label>Video resolution<select id="videoResolution"><option value="720p">720p · selected default</option><option value="1080p">1080p</option></select></label><label>Video frame rate<select id="videoFps"><option value="24">24 fps</option><option value="30" selected>30 fps · selected default</option><option value="60">60 fps</option></select></label></div><p class="caption" id="renderTimingNote">Loading matched output-format render timing…</p>
+        <div class="fieldpair"><label>Video resolution<select id="videoResolution"><option value="720p">720p · selected default</option><option value="1080p">1080p</option></select></label><label>Video frame rate<select id="videoFps"><option value="24">24 fps</option><option value="30" selected>30 fps · selected default</option><option value="60">60 fps</option></select></label></div><label>Local video renderer<select id="videoRenderer"><option value="auto">Best tested path for this format</option><option value="native">NVIDIA GPU · measured 720p30</option><option value="cpu">CPU · compatibility baseline</option></select><small>Forecast only. Studio Video output controls the actual helper. Native GPU rendering shares the laptop GPU with voice; cloud image generation remains independent.</small></label><p class="caption" id="renderTimingNote">Loading matched output-format render timing…</p>
         <div class="fieldpair"><label>Chapters<input id="chapters" type="number" min="1" value="14"></label><label>Images / video min<input id="cadence" type="number" min="1" max="20" step="0.1" value="5.884" aria-describedby="cadenceNote"></label></div>
         <p class="caption" id="cadenceNote">Visual frequency in the finished video. GPU speed updates separately below.</p>
         <label>Images / min · continuous<input id="generationRate" type="text" value="Loading measurements…" readonly aria-describedby="generationRateNote"><small id="generationRateNote">Highest tested continuous warm throughput. Excludes startup, Luna waiting and rental idle time.</small></label>
@@ -68,5 +68,5 @@
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script type="module" src="./pipeline-ui.mjs?v=720p30-large-20261008b"></script>
+  <script type="module" src="./pipeline-ui.mjs?v=native-render-20261009"></script>
 </body></html>

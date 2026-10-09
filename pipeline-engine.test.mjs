@@ -168,6 +168,17 @@ test('output timing follows measured 720p30 rather than the older repeated-asset
  assert.throws(()=>buildPlan({...DEFAULTS,videoFps:120},evidence),/calibrated/);
 });
 
+test('native rendering uses the measured local GPU path and reserves the voice GPU',()=>{
+ const native=buildPlan({...DEFAULTS,videoRenderer:'native'},evidence),cpu=buildPlan({...DEFAULTS,videoRenderer:'cpu'},evidence);
+ assert.equal(native.renderProfile.backend,'native');assert.equal(cpu.renderProfile.backend,'cpu');
+ assert.ok(cpu.renderProfile.fullRenderWallSeconds/native.renderProfile.fullRenderWallSeconds>10);
+ assert.ok(native.tasks.filter(t=>t.kind==='render').every(t=>t.resources.audioGPU===1));
+ const result=schedule({...native,config:{...native.config,cpuOverlap:true}});
+ assert.deepEqual(result.diagnostics,[]);
+ assert.throws(()=>buildPlan({...DEFAULTS,videoRenderer:'native',videoResolution:'1080p'},evidence),/No matched/);
+ assert.equal(buildPlan({...DEFAULTS,videoResolution:'1080p'},evidence).renderProfile.backend,undefined);
+});
+
 test('90 minute through 24 hour plans preserve 80 chapters, output work and duration-scaled delivery allowances',()=>{
  for(const minutes of [90,120,720,1440]){
   const p=buildPlan({...DEFAULTS,minutes,chapters:80},evidence);

@@ -73,6 +73,7 @@ class MotionTest(unittest.TestCase):
 class IntroTest(unittest.TestCase):
     def narrated_project(self, folder, seconds=24):
         store=ProjectStore(folder);p=store.save(new_project('Teaser'))
+        p['settings']['video']['fps']=24  # This fixture asserts quarter-second frame boundaries.
         p['intro'].update(enabled=True,duration=30,voiceText='A story-supported conflict.',audioPath='intro.wav')
         with wave.open(str(store.asset(p['id'],'intro.wav')),'wb') as output:
             output.setnchannels(1);output.setsampwidth(2);output.setframerate(24000)
@@ -144,6 +145,7 @@ class IntroTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             store=ProjectStore(folder)
             p=new_project('Opening')
+            p['settings']['video']['fps']=24
             p['intro'].update(enabled=True,duration=30,motion='slow zoom in')
             p=store.save(p)
             renderer=VideoRenderer(store,{})
@@ -231,6 +233,19 @@ class RenderReuseTest(unittest.TestCase):
                 encoding = [call for call in run.call_args_list if '-frames:v' in call.args[0]]
                 self.assertEqual(len(encoding), 1)
                 self.assertIn('first.png', ' '.join(encoding[0].args[0]))
+
+    def test_mid_render_image_edit_cannot_poison_the_old_clip_cache(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,ch=self.setup_project(folder);renderer=VideoRenderer(store,{})
+            previous=store.asset(p['id'],'previous.mp4');previous.write_bytes(b'keep previous video')
+            def changed(args,*_):
+                self.save_output(args)
+                if '-frames:v' in args:store.asset(p['id'],'first.png').write_bytes(b'changed during encoding')
+            with patch.object(renderer,'run',side_effect=changed):
+                with self.assertRaisesRegex(ValueError,'source photo changed'):
+                    renderer.chapter(p,ch,lambda *_:None)
+            self.assertEqual(previous.read_bytes(),b'keep previous video')
+            self.assertFalse(list((store.folder(p['id'])/ch['id']).glob('clip-*.mp4')))
 
     def test_completed_clip_and_chapter_are_checkpointed_after_atomic_rename(self):
         with tempfile.TemporaryDirectory() as folder:

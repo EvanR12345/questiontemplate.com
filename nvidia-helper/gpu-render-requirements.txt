@@ -1,0 +1,2 @@
+# Optional, isolated Windows cp311 codec wheel. Never install dependencies into .venv.
+pynvvideocodec==2.2.3 --hash=sha256:cc1a1eaaed591f98a1e96bb5d28caeb5f47157682c3c8981316dc44450529015

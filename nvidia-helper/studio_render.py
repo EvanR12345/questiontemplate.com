@@ -30,6 +30,7 @@ def effective_motion(shot, video):
 
 
 class VideoRenderer:
+    allow_legacy_render_reuse = True
     def __init__(self, store, config):
         self.store = store
         self.config = config
@@ -67,6 +68,10 @@ class VideoRenderer:
         slot = max(256*2**20, video['width']*video['height']*300)
         capacity = int((available + pending*slot - 512*2**20)//slot)
         return max(1,min(maximum,capacity))
+
+    def render_clips(self, project, jobs, render, gate, video):
+        return render_unique_clips(jobs,render,gate,workers=self.config.get('renderWorkers',2),
+                                   capacity=lambda pending:self.render_capacity(video,pending))
 
     def asset_identity(self, project_id, name):
         """Hash the saved bytes once per file revision, not QC or prompt metadata."""
@@ -179,9 +184,12 @@ class VideoRenderer:
                         proc.wait()
                     raise
             if proc.returncode:
+                detail=Path(log).read_text(errors='replace')[-1400:]
+                if 'No space left on device' in detail:
+                    raise RuntimeError('Rendering stopped because the disk filled up. Completed clips, original audio and previous videos are retained. Free space and retry; only missing outputs will be rebuilt.')
                 raise RuntimeError(
                     "FFmpeg rendering failed: "
-                    + Path(log).read_text(errors="replace")[-1400:]
+                    + detail
                 )
             if not multiple_outputs:
                 staging.replace(destination)
@@ -368,7 +376,7 @@ class VideoRenderer:
         if (
             old_path and old_path.is_file() and old_path.stat().st_size > 0
             and (old.get('renderIdentity') in (signature, previous_signature) or
-                 old.get('signature') == legacy_signature and all(s['motion'] == 'static' for s in visual_shots) and self.legacy_is_current(old_path, assets))
+                 self.allow_legacy_render_reuse and old.get('signature') == legacy_signature and all(s['motion'] == 'static' for s in visual_shots) and self.legacy_is_current(old_path, assets))
         ):
             return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4"}
         clip_jobs = []
@@ -382,12 +390,17 @@ class VideoRenderer:
             name = "clip-" + digest({"rendererVersion": 7, "shot": visual_shots[index], "video": v})[:24] + ".mp4"
             clip = folder / name
             previous = folder / ('clip-' + digest({'rendererVersion':6, 'shot':previous_visual_shots[index], 'video':v})[:24] + '.mp4')
-            self.reuse_legacy_clip(previous, clip, [assets[index]])
+            if self.allow_legacy_render_reuse:
+                self.reuse_legacy_clip(previous, clip, [assets[index]])
             legacy = folder / ('clip-' + digest({'rendererVersion': 5, 'shot': s, 'video': v})[:24] + '.mp4')
-            if visual_shots[index]['motion'] == 'static':
+            if self.allow_legacy_render_reuse and visual_shots[index]['motion'] == 'static':
                 self.reuse_legacy_clip(legacy, clip, [assets[index]])
             job = {
                 'clip':str(clip),
+                'sourceAsset':s['imagePath'],
+                'sourceDigest':visual_shots[index]['image'],
+                'nativeShot':{key:copy.deepcopy(s[key]) for key in
+                              ('start','end','motion','motionSettings','manual','camera') if key in s},
                 'args':[
                         '-filter_threads','2',
                         "-i",
@@ -409,14 +422,18 @@ class VideoRenderer:
             durations.append(duration)
         def render_clip(job, worker_gate):
             clip = Path(job['clip'])
+            if self.asset_identity(p['id'],job['sourceAsset'])!=job['sourceDigest']:
+                raise ValueError('A source photo changed during rendering. Previous videos are retained; retry to rebuild the updated plan.')
             if not self.cached_asset(p['id'], clip):
                 self.run(job['args'],worker_gate,clip.with_suffix('.log'))
+                if self.asset_identity(p['id'],job['sourceAsset'])!=job['sourceDigest']:
+                    partial=clip.with_suffix('.partial.mp4')
+                    if partial.is_file():partial.unlink()
+                    raise ValueError('A source photo changed during rendering. Its stale clip was not cached; previous videos are retained.')
                 clip.with_suffix('.partial.mp4').replace(clip)
                 self.completed_output(clip)
             return clip
-        workers = self.config.get('renderWorkers',2)
-        clips = render_unique_clips(clip_jobs,render_clip,gate,workers=workers,
-                                   capacity=lambda pending:self.render_capacity(v,pending))
+        clips = self.render_clips(p,clip_jobs,render_clip,gate,v)
         # Each incoming crossfade blends from the previous shot's final frame.
         # Only two clips are decoded at once, and every boundary keeps its own
         # transition. The fade occupies the incoming shot's first 250 ms, so
@@ -795,6 +812,7 @@ class VideoRenderer:
                 encoding="utf-8",
             )
             temporary = target.with_suffix(".partial.mp4")
+            self.require_output_space(temporary,visual.stat().st_size,duration)
             self.run(
                 [
                     "-i",

@@ -40,8 +40,8 @@ test('timed boot cannot bypass chapter readiness, and rendering is outside GPU s
  assert.throws(()=>buildPlan({...config,gpuStartSeconds:-1},evidence),/GPU boot time/);
  assert.throws(()=>buildPlan({...config,gpuStartSeconds:Infinity},evidence),/GPU boot time/);
 });
-test('aligned completion offers the later rental start and shows its rendering tradeoff',()=>{
- const candidates=startupCandidates(config,evidence),baseline=candidates[0],fast=candidates.find(v=>v.balanced&&v.keepFastestVideo),aligned=candidates.find(v=>v.balanced&&!v.keepFastestVideo);
+test('aligned completion offers the later rental start and shows its CPU rendering tradeoff',()=>{
+ const candidates=startupCandidates({...config,videoRenderer:'cpu'},evidence),baseline=candidates[0],fast=candidates.find(v=>v.balanced&&v.keepFastestVideo),aligned=candidates.find(v=>v.balanced&&!v.keepFastestVideo);
  assert.ok(aligned);assert.ok(aligned.bootStart>fast.bootStart);
  assert.ok(aligned.imageEnd<=baseline.imageEnd+.5);assert.ok(aligned.gap<=baseline.gap+.5);
  assert.ok(aligned.result.gpuUSD<fast.result.gpuUSD);assert.ok(aligned.result.gpuIdleSeconds<fast.result.gpuIdleSeconds);
