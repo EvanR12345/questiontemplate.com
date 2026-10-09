@@ -163,6 +163,18 @@ class ScheduledStoryTest(unittest.TestCase):
         estimate=self.service.performance.estimate(row['performanceProfile'],row['performanceUnits'])
         self.assertIsNone(estimate['seconds'])
 
+    def test_alignment_readiness_does_not_require_a_rented_waiting_gpu(self):
+        with patch.object(self.provider,'planningCatalog',create=True,return_value={
+                'models':['klein'],'workflow':['klein']}), \
+             patch.object(self.provider,'healthCheck',create=True,side_effect=AssertionError('Do not contact the stopped image worker')), \
+             patch('openai_director.OpenAIDirector.healthCheck',return_value={'installed':True}):
+            report=self.service.production_readiness(self.project['id'],{'generationStrategy':'align','overlap':True})
+        image=next(c for c in report['checks'] if c['name']=='images')
+        self.assertTrue(image['ready']);self.assertIn('not proof',image['message'])
+        dispatch=next(c for c in report['checks'] if c['name']=='image-dispatch')
+        self.assertFalse(dispatch['blocking']);self.assertIn('saved plans',dispatch['message'])
+        self.assertEqual(self.provider.requests,[])
+
     def test_cancel_before_align_dispatch_keeps_plans_and_buys_no_images(self):
         self.service.wait_for_overlap=False
         entered=threading.Event();release=threading.Event()

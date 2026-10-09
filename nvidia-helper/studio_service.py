@@ -489,10 +489,20 @@ class StudioService:
             images_needed |= bool(not p['intro'].get('visualPath') and not p['intro'].get('shots'))
             images_needed |= any(not s.get('imagePath') for s in p['intro'].get('shots',[]))
         if images_needed:
-            try:installed=bool(self.provider(provider_name).healthCheck().get('installed'))
-            except Exception:installed=False
-            check('images',installed,'Image worker and workflow are available.' if installed else
-                  'The selected image worker is unavailable. Connect the installed model before generation; no fallback was started.')
+            if selected_strategy=='align' and provider_name=='comfyui':
+                try:
+                    provider=self.provider(provider_name);catalog=provider.planningCatalog();image=p['settings']['image']
+                    configured=image['model'] in catalog['models'] and image['workflow'] in catalog['workflow']
+                    provider.validateSettings(image,check_hardware=False)
+                except Exception:configured=False
+                check('images',configured,'Declared image workflow is configured for offline planning; this is not proof of a running worker.' if configured else
+                    'Configure the selected image model/workflow before planning. No fallback was started.')
+                check('image-dispatch',False,'The image GPU may stay stopped during planning. Connect it before dispatch; unavailable live generation stops with saved plans, rather than renting a GPU automatically.',False)
+            else:
+                try:installed=bool(self.provider(provider_name).healthCheck().get('installed'))
+                except Exception:installed=False
+                check('images',installed,'Image worker and workflow are available.' if installed else
+                      'The selected image worker is unavailable. Connect the installed model before generation; no fallback was started.')
         director_name=p['settings']['director'].get('provider','local-qwen')
         director=OpenAIDirector(self.config,self.store.root) if director_name=='openai-luna' else LocalQwenDirector(self.config,self.store.root)
         check('director',director.healthCheck().get('installed'),

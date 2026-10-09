@@ -27,7 +27,12 @@ passes still use the saved one/two/three-call setting.
 * Existing workflow preserves the previous serial/overlap checkbox behavior.
 
 **These modes schedule image requests, not Runpod rental.** They do not create,
-start, stop or delete a pod. Readiness still checks the configured worker.
+start, stop or delete a pod. Align readiness validates the declared workflow
+offline; live model, memory and backend validation still happens before images.
+Fastest/existing workflows require the configured live worker at readiness.
+An unavailable worker at image dispatch stops with saved plans for a retry; it
+does not silently rent a GPU. Keep the worker stopped during offline planning
+and connect it before the planned image window.
 A manually running GPU bills while planning/waiting. The planner's proposed
 latest-boot rental optimization remains a simulation. Do not claim identical
 rental costs to starting after the final chapter or a achieved speedup from
@@ -70,7 +75,7 @@ it does not silently replace pass weights with concurrent parent wall times.
 
 ## Verification
 
-247 top-level frontend tests and 101 focused backend tests passed. Synthetic
+247 top-level frontend tests and 102 focused backend tests passed. Synthetic
 remote endpoints covered image admission beyond one window, existing portrait
 overlap, ordered missing portraits, calibrated/unknown alignment, pause/resume,
 cancel before dispatch, changed manual prompt, failed QC, calibration DB failure,
