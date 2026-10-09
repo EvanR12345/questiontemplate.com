@@ -28,11 +28,11 @@ class LargeProjectTest(unittest.TestCase):
         self.temp.cleanup()
 
     def test_shared_reference_is_read_once_per_view_but_changed_bytes_invalidate_next_view(self):
-        original=Path.read_bytes;reads=[]
-        def record(path):
+        original=Path.open;reads=[]
+        def record(path,*args,**kwargs):
             if path.name=='reference.png':reads.append(path)
-            return original(path)
-        with patch.object(Path,'read_bytes',record):
+            return original(path,*args,**kwargs)
+        with patch.object(Path,'open',record):
             result=project_view(self.store,self.p['id'])
         self.assertEqual(len(reads),1)
         self.assertEqual(sum(len(s['shots']) for c in result['chapters'] for s in c['scenes']),1600)
@@ -56,6 +56,24 @@ class LargeProjectTest(unittest.TestCase):
         value=json.loads(path.read_text());value['name']='Changed externally';value['revision']+=1
         path.write_text(json.dumps(value))
         self.assertEqual(self.store.list_local()[0]['name'],'Changed externally')
+
+    def test_one_damaged_project_does_not_block_other_projects_or_overwrite_saved_files(self):
+        damaged=new_project('Damaged fixture');self.store.save(damaged)
+        folder=self.store.folder(damaged['id']);source=folder/'project.json';previous=folder/'project.previous.json'
+        source.write_bytes(b'{bad json');previous.write_bytes(b'preserved previous snapshot')
+        rows=self.store.list_local();self.assertEqual(len(rows),2)
+        error=next(row for row in rows if row['id']==damaged['id'])
+        self.assertIn('loadError',error);self.assertEqual(source.read_bytes(),b'{bad json')
+        self.assertEqual(previous.read_bytes(),b'preserved previous snapshot')
+        self.assertEqual(next(row for row in rows if row['id']==self.p['id'])['name'],'80 chapter fixture')
+        with self.assertRaises(json.JSONDecodeError):self.store.load(damaged['id'])
+        self.assertEqual(self.store.list_local(),rows)
+
+    def test_picker_rejects_malformed_metadata_then_uses_intact_project(self):
+        path=self.store.folder(self.p['id'])/'revision.json'
+        metadata=json.loads(path.read_text());metadata['summary']['updated']='not a number'
+        path.write_text(json.dumps(metadata));rows=self.store.list_local()
+        self.assertEqual(rows[0]['name'],'80 chapter fixture');self.assertNotIn('loadError',rows[0])
 
     def test_video_default_is_selected_720p30(self):
         video=new_project()['settings']['video']

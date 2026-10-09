@@ -1,10 +1,12 @@
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=render-research-20261009c';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=render-research-20261009c';
+import {createWorkerRequest} from './pipeline-worker-request.mjs?v=render-research-20261009d';
+import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=render-research-20261009d';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=render-research-20261009d';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=render-research-20261009c';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=render-research-20261009c';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=render-research-20261009d';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=render-research-20261009d';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -17,7 +19,9 @@ async function loadRenderResearch(){
   catch{$('renderResearch').textContent='Video-render research unavailable. Existing planner remains usable.';}
 }
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
-let computeWorker,computeGeneration=0,controlTimer;
+let taskLookup=new Map();
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=render-research-20261009d',import.meta.url),{type:'module'}));
+let computeGeneration=0,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
 const snapshot=()=>({type:'studio-pipeline-plan',version:VERSION,config:{...config},preferences:structuredClone(preferences),uncertainty});
 function checkpoint(){history.push(snapshot());if(history.length>40)history.shift();$('undo').disabled=false;}
@@ -25,7 +29,7 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function persist(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{try{localStorage.setItem(STORE,JSON.stringify(snapshot()));$('saved').textContent='Saved on this device';}catch{$('saved').textContent='Device storage unavailable — export your plan';}},180);}
 function setControls(){for(const k of keys){if(!$(k))continue;if(booleans.includes(k))$(k).checked=config[k];else $(k).value=config[k];}$('readyChapters').max=config.chapters;$('uncertainty').value=uncertainty;}
 function readControls(){const next={};for(const k of keys){if(!$(k))continue;next[k]=booleans.includes(k)?$(k).checked:typeof DEFAULTS[k]==='number'?Number($(k).value):$(k).value;}return {...config,...next};}
-function getTask(id){return result.tasks.find(t=>t.id===id);}
+function getTask(id){return taskLookup.get(id);}
 function renderGenerationSpeed(){
   const speed=generationSpeed(plan,evidence);
   $('generationRate').value=speed.highest===null?'Not measured':speed.highest.toFixed(1);
@@ -38,18 +42,13 @@ function labelChapter(n){return n===0?'Project / intro':`Chapter ${String(n).pad
 function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(['gpus','processes','observed'].includes(next))void loadOptionalPanels();if(next==='gpus'){void loadRenderResearch();mountGPUPanels();if(result)renderGPUs();}}
 async function rebuild(){
   stopPlay();
-  const generation=++computeGeneration;computeWorker?.terminate();
+  const generation=++computeGeneration;plannerRequest.cancel();
   const startupHost=$('startTradeoffs');startupHost._startupGeneration=(startupHost._startupGeneration||0)+1;startupHost._startupWorker?.terminate();startupHost._startupWorker=null;startupHost._startupKey=null;
   $('saved').textContent='Calculating in the background…';
   try{
-    const computed=await new Promise((resolve,reject)=>{
-      const worker=new Worker(new URL('./pipeline-worker.mjs?v=render-research-20261009c',import.meta.url),{type:'module'});computeWorker=worker;
-      worker.onmessage=({data})=>{worker.terminate();if(data.type==='error')reject(Error(data.message));else resolve(data);};
-      worker.onerror=()=>{worker.terminate();reject(Error('The background planner could not load. Refresh the page to load its updated files.'));};
-      worker.postMessage({type:'plan',config,evidence,preferences});
-    });
-    if(generation!==computeGeneration)return;
-    ({plan,result,serial}=computed);computeWorker=null;
+    const computed=await plannerRequest.run({type:'plan',config,evidence,preferences});
+    if(!computed||generation!==computeGeneration)return;
+    ({plan,result,serial}=computed);taskLookup=indexTasks(result.tasks);
     if(result.diagnostics.length)throw Error(result.diagnostics.join('; '));
     $('error').hidden=true;
     config=plan.config;
@@ -122,14 +121,14 @@ function beginDrag(event){
   if(event.button!==0)return;
   const button=event.currentTarget,id=button.dataset.id,task=getTask(id),startX=event.clientX,scroll=$('timeline').scrollLeft;
   let delta=0,moved=false;button.setPointerCapture(event.pointerId);
-  const onMove=e=>{delta=e.clientX-startX+$('timeline').scrollLeft-scroll;if(Math.abs(delta)>4)moved=true;if(moved){button.classList.add('dragging');button.style.transform=`translateX(${delta}px)`;const target=Math.max(0,Math.round(task.start+delta/scale));$('moveFeedback').textContent=`${id} → ${formatTime(target)}. ${explainMove(plan,result,id,target)}`;}};
+  const onMove=e=>{delta=e.clientX-startX+$('timeline').scrollLeft-scroll;if(Math.abs(delta)>4)moved=true;if(moved){button.classList.add('dragging');button.style.transform=`translateX(${delta}px)`;const target=Math.max(0,Math.round(task.start+delta/scale));$('moveFeedback').textContent=`${id} → ${formatTime(target)}. ${explainMove(plan,result,id,target,taskLookup)}`;}};
   const finish=e=>{button.removeEventListener('pointermove',onMove);button.removeEventListener('pointerup',finish);button.removeEventListener('pointercancel',cancel);if(button.hasPointerCapture(event.pointerId))button.releasePointerCapture(event.pointerId);if(moved){e.preventDefault();moveTask(id,Math.max(0,Math.round(task.start+delta/scale)));}else selectTask(id);};
   const cancel=()=>{button.removeEventListener('pointermove',onMove);button.removeEventListener('pointerup',finish);button.removeEventListener('pointercancel',cancel);renderTimeline();};
   button.addEventListener('pointermove',onMove);button.addEventListener('pointerup',finish);button.addEventListener('pointercancel',cancel);
 }
 async function moveTask(id,target){
   if(!Number.isFinite(target)||target<0){toast('Choose a finite, nonnegative start time.');return;}
-  target=Math.max(0,target);const why=explainMove(plan,result,id,target);checkpoint();preferences[id]={...preferences[id],notBefore:target};selected=id;await rebuild();const moved=getTask(id);if(!moved)return;
+  target=Math.max(0,target);const why=explainMove(plan,result,id,target,taskLookup);checkpoint();preferences[id]={...preferences[id],notBefore:target};selected=id;await rebuild();const moved=getTask(id);if(!moved)return;
   $('moveFeedback').textContent=`${id}: requested ${formatTime(target)}, scheduled ${formatTime(moved.start)}. ${moved.start>target+.1?why+' Dependencies or capacity pushed it later.':'Dependent tasks were re-scheduled; all resource checks pass.'}`;
 }
 function renderInspector(){
@@ -170,9 +169,7 @@ function renderPairs(){
   $('pairB').value=getTask(b)?b:(result.tasks.find(t=>t.kind==='infer'&&t.chapter===1)||result.tasks.at(-1)).id;
   pairResult();
 }
-function dependsOn(task,id,seen=new Set()){
-  if(seen.has(task.id))return false;seen.add(task.id);return task.deps.some(d=>d===id||dependsOn(getTask(d),id,seen));
-}
+function dependsOn(task,id){return dependsOnTask(taskLookup,task.id,id);}
 function pairResult(){
   const a=getTask($('pairA').value),b=getTask($('pairB').value);if(!a||!b)return;
   if(a.id===b.id){$('pairResult').textContent='This is the same task.';return;}
@@ -203,7 +200,7 @@ function tick(now){
 function download(name,value,type){const blob=new Blob([value],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function start(){
   try{
-    const response=await fetch('./pipeline-evidence.json?v=render-research-20261009c');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
+    const response=await fetch('./pipeline-evidence.json?v=render-research-20261009d');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
     if(concurrencyResponse.ok){
       evidence.concurrency=await concurrencyResponse.json();

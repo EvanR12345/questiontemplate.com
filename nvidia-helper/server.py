@@ -246,7 +246,10 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
-                except (ValueError,KeyError,FileNotFoundError) as error:self.reply(404,{'error':safe_error_message(error)})
+                except FileNotFoundError as error:
+                    from studio_data import ProjectNotFound
+                    self.reply(404,{'error':safe_error_message(error),'code':'PROJECT_NOT_FOUND' if isinstance(error,ProjectNotFound) else 'ASSET_NOT_FOUND'})
+                except (ValueError,KeyError) as error:self.reply(400,{'error':safe_error_message(error)})
                 return
             if path == '/health':
                 self.reply(200, audio_engine.health())
@@ -415,6 +418,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     patch=body['patch']
                     if not isinstance(patch,dict) or any(k in ('id','schemaVersion','revision','created') for k in patch):raise ValueError('Cannot edit stable identity fields.')
                     changed={k:v for k,v in patch.items() if target.get(k)!=v}
+                    if not changed:
+                        from studio_data import UNCHANGED
+                        return UNCHANGED
                     previous_intro=copy.deepcopy(p['intro'])
                     previous_prompt=target.get('prompt','');previous_handoff=copy.deepcopy(target.get('handoff',{}));previous_video=copy.deepcopy(p['settings'].get('video',{}));previous_watermark=copy.deepcopy(p['settings'].get('watermark',{}));previous_engagement=copy.deepcopy(p['settings'].get('engagement',{}))
                     target.update(patch)

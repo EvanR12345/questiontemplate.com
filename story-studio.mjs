@@ -1,11 +1,14 @@
+import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-state.mjs?v=forms-20261009';
+import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
+import {resolveConnectedProject,canAdoptConnection} from './studio-connection.mjs?v=connection-20261009';
 import {checkpointProject,backupSnapshot,canApplyBackgroundProject} from './studio-project-safety.mjs?v=safety-20261009';
 import {createMediaLoader} from './studio-media-loader.mjs?v=media-20261009';
-import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009';
-import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=queue-2";
-import { nativeRequest } from "./native-client.mjs?v=queue-1";
+import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
+import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=connection-20261009";
+import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
 import {rendererPlacement} from './studio-render-status.mjs?v=render-research-20261009';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=media-20261009';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=files-20261009b';
 import {
   loadProjectState,
   saveStudioProject,
@@ -47,12 +50,28 @@ let key = pairingKey(),
   overlapRequested = false,
   saveTimer;
 let cacheWarning="";
+let connectionPromise;
+const startingProduction=new Set();
+const settingsDrafts=createFormDrafts(),projectSelection=createProjectSelection();
 const mediaCache = new Map();
 const progressReader=createProgressReader(qualityDecision);
 const mediaLoader=createMediaLoader({resolve:(path,projectId)=>media(path,projectId)});
 const root = document.createElement("section");
 root.id = "productionStudio";
 root.className = "production";
+function settingsDraftStatus(){
+  const status=$('#settingsDraftStatus');
+  if(status)status.textContent=settingsDrafts.has(project?.id)?'Unsaved settings · retained in this open page until you save.':'';
+}
+function rememberSettings(event){
+  if(tab!=='settings'||!project||!root.contains(event.target))return;
+  if(/^(setting|intro|eng)/.test(event.target.id)&&settingsDrafts.remember(project.id,event.target))settingsDraftStatus();
+}
+root.addEventListener('input',rememberSettings);
+root.addEventListener('change',rememberSettings);
+window.addEventListener('beforeunload',event=>{
+  if(editorSave.dirty||settingsDrafts.dirty||document.querySelector('dialog.studio-form-dialog[open][data-unsaved="true"]')){event.preventDefault();event.returnValue='';}
+});
 const switcher = document.createElement("nav");
 switcher.className = "production-switch";
 switcher.setAttribute("aria-label", "Studio mode");
@@ -149,72 +168,55 @@ async function connectHelper() {
   dialog.querySelector('#helperPairingCancel').onclick=()=>{dialog.close();dialog.remove();};
   dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();
 }
-async function connect() {
-  key = pairingKey();
+function connect() {
+  if(connectionPromise)return connectionPromise;
+  connectionPromise=reconnect().finally(()=>{connectionPromise=undefined;});
+  return connectionPromise;
+}
+async function reconnect() {
+  key=pairingKey();
+  // Keep autosave local until the connection has chosen a safe snapshot.
+  // Existing editors stay mounted while health/project requests are pending.
+  connected=false;
   try {
-    health = await api("health");
-    mediaCache.clear(); // Restarted helpers no longer know old local tickets.
-    connected = true;
-    queue = health.queue;
-    await refreshProjects();
-    // A fresh browser's empty connection placeholder is not a user-authored project.
-    // Prefer the saved helper projects rather than importing an empty duplicate.
-    if (project?._connectionPlaceholder) project = null;
-    if (project?._unsynced) {
-      try {
-        await api("project?id=" + project.id);
-        note(
-          "Offline edits are saved in this browser. Use “Sync offline edits” after checking the project; existing helper generations are preserved until you choose to sync.",
-        );
-      } catch {
-        const local = structuredClone(project);
-        delete local._unsynced;
-        if (
-          !local._imageSelectedByUser &&
-          !local.chapters.some((c) => c.scenes.length) &&
-          health.providers["native-flux"]?.validated
-        )
-          local.settings.image = {
-            ...local.settings.image,
-            ...health.providers["native-flux"].recommended,
-            provider: "native-flux",
-            model: "flux2-klein-4b-q4",
-            workflow: "reference-edit",
-          };
-        project = await api("import", { project: local });
-      }
-    } else if (project) {
-      try {
-        project = await api("project?id=" + project.id);
-      } catch {
-        if (
-          project.chapters.length === 1 &&
-          !project.chapters[0].sourceText &&
-          !project.characters.length &&
-          health.providers["native-flux"]?.validated
-        )
-          project = await api("create", { name: project.name });
-        else project = await api("import", { project });
-      }
-    } else if (projects.length)
-      project = await api("project?id=" + projects[0].id);
-    else project = await api("create", { name: "My story" });
-    chapterId = ch()?.id;
-    await cache();
-    render();
-  } catch (error) {
-    connected = false;
-    if (!project) {
-      try{projects = await listStudioProjects();}catch{projects=[];}
-      if (projects.length) project = projects[0];
-    }
-    render();
-    note(error.message, true);
+    const info=await api('health');
+    const available=await api('projects');
+    await flush();
+    const requestedProject=project,startEditorRevision=editorSave.revision;
+    const resolved=await resolveConnectedProject({project:requestedProject,projects:available,providers:info.providers,api});
+    // Includes edits typed during the final project fetch/import, before redraw.
+    await flush();
+    if(canAdoptConnection(project,resolved.project,{requestedProject,
+      editorRevision:editorSave.revision,startEditorRevision,preserveOffline:resolved.preserveOffline}))
+      project=resolved.project;
+    health=info;queue=info.queue;projects=available;
+    if(!projects.some(p=>p.id===project.id))projects=[{id:project.id,name:project.name,revision:project.revision,chapters:project.chapters.length},...projects];
+    mediaCache.clear();connected=true;chapterId=ch()?.id;
+    await cache();render();
+    if(project._unsynced)note('Your offline edits are retained. Review them, then use Sync offline edits; existing helper generations remain saved.');
+  } catch(error) {
+    connected=false;
+    // Export and the mounted editor must retain the latest input even if its
+    // browser checkpoint failed. No remote overwrite or automatic re-import.
+    if(editorSave.dirty&&project){project=editorSnapshot();project._unsynced=true;}
+    render();note(error.message,true);
   }
 }
+function editorSnapshot(){
+  return backupSnapshot(project,chapterId,tab,{
+    sourceText:$('#chapterStory')?.value,name:$('#chapterName')?.value,
+    cleanNarrationText:$('#narrationScript')?.value,narrationMode:$('#narrationMode')?.value,
+    includeChapterLabel:$('#includeChapterHeading')?.checked,
+  });
+}
 async function mutate(path, body, redraw = true) {
-  const p = await api(path, { project: project.id, ...body });
+  const requestedProject=project.id;
+  const p = await api(path, { project: requestedProject, ...body });
+  // The helper committed its result to the requested project. A slow edit
+  // must not switch the user's currently selected workspace back to it.
+  if(project.id!==requestedProject)return p;
   if (p?.chapters) {
+    if((Number(p.revision)||0)<(Number(project.revision)||0))return p;
     project = p;
     await cache();
   } else queue = p;
@@ -260,6 +262,7 @@ async function patch(scope, item, values, redraw = false) {
 }
 async function action(fn) {
   try {
+    if(connectionPromise)await connectionPromise;
     await flush();
     await fn();
   } catch (error) {
@@ -471,14 +474,16 @@ function render() {
     chapterId = project.chapters[0].id;
     return render();
   }
+  const focusContext=JSON.stringify([project.id,chapterId,tab]);
+  const savedFocus=captureFormFocus(root,focusContext);
   const openControls = [...root.querySelectorAll('details[data-ui][open]')].map(el => el.dataset.ui);
   const overlapEligible = connected && health?.cloudOverlapAvailable &&
     project.settings.image.provider === "comfyui" && project.settings.director.provider === "openai-luna" &&
     Number.isFinite(project.settings.budget?.openaiUSD) && project.settings.budget.openaiUSD > 0 &&
     !project.settings.economyPanels;
   const placement = rendererPlacement(connected,health);
-  root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · your text is saved in this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${options(
-    projects.map((p) => [p.id, p.name]),
+  root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · edits use this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${options(
+    projects.map((p) => [p.id, p.name+(p.loadError?" · needs recovery":"")]),
     project.id,
   )}</select><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
   <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -508,10 +513,14 @@ function render() {
     )
     .join("")}</nav>
   <section id="productionContent" role="tabpanel" aria-labelledby="studio-tab-${tab}">${content()}</section><div class="queue-panel" id="productionQueue"></div><p class="save-state" id="productionSaveState">Saved assets stay in the helper output folder. Refresh restores this project.</p></div></div>`;
+  root.dataset.focusContext=focusContext;
+  if(tab==="settings")settingsDrafts.restore(project.id,root);
   wire();
+  settingsDraftStatus();
   renderQueue();
   for (const detail of root.querySelectorAll('details[data-ui]')) detail.open = openControls.includes(detail.dataset.ui);
   void fillMedia();
+  restoreFormFocus(root,savedFocus);
   if(cacheWarning)note(cacheWarning,true);
 }
 function content() {
@@ -693,7 +702,7 @@ function settings() {
       ["1024x1024", "1024 × 1024 · cloud square"],
     ],
     i.width + "x" + i.height,
-  )}</select></label><label>Steps<input id="settingSteps" type="number" min="1" max="50" value="${i.steps}"></label><label>Guidance<input id="settingGuidance" type="number" min="1" max="14" step=".5" value="${i.guidance}"></label><label>Sampler<input id="settingSampler" value="${escape(i.sampler)}"></label><label>Scheduler<input id="settingScheduler" value="${escape(i.scheduler)}"></label></div><label class="inline"><input id="settingFallback" type="checkbox" ${i.fallbackEnabled ? "checked" : ""}>Enable explicit SD 1.5 fallback when the chosen provider fails</label><button id="editCustomLayout">Edit custom pacing targets</button> <button id="editImageSettings">Edit conditioning / LoRA / full generation settings</button> <button id="configureCloud">Cloud setup · Luna + Runpod</button> <button id="configureRuntimes">Configure local runtime paths</button><p class="muted">Unsupported settings are rejected before jobs are queued. No silent model substitution.</p></details><button class="primary" id="productionSaveSettings">Save project settings</button>`;
+  )}</select></label><label>Steps<input id="settingSteps" type="number" min="1" max="50" value="${i.steps}"></label><label>Guidance<input id="settingGuidance" type="number" min="1" max="14" step=".5" value="${i.guidance}"></label><label>Sampler<input id="settingSampler" value="${escape(i.sampler)}"></label><label>Scheduler<input id="settingScheduler" value="${escape(i.scheduler)}"></label></div><label class="inline"><input id="settingFallback" type="checkbox" ${i.fallbackEnabled ? "checked" : ""}>Enable explicit SD 1.5 fallback when the chosen provider fails</label><button id="editCustomLayout">Edit custom pacing targets</button> <button id="editImageSettings">Edit conditioning / LoRA / full generation settings</button> <button id="configureCloud">Cloud setup · Luna + Runpod</button> <button id="configureRuntimes">Configure local runtime paths</button><p class="muted">Unsupported settings are rejected before jobs are queued. No silent model substitution.</p></details><button class="primary" id="productionSaveSettings">Save project settings</button><p id="settingsDraftStatus" class="muted" role="status"></p>`;
 }
 function shotMotionLabel(shot) {
   const mode = project.settings.video.motionMode || "director";
@@ -735,10 +744,10 @@ function renderQueue() {
       ["QUEUED", "RUNNING"].includes(j.status),
   );
   if (fullButton) {
-    fullButton.disabled = !connected || !!activeFullRun || !!project.production?.budgetBlocked;
+    fullButton.disabled = !connected || startingProduction.has(project.id) || !!activeFullRun || !!project.production?.budgetBlocked;
     fullButton.textContent = activeFullRun
       ? queue.paused ? "Full video paused" : "Full video in progress"
-      : "Generate full video";
+      : startingProduction.has(project.id) ? "Checking and starting…" : "Generate full video";
   }
   const run = project.production,
     runStatus = $("#fullVideoStatus");
@@ -846,6 +855,7 @@ function renderQueue() {
     pending =
       counts?.all.QUEUED ?? jobs.filter((j) => j.status === "QUEUED").length,
     current = jobs.find((j) => j.id === queue.current),
+    otherCurrent = queue.jobs.some(j=>j.id===queue.current&&j.project!==project.id),
     progress = progressReader.read(project),
     imageDone = progress.imageDone,
     imageTotal = progress.imageTotal,
@@ -859,7 +869,7 @@ function renderQueue() {
     currentScene = project.chapters
       .find((c) => c.id === current?.chapter)
       ?.scenes.find((s) => s.id === currentShot?.sceneId);
-  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting · ${failureCount} images need attention · ETA ${queue.paused ? "Paused" : queue.etaStatus === "LONGER_THAN_HISTORY" ? "Longer than earlier runs" : queue.etaSeconds == null ? "Measuring" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || "Ready"))}</p><progress max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel all queued</button><button data-control="retry-missing" ${imageDone === imageTotal ? "disabled" : ""}>Retry missing images</button></div><details data-ui="job-history"><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
+  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting in this project · ${failureCount} images need attention · Shared queue ETA ${queue.paused ? "Paused" : queue.etaStatus === "LONGER_THAN_HISTORY" ? "Longer than earlier runs" : queue.etaSeconds == null ? "Measuring" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || (otherCurrent?"Another project is using the shared helper; this project waits.":"Ready")))}</p><progress aria-label="Images saved in this project" max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel project queue</button><button data-control="retry-missing" ${imageDone === imageTotal ? "disabled" : ""}>Retry missing images</button></div><p class="muted">Pause and Resume affect the shared helper queue. Cancel project queue stops only this project’s work; other projects and completed assets are retained.</p><details data-ui="job-history"><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
     .filter(
       (j) =>
         j.status === "FAILED" ||
@@ -890,7 +900,7 @@ function renderQueue() {
       (b.onclick = () =>
         action(async () => {
           queue = await api("control", { action: b.dataset.control, project: project.id,
-            ...(b.dataset.execution ? {job: b.dataset.execution} : {}) });
+            ...(b.dataset.execution ? {job: b.dataset.execution} : b.dataset.control==='cancel-current'&&current ? {job:current.id} : {}) });
           renderQueue();
         })),
   );
@@ -910,7 +920,9 @@ function renderQueue() {
   );
 }
 async function submit(kind, selected, options) {
+  const targetProject=project.id,targetChapter=chapterId;
   await saveSettingsIfVisible();
+  if(project.id!==targetProject||chapterId!==targetChapter)throw Error('The selected chapter changed. Choose the operation again in the current chapter.');
   queue = await api("jobs", {
     project: project.id,
     chapter: chapterId,
@@ -941,45 +953,53 @@ function wire() {
   $('#prepareOutro')?.addEventListener('click',()=>action(async()=>{await saveSettings();await submit('outro-audio');}));
   $("#productionOverlap").onchange = (event) => { overlapRequested = event.target.checked; };
   const checkReadiness=async()=>{
+    const targetProject=project.id;
     await saveSettingsIfVisible();
+    if(project.id!==targetProject)throw Error('Project selection changed. Check the current project again.');
     const overlap=!!$("#productionOverlap")?.checked;
     const readiness=await api("production-readiness?project="+encodeURIComponent(project.id)+"&overlap="+overlap);
+    if(project.id!==targetProject)throw Error('Project selection changed. Check the current project again.');
     $("#productionReadiness").innerHTML=`<details open><summary>${readiness.ready?'Ready to start':'Setup needs attention'}</summary><ul>${readiness.checks.map(x=>`<li>${x.ready?'✓':x.blocking?'Required:':'Note:'} ${escape(x.message)}</li>`).join('')}</ul><p class="muted">These checks do not generate images, rent a GPU or spend API tokens.</p></details>`;
     return readiness;
   };
   $("#productionCheckReadiness").onclick=()=>action(checkReadiness);
   $("#productionFullVideo").onclick = () =>
     action(async () => {
-      const readiness=await checkReadiness();
-      const overlap=!!$("#productionOverlap")?.checked;
-      if(!readiness.ready){
-        const issues=readiness.checks.filter(x=>x.blocking&&!x.ready).map(x=>x.message);
-        throw Error("Before generation: "+issues.join(" "));
-      }
-      queue = await api("jobs", { project: project.id, kind: "produce-story",
-        options: {overlap,preflightRevision:readiness.revision} });
-      renderQueue();
-      note(
-        "Full video queued. Keep the shared helper running. Pause, cancel or retry here; completed work is saved and reused.",
-      );
+      const targetProject=project.id;
+      if(startingProduction.has(targetProject))return;
+      startingProduction.add(targetProject);renderQueue();
+      try{
+        const readiness=await checkReadiness();
+        await flush();
+        if(project.id!==targetProject)throw Error('Project selection changed. Start generation again in the intended project.');
+        const overlap=!!$("#productionOverlap")?.checked;
+        if(!readiness.ready){
+          const issues=readiness.checks.filter(x=>x.blocking&&!x.ready).map(x=>x.message);
+          throw Error('Before generation: '+issues.join(' '));
+        }
+        queue=await api('jobs',{project:targetProject,kind:'produce-story',options:{overlap,preflightRevision:readiness.revision}});
+        note('Full video queued. Keep the shared helper running. Pause, cancel or retry here; completed work is saved and reused.');
+      }finally{startingProduction.delete(targetProject);renderQueue();}
     });
   $("#productionConnect").onclick = () => action(connectHelper);
   $("#productionNewProject").onclick = () => action(newProject);
-  $("#productionProject").onchange = (e) =>
-    action(async () => {
-      const selected = connected
-        ? await api("project?id=" + e.target.value)
-        : await loadStudioProject(e.target.value);
-      if (!selected?.chapters?.length) {
-        e.target.value = project.id;
-        throw new Error("This project is saved on the helper. Reconnect the helper, then select it again.");
+  $("#productionProject").onchange = event => {
+    const wanted=event.target.value;
+    const request=projectSelection.begin(project,editorSave.revision);
+    void action(async()=>{
+      request.project=project;request.editorRevision=editorSave.revision;
+      let selected;
+      try{selected=connected?await api('project?id='+encodeURIComponent(wanted)):await loadStudioProject(wanted);}
+      catch(error){if(!projectSelection.current(request,project,editorSave.revision))return;event.target.value=project.id;throw error;}
+      if(!projectSelection.current(request,project,editorSave.revision)){
+        if(projectSelection.latest(request)&&request.project===project&&editorSave.revision!==request.editorRevision){event.target.value=project.id;note('Your new edits are retained. Select the other project again when you are ready.');}
+        return;
       }
-      project = selected;
-      chapterId = project.chapters[0].id;
-      scenePage = 0;
-      await cache();
-      render();
+      if(!selected?.chapters?.length){event.target.value=project.id;throw new Error('This project is saved on the helper. Reconnect the helper, then select it again.');}
+      project=selected;chapterId=project.chapters[0].id;scenePage=0;
+      await cache();render();
     });
+  };
   root.querySelectorAll("[data-chapter]").forEach(
     (b) =>
       (b.onclick = () =>
@@ -1052,7 +1072,7 @@ function wire() {
         includeChapterLabel:$('#includeChapterHeading')?.checked,
       });
       downloadBlob(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}),project.name+'.json');
-      note('Project JSON exported with the current editor text and saved generation settings. Media files remain in their existing helper/cloud archive.');
+      note('Project JSON exported with the current editor text and saved generation settings. Media files remain in their existing helper/cloud archive.'+(settingsDrafts.has(project.id)?' Unsaved settings are still in this page; Save project settings to include them in the next export.':''));
     } catch(error){note(error.message,true);}
   };
   $("#productionImport").onclick = () => $("#productionImportFile").click();
@@ -1572,22 +1592,9 @@ async function personAction(pid, act) {
   }
 }
 function formDialog(title, body, onSave) {
-  const modal = document.createElement("div");
-  modal.className = "dialog-backdrop";
-  modal.innerHTML = `<div class="dialog-content" role="dialog" aria-modal="true" aria-label="${escape(title)}"><div class="toolbar"><h2 style="flex:1">${escape(title)}</h2><button class="dialog-close">Close</button></div>${body}<p class="notice error dialog-error" hidden></p><div class="toolbar"><button class="primary dialog-save">Save</button></div></div>`;
-  root.append(modal);
-  modal.querySelector(".dialog-close").onclick = () => modal.remove();
-  modal.querySelector(".dialog-save").onclick = async () => {
-    try {
-      await onSave();
-      modal.remove();
-    } catch (error) {
-      const el = modal.querySelector(".dialog-error");
-      el.hidden = false;
-      el.textContent = error.message;
-    }
-  };
-  modal.querySelector("input,textarea,select,button")?.focus();
+  const projectId=project?.id;
+  return openFormDialog({document,title,body,escape,onSave,
+    stillCurrent:()=>project?.id===projectId});
 }
 function jsonDialog(title, value, save) {
   formDialog(
@@ -1761,6 +1768,8 @@ function wireSettings() {
     if (e.target.value === "Cinematic")
       $("#settingStyle").value = "photorealistic cinema";
     if (e.target.value === "Storybook") $("#settingStyle").value = "storybook";
+    for(const id of ['settingSteps','settingGuidance','settingResolution','settingStyle'])settingsDrafts.remember(project.id,$('#'+id));
+    settingsDraftStatus();
   };
   $("#editCustomLayout").onclick = () =>
     jsonDialog("Custom layout targets", project.settings.customLayout, (v) =>
@@ -1861,6 +1870,7 @@ function wireSettings() {
   };
 }
 async function saveSettings() {
+  const savedDrafts=settingsDrafts.snapshot(project.id),settingsProjectId=project.id;
   const s = structuredClone(project.settings),
     intro = structuredClone(project.intro);
   s.style = $("#settingStyle").value;
@@ -1940,6 +1950,7 @@ async function saveSettings() {
     },
     false,
   );
+  settingsDrafts.acknowledge(settingsProjectId,savedDrafts);settingsDraftStatus();
   note(
     "Project settings saved. Existing shots keep their own model settings; edit an individual shot to change its model.",
   );
@@ -1963,7 +1974,7 @@ async function poll() {
     renderQueue();
     if (
       !dirty && !project._unsynced && project.id===requestedProjectId &&
-      !root.querySelector(".dialog-backdrop") &&
+      !document.querySelector("dialog.studio-form-dialog[open]") &&
       tab !== "settings"
     ) {
       const revision = await api("revision?id=" + requestedProjectId);
@@ -1972,7 +1983,7 @@ async function poll() {
         const active = document.activeElement;
         if (canApplyBackgroundProject(project,latest,{
           requestedId:requestedProjectId,dirty,
-          editing:root.contains(active)&&["INPUT","TEXTAREA","SELECT"].includes(active.tagName),
+          editing:Boolean(document.querySelector("dialog.studio-form-dialog[open]"))||(root.contains(active)&&["INPUT","TEXTAREA","SELECT"].includes(active.tagName)),
         })) {
           project = latest;
           await cache();
@@ -2034,18 +2045,18 @@ function editPerson(person, main) {
       .join(
         "",
       )}</div><details><summary>All profile fields</summary><textarea id="profileAdvanced" class="json-editor">${escape(JSON.stringify(person, null, 2))}</textarea></details>`,
-    async () => {
+    async (modal) => {
       const v = JSON.parse($("#profileAdvanced").value);
       delete v.id;
       v.name = $("#profileName").value;
       v.description = $("#profileDescription").value;
       v.type = $("#profileType").value;
-      root
+      modal
         .querySelectorAll("[data-identity-field]")
         .forEach(
           (i) => (v.permanentIdentity[i.dataset.identityField] = i.value),
         );
-      root
+      modal
         .querySelectorAll("[data-appearance-field]")
         .forEach(
           (i) => (v.defaultAppearance[i.dataset.appearanceField] = i.value),

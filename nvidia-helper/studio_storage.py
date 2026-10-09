@@ -214,7 +214,9 @@ class R2Archive:
 
     def restore(self, pid):
         manifest,_ = self.manifest(pid,True)
-        if not manifest: raise FileNotFoundError('Project not found in cloud storage.')
+        if not manifest:
+            from studio_data import ProjectNotFound
+            raise ProjectNotFound('Project not found in cloud storage.')
         from studio_data import validate_project
         project = validate_project(manifest['project'])
         if project['id'] != pid: raise ValueError('Cloud project identity does not match.')
@@ -229,6 +231,24 @@ class R2Archive:
             temp.replace(folder/'project.json')
             (folder/'revision.json').write_text(json.dumps({'revision':project['revision'],'updated':project['updated']}),encoding='utf-8')
         return project
+
+    def asset_record(self, pid, name):
+        """Verified immutable identity from the published manifest; no media download.
+
+        This is metadata availability, not a new visual inspection. Actual reads
+        still verify the downloaded bytes against this identity before use.
+        """
+        self.store.asset_local(pid,name) # Path and media-extension validation.
+        if not self.enabled:return None
+        manifest,_=self.manifest(pid)
+        record=(manifest or {}).get('files',{}).get(name.replace('\\','/'))
+        if record is None:return None
+        if (not isinstance(record,dict) or not isinstance(record.get('sha256'),str) or not re.fullmatch(r'[a-f0-9]{64}',record.get('sha256',''))
+                or record.get('key') != f'studio/assets/{pid}/{record["sha256"]}/{name.replace(chr(92),"/")}'
+                or isinstance(record.get('bytes'),bool) or not isinstance(record.get('bytes'),int)
+                or record['bytes']<0):
+            raise ValueError('Invalid cloud asset identity.')
+        return dict(record)
 
     def fetch_asset(self, pid, name):
         target = self.store.asset_local(pid,name)

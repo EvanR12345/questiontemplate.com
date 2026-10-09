@@ -226,6 +226,31 @@ class BridgeTest(unittest.TestCase):
         client.close()
         return result
 
+    def test_missing_project_is_distinct_from_an_invalid_saved_snapshot(self):
+        service=self.server.RequestHandlerClass.studio_service
+        pid='pr-0123456789abcdef'
+        code,_,data=self.request('/studio/project?id='+pid)
+        self.assertEqual(code,404);self.assertEqual(json.loads(data)['code'],'PROJECT_NOT_FOUND')
+        folder=service.store.folder(pid);folder.mkdir();snapshot=folder/'project.json';snapshot.write_text('{broken')
+        code,_,data=self.request('/studio/project?id='+pid)
+        self.assertEqual(code,400);self.assertNotEqual(json.loads(data).get('code'),'PROJECT_NOT_FOUND')
+        self.assertEqual(snapshot.read_text(),'{broken')
+        code,_,data=self.request('/studio/project?id=invalid')
+        self.assertEqual(code,400)
+
+    def test_unchanged_editor_save_does_not_rewrite_or_archive_the_whole_project(self):
+        from unittest.mock import Mock
+        service=self.server.RequestHandlerClass.studio_service
+        p=service.store.save(new_project('Unchanged settings'))
+        file=service.store.folder(p['id'])/'project.json';before=file.read_bytes()
+        archive=Mock();archive.enqueue=Mock()
+        with patch.object(service.store,'archive',archive):
+            code,_,data=self.request('/studio/edit',{'project':p['id'],'scope':'project','patch':{'name':p['name'],'settings':p['settings'],'intro':p['intro']}})
+        self.assertEqual(code,200);self.assertEqual(json.loads(data)['revision'],p['revision'])
+        self.assertEqual(file.read_bytes(),before);archive.enqueue.assert_not_called()
+        code,_,data=self.request('/studio/edit',{'project':p['id'],'scope':'project','patch':{'name':'Actual update'}})
+        self.assertEqual(code,200);self.assertEqual(json.loads(data)['revision'],p['revision']+1)
+
     def test_authentication_and_origins(self):
         self.assertEqual(self.request(key='bad')[0], 401)
         code, headers, _ = self.request(origin='https://unrelated.example')

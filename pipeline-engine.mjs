@@ -323,10 +323,14 @@ export function validateSchedule(plan,tasks) {
   return errors;
 }
 
-export function explainMove(plan,result,id,requested) {
-  const task=result.tasks.find(t=>t.id===id);if(!task)throw Error('Unknown task.');
-  const ready=Math.max(0,...task.deps.map(d=>result.tasks.find(t=>t.id===d).end));
-  if(requested<ready-1e-6)return `Needs ${task.deps.map(d=>result.tasks.find(t=>t.id===d).name).join(', ')} first. Earliest dependency time: ${formatTime(ready)}.`;
+export function explainMove(plan,result,id,requested,index=new Map(result.tasks.map(task=>[task.id,task]))) {
+  const task=index.get(id);if(!task)throw Error('Unknown task.');
+  const dependencies=task.deps.map(d=>index.get(d));
+  const ready=dependencies.reduce((end,t)=>Math.max(end,t.end),0);
+  if(requested<ready-1e-6){
+    const names=dependencies.slice(0,6).map(t=>t.name).join(', ');
+    return `Needs ${names}${dependencies.length>6?` and ${dependencies.length-6} more`:''} first. Earliest dependency time: ${formatTime(ready)}.`;
+  }
   return 'Resources and dependent tasks will be re-scheduled safely.';
 }
 

@@ -1,5 +1,5 @@
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=render-research-20261009c';
-import {startupSearch} from './pipeline-detail-ui.mjs?v=render-research-20261009c';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=render-research-20261009d';
+import {startupSearch} from './pipeline-detail-ui.mjs?v=render-research-20261009d';
 self.onmessage=({data})=>{
  try{
   if(data.type==='plan'){

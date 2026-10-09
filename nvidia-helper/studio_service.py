@@ -472,7 +472,7 @@ class StudioService:
         provider_name=p['settings']['image']['provider']
         check('cloud-images',not p['settings'].get('cloudImagesOnly') or provider_name=='comfyui',
               'Cloud-only projects require their configured cloud image provider.')
-        images_needed=any(not c['scenes'] or any(not s.get('imagePath') or s.get('generationStale')
+        images_needed=any(not c['scenes'] or any(not s.get('imagePath') or s.get('generationStale') or not self.store.has_asset(pid,s['imagePath'])
                           for scene in c['scenes'] for s in scene['shots']) for c in chapters)
         if p['intro']['enabled']:
             images_needed |= bool(not p['intro'].get('visualPath') and not p['intro'].get('shots'))
@@ -722,7 +722,7 @@ class StudioService:
             self.before_image()
 
     def control(self, action, job=None, project=None):
-        sync_project = project if action == 'retry-missing' else None
+        sync_project = project if action in ('retry-missing','cancel-all') else None
         if action == 'retry-missing':
             if not project:
                 raise ValueError('Choose a project before retrying missing images.')
@@ -743,7 +743,7 @@ class StudioService:
                 for c in p['chapters']:
                     for sc in c['scenes']:
                         for s in sc['shots']:
-                            if s.get('imagePath') and self.store.asset(project, s['imagePath']).is_file():
+                            if s.get('imagePath') and self.store.has_asset(project, s['imagePath']):
                                 continue
                             row = latest.get((c['id'], s['id']))
                             if not row or row['status'] not in ('FAILED','CANCELLED') or available <= 0:
@@ -767,10 +767,13 @@ class StudioService:
                 else:
                     self.cancel = True
             elif action == "cancel-all":
-                self.cancel = True
-                self.paused = True
+                if project:self.store.folder(project) # Validate the selected identity.
+                current=self.db.execute('SELECT project FROM jobs WHERE id=?',(self.current,)).fetchone() if self.current else None
+                if not project or current and current['project']==project:self.cancel=True
+                if not project:self.paused = True # Global legacy control still holds the entire queue.
                 self.db.execute(
-                    "UPDATE jobs SET status='CANCELLED',message='Cancelled; completed assets retained' WHERE status='QUEUED'"
+                    "UPDATE jobs SET status='CANCELLED',message='Cancelled; completed assets retained' WHERE status='QUEUED'"+
+                    (' AND project=?' if project else ''),(project,) if project else ()
                 )
             elif action == "retry":
                 available = (
@@ -2028,7 +2031,7 @@ class StudioService:
             raise ValueError('Local image generation is disabled for this project.')
         if p['intro'].get('shots'):
             for shot in p['intro']['shots']:
-                if shot.get('imagePath') and self.store.asset(p['id'], shot['imagePath']).is_file():
+                if shot.get('imagePath') and self.store.has_asset(p['id'], shot['imagePath']):
                     continue
                 self.check_cloud_budget(p, provider)
                 references, metadata = select_references(p, shot, self.store, provider)
@@ -3863,7 +3866,7 @@ class StudioService:
 
     def saved_image_ready(self, project, shot):
         return bool(shot.get("imagePath") and not shot.get("generationStale")
-            and self.store.asset(project["id"],shot["imagePath"]).is_file()
+            and self.store.has_asset(project["id"],shot["imagePath"])
             and not qc_decision(project,shot,self.store)["blocking"]
             and (shot.get("status") in ("COMPLETE","PASSED") or shot.get("qc",{}).get("pass") is False))
 

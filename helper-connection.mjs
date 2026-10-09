@@ -1,4 +1,4 @@
-import { nativeRequest } from './native-client.mjs?v=queue-1';
+import { nativeRequest } from './native-client.mjs?v=connection-20261009';
 export const KEY_STORAGE = 'qt-local-helper-key';
 let sessionKey = '';
 export function importHelperPairing(value, storage) {

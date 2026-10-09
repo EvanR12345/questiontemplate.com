@@ -484,6 +484,13 @@ def validate_project(p):
     return p
 
 
+UNCHANGED=object() # Explicit callback result; avoids copying large snapshots just to compare them.
+
+
+class ProjectNotFound(FileNotFoundError):
+    """Only a missing project snapshot, never an unreadable or invalid file."""
+
+
 class ProjectStore:
     def __init__(self, root):
         self.root = (Path(root) / "studio").resolve()
@@ -504,9 +511,10 @@ class ProjectStore:
 
     def load_local(self, id):
         with self.lock:
-            return json.loads(
-                (self.folder(id) / "project.json").read_text(encoding="utf-8")
-            )
+            path=self.folder(id)/'project.json'
+            try:source=path.read_text(encoding='utf-8')
+            except FileNotFoundError:raise ProjectNotFound('Saved project not found.') from None
+            return json.loads(source)
 
     def save(self, p, expected=None):
         validate_project(p)
@@ -560,6 +568,7 @@ class ProjectStore:
             p = self.load(id)
             before = copy.deepcopy(p) if skip_unchanged else None
             result = fn(p)
+            if result is UNCHANGED:return p
             if not skip_unchanged or p != before:
                 self.save(p)
             return result if result is not None else p
@@ -577,9 +586,18 @@ class ProjectStore:
 
     def list_local(self):
         result = []
+        def valid(summary, pid):
+            return (isinstance(summary,dict) and summary.get('id')==pid
+                and isinstance(summary.get('name'),str)
+                and isinstance(summary.get('revision'),int) and not isinstance(summary['revision'],bool) and summary['revision']>=0
+                and isinstance(summary.get('updated'),(int,float)) and math.isfinite(summary['updated'])
+                and isinstance(summary.get('chapters'),int) and not isinstance(summary['chapters'],bool) and summary['chapters']>=0)
         with self.lock:
             for f in self.root.glob("pr-*/project.json"):
-                stamp = f.stat()
+                pid=f.parent.name
+                if not re.fullmatch(r'pr-[a-f0-9]{16}',pid):continue
+                try:stamp=f.stat()
+                except FileNotFoundError:continue # A removed entry cannot block other projects.
                 fingerprint = (stamp.st_ino,stamp.st_size,stamp.st_mtime_ns,stamp.st_ctime_ns)
                 cached = self._summaries.get(f)
                 if cached and cached[0] == fingerprint:
@@ -588,16 +606,42 @@ class ProjectStore:
                     summary = None
                     try:
                         metadata = json.loads((f.parent/'revision.json').read_text(encoding='utf-8'))
-                        if metadata.get('projectFile') == list(fingerprint): summary = metadata.get('summary')
+                        if isinstance(metadata,dict) and metadata.get('projectFile') == list(fingerprint): summary = metadata.get('summary')
                     except (OSError,ValueError): pass
-                    if not isinstance(summary,dict) or not all(k in summary for k in ('id','name','revision','updated','chapters')):
-                        p = json.loads(f.read_text(encoding='utf-8'))
-                        summary = {k:p[k] for k in ('id','name','revision','updated')} | {'chapters':len(p['chapters'])}
+                    if not valid(summary,pid):
+                        try:
+                            p = json.loads(f.read_text(encoding='utf-8'))
+                            summary = {k:p[k] for k in ('id','name','revision','updated')} | {'chapters':len(p['chapters'])}
+                            if not valid(summary,pid):raise ValueError('Invalid saved summary')
+                        except (OSError,ValueError,KeyError,TypeError):
+                            # Keep the damaged project visible and preserve its bytes and
+                            # previous snapshot. Opening it still reports the actual load
+                            # error; it is never silently re-created or replaced here.
+                            summary={'id':pid,'name':'Saved project needs recovery','revision':0,
+                                'updated':stamp.st_mtime,'chapters':0,
+                                'loadError':'The saved project could not be read. Its files and previous snapshot are preserved.'}
                     self._summaries[f] = (fingerprint,summary)
                 result.append(dict(summary))
             if len(self._summaries)>256:
                 self._summaries = {f:self._summaries[f] for f in list(self._summaries)[-256:]}
         return sorted(result, key=lambda p: p["updated"], reverse=True)
+
+    def has_asset(self, id, name):
+        """Check local or published cloud availability without restoring a cache."""
+        path=self.asset_local(id,name)
+        if path.is_file():return True
+        return bool(self.archive and self.archive.asset_record(id,name))
+
+    def asset_digest(self, id, name):
+        """Hash local bytes or use the previously verified immutable cloud hash."""
+        path=self.asset_local(id,name)
+        if path.is_file():
+            h=hashlib.sha256()
+            with path.open('rb') as handle:
+                for block in iter(lambda:handle.read(4*1024*1024),b''):h.update(block)
+            return h.hexdigest()
+        record=self.archive.asset_record(id,name) if self.archive else None
+        return record['sha256'] if record else None
 
     def asset(self, id, name):
         path = self.asset_local(id,name)

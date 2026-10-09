@@ -14,8 +14,9 @@ export async function nativeRequest(path, key, body, fetcher = fetch) {
   } catch { throw new Error('Cannot reach the NVIDIA helper. Keep its window open and allow this site’s Local network access permission in Chrome.'); }
   if (!response.ok) {
     let message = 'NVIDIA helper request failed (' + response.status + ')';
-    try { message = (await response.json()).error || message; } catch {}
-    throw new Error(message);
+    let code;
+    try { const problem=await response.json();message=problem.error||message;code=problem.code; } catch {}
+    const error=new Error(message);error.status=response.status;if(typeof code==='string')error.code=code;throw error;
   }
   return response;
 }

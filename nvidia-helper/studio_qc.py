@@ -45,8 +45,7 @@ def asset_hash(store, pid, name, context=None):
     key = (pid, name)
     if context is not None and key in context['files']:
         return context['files'][key]
-    path = store.asset(pid, name)
-    value = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+    value = store.asset_digest(pid, name)
     if context is not None: context['files'][key] = value
     return value
 

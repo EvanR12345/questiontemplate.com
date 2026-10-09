@@ -3,6 +3,7 @@ export function createEditorSave(write) {
   let revision=0,savedRevision=0,inFlight;
   return {
     markDirty(){revision++;},
+    get revision(){return revision;},
     get dirty(){return savedRevision<revision;},
     flush(){
       if(inFlight)return inFlight;

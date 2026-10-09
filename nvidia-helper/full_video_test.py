@@ -166,6 +166,27 @@ class FullVideoTest(unittest.TestCase):
         self.assertEqual(saved['exports']['patreon'],saved['render'])
         self.assertFalse(self.service.snapshot()['storage']['enabled'])
 
+    def test_cancel_current_is_pinned_and_never_cancels_the_next_job(self):
+        self.service.current='next-job'
+        with self.assertRaisesRegex(ValueError,'active job'):
+            self.service.control('cancel-current',job='finished-job',project=self.project['id'])
+        self.assertFalse(self.service.cancel)
+        self.service.control('cancel-current',job='next-job',project=self.project['id'])
+        self.assertTrue(self.service.cancel)
+
+    def test_cancel_project_queue_keeps_other_project_jobs_and_assets(self):
+        other=self.service.store.save(new_project('Other story'))
+        for pid in [self.project['id'],other['id']]:
+            self.service.enqueue(pid,None,'outro-audio')
+        other_job=next(j for j in self.service.snapshot()['jobs'] if j['project']==other['id'])
+        self.service.current=other_job['id'];self.service.cancel=False;self.service.paused=False
+        self.service.store.asset(other['id'],'keep.png').write_bytes(b'keep')
+        result=self.service.control('cancel-all',project=self.project['id'])
+        self.assertFalse(self.service.paused);self.assertFalse(self.service.cancel)
+        self.assertTrue(all(j['status']=='CANCELLED' for j in result['jobs'] if j['project']==self.project['id']))
+        self.assertTrue(all(j['status']=='QUEUED' for j in result['jobs'] if j['project']==other['id']))
+        self.assertEqual(self.service.store.asset(other['id'],'keep.png').read_bytes(),b'keep')
+
     def cloud_mode(self):
         cloud = Provider()
         cloud.id = 'comfyui'
@@ -453,6 +474,23 @@ class FullVideoTest(unittest.TestCase):
         self.assertEqual([j['id'] for j in queued], ['missing-latest'])
         self.assertEqual(queued[0]['seed'], 30)
         self.assertTrue(self.service.store.asset(p['id'], 'saved.png').exists())
+
+    def test_retry_and_saved_ready_checks_use_cloud_records_without_restoring_images(self):
+        from unittest.mock import Mock,patch
+        self.service.prepare_story(self.project['id'], {})
+        p=self.service.store.load(self.project['id'])
+        shot=p['chapters'][0]['scenes'][0]['shots'][0]
+        shot.update(imagePath='cloud-only.png',status='COMPLETE',qc={'pass':True})
+        self.service.store.save(p)
+        archive=Mock();archive.asset_record.return_value={'sha256':'a'*64,'bytes':12}
+        self.service.store.archive=archive
+        row=('saved-failed',p['id'],p['chapters'][0]['id'],shot['id'],'image','{}','FAILED','',0,1,None,0,1,10)
+        self.service.db.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',row);self.service.db.commit()
+        with patch.object(self.service.store,'asset',side_effect=AssertionError('Retry downloaded a saved image')):
+            self.assertTrue(self.service.saved_image_ready(p,shot))
+            result=self.service.control('retry-missing',project=p['id'])
+            self.assertFalse(any(j['status']=='QUEUED' for j in result['jobs']))
+        self.assertFalse(self.service.store.asset_local(p['id'],'cloud-only.png').exists())
 
     def test_repeated_stream_progress_does_not_commit_for_every_token(self):
         self.service.current = 'job-stream'

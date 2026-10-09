@@ -44,3 +44,14 @@ test('CUDA failure remains an explicit error rather than a silent CPU switch', a
   await assert.rejects(nativeHealth(key, async () => new Response(JSON.stringify({protocol:1, backend:'wasm', sampleRate:24000, vocab:{}}))), /Update/);
   await assert.rejects(nativeRequest('/prepare', key, {}, async () => new Response(JSON.stringify({error:'CUDA ran out of memory'}), {status:503})), /CUDA ran out of memory/);
 });
+
+test('HTTP status survives safe JSON errors so reconnect distinguishes missing projects',async()=>{
+  for(const status of [401,403,404,500])await assert.rejects(
+    nativeRequest('/studio/project?id=test',key,undefined,async()=>new Response('{"error":"Request failed"}',{status})),
+    error=>error.status===status&&error.message==='Request failed');
+});
+
+test('a typed missing-project error is preserved without mistaking arbitrary 404s for absence',async()=>{
+  await assert.rejects(nativeRequest('/studio/project?id=test',key,undefined,async()=>new Response('{"error":"Missing","code":"PROJECT_NOT_FOUND"}',{status:404})),
+    error=>error.status===404&&error.code==='PROJECT_NOT_FOUND');
+});

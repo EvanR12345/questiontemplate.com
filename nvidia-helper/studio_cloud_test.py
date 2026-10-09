@@ -33,6 +33,34 @@ class CloudSaveTests(unittest.TestCase):
         self.a.objects=self.obj;self.a.enabled=True;self.store.archive=self.a
         self.image=self.store.folder(self.p['id'])/'art.png';Image.new('RGB',(640,360),'purple').save(self.image)
     def tearDown(self):self.tmp.cleanup()
+    def test_cloud_presence_and_identity_checks_never_restore_media_to_laptop(self):
+        from studio_qc import asset_hash
+        original=sha(self.image);self.a.sync(self.p['id']);self.image.unlink()
+        with patch.object(self.obj,'download',side_effect=AssertionError('Metadata check downloaded media')):
+            self.assertTrue(self.store.has_asset(self.p['id'],'art.png'))
+            self.assertEqual(self.store.asset_digest(self.p['id'],'art.png'),original)
+            self.assertEqual(asset_hash(self.store,self.p['id'],'art.png'),original)
+            self.assertFalse(self.store.has_asset(self.p['id'],'missing.png'))
+            self.assertIsNone(self.store.asset_digest(self.p['id'],'missing.png'))
+        self.assertFalse(self.image.exists())
+        # A local replacement takes priority over an older cloud fingerprint.
+        self.image.write_bytes(b'new local image')
+        self.assertEqual(self.store.asset_digest(self.p['id'],'art.png'),sha(self.image))
+        self.assertNotEqual(sha(self.image),original)
+
+    def test_cloud_presence_rejects_invalid_manifest_identity_and_unsafe_paths(self):
+        self.a.sync(self.p['id']);self.image.unlink()
+        manifest,_=self.a.manifest(self.p['id']);original=copy.deepcopy(manifest['files']['art.png'])
+        for patch_value in ({'key':'other-account/object'},{'sha256':'bad'},{'bytes':True},{'bytes':-1}):
+            manifest['files']['art.png']=original|patch_value
+            with self.assertRaises(ValueError):self.store.has_asset(self.p['id'],'art.png')
+        manifest['files']['art.png']=original
+        with self.assertRaises(ValueError):self.store.has_asset(self.p['id'],'../outside.png')
+        # Metadata availability does not disable checksum verification on a real read.
+        key=original['key'];self.obj.data[key]=(b'corrupt remote bytes','asset')
+        with self.assertRaises(ValueError):self.store.asset(self.p['id'],'art.png')
+        self.assertFalse(self.image.exists())
+
     def test_uploads_before_manifest_and_does_not_repeat_unchanged_assets(self):
         self.a.sync(self.p['id']);n=self.obj.uploads
         self.a.sync(self.p['id']);self.assertEqual(self.obj.uploads,n)
