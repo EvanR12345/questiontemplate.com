@@ -1,12 +1,12 @@
-import {createWorkerRequest} from './pipeline-worker-request.mjs?v=render-research-20261009d';
+import {createWorkerRequest} from './pipeline-worker-request.mjs?v=render-research-20261009e';
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=render-research-20261009d';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=render-research-20261009d';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=render-research-20261009e';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=render-research-20261009e';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=render-research-20261009d';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=render-research-20261009d';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=render-research-20261009e';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=render-research-20261009e';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -20,7 +20,9 @@ async function loadRenderResearch(){
 }
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=render-research-20261009d',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=render-research-20261009e',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=render-research-20261009e',import.meta.url),{type:'module'}));
+let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
 const snapshot=()=>({type:'studio-pipeline-plan',version:VERSION,config:{...config},preferences:structuredClone(preferences),uncertainty});
@@ -42,7 +44,7 @@ function labelChapter(n){return n===0?'Project / intro':`Chapter ${String(n).pad
 function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(['gpus','processes','observed'].includes(next))void loadOptionalPanels();if(next==='gpus'){void loadRenderResearch();mountGPUPanels();if(result)renderGPUs();}}
 async function rebuild(){
   stopPlay();
-  const generation=++computeGeneration;plannerRequest.cancel();
+  const generation=++computeGeneration;plannerRequest.cancel();comparisonRequest.cancel();comparisonPendingKey='';
   const startupHost=$('startTradeoffs');startupHost._startupGeneration=(startupHost._startupGeneration||0)+1;startupHost._startupWorker?.terminate();startupHost._startupWorker=null;startupHost._startupKey=null;
   $('saved').textContent='Calculating in the background…';
   try{
@@ -177,9 +179,21 @@ function pairResult(){
   const conflicts=Object.keys(a.resources).filter(p=>a.resources[p]+(b.resources[p]||0)>plan.capacities[p]+1e-7);
   $('pairResult').textContent=conflicts.length?'Cannot overlap with these limits: '+conflicts.join(', ')+'. Change a capacity only after measuring throughput and memory.':'The dependency/resource model permits overlap. This is a scheduling result, not proof that contention leaves real throughput unchanged.';
 }
-function renderGPUs(){
-  const choices=gpuChoices(evidence),unavailable=[];
-  const comparisons=choices.flatMap(g=>{try{const c=selectGPUConfig(config,evidence,g.id),p=buildPlan(c,evidence),r=schedule(p);return [{g:p.gpu,p,r,c}];}catch{unavailable.push(g);return [];}}),max=Math.max(1,...comparisons.map(x=>x.r.end));
+async function renderGPUs(){
+  const key=JSON.stringify(config);
+  if(comparisonKey!==key){
+    if(comparisonPendingKey===key)return;
+    comparisonPendingKey=key;
+    $('gpuCards').innerHTML='';
+    $('gpuComparison').innerHTML='<p class="caption" role="status">Comparing complete GPU schedules in the background… Controls remain available.</p>';
+    try{
+      const summary=await comparisonRequest.run({type:'gpu-comparison',config,evidence});
+      if(!summary||JSON.stringify(config)!==key)return;
+      comparisonSummary=summary;comparisonKey=key;
+    }catch(error){if(JSON.stringify(config)===key)$('gpuComparison').textContent=error.message;return;}
+    finally{if(comparisonPendingKey===key)comparisonPendingKey='';}
+  }
+  const {comparisons,unavailable}=comparisonSummary,max=Math.max(1,...comparisons.map(x=>x.r.end));
   $('gpuCards').innerHTML=comparisons.map(({g,r})=>`<article class="gpu-card ${config.gpu===g.id?'active':''}"><span class="badge">${g.basis==='concurrency'?'MATCHED WORKER GROUPS':g.basis==='measured'?'MATCHED · 5 WARM SAMPLES':'HISTORICAL · DIFFERENT CONDITIONS'}</span><h3>${esc(g.name)}</h3><span class="caption">${g.vram} GB VRAM · ${esc(g.region)} · ${g.date}</span><div class="specs"><div><strong>${g.meanClient.toFixed(2)}s</strong><small>mean client / job</small></div><div><strong>${money(g.hourly)}</strong><small>rental / hour</small></div><div><strong>${g.server.toFixed(2)}s</strong><small>backend</small></div></div><p>${esc(g.scope)}</p><button class="button ${config.gpu===g.id?'dark':''}" data-gpu="${g.id}">${config.gpu===g.id?'Selected profile':'Use this GPU'}</button></article>`).join('');
   $('gpuComparison').innerHTML=comparisons.map(({g,p,r})=>`<div class="compare-row"><div class="label">${esc(g.name)}<small>${esc(executionLabel(p))}</small></div><div class="track"><i style="width:${r.end/max*100}%;background:${g.id===config.gpu?'#89aa8f':'#bdccba'}"><span>${formatTime(r.end)}</span></i></div><div class="cost">${money(r.totalUSD)}</div></div>`).join('')+'<p class="caption">Each GPU uses its fastest completed compatible measurement, including its tested execution method. Same resolution, conditioning, chapter count, checks and cost assumptions; manual timeline moves are excluded from this comparison. Complete simulated time includes setup and rental waiting, director, local voice, rendering and daily storage. Prices and stock are historical, not live quotes.</p>'+(unavailable.length?`<p class="caption">No compatible completed measurement: ${unavailable.map(g=>esc(g.name)).join(', ')}. These GPUs have no substituted speed estimate.</p>`:'');
   $('gpuCards').querySelectorAll('[data-gpu]').forEach(b=>b.onclick=()=>{const chosen=comparisons.find(x=>x.g.id===b.dataset.gpu);checkpoint();config=chosen.c;preferences={};selected=null;setControls();rebuild();toast('Schedule updated: '+executionLabel(plan));});
@@ -200,7 +214,7 @@ function tick(now){
 function download(name,value,type){const blob=new Blob([value],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function start(){
   try{
-    const response=await fetch('./pipeline-evidence.json?v=render-research-20261009d');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
+    const response=await fetch('./pipeline-evidence.json?v=render-research-20261009e');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
     if(concurrencyResponse.ok){
       evidence.concurrency=await concurrencyResponse.json();

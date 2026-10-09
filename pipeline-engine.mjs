@@ -50,8 +50,8 @@ export const CATALOG = [
   ['vision','Luna visual QC','qc','Review story fidelity, identity, appearance, held objects, anatomy and intentional changes. No endless repair loop.','Saved output and expected shot.','Shares API slots with directing; can check earlier images while the GPU works.','Mean of 12 historical calls. Off skips vision, not decode/black-image validation.'],
   ['repair','Bounded extra image attempts','gpu','An assumed fraction of images gets one more image/edit attempt; same provider settings, bounded retry budget.','First attempt plus configured review or deliberate replacement.','Extra attempts are counted; automatic visual repair cannot be inferred when vision QC is off.','User-entered attempt allowance, not measured failure probability.'],
   ['timeline','Chapter timeline','save','Map images onto real narration boundaries, apply cover framing, motion and approved transitions.','Saved chapter assets and required review decisions.','Can begin while later chapters generate in the proposed scheduler.','Allowance. Existing renderer caches unchanged clips.'],
-  ['render','Motion clips and chapter assembly','render','Encode smooth still-image zoom/pan clips, mux narration and cache chapter MP4. Output resolution and frame rate select matched timing evidence.','Chapter timeline, images and audio.','Can overlap cloud work; audio/render CPU overlap requires measurement if enabled.','Matched fresh local motion/encoding clips, one worker. Chapter mux and overlays are not measured; full production is extrapolated.'],
-  ['stop','Stop and reconcile GPU','setup','Stop compute, confirm worker removed/exited and reconcile rental receipts. Saved outputs remain local.','All paid image attempts and output transfers completed.','Independent local rendering and Luna work can continue. Storage can still bill.','Eight-second shutdown allowance, distinct from actual last test lease upper bound.'],
+  ['render','Motion clips and chapter assembly','render','Encode smooth still-image zoom/pan clips, mux narration and cache chapter MP4. Output resolution and frame rate select matched timing evidence.','Chapter timeline, images and audio.','Can overlap cloud work; audio/render CPU overlap requires measurement if enabled.','Matched fresh local motion/encoding clips, one worker; some profiles include chapter assembly. Overlays, cloud transfers and long production remain unmeasured.'],
+  ['stop','Stop and reconcile GPU','setup','Stop compute, confirm worker removed/exited and reconcile rental receipts. Saved outputs remain in configured project storage.','All paid image attempts and output transfers completed.','Independent local rendering and Luna work can continue. Storage can still bill.','Eight-second shutdown allowance, distinct from actual last test lease upper bound.'],
   ['join','Join full story','finish','Join ordered cached chapter videos and optional intro once; no chapter-label narration or title overlay.','Rendered chapters and intro.','Must follow every required chapter render.','Part of explicit 2-minute auxiliary allowance, not a measured two-hour mux stage.'],
   ['probe','Routine output checks','finish','Probe duration, codecs, chapter boundaries and a few black/border samples; publish completed file and cost/time report.','Full story MP4.','These technical checks are separate from image vision QC.','Allowance; sampled checks do not certify every story image.'],
   ['decode','Exhaustive video verification','finish','Decode every final video frame. Optional research-level verification, not necessary for every normal render.','Completed final file.','Adds local CPU/disk work.','Actual two-hour decode measurement, ~20.74 minutes.'],
@@ -59,7 +59,7 @@ export const CATALOG = [
   ['denoise','FLUX sampling','gpu','Four denoising steps, Euler/Flux2, CFG 1.0, no model swap.','Encoded conditioning and seeded latent.','GPU-bound stage; same-GPU parallel copies need a separate benchmark.','Included in Infer; no separate isolated timing.'],
   ['vae','VAE pixel decode','gpu','Turn latent into visible pixels and backend output.','Denoised latent.','Must precede output download.','Included in Infer; not double-counted.'],
   ['audioEncode','Audio encoding and save','audio','Maintain continuous audio, encode chapter output and save to the helper’s persistent project.','Narration PCM.','Existing voice experiment covers inference/encoding overlap.','Included in Voice; not added twice.'],
-  ['motion','Zoom, pan and framing','render','Landscape image, cover fit, smooth subpixel zoom/pan and optional transitions.','Validated image and shot duration.','Independent clips use at most two renderer workers.','Included in Render. 1080p is not calibrated here.'],
+  ['motion','Zoom, pan and framing','render','Landscape image, cover fit, smooth subpixel zoom/pan and optional transitions.','Validated image and shot duration.','Clip concurrency depends on the selected renderer; native photo motion uses one worker and shares the laptop GPU with narration.','Included in Render. Output format selects its matched calibration; long production is extrapolated.'],
   ['cache','Cache validation and resume','save','Fingerprint saved assets/settings; keep complete outputs and known remote IDs, flag unresolved operations rather than repurchase them.','Saved journal and source revision.','Writes serialize; readonly validation can overlap.','Included in preflight and save allowances.'],
   ['retryJSON','JSON repair / API retry','director','Validate director schemas and story evidence; retry only bounded invalid responses.','Invalid model result, if any.','Costs time and tokens; observed director aggregate includes its test behavior.','Not an additional fixed duration. Outages/manual reviews cannot be predicted.']
 ].map(([id,name,lane,description,requires,parallel,basis])=>({id,name,lane,description,requires,parallel,basis}));
@@ -95,7 +95,9 @@ export function validateConfig(input, evidence) {
   return c;
 }
 
-export function buildPlan(input, evidence) {
+export function describePlan(input,evidence){return buildPlan(input,evidence,{metadataOnly:true});}
+
+export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   const c=validateConfig(input,evidence),cal=evidence.calibration;
   const nativeProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&p.backend==='native');
   const cpuProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&(p.backend||'cpu')==='cpu')||cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
@@ -128,6 +130,7 @@ export function buildPlan(input, evidence) {
   const available=Math.max(100,3000-c.chapters*20-40);
   if(c.chapters*14>30000)throw Error('The detailed browser chart exceeds its 30,000-operation memory budget. These project settings are valid, but require a larger-project view.');
   const groupSize=Math.max(c.batch,Math.ceil((count*(1+c.retries/100)+(c.intro?c.introImages:0))*8/available));
+  if(metadataOnly)return {config:c,gpu:g,measurement,renderProfile,groupSize};
   const tasks=[];let seq=0;
   const add=(id,kind,chapter,duration,deps,resources={},extra={})=>{
     if(tasks.length>=30000)throw Error('The detailed browser chart exceeds its 30,000-operation memory budget. These project settings are valid, but require a larger-project view.');

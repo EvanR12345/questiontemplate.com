@@ -1,4 +1,4 @@
-import {buildPlan} from './pipeline-engine.mjs?v=render-research-20261009d';
+import {describePlan} from './pipeline-engine.mjs?v=render-research-20261009e';
 
 export function gpuChoices(evidence) {
   const measured=(evidence.concurrency?.gpus||[]).filter(g=>
@@ -12,14 +12,14 @@ export function selectGPUConfig(config,evidence,gpu) {
   const base={...config,gpu,measurementAttempt:'latest',imageWorkers:'best'};
   if(base.resolution==='legacy') {
     base.executionMode='resident';
-    buildPlan(base,evidence);
+    describePlan(base,evidence);
     return base;
   }
   const candidates=[];
   for(const executionMode of ['resident','pipeline','hybrid']) {
     const candidate={...base,executionMode};
     try {
-      const plan=buildPlan(candidate,evidence);
+      const plan=describePlan(candidate,evidence);
       candidates.push({config:candidate,rate:plan.measurement.imagesPerSecond});
     } catch { /* No completed compatible measurement is never replaced with an estimate. */ }
   }
@@ -39,7 +39,7 @@ export function executionLabel(plan) {
 // derived speed back into cadence, which would increase the work being compared.
 export function generationSpeed(plan,evidence) {
   if(!plan.measurement)return {highest:null,current:null,isFastest:false,label:''};
-  const fastest=buildPlan(selectGPUConfig(plan.config,evidence,plan.config.gpu),evidence);
+  const fastest=describePlan(selectGPUConfig(plan.config,evidence,plan.config.gpu),evidence);
   const highest=fastest.measurement.imagesPerSecond*60,current=plan.measurement.imagesPerSecond*60;
   return {highest,current,isFastest:Math.abs(highest-current)<1e-8,label:executionLabel(fastest)};
 }
