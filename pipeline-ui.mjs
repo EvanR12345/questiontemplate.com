@@ -1,14 +1,14 @@
-import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pricing-group-20261009';
+import {createWorkerRequest} from './pipeline-worker-request.mjs?v=scheduling-20261009';
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
 import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=pricing-group-20261009';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=pricing-group-20261009';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=scheduling-20261009';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=scheduling-20261009';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=pricing-group-20261009';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=pricing-group-20261009';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=scheduling-20261009';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=scheduling-20261009';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -19,7 +19,7 @@ let directorStudy,directorStudyLoading=false;
 async function loadDirectorStudy(){
   if(directorStudyLoading||directorStudy)return;directorStudyLoading=true;
   try{
-    const {mountDirectorStudy}=await import('./pipeline-director-study.mjs?v=luna-20261009b');
+    const {mountDirectorStudy}=await import('./pipeline-director-study.mjs?v=scheduling-20261009');
     directorStudy=await mountDirectorStudy($('directorResearch'),config.minutes);
   }catch{$('directorResearch').textContent='Director study unavailable. The existing planner remains usable.';}
   finally{directorStudyLoading=false;}
@@ -32,8 +32,8 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pricing-group-20261009',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pricing-group-20261009',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=scheduling-20261009',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=scheduling-20261009',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -242,7 +242,7 @@ function tick(now){
 function download(name,value,type){const blob=new Blob([value],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function start(){
   try{
-    const response=await fetch('./pipeline-evidence.json?v=pricing-group-20261009');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
+    const response=await fetch('./pipeline-evidence.json?v=scheduling-20261009');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
     if(concurrencyResponse.ok){
       evidence.concurrency=await concurrencyResponse.json();
@@ -274,7 +274,6 @@ async function start(){
       if(k==='chapters'){next.readyChapters=Math.min(next.readyChapters,next.chapters);}
       if(k!=='gpuStartSeconds'&&k!=='uncertainty'&&next.gpuStartSeconds>0){next.gpuStartSeconds=0;toast('Timed GPU startup cleared after settings changed. Recalculate using Spend less on rented waiting.');}
       // Never silently change the user's check level to satisfy installed overlap.
-      if(next.policy==='current'&&!['practical','strict'].includes(next.qc)){toast('Installed overlap needs Practical/Strict checks. Choose those checks, or use Proposed mode.');setControls();return;}
       try{if(['gpu','resolution','encodingProfile'].includes(k))next=selectGPUConfig(next,evidence,next.gpu);buildPlan(next,evidence);const u=Number($('uncertainty').value);if(!Number.isFinite(u)||u<0||u>100)throw Error('Sensitivity must be 0–100%.');checkpoint();config=next;uncertainty=u;preferences={};selected=null;setControls();rebuild();if(['gpu','resolution','encodingProfile'].includes(k))toast('Automatically selected fastest tested settings: '+executionLabel(plan));}catch(e){toast(e.message);setControls();}
       };
       $(k).addEventListener('change',()=>{clearTimeout(controlTimer);apply();});

@@ -7,6 +7,7 @@ import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=connection-20261009";
 import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
 import {rendererPlacement} from './studio-render-status.mjs?v=render-research-20261009';
+import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=scheduling-20261009';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
 import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=files-20261009b';
 import {
@@ -52,6 +53,8 @@ let key = pairingKey(),
 let cacheWarning="";
 let connectionPromise;
 const startingProduction=new Set();
+const strategyChoices=new Map(),strategyDirty=new Set(),performanceReports=new Map();
+const learnedCompletion=new Map();
 const settingsDrafts=createFormDrafts(),projectSelection=createProjectSelection();
 const mediaCache = new Map();
 const progressReader=createProgressReader(qualityDecision);
@@ -63,6 +66,12 @@ function settingsDraftStatus(){
   const status=$('#settingsDraftStatus');
   if(status)status.textContent=settingsDrafts.has(project?.id)?'Unsaved settings · retained in this open page until you save.':'';
 }
+async function loadPerformance(target) {
+  const report=await api('performance?project='+encodeURIComponent(target));
+  performanceReports.set(target,report);
+  if(project.id===target && $('#productionPerformance'))$('#productionPerformance').textContent=forecastText(report)+(report.warning?' '+report.warning:'');
+  return report;
+}
 function rememberSettings(event){
   if(tab!=='settings'||!project||!root.contains(event.target))return;
   if(/^(setting|intro|eng)/.test(event.target.id)&&settingsDrafts.remember(project.id,event.target))settingsDraftStatus();
@@ -70,7 +79,7 @@ function rememberSettings(event){
 root.addEventListener('input',rememberSettings);
 root.addEventListener('change',rememberSettings);
 window.addEventListener('beforeunload',event=>{
-  if(editorSave.dirty||settingsDrafts.dirty||document.querySelector('dialog.studio-form-dialog[open][data-unsaved="true"]')){event.preventDefault();event.returnValue='';}
+  if(editorSave.dirty||settingsDrafts.dirty||strategyDirty.size||document.querySelector('dialog.studio-form-dialog[open][data-unsaved="true"]')){event.preventDefault();event.returnValue='';}
 });
 const switcher = document.createElement("nav");
 switcher.className = "production-switch";
@@ -483,12 +492,13 @@ function render() {
     Number.isFinite(project.settings.budget?.openaiUSD) && project.settings.budget.openaiUSD > 0 &&
     !project.settings.economyPanels;
   const placement = rendererPlacement(connected,health);
+  const generationStrategy=strategyChoices.get(project.id) || selectedStrategy(project);
   root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · edits use this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${options(
     projects.map((p) => [p.id, p.name+(p.loadError?" · needs recovery":"")]),
     project.id,
   )}</select><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
   <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
-  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong><p class="muted">Add your chapters below, then start the full workflow. Saved results and manual edits are preserved. Voice generation stays on your computer.</p><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && overlapRequested ? "checked" : ""} ${overlapEligible ? "" : "disabled"}> Overlap cloud tasks (preview)</label><p class="muted">Runs direction and images together, plus only the reviews selected in Settings. Requires cloud images, Luna and an API spending cap.</p><details data-ui="render-placement"><summary>${escape(placement.title)}</summary><p class="muted">${escape(placement.detail)}</p></details><div id="productionReadiness" role="status"></div><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><div class="toolbar"><button id="productionCheckReadiness" ${connected ? "" : "disabled"}>Check readiness</button><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div></div>
+  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong><p class="muted">Add your chapters below, then start the full workflow. Saved results and manual edits are preserved. Voice generation stays on your computer.</p><label>Generation strategy<select id="productionStrategy" aria-describedby="productionStrategyHelp">${options(STRATEGIES,generationStrategy)}</select></label><p id="productionStrategyHelp" class="muted">${escape(strategyDescription(generationStrategy))}</p><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && (generationStrategy!=='legacy' || overlapRequested) ? "checked" : ""} ${overlapEligible && generationStrategy==='legacy' ? "" : "disabled"}> Overlap cloud tasks</label><p class="muted">Requires cloud images, Luna and an API spending cap. Reviews and independent Luna calls follow your saved Settings.</p><details data-ui="learned-timings"><summary>Timing history and estimate coverage</summary><p id="productionPerformance" class="muted">${escape(forecastText(performanceReports.get(project.id)))}</p><button id="productionTimingRefresh" ${connected ? '' : 'disabled'}>Refresh matching estimates</button></details><details data-ui="render-placement"><summary>${escape(placement.title)}</summary><p class="muted">${escape(placement.detail)}</p></details><div id="productionReadiness" role="status"></div><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><div class="toolbar"><button id="productionCheckReadiness" ${connected ? "" : "disabled"}>Check readiness</button><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div></div>
   ${project._unsynced ? '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>' : ""}
   ${project.warnings
     .filter((w) => !w.resolved)
@@ -773,6 +783,7 @@ function renderQueue() {
               : run.stage || run.message || run.status;
     const delivery=ready?videoDeliveryStatus(project,queue.storage):null;
     runStatus.innerHTML = `<span>${escape(status)}${delivery?' · '+escape(delivery.label):''}</span>${ready ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}${delivery?.retry?'<button id="retryVideoCloudSave">Retry cloud save</button>':''}`;
+    if(run.generationStrategyLabel)runStatus.insertAdjacentHTML('beforeend',`<p class="muted">This run: ${escape(run.generationStrategyLabel)} · GPU rental start/stop remain external.</p>`);
     $('#retryVideoCloudSave')?.addEventListener('click',()=>action(async()=>{
       await api('storage-sync',{project:project.id});queue=await api('queue');renderQueue();
     }));
@@ -785,29 +796,15 @@ function renderQueue() {
         });
     if (activeFullRun?.started && activeFullRun.kind === "produce-story") {
       const elapsed = Math.max(0, Date.now() / 1000 - activeFullRun.started);
-      const samples = (run.timings || [])
-        .filter(
-          (t) =>
-            t.stage === "Image + quality checks" &&
-            t.status === "COMPLETE" &&
-            t.chapter === run.chapterNumber,
-        )
-        .slice(-5);
+      const estimate=imageWorkEstimate(run.timings || [],run.chapterNumber,activeFullRun.started,run.totalImages-run.completedImages);
       let remaining =
         "Full-story ETA is being measured as chapters are planned.";
       if (
-        samples.length >= 2 &&
+        estimate &&
         run.shotId &&
         run.totalImages > run.completedImages
       ) {
-        const average =
-          samples.reduce((sum, item) => sum + item.seconds, 0) / samples.length;
-        const seconds = Math.max(
-          average,
-          (run.totalImages - run.completedImages) * average -
-            Math.max(0, Date.now() / 1000 - run.updated),
-        );
-        remaining = `Images remaining in this chapter: approximately ${time(seconds * 0.8)}–${time(seconds * 1.25)}. Later chapters and rendering take additional time.`;
+        remaining = `Remaining chapter image work: about ${time(estimate.seconds)} at the observed throughput of ${estimate.samples} matching fresh shots. This is work, not a complete elapsed ETA; later chapters, idle gaps and rendering take additional time.`;
       }
       runStatus.insertAdjacentHTML(
         "beforeend",
@@ -954,12 +951,35 @@ function wire() {
   }
   $('#prepareOutro')?.addEventListener('click',()=>action(async()=>{await saveSettings();await submit('outro-audio');}));
   $("#productionOverlap").onchange = (event) => { overlapRequested = event.target.checked; };
+  const productionOptions=()=>strategyOptions($('#productionStrategy').value,
+    connected && health?.cloudSchedulingAvailable && project.settings.image.provider==='comfyui' &&
+    project.settings.director.provider==='openai-luna' && Number(project.settings.budget?.openaiUSD)>0 && !project.settings.economyPanels,
+    !!$('#productionOverlap')?.checked);
+  const saveStrategy=async()=>{
+    const wanted=strategyChoices.get(project.id) || selectedStrategy(project),target=project.id;
+    if(project.generationStrategy!==wanted)await patch('project',target,{generationStrategy:wanted});
+    if(project.id===target && (strategyChoices.get(target)||selectedStrategy(project))===wanted)strategyDirty.delete(target);
+  };
+  $('#productionStrategy').onchange=event=>{
+    const wanted=event.target.value,target=project.id;strategyChoices.set(target,wanted);strategyDirty.add(target);
+    void action(async()=>{
+      if(project.id!==target)return;
+      await saveStrategy();
+      if(project.id===target)render();
+    });
+  };
+  const refreshPerformance=async()=>{
+    return loadPerformance(project.id);
+  };
+  $('#productionTimingRefresh').onclick=()=>action(refreshPerformance);
   const checkReadiness=async()=>{
     const targetProject=project.id;
     await saveSettingsIfVisible();
+    await saveStrategy();
     if(project.id!==targetProject)throw Error('Project selection changed. Check the current project again.');
-    const overlap=!!$("#productionOverlap")?.checked;
-    const readiness=await api("production-readiness?project="+encodeURIComponent(project.id)+"&overlap="+overlap);
+    const planned=productionOptions();
+    const readiness=await api("production-readiness?project="+encodeURIComponent(project.id)+"&overlap="+planned.overlap+'&generationStrategy='+planned.generationStrategy);
+    await refreshPerformance();
     if(project.id!==targetProject)throw Error('Project selection changed. Check the current project again.');
     $("#productionReadiness").innerHTML=`<details open><summary>${readiness.ready?'Ready to start':'Setup needs attention'}</summary><ul>${readiness.checks.map(x=>`<li>${x.ready?'✓':x.blocking?'Required:':'Note:'} ${escape(x.message)}</li>`).join('')}</ul><p class="muted">These checks do not generate images, rent a GPU or spend API tokens.</p></details>`;
     return readiness;
@@ -974,12 +994,12 @@ function wire() {
         const readiness=await checkReadiness();
         await flush();
         if(project.id!==targetProject)throw Error('Project selection changed. Start generation again in the intended project.');
-        const overlap=!!$("#productionOverlap")?.checked;
+        const planned=productionOptions();
         if(!readiness.ready){
           const issues=readiness.checks.filter(x=>x.blocking&&!x.ready).map(x=>x.message);
           throw Error('Before generation: '+issues.join(' '));
         }
-        queue=await api('jobs',{project:targetProject,kind:'produce-story',options:{overlap,preflightRevision:readiness.revision}});
+        queue=await api('jobs',{project:targetProject,kind:'produce-story',options:{...planned,preflightRevision:readiness.revision}});
         note('Full video queued. Keep the shared helper running. Pause, cancel or retry here; completed work is saved and reused.');
       }finally{startingProduction.delete(targetProject);renderQueue();}
     });
@@ -1976,6 +1996,12 @@ async function poll() {
   try {
     queue = await api("queue");
     renderQueue();
+    const completion=queue.jobs?.find(j=>j.project===requestedProjectId && ['COMPLETE','FAILED','CANCELLED'].includes(j.status) && j.started);
+    const observation=completion && JSON.stringify([completion.id,completion.started,completion.seconds,completion.status]);
+    if(observation && learnedCompletion.get(requestedProjectId)!==observation){
+      try{await loadPerformance(requestedProjectId);learnedCompletion.set(requestedProjectId,observation);}
+      catch{if(project.id===requestedProjectId && $('#productionPerformance'))$('#productionPerformance').textContent='Timing history could not refresh. Saved work is retained; use Refresh matching estimates to retry.';}
+    }
     if (
       !dirty && !project._unsynced && project.id===requestedProjectId &&
       !document.querySelector("dialog.studio-form-dialog[open]") &&

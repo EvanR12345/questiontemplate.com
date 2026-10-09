@@ -1,4 +1,4 @@
-import {describePlan} from './pipeline-engine.mjs?v=pricing-group-20261009';
+import {describePlan} from './pipeline-engine.mjs?v=scheduling-20261009';
 
 export function gpuChoices(evidence) {
   const measured=(evidence.concurrency?.gpus||[]).filter(g=>

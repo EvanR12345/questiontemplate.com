@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {createProjectSelection} from './studio-form-drafts.mjs';
+import {selectedStrategy,strategyOptions} from './studio-generation-plan.mjs';
 const source=fs.readFileSync(new URL('./story-studio.mjs',import.meta.url),'utf8');
 const deferred=()=>{let resolve,reject;return {promise:new Promise((y,n)=>{resolve=y;reject=n;}),get resolve(){return resolve;},get reject(){return reject;}};};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(api){
   const controls=new Map(),calls=[],tasks=[],notes=[];
-  const get=selector=>{if(!controls.has(selector))controls.set(selector,{value:'a',checked:false,innerHTML:'',addEventListener(){},click(){}});return controls.get(selector);};
-  const context={project:{id:'a',revision:3,chapters:[{id:'ch-a'}]},chapterId:'ch-a',connected:true,tab:'write',
+  const get=selector=>{if(!controls.has(selector))controls.set(selector,{value:selector==='#productionStrategy'?'align':'a',checked:false,innerHTML:'',addEventListener(){},click(){}});return controls.get(selector);};
+  const context={project:{id:'a',revision:3,chapters:[{id:'ch-a'}],settings:{image:{provider:'comfyui'},director:{provider:'openai-luna'},budget:{openaiUSD:1}}},chapterId:'ch-a',connected:true,tab:'write',
+    health:{cloudSchedulingAvailable:true},strategyChoices:new Map(),strategyDirty:new Set(),selectedStrategy,strategyOptions,
+    loadPerformance:async()=>({history:{},forecast:{}}),patch:async(scope,target,patch)=>Object.assign(context.project,patch),
     editorSave:{revision:1},projectSelection:createProjectSelection(),startingProduction:new Set(),
     root:{querySelectorAll:()=>[]},$:get,api:async(path,body)=>{calls.push({path,body});return api(path,body);},
     dirtyEditor:()=>{},flush:async()=>{},saveSettingsIfVisible:async()=>{},render:()=>{},renderQueue:()=>{},cache:async()=>{},
@@ -50,6 +53,22 @@ test('double-clicking full production issues one readiness request and one job',
   ready.resolve({ready:true,revision:3,checks:[]});await Promise.all([first,second]);
   const jobs=f.calls.filter(c=>c.path==='jobs');assert.equal(jobs.length,1);assert.equal(jobs[0].body.project,'a');
   assert.equal(jobs[0].body.options.preflightRevision,3);assert.equal(f.context.startingProduction.size,0);
+  assert.equal(jobs[0].body.options.generationStrategy,'align');assert.equal(jobs[0].body.options.overlap,true);
+});
+
+test('selected fastest dispatch reaches the actual production job and is saved',async()=>{
+  const f=fixture(async()=>({ready:true,revision:3,checks:[]}));
+  f.get('#productionStrategy').value='fastest';f.get('#productionStrategy').onchange({target:f.get('#productionStrategy')});
+  await f.tasks.at(-1);
+  assert.equal(f.context.project.generationStrategy,'fastest');assert.equal(f.context.strategyDirty.size,0);
+  await f.get('#productionFullVideo').onclick();
+  assert.equal(f.calls.find(c=>c.path==='jobs').body.options.generationStrategy,'fastest');
+});
+
+test('an older helper cannot silently execute a timed strategy as the old workflow',async()=>{
+  const f=fixture(async()=>({ready:true,revision:3,checks:[]}));f.context.health.cloudSchedulingAvailable=false;
+  await f.get('#productionFullVideo').onclick();
+  assert.equal(f.calls.filter(c=>c.path==='jobs').length,0);assert.match(f.notes.at(-1),/Timed generation requires/);
 });
 test('changing project during readiness never queues expensive work for either project',async()=>{
   const ready=deferred(),f=fixture(()=>ready.promise);const pending=f.get('#productionFullVideo').onclick();await settle();

@@ -60,6 +60,9 @@ def validate_overlap(project, options):
 class CloudStoryOverlap:
     def __init__(self, service, project, options):
         validate_overlap(project,options)
+        from studio_schedule import strategy
+        self.strategy=strategy(options)
+        self.scheduler=None
         self.root=service
         self.project=project['id']
         self.settings=copy.deepcopy(project['settings'])
@@ -88,6 +91,12 @@ class CloudStoryOverlap:
         self.chapter_dependencies=[]
         self.chapters=[chapter['id'] for chapter in project['chapters'] if chapter['sourceText'].strip()]
         self.chapter_futures={}
+        self.image_tasks=options.get('overlapShots',3)
+        self.pipeline_observations=[]
+        self.pipeline_recorded=False
+        if self.strategy!='legacy':
+            from studio_schedule import ChapterImageScheduler
+            self.scheduler=ChapterImageScheduler(self,self.strategy)
 
     def admit(self, project, chapter, shot, kind, fingerprint, dependencies=()):
         context=self.coordinator.call(self.journal.admit,self.parent,self.project,chapter,shot,kind,
@@ -110,6 +119,7 @@ class CloudStoryOverlap:
     def gate(self, context, message='', step=0,total=0,wait_paused=True):
         # No mutable current-job lookup: every callback owns this immutable ID.
         from studio_service import JobCancelled, AudioYield
+        if wait_paused and self.scheduler:self.scheduler.check()
         with self.root.cv:
             while True:
                 if self.root.closed or self.root.cancel or context.cancelled.is_set():raise JobCancelled()
@@ -138,6 +148,7 @@ class CloudStoryOverlap:
         clone.store=CoordinatedStore(self.root.store,self.coordinator)
         clone.trace=CoordinatedTrace(self.root.trace,self.coordinator)
         clone._overlap=self
+        clone._timing_pause_epoch=self.root.pause_epoch
         clone.execution_context=context
         clone.gate=lambda *args,**kwargs:self.gate(context,*args,**kwargs)
         clone.checkpoint=lambda step,total,message:clone.gate(message,step,total,wait_paused=False)
@@ -171,9 +182,21 @@ class CloudStoryOverlap:
         return clone
 
     def before_chapter(self, chapter):
+        if self.scheduler:
+            self.scheduler.check()
+            return
         index=self.chapters.index(chapter)
         for earlier in self.chapters[:max(0,index-1)]:
             self.pool.wait_for(self.chapter_futures.get(earlier,[]))
+
+    def publish_chapter(self,project,chapter,index,chapters):
+        self.accepted_chapters=getattr(self,'accepted_chapters',set()) | {chapter}
+        forecast=self.main.performance_forecast(project,accepted=self.accepted_chapters)
+        self.scheduler.publish(project,chapter,index,chapters,forecast)
+        self.coordinator.call(self.root.store.mutate,self.project,lambda p:p.setdefault('production',{}).update(
+            scheduling={'strategy':self.strategy,'planningReady':len(self.accepted_chapters),
+                'planningChapters':len(chapters),'imageDispatchStarted':self.scheduler.started,
+                'bufferSeconds':15,'forecast':forecast,'rentalControl':'external'}))
 
     def director_calls(self, project, chapter, calls, expected=None):
         """Only independent finishing/prompt passes, with separate durable owners."""
@@ -206,7 +229,8 @@ class CloudStoryOverlap:
                 clone.director.receive_gate=lambda message:ordinary_gate(message,wait_paused=False)
                 clone.director.timing_callback=lambda stage,seconds,details:clone.record_timing(
                     self.project,stage,seconds,details | {'chapter':get_chapter(snapshot,chapter)['number'],
-                        'detail':True,'parallelDirector':True})
+                        'detail':True,'parallelDirector':True,
+                        'paused':self.root.pause_epoch!=clone._timing_pause_epoch})
                 result=getattr(clone.director,method)(copy.deepcopy(payload),dispatch_gate)
                 validate_director_result(method,payload,result)
                 latest=self.validate_settings()
@@ -324,14 +348,28 @@ class CloudStoryOverlap:
             raise
 
     def drain(self):
+        if self.scheduler:self.scheduler.finish()
         self.pool.drain()
         if any(context.cancelled.is_set() for context in self.contexts):
             raise ValueError('A shot task was cancelled. Other submitted tasks finished; saved assets and unresolved receipts are retained.')
+        if not self.pipeline_recorded:
+            self.pipeline_recorded=True
+            rows=self.pipeline_observations
+            # Per-shot latency includes queue waits and concurrent QC. Use the
+            # union of completed intervals once, never sum those latencies.
+            if rows and all(r['eligible'] for r in rows) and len({r['profile'] for r in rows})==1:
+                from studio_performance import interval_union
+                seconds=interval_union([(r['start'],r['end']) for r in rows])
+                self.main.record_timing(self.project,'Image pipeline',seconds,
+                    {'status':'COMPLETE','images':len(rows),'shot':rows[0]['shot'],'detail':True,
+                        'imageTasks':self.image_tasks,'timingSource':'busy-interval-union',
+                        'note':'Delivered-image throughput includes selected reviews and waiting inside active tasks; nested shot latencies are not added.'})
 
     def close(self, status, message=''):
         if status!='COMPLETE':
             for context in self.contexts:context.cancelled.set()
             with self.root.cv:self.root.cv.notify_all()
+        if self.scheduler:self.scheduler.close()
         self.pool.close()
         self.coordinator.call(self.journal.finish,self.main_context.identity,status,message)
         with self.root.cv:

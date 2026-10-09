@@ -93,7 +93,6 @@ export function validateConfig(input, evidence) {
   if(c.resolution!=='legacy'&&c.policy==='current')throw Error('Measured worker groups are an experiment. Use Proposed or Sequential scheduling.');
   if(!['serial','current','proposed'].includes(c.policy)) throw Error('Unknown schedule mode.');
   if(!['off','sampled','practical','strict'].includes(c.qc)) throw Error('Unknown check level.');
-  if(c.policy==='current'&&!['practical','strict'].includes(c.qc)) throw Error('The installed overlap requires Practical or Strict vision checks. Use Proposed for an Off/Sampled experiment.');
   for(const key of ['intro','warmCache','cpuOverlap','exhaustive','earlyGpu']) if(typeof c[key]!=='boolean') throw Error(`${key} must be true or false.`);
   if(c.readyChapters>c.chapters)throw Error('GPU readiness chapters cannot exceed chapter count.');
   if(!Number.isFinite(Number(c.gpuStartSeconds))||Number(c.gpuStartSeconds)<0)throw Error('GPU boot time must be a finite, nonnegative number of seconds from project start.');

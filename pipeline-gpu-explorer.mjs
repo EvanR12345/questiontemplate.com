@@ -1,4 +1,4 @@
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=pricing-group-20261009';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=scheduling-20261009';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const missing=value=>value===null||value===undefined||value===''||(typeof value==='number'&&!Number.isFinite(value));
 const GROUPS={profiles:'resident',productionProfiles:'resident',pipelineProfiles:'pipeline',hybridProfiles:'hybrid'};

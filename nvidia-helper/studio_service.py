@@ -23,6 +23,7 @@ from prompt_quality import generation_measurements
 from production_trace import ProductionTrace
 from prompt_preflight import require_shot
 from queue_estimates import remaining_time, timing_profile
+from studio_performance import PerformanceStore,profile_for,observation_units,signature as performance_signature
 from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, FLOW_VERSION, audio_segments, effect_pcm, create_connected_audio, speech_pcm
 
 
@@ -51,6 +52,8 @@ class StudioService:
     ):
         self.store = ProjectStore(root)
         self.trace = ProductionTrace(self.store.root / 'production-trace.sqlite3')
+        self.performance = PerformanceStore(self.store.root / 'performance.sqlite3')
+        self.pause_epoch = 0
         self.audio = audio
         self.gpu_lock = gpu_lock
         self.before_audio = before_audio
@@ -126,7 +129,12 @@ class StudioService:
         timings.append({'stage':stages[job['kind']], 'seconds':round(job['seconds'], 3),
                         'finished':job['started'] + job['seconds'], 'jobId':job['id'],
                         'attemptStarted':job['started'], 'chapter':chapter, 'shot':job.get('shot'),
-                        'status':job['status'], 'timingSource':'queue-attempt'})
+                        'status':job['status'], 'timingSource':'queue-attempt',
+                        'paused':job.get('pausedDuringAttempt',False),
+                        'performanceProfile':job.get('performanceProfile'),
+                        'performanceUnits':job.get('performanceUnits'),
+                        'performanceRun':job['id'],
+                        'performanceId':performance_signature({'job':job['id'],'started':job['started']})})
 
     def sync_queue_states(self, project_id=None, completed_job=None):
         """Restore persistent item states without touching completed image assets."""
@@ -264,6 +272,7 @@ class StudioService:
         return {
             "studioProtocol": 1,
             "cloudOverlapAvailable":True,
+            "cloudSchedulingAvailable":True,
             "storage": self.storage.status(),
             "hardware": hardware,
             "director": self.director.healthCheck(),
@@ -457,6 +466,8 @@ class StudioService:
         """Read-only checks before the first potentially paid production stage."""
         import shutil
         p=self.store.load(pid);options=options or {};checks=[]
+        from studio_schedule import strategy,LABELS
+        selected_strategy=strategy(options)
         def check(name, ready, message, blocking=True):
             checks.append({'name':name,'ready':bool(ready),'message':message,'blocking':blocking})
         chapters=[c for c in p['chapters'] if c['sourceText'].strip()]
@@ -503,13 +514,18 @@ class StudioService:
         check('archive',storage.get('enabled') and storage.get('provider')=='Google Cloud Storage',
               'Permanent project and media archive must be connected to Google storage.')
         check('rental',False,'A paused Studio queue does not stop a manually rented GPU. Keep its rental window bounded.',False)
+        check('strategy',True,LABELS[selected_strategy]+'. This controls image dispatch; GPU rental remains external. Uncalibrated alignment plans chapters first.',False)
         return {'project':pid,'revision':p['revision'],'ready':all(x['ready'] for x in checks if x['blocking']),
+                'generationStrategy':selected_strategy,'rentalControl':'external',
                 'voiceLocation':'local','renderLocation':'local','checks':checks,'paidRequestsSubmitted':0}
 
     def enqueue(self, pid, chapter, kind, shots=None, options=None):
         p = self.store.load(pid)
         self.require_resolved_execution(pid,kind)
         options = options or {}
+        if kind=='produce-story':
+            from studio_schedule import strategy
+            strategy(options)
         if options.get('preflightRevision') is not None and options['preflightRevision']!=p['revision']:
             raise ValueError('Project changed after readiness checks. Check the current project before starting.')
         if 'overlap' in options and not isinstance(options['overlap'],bool):
@@ -685,6 +701,7 @@ class StudioService:
             raise UnresolvedExecution('Project has unresolved remote work. Reconcile saved execution IDs before dispatching again.')
 
     def select_director(self, project):
+        self._timing_pause_epoch=getattr(getattr(self,'_overlap',None),'root',self).pause_epoch
         if getattr(self,'_overlap',None):
             self.validate_execution()
         selected = project["settings"]["director"].get("provider", "local-qwen")
@@ -755,6 +772,7 @@ class StudioService:
             action = 'resume'
         with self.cv:
             if action == "pause":
+                self.pause_epoch += 1
                 self.paused = True
             elif action == "resume":
                 self.paused = False
@@ -857,6 +875,8 @@ class StudioService:
                 self.cancel = False
                 self.yield_requested = False
                 started = time.time()
+                attempt_pause_epoch=self.pause_epoch
+                job_performance={}
                 self.db.execute(
                     "UPDATE jobs SET status='RUNNING',started=?,attempt=attempt+1 WHERE id=?",
                     (started, job["id"]),
@@ -874,6 +894,13 @@ class StudioService:
                     self.gate("Waiting for GPU helper")
                 try:
                     p = self.store.load(job["project"])
+                    direct_stage={'image':'Image generation','qc':'Visual QC','narration':'Narration',
+                        'render-chapter':'Render chapter','render-full':'Assemble full video',
+                        'character-reference':'Character reference','intro-image':'Intro images'}.get(job['kind'])
+                    if direct_stage:
+                        detail={'chapter':get_chapter(p,job['chapter'])['number'] if job['chapter'] else None,'shot':job['shot']}
+                        job_performance={'performanceProfile':profile_for(direct_stage,p,self.config,detail),
+                            'performanceUnits':observation_units(direct_stage,p,detail)}
                     self.require_resolved_execution(p['id'],job['kind'])
                     options = json.loads(job["payload"])
                     if job["kind"] == "produce-story":
@@ -1082,7 +1109,12 @@ class StudioService:
                     self.current = None
                     self.cancel = False
                     self.cv.notify_all()
-                self.sync_queue_states(job['project'], job | {'started':started, 'seconds':elapsed, 'status':state})
+                completion=job | {'started':started, 'seconds':elapsed, 'status':state,
+                    'pausedDuringAttempt':self.pause_epoch!=attempt_pause_epoch,**job_performance}
+                self.sync_queue_states(job['project'],completion)
+                self.learn_performance(performance_signature({'job':job['id'],'started':started}),job['id'],
+                    job_performance.get('performanceProfile'),job_performance.get('performanceUnits'),elapsed,
+                    {'status':state,'paused':completion['pausedDuringAttempt']},started+elapsed)
 
     def production_progress(self, pid, stage, **details):
         """Persist the current stage alongside assets, including between restarts."""
@@ -1095,9 +1127,16 @@ class StudioService:
         self.gate(stage)
 
     def record_timing(self, pid, stage, seconds, details=None, trace_record=True):
+        learned={};observed_at=time.time()
         context=getattr(self,'execution_context',None)
         if context:
             details=(details or {}) | {'executionId':context.identity,'inputHash':context.input_hash,'jobId':context.parent_job}
+        root=getattr(getattr(self,'_overlap',None),'root',self)
+        if root.paused or root.pause_epoch!=getattr(self,'_timing_pause_epoch',root.pause_epoch):
+            details=(details or {}) | {'paused':True}
+        run_id=(details or {}).get('jobId') or self.current or getattr(self,'_performance_run_id','manual')
+        observation_id=performance_signature({'project':pid,'stage':stage,'finished':observed_at,
+            'job':(details or {}).get('executionId',self.current)})
         if trace_record:
             self.trace.record(pid, stage, seconds, details)
         def save(p):
@@ -1106,16 +1145,46 @@ class StudioService:
                 costs = production.setdefault('costs',{})
                 costs['apiEstimatedUSD'] = costs.get('apiEstimatedUSD',0) + details['estimatedUSD']
             timings = production.setdefault("timings", [])
+            profile=profile_for(stage,p,self.config,details)
+            units=observation_units(stage,p,details or {})
+            learned.update(profile=profile,units=units)
+            overlap=getattr(self,'_overlap',None)
+            if overlap and stage=='Image + quality checks':
+                pipeline_profile=profile_for('Image pipeline',p,self.config,
+                    (details or {}) | {'imageTasks':overlap.image_tasks})
+                with overlap.root.cv:overlap.pipeline_observations.append({
+                    'start':observed_at-seconds,'end':observed_at,
+                    'profile':performance_signature(pipeline_profile),'shot':(details or {}).get('shot'),
+                    'eligible':(details or {}).get('status')=='COMPLETE' and not any(
+                        (details or {}).get(k) for k in ('paused','reused','usagePending'))})
             timings.append(
                 {
                     "stage": stage,
                     "seconds": round(seconds, 3),
-                    "finished": time.time(),
+                    "finished": observed_at,
+                    "performanceProfile": profile,
+                    "performanceUnits": units,
+                    "performanceRun": run_id,
+                    "performanceId": observation_id,
                     **(details or {}),
                 }
             )
 
         self.store.mutate(pid, save)
+        self.learn_performance(observation_id,run_id,
+            learned['profile'],learned['units'],seconds,details or {},observed_at)
+
+    def learn_performance(self,*args,**kwargs):
+        # Asset production must not fail because the optional calibration DB is
+        # temporarily unavailable. Profiled timings remain in project history.
+        root=getattr(getattr(self,'_overlap',None),'root',self)
+        try:
+            result=self.performance.record(*args,**kwargs)
+            root.performance_warning=None
+            return result
+        except (OSError,sqlite3.Error):
+            root.performance_warning='Timing history is saved with the project; calibration could not update. Retry its timing report after storage recovers.'
+            return False
 
     def measured_stage(self, pid, stage, callback, *args, **details):
         overlap=getattr(self,'_overlap',None)
@@ -1129,22 +1198,108 @@ class StudioService:
             return self._measured_stage(pid, stage, callback, *args, **details)
 
     def _measured_stage(self, pid, stage, callback, *args, **details):
+        root=getattr(getattr(self,'_overlap',None),'root',self)
+        pause_epoch=root.pause_epoch
+        was_paused=root.paused
+        old_audio=None
+        if stage=='Narration' and len(args)>1 and isinstance(args[1],dict):
+            old_audio=copy.deepcopy(args[1].get('audio',{}))
+            old_audio_available=bool(old_audio.get('path') and self.store.has_asset(pid,old_audio['path']))
+        if stage=='AI directing':
+            p=next((a for a in args if isinstance(a,dict) and a.get('id')==pid),None)
+            if p:details['directorTasks']=p['settings']['director'].get('parallelism',1) if getattr(self,'_overlap',None) else 1
         began = time.monotonic()
+        began_at=time.time()
         try:
             result = callback(*args)
         except Exception:
             self.record_timing(
-                pid, stage, time.monotonic() - began, details | {"status": "FAILED"}, trace_record=False
+                pid, stage, time.monotonic() - began, details | {"status": "FAILED","paused":was_paused or root.pause_epoch!=pause_epoch}, trace_record=False
             )
             raise
+        if old_audio is not None:
+            current_audio=get_chapter(self.store.load(pid),args[1]['id']).get('audio',{})
+            details['reused']=bool(old_audio_available and old_audio==current_audio)
+        if stage=='AI directing':
+            # A retry can use many paid replies from the durable cache. Its
+            # shorter wall time must not train a fresh full-chapter forecast.
+            recent=self.store.load(pid).get('production',{}).get('timings',[])
+            details['reused']=any(t.get('reused') and t.get('detail') and
+                t.get('chapter')==details.get('chapter') and t.get('finished',0)>=began_at for t in recent)
+        status=result.get('status') if isinstance(result,dict) else None
         self.record_timing(
-            pid, stage, time.monotonic() - began, details | {"status": "COMPLETE"}, trace_record=False
+            pid, stage, time.monotonic() - began, details | {"status":status if status in ('SUPERSEDED','CANCELLED','FAILED') else "COMPLETE","paused":was_paused or root.pause_epoch!=pause_epoch}, trace_record=False
         )
         return result
 
     def trace_report(self, pid):
         project = self.store.load(pid)
         return self.trace.report(pid, project['settings'].get('cloudWindow'))
+
+    def performance_forecast(self,project,accepted=None):
+        """Matching stage estimates; unknown work is never quietly zero."""
+        accepted=accepted or set();planning=0;images=0;unknown=[];observations=[];cache={}
+        def measure(stage,units,details):
+            profile=profile_for(stage,project,self.config,details)
+            key=(performance_signature(profile),units['kind'])
+            if key not in cache:
+                cache[key]=self.performance.estimate(profile,{'kind':units['kind'],'value':1})
+            base=cache[key];row=dict(base)
+            if base['seconds'] is not None:
+                row['seconds']=base['seconds']*units['value']
+                row['rangeSeconds']=[v*units['value'] for v in base['rangeSeconds']]
+                if base['costUSD'] is not None:row['costUSD']=base['costUSD']*units['value']
+            row['units']=units
+            observations.append({'stage':stage,**row})
+            if row['seconds'] is None:unknown.append(stage)
+            return row['seconds']
+        for chapter in project['chapters']:
+            if not chapter['sourceText'].strip():continue
+            if chapter['id'] not in accepted:
+                units={'kind':'characters','value':len(chapter.get('cleanNarrationText') or chapter['sourceText'])}
+                audio=chapter.get('audio',{})
+                if not audio.get('path') or not self.store.has_asset(project['id'],audio['path']):
+                    seconds=measure('Narration',units,{'chapter':chapter['number']})
+                    if seconds is not None:planning+=seconds
+                if not self.analysis_is_current(project,chapter,audio.get('signature')):
+                    seconds=measure('AI directing',units,{'chapter':chapter['number']})
+                    if seconds is not None:planning+=seconds
+            else:
+                active={person['id'] for scene in chapter['scenes'] for shot in scene['shots']
+                    for person in shot['characters'] if person['type']=='main'}
+                if any(person['id'] in active and not person.get('references') for person in project['characters']):
+                    unknown.append('Character reference')
+                for scene in chapter['scenes']:
+                    for shot in scene['shots']:
+                        if self.saved_image_ready(project,shot):continue
+                        seconds=measure('Image pipeline',{'kind':'images','value':1},
+                            {'chapter':chapter['number'],'shot':shot['id'],
+                                '_shotSpec':shot,
+                                'imageTasks':getattr(getattr(self,'_overlap',None),'image_tasks',3)})
+                        if seconds is not None:images+=seconds
+        unique={performance_signature(row.get('profile') or {'stage':row['stage'],'status':row['status']}):row for row in observations}
+        return {'planningSeconds':None if any(x in ('Narration','AI directing') for x in unknown) else planning,
+            'readyImageSeconds':None if any(x in ('Image pipeline','Character reference') for x in unknown) else images,
+            'unknownStages':sorted(set(unknown)),'profiles':list(unique.values()),
+            'scope':'Remaining narration/directing and accepted ready images only; rendering, intro, setup, transfers outside the measured parent, repairs and manual rental stop are not a complete ETA.'}
+
+    def performance_report(self,pid):
+        p=self.store.load(pid)
+        # Import only records that captured their actual settings at execution.
+        # Never apply today's settings to legacy unprofiled observations.
+        rows=[row for row in p.get('production',{}).get('timings',[])
+            if row.get('performanceId') and row.get('performanceProfile') and row.get('performanceUnits') and row.get('seconds',0)>0]
+        known=self.performance.known([row['performanceId'] for row in rows])
+        for row in rows:
+            if row['performanceId'] not in known:
+                self.learn_performance(row['performanceId'],row.get('performanceRun','legacy'),
+                    row.get('performanceProfile'),row.get('performanceUnits'),row['seconds'],row,row.get('finished'),source='project-history')
+        if all(row['performanceId'] in known for row in rows):self.performance_warning=None
+        accepted={c['id'] for c in p['chapters'] if c['scenes'] and self.analysis_is_current(p,c,c.get('audio',{}).get('signature'))}
+        return {'history':self.performance.summary(),'forecast':self.performance_forecast(p,accepted),
+            'warning':getattr(self,'performance_warning',None),
+            'scheduling':p.get('production',{}).get('scheduling'),
+            'note':'Every supported stage/attempt is retained. Failed, reused, paused, incompatible and unresolved samples are excluded from speed calibration. Unknown work stays unknown.'}
 
     def prepare_story(self, pid, options):
         """Generate fresh narration and the selected director's complete plan.
@@ -1263,6 +1418,11 @@ class StudioService:
     def produce_story(self, pid, options):
         """One durable queue job; reuse completed stages and stop safely on errors."""
         p = self.store.load(pid)
+        from studio_schedule import strategy,LABELS
+        mode=strategy(options)
+        self.store.mutate(pid,lambda q:q.setdefault('production',{}).update(
+            generationStrategy=mode,generationStrategyLabel=LABELS[mode],rentalControl='external'))
+        if not getattr(self,'_overlap',None):self._performance_run_id=uid('run-')
         if options.get('overlap') and not getattr(self,'_overlap',None):
             from studio_overlap import CloudStoryOverlap
             overlap=CloudStoryOverlap(self,p,options)
@@ -1389,123 +1549,10 @@ class StudioService:
                 raise ValueError(
                     f"{ch['name']}: your appearance-change settings require review. Accept the changes and retry this run."
                 )
-            active_characters = {
-                c["id"]
-                for sc in ch["scenes"]
-                for shot in sc["shots"]
-                for c in shot["characters"]
-                if c["type"] == "main"
-            }
-            reference_provider = self.provider(p["settings"]["image"]["provider"])
-            if reference_provider.getCapabilities().get("maxReferenceImages", 0):
-                for person in p["characters"]:
-                    if person["id"] in active_characters and not person["references"]:
-                        self.production_progress(
-                            pid,
-                            f"Chapter {index+1} / {len(chapters)} · reference for {person['name']}",
-                        )
-                        self.measured_stage(
-                            pid,
-                            "Character reference",
-                            self.character_reference,
-                            self.store.load(pid),
-                            {"characterId": person["id"], "referenceKind": "face"},
-                            chapter=ch["number"],
-                            character=person["name"],
-                        )
-
-            def prepare_images(latest):
-                chapter = get_chapter(latest, chid)
-                for scene in chapter["scenes"]:
-                    for shot in scene["shots"]:
-                        if self.saved_image_ready(latest, shot):
-                            continue
-                        provider = self.provider(shot["imageProvider"])
-                        settings = shot["generationSettings"]
-                        has_refs = any(
-                            c["references"]
-                            and any(s["id"] == c["id"] for s in shot["characters"])
-                            for c in latest["characters"]
-                        )
-                        if (
-                            provider.id == "native-flux"
-                            and has_refs
-                            and not shot.get("manual", {}).get("generationSettings")
-                        ):
-                            settings["width"] = min(settings.get("width", 384), 384)
-                            settings["height"] = min(settings.get("height", 384), 384)
-                        requested=settings | {"model":shot['imageModel']}
-                        validated = (provider.validateSettings(requested,check_hardware=False)
-                            if provider.id=='comfyui' and getattr(self,'_overlap',None)
-                            else provider.validateSettings(requested))
-                        shot["generationSettings"] = validated
-
-            self.store.mutate(pid, prepare_images)
-            p = self.store.load(pid)
-            ch = get_chapter(p, chid)
-            shots = [s for scene in ch["scenes"] for s in scene["shots"]]
-            if getattr(self,'_overlap',None):
-                self.preflight_chapter(pid,chid)
-                self._overlap.chapter_dependencies.append(digest(ch.get('handoff',{})))
-            for shot_index, shot in enumerate(shots):
-                # Cached shots need no per-shot progress writes to the entire
-                # durable project. One chapter update below records completion.
-                if (self.saved_image_ready(p, shot)):
-                    if getattr(self,'_overlap',None) and should_check(p,shot):
-                        qc=shot.get('qc',{})
-                        asset_hash=hashlib.sha256(self.store.asset(pid,shot['imagePath']).read_bytes()).hexdigest()
-                        if (qc.get('checkedImagePath')!=shot['imagePath'] or qc.get('checkedImageSHA256')!=asset_hash
-                                or qc.get('shotSpecSignature')!=self.visual_spec_signature(p,shot)
-                                or qc.get('status') in (None,'PENDING','UNREVIEWED')):
-                            self._overlap.submit_shot(self.store.load(pid),chid,shot,review_only=True)
-                    continue
-                if (shot.get('imagePath') and not shot.get('generationStale')
-                        and shot.get('qc',{}).get('pass') is False
-                        and not automatic_repairs(p['settings'])):
-                    raise RuntimeError('Saved image needs your review. No replacement was purchased; accept this image to continue.')
-                self.production_progress(
-                    pid,
-                    f"Chapter {index+1} / {len(chapters)} · image {shot_index+1} / {len(shots)}",
-                    shotId=shot["id"],
-                    imageNumber=shot_index + 1,
-                    totalImages=len(shots),
-                    completedImages=shot_index,
-                )
-                complete = (
-                    self.saved_image_ready(p, shot)
-                )
-                if not complete:
-                    if getattr(self,'_overlap',None):
-                        self._overlap.submit_shot(self.store.load(pid),chid,shot)
-                        continue
-                    try:
-                        self.measured_stage(
-                            pid,
-                            "Image + quality checks",
-                            self.generate,
-                            self.store.load(pid),
-                            chid,
-                            shot["id"],
-                            shot["generationSettings"]["seed"],
-                            {},
-                            chapter=ch["number"],
-                            shot=shot["id"],
-                        )
-                    except (JobCancelled, AudioYield):
-                        raise
-                    except Exception as error:
-
-                        def failed_image(latest):
-                            item = get_shot(latest, chid, shot["id"])
-                            item.update(status="FAILED", generationError=str(error))
-
-                        self.store.mutate(pid, failed_image)
-                        raise
-                self.production_progress(
-                    pid,
-                    f"Chapter {index+1} / {len(chapters)} · saved image {shot_index+1} / {len(shots)}",
-                    completedImages=shot_index + 1,
-                )
+            if getattr(getattr(self,'_overlap',None),'scheduler',None):
+                self._overlap.publish_chapter(p,chid,index,chapters)
+            else:
+                self.generate_production_chapter_images(pid,chid,index,chapters)
             if not cloud_flow:
                 self.render_production_chapter(pid, chid, index, chapters)
 
@@ -1583,6 +1630,127 @@ class StudioService:
             'reason':'Source or selected assets changed during rendering; current project was preserved.'})
         target['renderStale']=True
 
+
+    def generate_production_chapter_images(self,pid,chid,index,chapters):
+        p=self.store.load(pid)
+        ch=get_chapter(p,chid)
+        active_characters = {
+            c["id"]
+            for sc in ch["scenes"]
+            for shot in sc["shots"]
+            for c in shot["characters"]
+            if c["type"] == "main"
+        }
+        reference_provider = self.provider(p["settings"]["image"]["provider"])
+        if reference_provider.getCapabilities().get("maxReferenceImages", 0):
+            for person in p["characters"]:
+                if person["id"] in active_characters and not person["references"]:
+                    self.production_progress(
+                        pid,
+                        f"Chapter {index+1} / {len(chapters)} · reference for {person['name']}",
+                    )
+                    self.measured_stage(
+                        pid,
+                        "Character reference",
+                        self.character_reference,
+                        self.store.load(pid),
+                        {"characterId": person["id"], "referenceKind": "face"},
+                        chapter=ch["number"],
+                        character=person["name"],
+                    )
+
+        def prepare_images(latest):
+            chapter = get_chapter(latest, chid)
+            for scene in chapter["scenes"]:
+                for shot in scene["shots"]:
+                    if self.saved_image_ready(latest, shot):
+                        continue
+                    provider = self.provider(shot["imageProvider"])
+                    settings = shot["generationSettings"]
+                    has_refs = any(
+                        c["references"]
+                        and any(s["id"] == c["id"] for s in shot["characters"])
+                        for c in latest["characters"]
+                    )
+                    if (
+                        provider.id == "native-flux"
+                        and has_refs
+                        and not shot.get("manual", {}).get("generationSettings")
+                    ):
+                        settings["width"] = min(settings.get("width", 384), 384)
+                        settings["height"] = min(settings.get("height", 384), 384)
+                    requested=settings | {"model":shot['imageModel']}
+                    validated = (provider.validateSettings(requested,check_hardware=False)
+                        if provider.id=='comfyui' and getattr(self,'_overlap',None)
+                        else provider.validateSettings(requested))
+                    shot["generationSettings"] = validated
+
+        self.store.mutate(pid, prepare_images)
+        p = self.store.load(pid)
+        ch = get_chapter(p, chid)
+        shots = [s for scene in ch["scenes"] for s in scene["shots"]]
+        if getattr(self,'_overlap',None):
+            self.preflight_chapter(pid,chid)
+            self._overlap.chapter_dependencies.append(digest(ch.get('handoff',{})))
+        for shot_index, shot in enumerate(shots):
+            # Cached shots need no per-shot progress writes to the entire
+            # durable project. One chapter update below records completion.
+            if (self.saved_image_ready(p, shot)):
+                if getattr(self,'_overlap',None) and should_check(p,shot):
+                    qc=shot.get('qc',{})
+                    asset_hash=hashlib.sha256(self.store.asset(pid,shot['imagePath']).read_bytes()).hexdigest()
+                    if (qc.get('checkedImagePath')!=shot['imagePath'] or qc.get('checkedImageSHA256')!=asset_hash
+                            or qc.get('shotSpecSignature')!=self.visual_spec_signature(p,shot)
+                            or qc.get('status') in (None,'PENDING','UNREVIEWED')):
+                        self._overlap.submit_shot(self.store.load(pid),chid,shot,review_only=True)
+                continue
+            if (shot.get('imagePath') and not shot.get('generationStale')
+                    and shot.get('qc',{}).get('pass') is False
+                    and not automatic_repairs(p['settings'])):
+                raise RuntimeError('Saved image needs your review. No replacement was purchased; accept this image to continue.')
+            self.production_progress(
+                pid,
+                f"Chapter {index+1} / {len(chapters)} · image {shot_index+1} / {len(shots)}",
+                shotId=shot["id"],
+                imageNumber=shot_index + 1,
+                totalImages=len(shots),
+                completedImages=shot_index,
+            )
+            complete = (
+                self.saved_image_ready(p, shot)
+            )
+            if not complete:
+                if getattr(self,'_overlap',None):
+                    self._overlap.submit_shot(self.store.load(pid),chid,shot)
+                    continue
+                try:
+                    self.measured_stage(
+                        pid,
+                        "Image + quality checks",
+                        self.generate,
+                        self.store.load(pid),
+                        chid,
+                        shot["id"],
+                        shot["generationSettings"]["seed"],
+                        {},
+                        chapter=ch["number"],
+                        shot=shot["id"],
+                    )
+                except (JobCancelled, AudioYield):
+                    raise
+                except Exception as error:
+
+                    def failed_image(latest):
+                        item = get_shot(latest, chid, shot["id"])
+                        item.update(status="FAILED", generationError=str(error))
+
+                    self.store.mutate(pid, failed_image)
+                    raise
+            self.production_progress(
+                pid,
+                f"Chapter {index+1} / {len(chapters)} · saved image {shot_index+1} / {len(shots)}",
+                completedImages=shot_index + 1,
+            )
 
     def render_production_chapter(self, pid, chid, index, chapters):
         p = self.store.load(pid)
@@ -4071,5 +4239,6 @@ class StudioService:
         if not self.thread.is_alive():
             self.db.close()
             self.trace.close()
+            self.performance.close()
             if hasattr(self,'execution_journal'):
                 self.execution_journal.close()

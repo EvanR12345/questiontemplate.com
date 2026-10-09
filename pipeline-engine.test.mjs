@@ -131,8 +131,8 @@ test('same work can overlap Luna and cloud inference in proposed plan',()=>{
   const p=buildPlan(DEFAULTS,evidence),r=schedule(p);assert.ok(r.tasks.some(a=>a.lane==='director'&&r.tasks.some(b=>b.kind==='infer'&&a.start<b.end&&b.start<a.end)));
   assert.ok(r.end<schedule(buildPlan({...DEFAULTS,policy:'serial'},evidence)).end);
 });
-test('installed overlap refuses unchecked or sampled jobs and supports full QC',()=>{
-  for(const qc of ['off','sampled'])assert.throws(()=>buildPlan({...DEFAULTS,policy:'current',qc},evidence),/Practical or Strict/);
+test('installed overlap preserves off or sampled checks and supports full QC',()=>{
+  for(const qc of ['off','sampled'])assert.deepEqual(schedule(buildPlan({...DEFAULTS,policy:'current',qc},evidence)).diagnostics,[]);
   const r=schedule(buildPlan({...DEFAULTS,policy:'current',qc:'practical',chapters:3},evidence));assert.deepEqual(r.diagnostics,[]);
 });
 test('timing metadata, image counts and intro are consistent',()=>{
