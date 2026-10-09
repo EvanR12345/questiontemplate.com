@@ -37,7 +37,7 @@ Studio Settings → Advanced AI settings provides **Independent Luna tasks** (on
 
 `director_tasks.py` admits a bounded window and collects results in input order. Independent camera, workflow and continuity review read the same finished shot facts. Prompt batches have frozen inputs and separate adapters, budget reservations and durable execution owners. Chronological fact extraction, appearance changes, group state and chapter handoffs remain ordered.
 
-On failure, new admission stops and already submitted sibling responses drain for billing receipts. Pause holds dispatch and lets paid responses settle; cancellation preserves unresolved liability when an accepted response cannot be collected. UNKNOWN operations are not silently replayed. Input signatures include canonical descriptions, aliases and default appearance; edits during requests cannot overwrite current work.
+On failure, new admission stops and already submitted sibling responses drain for billing receipts. Pause holds dispatch and lets paid responses settle; cancellation preserves unresolved liability when an accepted response cannot be collected. UNKNOWN operations are not silently replayed. Input signatures include canonical descriptions, aliases, default appearance and the incoming chapter story memory; edits during requests cannot overwrite current work.
 
 **Short visual-direction supplements** is a separate optional flag. It reuses existing prompt guidance without enabling the separate scene-fact guidance. Existing/manual prompts stay saved; no automatic rewrite of old shots occurs.
 

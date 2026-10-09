@@ -12,7 +12,7 @@ def validate_director_result(method, context, result):
                 or sorted(indices)!=list(range(len(context['shots'])))
                 or any(not isinstance(entry.get('prompt'),str) or not entry['prompt'].strip() for entry in entries)):
             raise ValueError('Director prompt batch has missing, duplicate or empty shot prompts. '
-                'Completed responses are cached; existing shots and manual edits were retained.')
+                'Valid completed stages stay saved; existing shots and manual edits were retained.')
     if method=='selectImageWorkflow':
         matches=[provider for provider in context['available']
             if provider['provider']==result['provider']

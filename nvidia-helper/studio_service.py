@@ -3501,10 +3501,11 @@ class StudioService:
     @staticmethod
     def analysis_input_signature(project,chid):
         chapter=get_chapter(project,chid)
+        incoming_state,incoming_memory=state_before(project,chid)
         fields=('sourceText','name','scenes','people','narrationMode','cleanNarrationText','includeChapterLabel')
         return digest({'chapter':{key:chapter.get(key) for key in fields},
             'audio':chapter.get('audio',{}).get('signature'),'settings':project['settings'],
-            'inputState':state_before(project,chid)[0],
+            'inputState':incoming_state,'inputMemory':incoming_memory,
             'identities':[{key:person.get(key) for key in ('id','name','description','aliases',
                 'permanentIdentity','defaultAppearance','references')}
                 for person in project['characters']]})

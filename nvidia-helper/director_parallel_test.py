@@ -197,6 +197,16 @@ class DirectorParallelTest(unittest.TestCase):
         edited=copy.deepcopy(p);edited.setdefault('production',{})['timings']=[{'seconds':3}]
         self.assertEqual(StudioService.analysis_input_signature(edited,chid),base)
 
+    def test_previous_chapter_memory_edit_invalidates_analysis_without_an_appearance_change(self):
+        from studio_data import new_chapter
+        p=copy.deepcopy(self.project);p['chapters'].append(new_chapter(2))
+        p['chapters'][0]['handoff']={'state':{'characters':{}},'memory':{'revealed':['Mira knows the secret.']}}
+        chid=p['chapters'][1]['id'];base=StudioService.analysis_input_signature(p,chid)
+        edited=copy.deepcopy(p)
+        edited['chapters'][0]['handoff']['memory']['revealed']=['Mira has not learned the secret.']
+        self.assertNotEqual(StudioService.analysis_input_signature(edited,chid),base)
+        self.assertEqual(edited['chapters'][0]['handoff']['state'],p['chapters'][0]['handoff']['state'])
+
     def test_parallel_requests_keep_frozen_inputs_own_receipts_and_bound_shared_api_slots(self):
         overlap,p=self.make_overlap();barrier=threading.Barrier(3)
         lock=threading.Lock();seen=[];active=peak=0
