@@ -66,7 +66,7 @@ export function mountStartupTradeoffs(host,config,evidence,onApply){
   host._startupWorker?.terminate();
   host.innerHTML='<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption" role="status" data-start-progress>Comparing startup timings… Controls remain available.</p>';
   if(typeof Worker!=='undefined'){
-   const worker=new Worker(new URL('./pipeline-worker.mjs',import.meta.url),{type:'module'});host._startupWorker=worker;
+   const worker=new Worker(new URL('./pipeline-worker.mjs?v=720p30-large-20261008b',import.meta.url),{type:'module'});host._startupWorker=worker;
    worker.onmessage=({data})=>{
     if(host._startupGeneration!==generation)return;
     if(data.type==='progress')host.querySelector('[data-start-progress]').textContent=data.message+' · controls remain available.';

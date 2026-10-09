@@ -37,7 +37,7 @@ async function rebuild(){
   $('saved').textContent='Calculating in the background…';
   try{
     const computed=await new Promise((resolve,reject)=>{
-      const worker=new Worker(new URL('./pipeline-worker.mjs',import.meta.url),{type:'module'});computeWorker=worker;
+      const worker=new Worker(new URL('./pipeline-worker.mjs?v=720p30-large-20261008b',import.meta.url),{type:'module'});computeWorker=worker;
       worker.onmessage=({data})=>{worker.terminate();if(data.type==='error')reject(Error(data.message));else resolve(data);};
       worker.onerror=()=>{worker.terminate();reject(Error('The background planner could not load. Refresh the page to load its updated files.'));};
       worker.postMessage({type:'plan',config,evidence,preferences});
