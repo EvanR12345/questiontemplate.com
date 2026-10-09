@@ -2,7 +2,7 @@ import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-st
 import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
 import {resolveConnectedProject,canAdoptConnection} from './studio-connection.mjs?v=connection-20261009';
 import {checkpointProject,backupSnapshot,canApplyBackgroundProject} from './studio-project-safety.mjs?v=safety-20261009';
-import {createMediaLoader} from './studio-media-loader.mjs?v=media-20261009';
+import {createMediaLoader} from './studio-media-loader.mjs?v=media-20261009b';
 import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=connection-20261009";
 import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
@@ -55,7 +55,7 @@ const startingProduction=new Set();
 const settingsDrafts=createFormDrafts(),projectSelection=createProjectSelection();
 const mediaCache = new Map();
 const progressReader=createProgressReader(qualityDecision);
-const mediaLoader=createMediaLoader({resolve:(path,projectId)=>media(path,projectId)});
+const mediaLoader=createMediaLoader({resolve:(path,projectId,options)=>media(path,projectId,options)});
 const root = document.createElement("section");
 root.id = "productionStudio";
 root.className = "production";
@@ -137,7 +137,8 @@ async function cache() {
   cacheWarning=warnings.join(' ');
   if(cacheWarning)note(cacheWarning,true);
 }
-async function media(path, projectId=project.id) {
+async function media(path, projectId=project.id, {refresh=false}={}) {
+  if(refresh)mediaCache.delete(projectId+'/'+path);
   return cachedMediaLink(mediaCache,projectId,path,api);
 }
 async function fillMedia() {
@@ -728,6 +729,7 @@ function shotMotionLabel(shot) {
   return "slow zoom in";
 }
 function renderQueue() {
+  const displayedProject=project.id;
   const el = $("#productionQueue");
   if (!el) return;
   const openDetails = new Set([...root.querySelectorAll('details[data-ui][open]')].map(detail => detail.dataset.ui));
@@ -892,14 +894,14 @@ function renderQueue() {
     el.insertAdjacentHTML("beforeend", `<details data-ui="cloud-tasks"><summary>Cloud tasks · ${executions.filter(item => item.status === "RUNNING").length} active</summary>${executions.map(item => `<p class="muted">${escape(item.message || item.status)}${item.status === "UNKNOWN" ? " · Needs reconciliation before retry" : ""}${item.status === "RUNNING" ? ` <button data-control="cancel-current" data-execution="${escape(item.id)}">Cancel this task</button>` : ""}</p>`).join("")}</details>`);
   }
   el.querySelector("#downloadProductionTrace").onclick = () => action(async () => {
-    const trace = await api("trace?project=" + encodeURIComponent(project.id));
+    const trace = await api("trace?project=" + encodeURIComponent(displayedProject));
     downloadBlob(new Blob([JSON.stringify(trace, null, 2)], {type: "application/json"}), "studio-timing-report.json");
   });
   el.querySelectorAll("[data-control]").forEach(
     (b) =>
       (b.onclick = () =>
         action(async () => {
-          queue = await api("control", { action: b.dataset.control, project: project.id,
+          queue = await api("control", { action: b.dataset.control, project: displayedProject,
             ...(b.dataset.execution ? {job: b.dataset.execution} : b.dataset.control==='cancel-current'&&current ? {job:current.id} : {}) });
           renderQueue();
         })),

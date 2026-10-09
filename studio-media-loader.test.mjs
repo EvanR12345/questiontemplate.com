@@ -4,6 +4,40 @@ import {createMediaLoader} from './studio-media-loader.mjs';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const node=(path,tagName='IMG')=>({dataset:{asset:path},tagName,isConnected:true});
 const root=nodes=>({querySelectorAll:()=>nodes});
+function player(path='story.mp4'){
+  const events=new Map(),video={...node(path,'VIDEO'),currentTime:0,playbackRate:1,duration:86400,plays:0,loads:0,
+    addEventListener(name,handler){events.set(name,handler);},removeEventListener(name,handler){if(events.get(name)===handler)events.delete(name);},
+    emit(name){events.get(name)?.();},play(){this.plays++;return Promise.resolve();},load(){this.loads++;}};
+  return video;
+}
+
+test('expired playback link renews once and restores position, speed and active playback',async()=>{
+  let clock=0;const requests=[],video=player();
+  const loader=createMediaLoader({Observer:null,now:()=>clock,resolve:async(path,pid,options)=>{requests.push(options);return options.refresh?'new-link':'old-link';}});
+  loader.load(root([video]),'project');await tick();video.emit('playing');video.currentTime=7421;video.playbackRate=1.25;
+  video.emit('error');await tick();assert.equal(requests.length,1,'a fresh decoder error does not cause a renewal loop');
+  clock=3600000;video.emit('error');video.emit('error');await tick();
+  assert.equal(requests.length,2);assert.equal(requests[1].refresh,true);assert.equal(video.src,'new-link');assert.equal(video.loads,1);
+  video.currentTime=0;video.emit('loadedmetadata');await tick();
+  assert.equal(video.currentTime,7421);assert.equal(video.playbackRate,1.25);assert.equal(video.plays,1);
+  video.emit('error');await tick();assert.equal(requests.length,2);
+});
+
+test('paused playback stays paused and a late renewal cannot update a different project',async()=>{
+  let clock=0,release;const video=player();
+  const loader=createMediaLoader({Observer:null,now:()=>clock,resolve:async(path,pid,options)=>options.refresh?await new Promise(r=>{release=r;}):pid});
+  loader.load(root([video]),'first');await tick();video.currentTime=52;
+  clock=3600000;video.emit('error');await tick();video.emit('loadedmetadata');assert.equal(video.plays,0);
+  loader.load(root([video]),'second');await tick();release('expired-project');await tick();
+  assert.equal(video.src,'second');assert.equal(video.loads,0);assert.equal(video.plays,0);
+});
+
+test('renewal errors remain visible and do not restart or redownload the video',async()=>{
+  let clock=0,calls=0;const video=player();
+  const loader=createMediaLoader({Observer:null,now:()=>clock,resolve:async(path,pid,options)=>{calls++;if(options.refresh)throw Error('helper offline');return 'initial';}});
+  loader.load(root([video]),'project');await tick();clock=3600000;video.emit('error');await tick();
+  assert.match(video.title,/helper offline/);assert.equal(video.src,'initial');assert.equal(video.loads,0);assert.equal(calls,2);
+});
 test('offscreen images request no links while audio remains available',async()=>{
   let observed;
   class Observer {constructor(callback){this.callback=callback;observed=this;}observe(){}unobserve(){}disconnect(){}}
