@@ -49,8 +49,9 @@ def validate_overlap(project, options):
     if isinstance(limit,bool) or not isinstance(limit,int) or not 2<=limit<=3:
         raise ValueError('Choose two or three in-flight cloud shots.')
     director_limit=settings['director'].get('parallelism',1)
-    if isinstance(director_limit,bool) or not isinstance(director_limit,int) or not 1<=director_limit<=3:
-        raise ValueError('Choose one, two or three parallel director calls.')
+    director_max=8 if settings['director'].get('executionMode','classic').startswith('staged') else 3
+    if isinstance(director_limit,bool) or not isinstance(director_limit,int) or not 1<=director_limit<=director_max:
+        raise ValueError('Choose bounded parallel director calls: up to three classic or eight staged.')
     for chapter in project['chapters']:
         for scene in chapter['scenes']:
             if any(shot['imageProvider']!='comfyui' for shot in scene['shots']):
@@ -83,7 +84,7 @@ class CloudStoryOverlap:
         self.contexts=[]
         self.progress_keys={}
         self.image_lane=ImageLane()
-        self.api_lane=ImageLane(3,'director')
+        self.api_lane=ImageLane(max(3,self.settings['director'].get('parallelism',1)),'director')
         self.main_context=self.admit(project,None,None,'story',digest({'sources':[c['sourceText'] for c in project['chapters']],
             'settings':self.settings}))
         self.main=self.clone(self.main_context,main=True)
@@ -202,7 +203,7 @@ class CloudStoryOverlap:
         """Only independent finishing/prompt passes, with separate durable owners."""
         from director_tasks import bounded_director_map,validate_director_result
         from studio_service import JobCancelled
-        allowed={'planLayout','selectImageWorkflow','checkContinuity','writeImagePrompt'}
+        allowed={'planLayout','selectImageWorkflow','checkContinuity','writeImagePrompt','planStoryboard','checkStoryboard','repairStoryboard'}
         if any(method not in allowed for method, _ in calls):
             raise ValueError('This director pass requires ordered story state and cannot run here.')
         snapshot=copy.deepcopy(project)

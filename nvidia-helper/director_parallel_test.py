@@ -22,8 +22,9 @@ class DirectorParallelTest(unittest.TestCase):
         return [('writeImagePrompt',{'shots':[{'shotIndex':0,'narration':'Moment '+str(i),
             'draftPrompt':'Mira carries the key.'}],'model':'klein','promptFormat':'natural'}) for i in range(count)]
 
-    def make_overlap(self):
-        p=copy.deepcopy(self.project);p['settings']['director']['parallelism']=3
+    def make_overlap(self,limit=3):
+        p=copy.deepcopy(self.project);p['settings']['director']['parallelism']=limit
+        if limit>3:p['settings']['director']['executionMode']='staged-review'
         p=self.service.store.save(p)
         return CloudStoryOverlap(self.service,p,{'overlap':True}),p
 
@@ -208,7 +209,13 @@ class DirectorParallelTest(unittest.TestCase):
         self.assertEqual(edited['chapters'][0]['handoff']['state'],p['chapters'][0]['handoff']['state'])
 
     def test_parallel_requests_keep_frozen_inputs_own_receipts_and_bound_shared_api_slots(self):
-        overlap,p=self.make_overlap();barrier=threading.Barrier(3)
+        self.verify_parallel_receipts(3,6)
+
+    def test_staged_eight_slots_have_distinct_receipts_and_bound_all_dispatch(self):
+        self.verify_parallel_receipts(8,16)
+
+    def verify_parallel_receipts(self,limit,count):
+        overlap,p=self.make_overlap(limit);barrier=threading.Barrier(limit)
         lock=threading.Lock();seen=[];active=peak=0
         def response(request,**kwargs):
             nonlocal active,peak
@@ -217,23 +224,32 @@ class DirectorParallelTest(unittest.TestCase):
                 seen.append(body);index=len(seen);active+=1;peak=max(peak,active)
             barrier.wait(timeout=3)
             with lock:active-=1
+            value={'prompts':[{'shotIndex':0,'prompt':'Directed moment '+str(index)}]}
+            if limit>3:
+                def compact(value,schema):
+                    if isinstance(value,dict):
+                        return {key:compact(value[child['description'].split('. ',1)[0]],child)
+                            for key,child in schema['properties'].items()}
+                    if isinstance(value,list):return [compact(item,schema['items']) for item in value]
+                    return value
+                value=compact(value,body['text']['format']['schema'])
             events=[{'type':'response.created','response':{'id':'response-'+str(index)}},
-                {'type':'response.output_text.delta','delta':json.dumps({'prompts':[{'shotIndex':0,'prompt':'Directed moment '+str(index)}]})},
+                {'type':'response.output_text.delta','delta':json.dumps(value)},
                 {'type':'response.completed','response':{'id':'response-'+str(index),'status':'completed',
                     'usage':{'input_tokens':100,'output_tokens':30}}}]
             return io.BytesIO(b''.join(b'data: '+json.dumps(e).encode()+b'\n\n' for e in events))
-        calls=self.requests();before=copy.deepcopy(calls)
+        calls=self.requests(count);before=copy.deepcopy(calls)
         try:
             with patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
                  patch('openai_director.urllib.request.urlopen',side_effect=response):
                 results=overlap.main.director_calls(p,p['chapters'][0]['id'],calls)
-            self.assertEqual(len(results),6);self.assertEqual(peak,3);self.assertEqual(calls,before)
+            self.assertEqual(len(results),count);self.assertEqual(peak,limit);self.assertEqual(calls,before)
             self.assertEqual(overlap.api_lane.active,0)
             ledger=json.loads((self.service.store.folder(p['id'])/'api-cost-ledger.json').read_text())
-            self.assertEqual(len(ledger['receipts']),6);self.assertFalse(ledger['requests'])
+            self.assertEqual(len(ledger['receipts']),count);self.assertFalse(ledger['requests'])
             children=[r for r in self.service.execution_journal.snapshot(overlap.parent) if r['kind']=='director-pass']
-            self.assertEqual(len(children),6);self.assertTrue(all(r['status']=='COMPLETE' for r in children))
-            self.assertEqual(len({next(iter(r['operations'])) for r in children}),6)
+            self.assertEqual(len(children),count);self.assertTrue(all(r['status']=='COMPLETE' for r in children))
+            self.assertEqual(len({next(iter(r['operations'])) for r in children}),count)
             self.assertTrue(all(len(r['operations'])==1 for r in children))
             self.assertEqual(len(self.service.active_executions),1)
         finally:overlap.close('COMPLETE')

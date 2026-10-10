@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
 
-PRICING_DATE = '2026-10-04'
+PRICING_DATE = '2026-10-09'
 # Standard short-context pricing. Cache writes are part of input_tokens,
 # not additional input tokens: https://developers.openai.com/api/docs/pricing
 LUNA_RATES = {'input': .10, 'cachedInput': .01, 'cacheWrite': .125, 'output': .50}
@@ -49,9 +49,9 @@ def luna_cost(usage, service_tier='default'):
     outputs = _tokens(usage.get('output_tokens', 0))
     if min(inputs, cached, written, outputs) < 0 or cached + written > inputs:
         raise ValueError('Invalid token usage: cache reads and writes must fit within input tokens.')
-    if service_tier not in ('default', 'flex'):
+    if service_tier not in ('default', 'flex','fast','priority'):
         raise ValueError('Unrecognized Luna billing tier.')
-    multiplier = .5 if service_tier == 'flex' else 1
+    multiplier = .5 if service_tier == 'flex' else 2 if service_tier in ('fast','priority') else 1
     input_multiplier = 2 if inputs > 272000 else 1
     output_multiplier = 1.5 if inputs > 272000 else 1
     return multiplier * (input_multiplier * ((inputs - cached - written) * LUNA_RATES['input']
@@ -211,7 +211,10 @@ class SpendLedger:
         # are expected. A cache miss must not escape the budget reservation.
         input_multiplier = 2 if input_bound > 272000 else 1
         output_multiplier = 1.5 if input_bound > 272000 else 1
-        bound = (input_multiplier * input_bound * LUNA_RATES['cacheWrite']
+        tier=body.get('service_tier','default')
+        if tier not in ('default','flex','fast','priority'):raise ValueError('Unrecognized requested Luna billing tier.')
+        premium=2 if tier in ('fast','priority') else 1
+        bound = premium * (input_multiplier * input_bound * LUNA_RATES['cacheWrite']
                  + output_multiplier * maximum * LUNA_RATES['output']) / 1e6
         return _nanos(bound) / 1e9
 

@@ -273,6 +273,8 @@ class StudioService:
             "studioProtocol": 1,
             "cloudOverlapAvailable":True,
             "cloudSchedulingAvailable":True,
+            "stagedDirectorAvailable":True,
+            "maxDirectorTasks":8,
             "storage": self.storage.status(),
             "hardware": hardware,
             "director": self.director.healthCheck(),
@@ -330,7 +332,7 @@ class StudioService:
             raise ValueError('Choose CPU or local NVIDIA GPU rendering.')
         if 'openaiPromptCacheMode' in data and data['openaiPromptCacheMode'] not in ('explicit', 'implicit'):
             raise ValueError('Choose explicit or implicit prompt caching.')
-        if 'openaiServiceTier' in data and data['openaiServiceTier'] not in ('default', 'flex'):
+        if 'openaiServiceTier' in data and data['openaiServiceTier'] not in ('default', 'flex','fast'):
             raise ValueError('Choose Standard or Flex Luna processing.')
         for field, minimum, maximum in (('comfyPollInterval', .1, 2), ('comfyGenerationTimeoutSeconds', 30, 3600)):
             if field in data and (isinstance(data[field], bool) or not isinstance(data[field], (int, float))
@@ -711,22 +713,33 @@ class StudioService:
             raise UnresolvedExecution('Project has unresolved remote work. Reconcile saved execution IDs before dispatching again.')
 
     def select_director(self, project):
-        self._timing_pause_epoch=getattr(getattr(self,'_overlap',None),'root',self).pause_epoch
+        self._timing_pause_epoch=getattr(getattr(getattr(self,'_overlap',None),'root',self),'pause_epoch',0)
         if getattr(self,'_overlap',None):
             self.validate_execution()
+        config=getattr(self,'config',{})
         selected = project["settings"]["director"].get("provider", "local-qwen")
         if selected not in ("local-qwen", "openai-luna"):
             raise ValueError("Unknown director provider. Select local Qwen or Luna.")
         self.prepare_director_device(project)
         if selected == "openai-luna" and not isinstance(self.director, OpenAIDirector):
             self.director.stop()
-            self.director = OpenAIDirector(self.config, self.store.root)
+            self.director = OpenAIDirector(config, self.store.root)
         elif selected == "local-qwen" and isinstance(self.director, OpenAIDirector):
             self.director.stop()
-            self.director = LocalQwenDirector(self.config, self.store.root)
+            self.director = LocalQwenDirector(config, self.store.root)
         self.director.focused_prompts = project["settings"].get("focusedPrompts") is True
         self.director.concise_prompt_supplement = project['settings']['director'].get('concisePrompts') is True
         self.director.reasoning = project["settings"]["director"].get("reasoning", "Balanced")
+        if project['settings']['director'].get('executionMode','classic').startswith('staged'):
+            # Separate config object; shared helper settings must not mutate.
+            self.director.config = {**config,'openaiCompactWire':True}
+            if project['settings']['director'].get('reasoningProfile','selected')=='adaptive':
+                self.director.config['openaiTaskEffort']={role:'none' for role in
+                    ('Visual storyboard director','Workflow planner')}
+        else:
+            self.director.config = config
+        if project['settings']['director'].get('processingTier'):
+            self.director.config={**self.director.config,'openaiServiceTier':project['settings']['director']['processingTier']}
         if isinstance(self.director, OpenAIDirector):
             from cost_control import SpendLedger
             budget = project['settings'].get('budget', {})
@@ -956,7 +969,7 @@ class StudioService:
                                 )
                             if job["kind"] in ("analyze", "scene-plan"):
                                 self.providers["existing"].unload()
-                                self.analyze(
+                                self.analyze_chapter(
                                     self.store.load(p["id"]), job["chapter"], options
                                 )
                     elif job["kind"] == "image":
@@ -1217,7 +1230,7 @@ class StudioService:
             old_audio_available=bool(old_audio.get('path') and self.store.has_asset(pid,old_audio['path']))
         if stage=='AI directing':
             p=next((a for a in args if isinstance(a,dict) and a.get('id')==pid),None)
-            if p:details['directorTasks']=p['settings']['director'].get('parallelism',1) if getattr(self,'_overlap',None) else 1
+            if p:details['directorTasks']=p['settings']['director'].get('parallelism',1) if (getattr(self,'_overlap',None) or p['settings']['director'].get('executionMode','classic').startswith('staged')) else 1
         began = time.monotonic()
         began_at=time.time()
         try:
@@ -1235,7 +1248,7 @@ class StudioService:
             # shorter wall time must not train a fresh full-chapter forecast.
             recent=self.store.load(pid).get('production',{}).get('timings',[])
             details['reused']=any(t.get('reused') and t.get('detail') and
-                t.get('chapter')==details.get('chapter') and t.get('finished',0)>=began_at for t in recent)
+                t.get('stage')!='Workflow planner' and t.get('chapter')==details.get('chapter') and t.get('finished',0)>=began_at for t in recent)
         status=result.get('status') if isinstance(result,dict) else None
         self.record_timing(
             pid, stage, time.monotonic() - began, details | {"status":status if status in ('SUPERSEDED','CANCELLED','FAILED') else "COMPLETE","paused":was_paused or root.pause_epoch!=pause_epoch}, trace_record=False
@@ -1332,7 +1345,7 @@ class StudioService:
                     self.confirm_chapter_people(pid, chid)
                 continue
             self.production_progress(pid, f"Chapter {chapter['number']} · complete AI direction", chapterId=chid)
-            self.measured_stage(pid, 'AI directing', self.analyze, p, chid,
+            self.measured_stage(pid, 'AI directing', self.analyze_chapter, p, chid,
                 options | {'managedPipeline': True, 'offlinePlanning': True}, chapter=chapter['number'])
             latest = self.store.load(pid)
             if get_chapter(latest, chid).get('proposedPlan'):
@@ -1515,7 +1528,7 @@ class StudioService:
                 self.measured_stage(
                     pid,
                     "AI directing",
-                    self.analyze,
+                    self.analyze_chapter,
                     p,
                     chid,
                     {"managedPipeline": True,"offlinePlanning":cloud_flow},
@@ -2674,6 +2687,26 @@ class StudioService:
         # can override this seam without changing installed project settings.
         return (9000,48) if remote else (2500,12)
 
+    def analyze_chapter(self,p,chid,options):
+        staged=p['settings']['director'].get('executionMode','classic').startswith('staged')
+        if not staged or options.get('sceneId') or getattr(self,'_overlap',None):
+            return self.analyze(p,chid,options)
+        from studio_overlap import CloudStoryOverlap
+        overlap=CloudStoryOverlap(self,p,{'overlap':True})
+        status,message='COMPLETE','Chapter plan saved'
+        try:
+            overlap.main.analyze(p,chid,{**options,'offlinePlanning':True,'managedPipeline':True})
+        except BaseException as error:
+            status='CANCELLED' if isinstance(error,JobCancelled) else 'FAILED';message=str(error)[:1800]
+            raise
+        finally:overlap.close(status,message)
+        if p['settings'].get('autoContinue') and not options.get('managedPipeline'):
+            current=self.store.load(p['id']);chapter=get_chapter(current,chid)
+            needs_review=current['settings']['appearanceHandling']!='Automatic' and any(
+                scene['appearanceChanges'] and not scene.get('appearanceChangesReviewed') for scene in chapter['scenes'])
+            if not chapter.get('proposedPlan') and not needs_review:
+                self.enqueue(p['id'],chid,'image',[shot['id'] for scene in chapter['scenes'] for shot in scene['shots']])
+
     def analyze(self, p, chid, options):
         expected_analysis=self.analysis_input_signature(p,chid)
         self.select_director(p)
@@ -2728,7 +2761,8 @@ class StudioService:
             }
             for c in p["characters"]
         ]
-        for casting_text in text_groups(ch["sourceText"]):
+        casting_limit = 32000 if isinstance(self.director,OpenAIDirector) and p['settings']['director'].get('executionMode','classic').startswith('staged') else 8500
+        for casting_text in text_groups(ch["sourceText"],max_chars=casting_limit):
             casting = self.director.resolvePeople(
                 {
                     "chapterText": casting_text,
@@ -2867,6 +2901,9 @@ class StudioService:
         size = 0
         remote_director = isinstance(self.director, OpenAIDirector)
         group_chars, group_sentences = self.director_group_limits(remote_director)
+        if remote_director and p['settings']['director'].get('executionMode','classic').startswith('staged'):
+            group_sentences=p['settings']['director'].get('factGroupSentences',48)
+            group_chars={48:9000,96:18000,128:24000}[group_sentences]
         for item in timings:
             if current and (size + len(item["text"]) > group_chars or len(current) >= group_sentences):
                 groups.append(current)
@@ -2883,6 +2920,13 @@ class StudioService:
             raise ValueError(
                 "Selected image workflow is unavailable. Choose an installed model before analyzing."
             )
+        staged = p['settings']['director'].get('executionMode','classic').startswith('staged') and not selected_scene
+        if staged and (not remote_director or not getattr(self,'_overlap',None)):
+            raise ValueError('Staged Luna directing needs cloud overlap and full-chapter analysis. Existing assets stay saved.')
+        prepared = None
+        if staged:
+            from director_staged import prepare_staged
+            prepared = prepare_staged(self,p,ch,groups,chapter_cast,state,memory,expected_analysis)
         for group_index, group in enumerate(groups):
             base = group[0]["index"]
             text = [
@@ -2911,7 +2955,8 @@ class StudioService:
                 "productionDirection": p['settings'].get('productionDirection', ''),
             }
             self.gate(f"Analyzing group {group_index+1}/{len(groups)}")
-            analysis = self.director.analyzeStory(context, self.gate)
+            ready = prepared[group_index] if prepared else None
+            analysis = copy.deepcopy(ready['analysis']) if ready else self.director.analyzeStory(context, self.gate)
             analyses.append(analysis)
             passes.append(
                 {"pass": "story-analyst", "group": group_index, "output": analysis}
@@ -3025,7 +3070,7 @@ class StudioService:
             ]
             for loc in analysis["locations"]:
                 analysis_location(p, loc, locations)
-            plan = self.director.planChapter(
+            plan = copy.deepcopy(ready['storyboard']['plan']) if ready else self.director.planChapter(
                 context | {"analysis": analysis, "people": cast}, self.gate
             )
             passes.append(
@@ -3055,7 +3100,7 @@ class StudioService:
                 "requiredVisualChangeBoundaries": change_sentences,
                 "instruction": "Start a shot at each supplied visual-change sentence. Depict that moment explicitly: object handover/pickup, injury, clothing change. Do not bury these moments inside a shot about an earlier action.",
             }
-            detail = self.director.planScenes(scene_context, self.gate)
+            detail = copy.deepcopy(ready['storyboard']['detail']) if ready else self.director.planScenes(scene_context, self.gate)
             passes.append(
                 {"pass": "scene-director", "group": group_index, "output": detail}
             )
@@ -3202,9 +3247,9 @@ class StudioService:
                     }
                 )
             details = expanded
-            cameras = {}
+            cameras = {x['shotIndex']:x for x in ready['storyboard']['cameras']} if ready else {}
             finishing_calls=[]
-            if p["settings"]["generationMode"] != "QUICK":
+            if not ready and p["settings"]["generationMode"] != "QUICK":
                 finishing_calls.append(('planLayout',
                     {
                         "shots": details,
@@ -3226,7 +3271,8 @@ class StudioService:
                         bool(c["references"]) for c in p["characters"]
                     ),
                 }))
-            finishing_calls.append(('checkContinuity',
+            if not ready:
+                finishing_calls.append(('checkContinuity',
                 {
                     "knownState": compact_state,
                     "people": cast,
@@ -3236,11 +3282,21 @@ class StudioService:
                     "shots": details if p["settings"]["generationMode"] != "QUICK" else [],
                 }))
             finishing_results=self.director_calls(p,chid,finishing_calls,expected_analysis)
-            if p["settings"]["generationMode"] != "QUICK":
+            if not ready and p["settings"]["generationMode"] != "QUICK":
                 result=finishing_results.pop(0)
                 cameras={x["shotIndex"]:x for x in result["cameras"]}
                 passes.append({"pass":"cinematographer","group":group_index,"output":result})
-            workflow,continuity=finishing_results
+            if ready:
+                workflow=finishing_results[0]
+                continuity=copy.deepcopy(ready['continuity'])
+                passes.append({'pass':'staged-storyboard','group':group_index,
+                    'output':ready['storyboard'],'factContext':digest(ready['context'])})
+                if ready.get('visualReview') is not None:
+                    passes.append({'pass':'storyboard-continuity-review','group':group_index,'output':ready['visualReview']})
+                if ready.get('repairHistory'):
+                    passes.append({'pass':'targeted-storyboard-repair','group':group_index,'output':ready['repairHistory']})
+            else:
+                workflow,continuity=finishing_results
             if (
                 workflow["provider"] != provider.id
                 or workflow["model"] not in health["models"]
@@ -3371,7 +3427,11 @@ class StudioService:
                                         "reason": e["reason"],
                                     }
                                 )
-                    state = apply_changes(state, changes, ch["number"], id)
+                    if staged:
+                        from director_staged import apply_source_changes
+                        state=apply_source_changes(state,changes,ch['number'],id)
+                    else:
+                        state = apply_changes(state, changes, ch["number"], id)
                     scene["appearanceChanges"] += changes
                     selected = []
                     for cid in ds["characters"]:
@@ -3474,6 +3534,11 @@ class StudioService:
                     shot["prompt"], shot["negativePrompt"] = format_prompt(
                         prompt_project, shot, provider
                     )
+                    if ready:
+                        supplement=ready['storyboard']['prompts'][cursor-1]['prompt']
+                        shot['directorPrompt']=supplement
+                        # Full prompt already contains these AI-selected visual
+                        # fields. Do not append a second contradictory paraphrase.
                     scene["shots"].append(shot)
                 scene["characters"] = list(
                     {
@@ -3515,7 +3580,7 @@ class StudioService:
                 },
             }
             # Summaries remain bounded, canonical state does not grow with full story text.
-        if p["settings"]["generationMode"] != "QUICK":
+        if not staged and p["settings"]["generationMode"] != "QUICK":
             planned_shots = [s for scene in scenes for s in scene["shots"]]
             prompt_batch = 12 if remote_director else 4
             prompt_groups=[]

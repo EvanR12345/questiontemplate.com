@@ -30,8 +30,8 @@ def bounded_director_map(items, execute, gate, limit=3):
     context. After a failure, already submitted work drains for its receipts;
     no new item is admitted. Failed or cancelled work is never silently replayed.
     """
-    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 3:
-        raise ValueError('Choose one, two or three parallel director calls.')
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 8:
+        raise ValueError('Choose one through eight bounded parallel director calls.')
     iterator = iter(enumerate(items))
     results = {}
     stopped = threading.Event()

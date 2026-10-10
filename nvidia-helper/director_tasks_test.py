@@ -6,6 +6,17 @@ from director_tasks import bounded_director_map,validate_director_result
 
 
 class IndependentDirectorTasksTest(unittest.TestCase):
+    def test_eight_slot_window_is_bounded_and_keeps_result_order(self):
+        barrier=threading.Barrier(8);lock=threading.Lock();active=peak=0
+        def execute(item,stopped):
+            nonlocal active,peak
+            with lock:active+=1;peak=max(peak,active)
+            barrier.wait(timeout=5)
+            with lock:active-=1
+            return item
+        self.assertEqual(bounded_director_map(range(24),execute,lambda *_:None,8),list(range(24)))
+        self.assertEqual(peak,8)
+
     def test_results_keep_input_order_with_three_independent_active_tasks(self):
         barrier=threading.Barrier(3)
         lock=threading.Lock()
@@ -41,7 +52,7 @@ class IndependentDirectorTasksTest(unittest.TestCase):
 
     def test_serial_mode_is_supported_and_unbounded_fanout_is_rejected(self):
         self.assertEqual(bounded_director_map([1,2],lambda item,stop:item,lambda *_:None,1),[1,2])
-        for limit in (0,4,True,1.5):
+        for limit in (0,9,True,1.5):
             with self.assertRaises(ValueError):
                 bounded_director_map([],lambda *_:None,lambda *_:None,limit)
 

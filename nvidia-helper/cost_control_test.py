@@ -7,6 +7,23 @@ from pathlib import Path
 from cost_control import SpendLedger, luna_cost
 
 class CostGuardTest(unittest.TestCase):
+    def test_fast_reserves_premium_and_settles_returned_tier_without_guessing(self):
+        usage={'input_tokens':1000,'output_tokens':200}
+        self.assertEqual(luna_cost(usage,'fast'),luna_cost(usage)*2)
+        self.assertEqual(luna_cost(usage,'priority'),luna_cost(usage)*2)
+        body={'model':'gpt-6-luna','max_output_tokens':1000,'input':[],'service_tier':'fast'}
+        standard={**body,'service_tier':'default'}
+        # Body bytes differ slightly; both include the complete schema/instructions.
+        expected=(len(json.dumps(body).encode())*.125+1000*.50)*2/1e6
+        self.assertAlmostEqual(SpendLedger.estimate(body),expected,places=9)
+        self.assertGreater(SpendLedger.estimate(body),SpendLedger.estimate(standard)*1.99)
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=SpendLedger(Path(folder)/'cost.json',.02)
+            ledger.reserve(body)
+            self.assertEqual(ledger.settle(usage,service_tier='default'),luna_cost(usage))
+            ledger.reserve(body)
+            self.assertEqual(ledger.settle(usage,service_tier='fast'),luna_cost(usage)*2)
+
     def test_flex_is_discounted_only_after_confirmed_tier_and_usage(self):
         usage={'input_tokens':1000,'output_tokens':200}
         with tempfile.TemporaryDirectory() as folder:

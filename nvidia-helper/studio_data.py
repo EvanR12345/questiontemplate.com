@@ -366,10 +366,25 @@ def validate_project(p):
     if 'focusedPrompts' in p['settings'] and not isinstance(p['settings']['focusedPrompts'], bool):
         raise ValueError('Focused prompts must be enabled or disabled.')
     director_parallelism=p['settings'].get('director',{}).get('parallelism',1)
-    if type(director_parallelism) is not int or not 1<=director_parallelism<=3:
-        raise ValueError('Choose one, two or three parallel director calls.')
+    director_max=8 if p['settings'].get('director',{}).get('executionMode','classic').startswith('staged') else 3
+    if type(director_parallelism) is not int or not 1<=director_parallelism<=director_max:
+        raise ValueError('Choose bounded parallel director calls: up to three classic or eight staged.')
     if 'concisePrompts' in p['settings'].get('director',{}) and type(p['settings']['director']['concisePrompts']) is not bool:
         raise ValueError('Concise director prompts must be enabled or disabled.')
+    if p['settings'].get('director',{}).get('executionMode','classic') not in ('classic','staged','staged-review'):
+        raise ValueError('Choose classic or staged Luna directing.')
+    if p['settings'].get('director',{}).get('executionMode','classic').startswith('staged'):
+        from studio_overlap import validate_overlap
+        validate_overlap(p,{})
+    if p['settings'].get('director',{}).get('reasoningProfile','selected') not in ('selected','adaptive'):
+        raise ValueError('Choose selected or adaptive director reasoning.')
+    if p['settings'].get('director',{}).get('processingTier','default') not in ('default','flex','fast'):
+        raise ValueError('Choose Standard, Flex or Fast Luna processing.')
+    if type(p['settings'].get('director',{}).get('factGroupSentences',48)) is not int or p['settings'].get('director',{}).get('factGroupSentences',48) not in (48,96,128):
+        raise ValueError('Choose a bounded source-fact group of 48, 96 or 128 sentences.')
+    cadence=p['settings'].get('director',{}).get('cadencePerMinute')
+    if cadence is not None and (type(cadence) not in (int,float) or not math.isfinite(cadence) or cadence<=0):
+        raise ValueError('Director cadence must be a positive finite image rate or automatic.')
     validate_checks(p['settings'])
     validate_watermark(p['settings'].get('watermark', {}))
     validate_engagement(p['settings'].get('engagement', {}))

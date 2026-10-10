@@ -14,7 +14,7 @@ import time
 VERSION = 1
 DIRECTOR_PASSES = {'Casting supervisor', 'Story analyst', 'Chapter director',
     'Scene director', 'Cinematographer', 'Workflow planner', 'Continuity supervisor',
-    'Image prompt engineer'}
+    'Image prompt engineer','Source fact analyst','Source continuity reviewer','Source fact correction','Visual storyboard director','Storyboard continuity supervisor','Targeted storyboard repair'}
 
 
 def positive(value):
@@ -43,10 +43,17 @@ def profile_for(stage, project, config, details=None):
             (config.get('openaiModel','gpt-6-luna') if director.get('provider')=='openai-luna' else director.get('model')),
             reasoning=director.get('reasoning','Balanced'),parallelism=details.get('directorTasks',director.get('parallelism',1)),
             concise=director.get('concisePrompts',False),focused=settings.get('focusedPrompts',False),
-            tier=config.get('openaiServiceTier','default'),layout=settings.get('layoutMode','AUTO'),
+            executionMode=director.get('executionMode','classic'),reasoningProfile=director.get('reasoningProfile','selected'),
+            factGroupSentences=director.get('factGroupSentences',48),
+            cadencePerMinute=director.get('cadencePerMinute'),
+            compactWire=config.get('openaiCompactWire',False) or director.get('executionMode','classic').startswith('staged'),
+            tier=director.get('processingTier',config.get('openaiServiceTier','default')),layout=settings.get('layoutMode','AUTO'),
             mode=settings.get('generationMode','BALANCED'),style=settings.get('style'),
             layoutSettings=settings.get('customLayout',{}),maxOutputTokens=director.get('maxOutputTokens',12000),
             checkLevel=settings.get('qcCheckLevel','off'))
+        if director.get('executionMode','classic').startswith('staged'):
+            profile['planVersion']=2
+            profile['visualGroupLimit']={'sentences':24,'characters':6000,'targetShots':8}
     elif stage in ('Image pipeline','Image + quality checks','Image generation','Visual QC','Character reference','Intro images'):
         if details.get('shot'):
             image=details.get('_shotSpec') or next((s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots']
