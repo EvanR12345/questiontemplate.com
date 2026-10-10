@@ -20,7 +20,7 @@ let directorStudy,directorStudyLoading=false;
 async function loadDirectorStudy(){
   if(directorStudyLoading||directorStudy)return;directorStudyLoading=true;
   try{
-    const {mountDirectorStudy}=await import('./pipeline-director-study.mjs?v=decisions-evidence-20261010');
+    const {mountDirectorStudy}=await import('./pipeline-director-study.mjs?v=decisions-evidence-20261010b');
     directorStudy=await mountDirectorStudy($('directorResearch'),config.minutes);
   }catch{$('directorResearch').textContent='Director study unavailable. The existing planner remains usable.';}
   finally{directorStudyLoading=false;}

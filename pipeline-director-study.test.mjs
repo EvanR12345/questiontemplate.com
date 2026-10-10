@@ -4,6 +4,16 @@ import fs from 'node:fs';
 import {directorStudyProjections,directorStudyHTML} from './pipeline-director-study.mjs';
 const study=JSON.parse(fs.readFileSync(new URL('./pipeline-director-study.json',import.meta.url)));
 
+test('director evidence inherits module version to avoid stale cached receipts',async()=>{
+  const {directorEvidenceURL}=await import('./pipeline-director-study.mjs?v=receipt-version-test');
+  for(const name of ['pipeline-director-study.json','pipeline-luna-standard-20261010.json']){
+    const url=directorEvidenceURL(name);
+    assert.ok(url.pathname.endsWith('/'+name));
+    assert.equal(url.search,'?v=receipt-version-test');
+    assert.equal(url.hash,'');
+  }
+});
+
 test('director scaling keeps measured work, wall time and API costs separate without modifying evidence',()=>{
   const before=structuredClone(study),rows=directorStudyProjections(study,120);
   assert.equal(rows[0].projectedWallSeconds,study.wholePlans[0].wallSeconds*7200/1050.23);

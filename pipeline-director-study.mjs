@@ -1,4 +1,4 @@
-import {standardLunaHTML,lunaAuditHTML,mountLunaRequests,flexLunaHTML,standardOptimizationHTML,mountStandardStages} from './pipeline-luna-efficiency.mjs?v=decisions-evidence-20261010';
+import {standardLunaHTML,lunaAuditHTML,mountLunaRequests,flexLunaHTML,standardOptimizationHTML,mountStandardStages} from './pipeline-luna-efficiency.mjs?v=decisions-evidence-20261010b';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>'$'+value.toFixed(4);
 const duration=value=>{const seconds=Math.round(value);return `${Math.floor(seconds/60)}:${(seconds%60).toString().padStart(2,'0')}`;};
@@ -33,12 +33,20 @@ export function directorStudyHTML(study,minutes=120){
     <p class="caption">All study requests together: ${money(study.spentUSD)} of ${money(study.budgetUSD)}. No unresolved usage; original saved story was preserved. No image-quality guarantee follows from valid JSON or faster text.</p>`;
 }
 
+export function directorEvidenceURL(name){
+  const url=new URL('./'+name,import.meta.url);
+  // Keep evidence and renderer on the same published version. Relative URLs
+  // otherwise discard the module query, allowing stale cached receipt data.
+  url.search=new URL(import.meta.url).search;
+  return url;
+}
+
 export async function mountDirectorStudy(host,minutes=120){
-  const response=await fetch(new URL('./pipeline-director-study.json',import.meta.url));
+  const response=await fetch(directorEvidenceURL('pipeline-director-study.json'));
   if(!response.ok)throw Error('Director study unavailable.');
   const study=await response.json();
   const extras=await Promise.allSettled(['pipeline-luna-standard.json','pipeline-luna-token-audit.json','pipeline-luna-flex.json','pipeline-luna-standard-20261010.json'].map(async name=>{
-    const reply=await fetch(new URL('./'+name,import.meta.url));if(!reply.ok)throw Error('Supplement unavailable.');return reply.json();
+    const reply=await fetch(directorEvidenceURL(name));if(!reply.ok)throw Error('Supplement unavailable.');return reply.json();
   }));
   if(extras[0].status==='fulfilled')study.standardStudy=extras[0].value;
   if(extras[1].status==='fulfilled')study.tokenAudit=extras[1].value;
