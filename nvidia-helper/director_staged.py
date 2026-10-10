@@ -144,7 +144,7 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
             # verbatim copy of every beat or summary of the future group.
             visual['analysis']={key:copy.deepcopy(analysis.get(key,[])) for key in ('locations','objects','environmentChanges')}
             # Unique source-keyed cut slots share scene/direction definitions.
-            visual['directorPayloadVersion']=6
+            visual['directorPayloadVersion']=7 if project['settings']['director'].get('compactCuts',False) else 6
         if type(cadence) in (int,float) and cadence>0:
             visual['cadenceTarget']={'imagesPerMinute':cadence,'approximateShots':max(1,round(duration*cadence/60)),
                 'instruction':'Keep this approximate selected cadence. Do not cut on every sentence. Split for genuinely distinct visible moments and required state changes; explain exceptions in pacingReason.'}

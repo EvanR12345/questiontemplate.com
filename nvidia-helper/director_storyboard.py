@@ -23,7 +23,7 @@ def storyboard_schema(context):
     minimum=min(maximum,max(1,math.ceil(target*.9))) if type(target) in (int,float) and target>0 else 1
     metadata={'purpose':short_text(160),'location':short_text(120),'mood':short_text(80),'pacingReason':short_text(160)}
     for field in metadata.values():field['minLength']=1
-    if context.get('directorPayloadVersion')==6:
+    if context.get('directorPayloadVersion') in (6,7):
         # Source-keyed slots make duplicate/out-of-order cuts impossible while
         # Luna still chooses every optional cut. Definitions avoid repeating
         # the complete camera/action schema for each source sentence.
@@ -31,6 +31,17 @@ def storyboard_schema(context):
         fields={k:v for k,v in shot['properties'].items() if k!='startSentence'}
         direction=obj({**fields,'scene':{'anyOf':[scene,{'type':'null'}]}})
         required=set(context.get('requiredVisualChangeBoundaries',[])) | {0}
+        if context.get('directorPayloadVersion')==7:
+            if any(type(n) is not int or not 0<=n<len(context['sentences']) for n in required):
+                raise ValueError('Required storyboard cut escapes its source range.')
+            if len(required)>maximum:raise ValueError('Required changes exceed selected cadence; needs review.')
+            optional=[n for n in range(len(context['sentences'])) if n not in required]
+            additional=obj({**copy.deepcopy(direction['properties']),
+                'startSentence':{'type':'integer','enum':optional or [0]}})
+            return obj({'openingScene':scene,
+                'requiredCuts':obj({f'cut{n}':{'$ref':'#/$defs/direction'} for n in sorted(required)}),
+                'additionalCuts':arr(additional)|{'minItems':max(0,minimum-len(required)),
+                    'maxItems':max(0,maximum-len(required))}})|{'$defs':{'scene':obj(metadata),'direction':direction}}
         slots={f'cut{n}':({'$ref':'#/$defs/direction'} if n in required else
             {'anyOf':[{'$ref':'#/$defs/direction'},{'type':'null'}]}) for n in range(len(context['sentences']))}
         return obj({'openingScene':scene,'cuts':obj(slots)}) | {'$defs':{'scene':obj(metadata),'direction':direction}}
@@ -58,6 +69,16 @@ def repair_schema(context):
 def compile_storyboard(value, context):
     """The model chooses each cut; the application restores ends and indices."""
     count = len(context['sentences'])
+    if context.get('directorPayloadVersion')==7:
+        validate_schema(value,storyboard_schema(context))
+        cuts={f'cut{n}':None for n in range(count)}
+        cuts.update(copy.deepcopy(value['requiredCuts']))
+        for entry in value['additionalCuts']:
+            raw=copy.deepcopy(entry);n=raw.pop('startSentence')
+            if cuts[f'cut{n}'] is not None:raise ValueError('Duplicate source cut in chapter storyboard.')
+            cuts[f'cut{n}']=raw
+        return compile_storyboard({'openingScene':value['openingScene'],'cuts':cuts},
+            {**context,'directorPayloadVersion':6})
     if context.get('directorPayloadVersion')==6 and 'cuts' in value:
         shots=[]
         for n in range(count):
@@ -151,6 +172,16 @@ def plan_storyboard(provider, context, gate):
                   if context.get('directorPayloadVersion')==6 else
                   'For each shot return only its startSentence. Starts must increase and begin at 0. '
                   'Each cut uses a DIFFERENT sentence index. Do not return two camera variations at the same startSentence. ')
+    if context.get('directorPayloadVersion')==7:
+        shape=('Return openingScene metadata, requiredCuts and additionalCuts. '
+            'Fill every fixed requiredCuts key with its direction. The number in cutN is the source sentence index. '
+            'Never return null for a required cut. For other director-selected cuts return an additionalCuts array '
+            'with startSentence and direction. Obey its minimum/maximum item count. '
+            'Choose approximately cadenceTarget.approximateShots TOTAL shots, counting both collections. '
+            'Never duplicate a cut or put required indices in additionalCuts. '
+            'Each direction has scene=null to continue or scene metadata to start a scene. '
+            'cut0 uses openingScene. Do not repeat metadata on continuing shots. ')
+        start_format='The application sorts source cut indices and derives end times. '
     value = provider.call(ROLE +
         ' Work only on the accepted source facts and narration. Plan story-driven scenes, then individual visible shots, '
         'their cameras. The application compiles the complete model-aware image prompt from those AI decisions. '

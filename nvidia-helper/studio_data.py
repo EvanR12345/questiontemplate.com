@@ -371,6 +371,10 @@ def validate_project(p):
         raise ValueError('Choose bounded parallel director calls: up to three classic or eight staged.')
     if 'concisePrompts' in p['settings'].get('director',{}) and type(p['settings']['director']['concisePrompts']) is not bool:
         raise ValueError('Concise director prompts must be enabled or disabled.')
+    if type(p['settings'].get('director',{}).get('compactCuts',False)) is not bool:
+        raise ValueError('Compact storyboard cuts must be enabled or disabled.')
+    if p['settings'].get('director',{}).get('compactCuts',False) and p['settings']['director'].get('executionMode')!='staged-lean':
+        raise ValueError('Compact storyboard cuts require Lean Luna.')
     if p['settings'].get('director',{}).get('executionMode','classic') not in ('classic','staged','staged-review','staged-lean'):
         raise ValueError('Choose classic or staged Luna directing.')
     if p['settings'].get('director',{}).get('executionMode','classic').startswith('staged'):

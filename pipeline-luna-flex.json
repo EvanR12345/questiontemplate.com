@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-10",
+  "model": "gpt-6-luna",
+  "sourceNarrationSeconds": 1050.23,
+  "pilotCapUSD": 0.1,
+  "pilotSettledUSD": 0.031741963,
+  "pilotReservedUSD": 0.0,
+  "priorSettledUSD": 0.492561112,
+  "priorReservedUSD": 0.014212125,
+  "combinedSettledUSD": 0.5243030750000001,
+  "combinedReservedUSD": 0.014212125,
+  "totalCapUSD": 1,
+  "conditions": [
+    {
+      "condition": "small-groups-hybrid",
+      "status": "COMPLETE",
+      "rejection": "",
+      "seconds": 3927.3439999999246,
+      "estimatedUSD": 0.015215959,
+      "chapters": [
+        {
+          "number": 1,
+          "seconds": 122.40599999995902,
+          "scenes": 14,
+          "shots": 43,
+          "duration": 435.0599999999998,
+          "handoffPresent": true
+        },
+        {
+          "number": 2,
+          "seconds": 3804.9060000000754,
+          "scenes": 16,
+          "shots": 60,
+          "duration": 615.1700000000002,
+          "handoffPresent": true
+        }
+      ],
+      "shots": 103,
+      "sourcePreserved": true,
+      "inputTokens": 146709,
+      "outputTokens": 31522,
+      "requests": 32,
+      "settledRequests": 32,
+      "unknownRequests": 0,
+      "reservedUSD": 0,
+      "stages": [
+        {
+          "name": "Casting supervisor",
+          "calls": 2,
+          "inputTokens": 6247,
+          "outputTokens": 1098,
+          "callWorkSeconds": 15.969000000000001,
+          "estimatedUSD": 0.000586851,
+          "elapsedSpanSeconds": 127.80357909202576,
+          "activeSeconds": 15.968999862670898
+        },
+        {
+          "name": "Source fact analyst",
+          "calls": 2,
+          "inputTokens": 15476,
+          "outputTokens": 8296,
+          "callWorkSeconds": 3753.0,
+          "estimatedUSD": 0.0028478,
+          "elapsedSpanSeconds": 3822.0185832977295,
+          "activeSeconds": 3753.0
+        },
+        {
+          "name": "Source continuity reviewer",
+          "calls": 2,
+          "inputTokens": 12476,
+          "outputTokens": 1132,
+          "callWorkSeconds": 27.218,
+          "estimatedUSD": 0.0009068,
+          "elapsedSpanSeconds": 3792.8082551956177,
+          "activeSeconds": 27.218000173568726
+        },
+        {
+          "name": "Visual storyboard director",
+          "calls": 21,
+          "inputTokens": 72904,
+          "outputTokens": 18692,
+          "callWorkSeconds": 515.878,
+          "estimatedUSD": 0.008318207,
+          "elapsedSpanSeconds": 3842.729508638382,
+          "activeSeconds": 84.14285850524902
+        },
+        {
+          "name": "Storyboard continuity supervisor",
+          "calls": 3,
+          "inputTokens": 32395,
+          "outputTokens": 1551,
+          "callWorkSeconds": 26.89,
+          "estimatedUSD": 0.0020075,
+          "elapsedSpanSeconds": 3830.386933326721,
+          "activeSeconds": 26.889999866485596
+        },
+        {
+          "name": "Targeted storyboard repair",
+          "calls": 1,
+          "inputTokens": 6613,
+          "outputTokens": 538,
+          "callWorkSeconds": 9.25,
+          "estimatedUSD": 0.000465151,
+          "elapsedSpanSeconds": 9.25,
+          "activeSeconds": 9.25
+        },
+        {
+          "name": "Workflow planner",
+          "calls": 1,
+          "inputTokens": 598,
+          "outputTokens": 215,
+          "callWorkSeconds": 3.672,
+          "estimatedUSD": 8.365e-05,
+          "elapsedSpanSeconds": 3.671999931335449,
+          "activeSeconds": 3.671999931335449
+        }
+      ],
+      "processingTier": "flex",
+      "hostInterrupted": true,
+      "allReturnedFlex": true,
+      "timingEligible": false
+    },
+    {
+      "condition": "whole-chapter-hybrid",
+      "status": "COMPLETE",
+      "rejection": "",
+      "seconds": 445.25,
+      "estimatedUSD": 0.009944302,
+      "chapters": [
+        {
+          "number": 1,
+          "seconds": 201.75,
+          "scenes": 4,
+          "shots": 47,
+          "duration": 435.0599999999998,
+          "handoffPresent": true
+        },
+        {
+          "number": 2,
+          "seconds": 243.46799999999348,
+          "scenes": 2,
+          "shots": 64,
+          "duration": 615.1700000000002,
+          "handoffPresent": true
+        }
+      ],
+      "shots": 111,
+      "sourcePreserved": true,
+      "inputTokens": 91556,
+      "outputTokens": 21466,
+      "requests": 13,
+      "settledRequests": 13,
+      "unknownRequests": 0,
+      "reservedUSD": 0,
+      "stages": [
+        {
+          "name": "Casting supervisor",
+          "calls": 2,
+          "inputTokens": 6252,
+          "outputTokens": 980,
+          "callWorkSeconds": 23.516,
+          "estimatedUSD": 0.000557601,
+          "elapsedSpanSeconds": 212.52514243125916,
+          "activeSeconds": 23.516000032424927
+        },
+        {
+          "name": "Source fact analyst",
+          "calls": 2,
+          "inputTokens": 15341,
+          "outputTokens": 6972,
+          "callWorkSeconds": 199.406,
+          "estimatedUSD": 0.0025100499999999998,
+          "elapsedSpanSeconds": 307.35053300857544,
+          "activeSeconds": 199.4060001373291
+        },
+        {
+          "name": "Source continuity reviewer",
+          "calls": 2,
+          "inputTokens": 11809,
+          "outputTokens": 513,
+          "callWorkSeconds": 20.781,
+          "estimatedUSD": 0.0007187000000000001,
+          "elapsedSpanSeconds": 222.5818166732788,
+          "activeSeconds": 20.7810001373291
+        },
+        {
+          "name": "Visual storyboard director",
+          "calls": 2,
+          "inputTokens": 17389,
+          "outputTokens": 10614,
+          "callWorkSeconds": 132.172,
+          "estimatedUSD": 0.00352295,
+          "elapsedSpanSeconds": 278.6631808280945,
+          "activeSeconds": 132.17200016975403
+        },
+        {
+          "name": "Storyboard continuity supervisor",
+          "calls": 3,
+          "inputTokens": 32366,
+          "outputTokens": 1471,
+          "callWorkSeconds": 31.376,
+          "estimatedUSD": 0.001986051,
+          "elapsedSpanSeconds": 260.64348435401917,
+          "activeSeconds": 31.37600016593933
+        },
+        {
+          "name": "Workflow planner",
+          "calls": 1,
+          "inputTokens": 598,
+          "outputTokens": 207,
+          "callWorkSeconds": 4.844,
+          "estimatedUSD": 8.165e-05,
+          "elapsedSpanSeconds": 4.8440001010894775,
+          "activeSeconds": 4.8440001010894775
+        },
+        {
+          "name": "Targeted storyboard repair",
+          "calls": 1,
+          "inputTokens": 7801,
+          "outputTokens": 709,
+          "callWorkSeconds": 26.046,
+          "estimatedUSD": 0.0005673,
+          "elapsedSpanSeconds": 26.046000003814697,
+          "activeSeconds": 26.046000003814697
+        }
+      ],
+      "processingTier": "flex",
+      "hostInterrupted": false,
+      "allReturnedFlex": true,
+      "timingEligible": true
+    },
+    {
+      "condition": "small-groups-hybrid",
+      "status": "FAILED",
+      "rejection": "Source-fidelity issues remained after bounded repair.",
+      "seconds": 166.10899999993853,
+      "estimatedUSD": 0.006581701999999998,
+      "chapters": [],
+      "shots": 0,
+      "sourcePreserved": true,
+      "inputTokens": 68229,
+      "outputTokens": 12681,
+      "requests": 15,
+      "settledRequests": 15,
+      "unknownRequests": 0,
+      "reservedUSD": 0,
+      "stages": [
+        {
+          "name": "Casting supervisor",
+          "calls": 1,
+          "inputTokens": 2831,
+          "outputTokens": 623,
+          "callWorkSeconds": 14.516,
+          "estimatedUSD": 0.0002973,
+          "elapsedSpanSeconds": 14.516000032424927,
+          "activeSeconds": 14.516000032424927
+        },
+        {
+          "name": "Source fact analyst",
+          "calls": 1,
+          "inputTokens": 6817,
+          "outputTokens": 2386,
+          "callWorkSeconds": 69.062,
+          "estimatedUSD": 0.00093735,
+          "elapsedSpanSeconds": 69.06200003623962,
+          "activeSeconds": 69.06200003623962
+        },
+        {
+          "name": "Source continuity reviewer",
+          "calls": 1,
+          "inputTokens": 5525,
+          "outputTokens": 537,
+          "callWorkSeconds": 14.235,
+          "estimatedUSD": 0.0004105,
+          "elapsedSpanSeconds": 14.234999895095825,
+          "activeSeconds": 14.234999895095825
+        },
+        {
+          "name": "Visual storyboard director",
+          "calls": 9,
+          "inputTokens": 29115,
+          "outputTokens": 8119,
+          "callWorkSeconds": 238.625,
+          "estimatedUSD": 0.003485501,
+          "elapsedSpanSeconds": 41.121896743774414,
+          "activeSeconds": 41.121896743774414
+        },
+        {
+          "name": "Storyboard continuity supervisor",
+          "calls": 2,
+          "inputTokens": 17539,
+          "outputTokens": 786,
+          "callWorkSeconds": 18.093,
+          "estimatedUSD": 0.001073451,
+          "elapsedSpanSeconds": 26.1638822555542,
+          "activeSeconds": 18.093000173568726
+        },
+        {
+          "name": "Targeted storyboard repair",
+          "calls": 1,
+          "inputTokens": 6402,
+          "outputTokens": 230,
+          "callWorkSeconds": 7.735,
+          "estimatedUSD": 0.0003776,
+          "elapsedSpanSeconds": 7.734999895095825,
+          "activeSeconds": 7.734999895095825
+        }
+      ],
+      "processingTier": "flex",
+      "hostInterrupted": false,
+      "allReturnedFlex": true,
+      "timingEligible": false
+    }
+  ],
+  "limitations": "Fresh AI plans vary. One clean run per format; no statistical significance or generated-image comparison. Interrupted results keep their costs but never calibrate latency."
+}

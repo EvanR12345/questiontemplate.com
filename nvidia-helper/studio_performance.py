@@ -12,6 +12,40 @@ import threading
 import time
 
 VERSION = 1
+
+class HostExecutionClock:
+    """Detect long gaps in host execution, not ordinary network/API waiting.
+
+    A background sampler continues during remote waits. Sleep, suspension or
+    severe starvation delays the sampler itself. Such runs remain recorded but
+    must not teach the ETA an hour of apparent model work. No OS settings change.
+    """
+    def __init__(self,clock=time.monotonic,interval=2,threshold=20):
+        self.clock=clock;self.interval=interval;self.threshold=threshold
+        self.lock=threading.Lock();self.last=clock();self.total=0.;self.started=False
+
+    def sample(self):
+        with self.lock:
+            now=self.clock();elapsed=max(0,now-self.last);self.last=now
+            if elapsed>self.threshold:self.total+=elapsed-self.interval
+            return self.total
+
+    def snapshot(self):
+        with self.lock:
+            if not self.started:
+                self.started=True
+                threading.Thread(target=self._watch,name='studio-host-clock',daemon=True).start()
+        return self.sample()
+
+    def _watch(self):
+        while True:
+            time.sleep(self.interval);self.sample()
+
+_host_execution_clock=HostExecutionClock()
+def host_execution_gaps():return _host_execution_clock.snapshot()
+def host_interruption_details(start):
+    gap=max(0,host_execution_gaps()-start)
+    return {'hostInterrupted':gap>0,'hostGapSeconds':round(gap,3)}
 DIRECTOR_PASSES = {'Casting supervisor', 'Story analyst', 'Chapter director',
     'Scene director', 'Cinematographer', 'Workflow planner', 'Continuity supervisor',
     'Image prompt engineer','Source fact analyst','Source continuity reviewer','Source fact correction','Visual storyboard director','Storyboard continuity supervisor','Targeted storyboard repair'}
@@ -53,7 +87,8 @@ def profile_for(stage, project, config, details=None):
             checkLevel=settings.get('qcCheckLevel','off'))
         if director.get('executionMode','classic').startswith('staged'):
             lean=director.get('executionMode')=='staged-lean'
-            profile['planVersion']=9 if lean else 2
+            profile['compactCuts']=director.get('compactCuts',False)
+            profile['planVersion']=10 if lean and profile['compactCuts'] else 9 if lean else 2
             profile['factsVersion']=3
             if lean:profile['factReasoning']='high' if director.get('reasoning')=='High' else 'medium'
             profile['visualGroupLimit']={'sentences':12 if lean else 24,'characters':6000,'targetShots':8}
@@ -131,7 +166,7 @@ class PerformanceStore:
             changed=self.db.execute('INSERT OR IGNORE INTO observations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (identity,str(run_id),signature(profile),json.dumps(profile,sort_keys=True),profile['stage'],
                  units['kind'],units['value'],seconds,cost,details.get('status','COMPLETE'),
-                 bool(details.get('reused')),bool(details.get('usagePending')),bool(details.get('paused')),
+                 bool(details.get('reused')),bool(details.get('usagePending')),bool(details.get('paused') or details.get('hostInterrupted')),
                  finished or time.time(),source)).rowcount
             self.db.commit()
         return bool(changed)

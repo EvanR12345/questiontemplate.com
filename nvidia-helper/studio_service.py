@@ -23,7 +23,7 @@ from prompt_quality import generation_measurements
 from production_trace import ProductionTrace
 from prompt_preflight import require_shot
 from queue_estimates import remaining_time, timing_profile
-from studio_performance import PerformanceStore,profile_for,observation_units,signature as performance_signature
+from studio_performance import PerformanceStore,profile_for,observation_units,signature as performance_signature,host_execution_gaps,host_interruption_details
 from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, FLOW_VERSION, audio_segments, effect_pcm, create_connected_audio, speech_pcm
 
 
@@ -1161,7 +1161,7 @@ class StudioService:
         if context:
             details=(details or {}) | {'executionId':context.identity,'inputHash':context.input_hash,'jobId':context.parent_job}
         root=getattr(getattr(self,'_overlap',None),'root',self)
-        if root.paused or root.pause_epoch!=getattr(self,'_timing_pause_epoch',root.pause_epoch):
+        if root.paused or root.pause_epoch!=getattr(self,'_timing_pause_epoch',root.pause_epoch) or (details or {}).get('hostInterrupted'):
             details=(details or {}) | {'paused':True}
         run_id=(details or {}).get('jobId') or self.current or getattr(self,'_performance_run_id','manual')
         observation_id=performance_signature({'project':pid,'stage':stage,'finished':observed_at,
@@ -1227,6 +1227,7 @@ class StudioService:
             return self._measured_stage(pid, stage, callback, *args, **details)
 
     def _measured_stage(self, pid, stage, callback, *args, **details):
+        host_epoch=host_execution_gaps()
         root=getattr(getattr(self,'_overlap',None),'root',self)
         pause_epoch=root.pause_epoch
         was_paused=root.paused
@@ -1243,7 +1244,7 @@ class StudioService:
             result = callback(*args)
         except Exception:
             self.record_timing(
-                pid, stage, time.monotonic() - began, details | {"status": "FAILED","paused":was_paused or root.pause_epoch!=pause_epoch}, trace_record=False
+                pid, stage, time.monotonic() - began, details | host_interruption_details(host_epoch) | {"status": "FAILED","paused":was_paused or root.pause_epoch!=pause_epoch}, trace_record=False
             )
             raise
         if old_audio is not None:
@@ -1257,7 +1258,7 @@ class StudioService:
                 t.get('stage')!='Workflow planner' and t.get('chapter')==details.get('chapter') and t.get('finished',0)>=began_at for t in recent)
         status=result.get('status') if isinstance(result,dict) else None
         self.record_timing(
-            pid, stage, time.monotonic() - began, details | {"status":status if status in ('SUPERSEDED','CANCELLED','FAILED') else "COMPLETE","paused":was_paused or root.pause_epoch!=pause_epoch}, trace_record=False
+            pid, stage, time.monotonic() - began, details | host_interruption_details(host_epoch) | {"status":status if status in ('SUPERSEDED','CANCELLED','FAILED') else "COMPLETE","paused":was_paused or root.pause_epoch!=pause_epoch}, trace_record=False
         )
         return result
 

@@ -14,6 +14,8 @@ export function directorSettings(current, values, health) {
   const n = Number(values.parallelism);
   if (!Number.isInteger(n) || n < 1 || n > directorLimits(mode)) throw Error('Choose a supported independent-task limit.');
   if (!['default', 'fast', 'flex'].includes(values.processingTier)) throw Error('Choose Standard, Fast or Flex processing.');
+  if(values.compactCuts!==undefined&&typeof values.compactCuts!=='boolean')throw Error('Compact storyboard cuts must be enabled or disabled.');
+  if(values.compactCuts&&mode!=='staged-lean')throw Error('Compact storyboard cuts require Lean Luna.');
   if (['staged-review','staged-lean'].includes(mode)) {
     if (!health?.stagedDirectorAvailable) throw Error('Update and connect the shared helper before using staged Luna.');
     if (mode === 'staged-lean' && !health?.leanDirectorAvailable) throw Error('Update the shared helper before using Lean Luna.');
@@ -24,6 +26,7 @@ export function directorSettings(current, values, health) {
       throw Error('Set an API spending cap before using staged Luna.');
   }
   return {...current, executionMode: mode, processingTier: values.processingTier, parallelism: n,
+    compactCuts:values.compactCuts??current.compactCuts??false,
     factGroupSentences: mode.startsWith('staged') ? 128 : current.factGroupSentences || 48,
     reasoningProfile: 'selected'};
 }

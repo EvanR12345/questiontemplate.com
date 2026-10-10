@@ -38,6 +38,18 @@ test('research and incomplete measurements cannot masquerade as installed calibr
     assert.throws(()=>buildPlan(c,bad),/completed/);
   }
 });
+test('clean matching Flex receipts override the assumption without discounting their already-discounted cost twice',()=>{
+  const p=evidence.directorCalibration.profiles.find(p=>p.id==='whole-chapter-hybrid');
+  assert.equal(p.tiers.flex.timingEligible,true);
+  const config={...c,directorProfile:p.id,directorTier:'flex',flexLatencyFactor:9};
+  const forecast=directorForecast(config,evidence);
+  assert.equal(forecast.tierMeasured,true);assert.equal(forecast.measuredSeconds,p.tiers.flex.seconds);
+  assert.equal(forecast.secondsPerStorySecond,p.tiers.flex.seconds/evidence.directorCalibration.sourceNarrationSeconds);
+  assert.equal(forecast.costPerTwoHours,p.tiers.flex.estimatedUSD/evidence.directorCalibration.sourceNarrationSeconds*7200);
+  const interrupted=structuredClone(evidence);
+  interrupted.directorCalibration.profiles.find(p=>p.id===config.directorProfile).tiers.flex.timingEligible=false;
+  assert.equal(directorForecast(config,interrupted).tierMeasured,false);
+});
 test('new director rates feed GPU comparisons and rental startup search, not only evidence cards',()=>{
   const old={...c,directorProfile:'historical',directorCostMode:'manual'},oldResult=schedule(buildPlan(old,evidence)),updated=schedule(buildPlan(c,evidence));
   assert.ok(updated.end<oldResult.end);assert.ok(updated.directorUSD<oldResult.directorUSD);

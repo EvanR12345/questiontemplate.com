@@ -22,16 +22,19 @@ export function directorForecast(config,evidence) {
   if(!Number.isFinite(p.seconds)||p.seconds<=0||!Number.isFinite(data.sourceNarrationSeconds)||data.sourceNarrationSeconds<=0||!Number.isFinite(p.estimatedUSD)||p.estimatedUSD<0)
     throw Error('Incomplete director timing or cost evidence.');
   if(config.policy==='current'&&!p.installed)throw Error('This director format is a research prototype. Choose Proposed scheduling or an installed director profile.');
+  const observed=p.tiers?.[tier];
+  const usable=observed?.status==='COMPLETE'&&observed.timingEligible&&observed.completedChapters===observed.sourceChapters&&!observed.unknownRequests;
+  if(usable&&(!Number.isFinite(observed.seconds)||observed.seconds<=0||!Number.isFinite(observed.estimatedUSD)||observed.estimatedUSD<0))throw Error('Incomplete selected-tier measurement.');
   // The measurement already contains its tested concurrency. Reserving that
   // capacity avoids applying an invented second speedup or overbooking visual QC.
-  return {id,label:p.label,slots:p.slots,aggregated:true,tier,installed:p.installed,
-    secondsPerStorySecond:p.seconds/data.sourceNarrationSeconds*(tier==='flex'?flexFactor:1),
-    costPerTwoHours:manual?config.directorCost:p.estimatedUSD/data.sourceNarrationSeconds*7200*multiplier,
+  return {id,label:p.label.replace('· Standard',tier==='flex'?'· Flex':tier==='fast'?'· Fast':'· Standard'),slots:p.slots,aggregated:true,tier,installed:p.installed,
+    secondsPerStorySecond:(usable?observed.seconds:p.seconds*(tier==='flex'?flexFactor:1))/data.sourceNarrationSeconds,
+    costPerTwoHours:manual?config.directorCost:(usable?observed.estimatedUSD:p.estimatedUSD*multiplier)/data.sourceNarrationSeconds*7200,
     sourceSeconds:data.sourceNarrationSeconds,sourceWords:data.sourceWords,sourceChapters:p.sourceChapters,
-    measuredSeconds:p.seconds,measuredUSD:p.estimatedUSD,calls:p.calls,shots:p.shots,
-    timingMeasured:tier==='default',priceMultiplier:multiplier,stages:p.stages||[],
+    measuredSeconds:usable?observed.seconds:p.seconds,measuredUSD:usable?observed.estimatedUSD:p.estimatedUSD,calls:usable?observed.calls:p.calls,shots:usable?observed.shots:p.shots,
+    timingMeasured:tier==='default'||usable,tierMeasured:usable,priceMultiplier:multiplier,stages:usable?observed.stages||[]:p.stages||[],
     scope:p.scope+' Linear duration scaling from two chapters; different chapter sizes, cadence, repairs and rate limits can change it.'+
-      (tier==='flex'?` Flex latency is unmeasured: ${flexFactor}× Standard is your assumption; temporary unavailability can add more delay.`:
+      (usable?` ${observed.samples} compatible selected-tier timing sample(s). ${observed.scope}`:tier==='flex'?` Flex latency is unmeasured: ${flexFactor}× Standard is your assumption; temporary unavailability can add more delay.`:
        tier==='fast'?' Fast latency is unmeasured for this profile; Standard time is retained as a comparison reference, not a Fast measurement.':'')};
 }
 

@@ -1,3 +1,11 @@
+## Compact storyboard response and interrupted ETA protection
+
+Advanced settings offers an optional Compact storyboard response for Lean. Version 10 sends mandatory source-change cuts plus a bounded list of director-selected extras, avoiding null entries for every unused sentence. It preserves the required changes, unique cuts, cadence, complete narration coverage, accepted cast and full fidelity review. Version 9 remains unchanged for older projects; enabling compact does not overwrite saved plans or prompts. A 134-sentence offline schema shrank from 11,487 to 3,695 characters; this is not an API token or speed measurement. The earlier matched hybrid research combined whole-chapter factual groups as well, so its timings must not silently train this different production profile.
+
+Host sampler gaps mark suspended/starved observations as interrupted. They remain in history with charges but do not train elapsed estimates. Normal remote API waits continue sampling and are not excluded. Windows sleep settings are unchanged.
+
+The 10-cent Flex pilot closed at $0.031741963 with no new reservations. Combined with earlier current study: $0.524303075 settled + $0.014212125 reserved of $1. A clean whole-chapter Flex research plan completed in 445.25s for $0.009944302, versus earlier Standard 160.797s/$0.016951102. Different generated plans and shots mean this is exploratory. One small-group run was interrupted by host standby; a fresh small-group repeat failed fidelity review. Neither supplies successful speed calibration. No images, GPUs, audio regeneration or rendered videos were used.
+
 ## October 10: planner calibration and Flex
 
 The production planner now explicitly selects measured Classic Standard, Lean Standard, or the two research hybrid formats. Timeline, startup alternatives and GPU comparisons all use the selected complete director elapsed time and receipt cost. The measured concurrency is included once; adding more API slots cannot invent another speedup. Two-chapter scaling is a projection. Failed/unknown studies never provide speed calibrations; Lean's failed repeat remains visible.

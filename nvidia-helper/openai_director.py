@@ -13,6 +13,7 @@ from pathlib import Path
 
 from director_provider import DirectorProvider, validate_schema, compact_source_evidence
 from cost_control import SpendLedger, luna_cost
+from studio_performance import host_execution_gaps,host_interruption_details
 
 _cache_publish_lock = threading.Lock()
 
@@ -121,6 +122,7 @@ class OpenAIDirector(DirectorProvider):
                     if row['status']=='SETTLED':settled+=row['estimatedUSD']
                     else:reserved+=row['reservedUSD'];pending=True
                 details={'provider':'openai-luna','model':self.model,'status':'FAILED',
+                    **host_interruption_details(report['hostEpoch']),
                     'requestSize':report.get('requestSize',{}),
                     'reasoning':report['reasoning'],'estimatedUSD':settled if ledger else report['cost'],
                     'usagePending':pending,'reservedUSD':reserved,
@@ -211,6 +213,7 @@ class OpenAIDirector(DirectorProvider):
                 "reasoning": {"effort": reasoning}, "max_output_tokens": min(getattr(self, 'max_output_tokens', 12000), 2048) if vision else getattr(self, 'max_output_tokens', 12000),
                 "text": {"format": {"type": "json_schema", "name": "director_pass", "strict": True, "schema": codec.schema if codec else schema}}}
         began = time.monotonic()
+        host_epoch=host_execution_gaps()
         total_usage = {"inputTokens": 0, "tokens": 0, "cachedInputTokens": 0, "cacheWriteTokens": 0}
         estimated_cost = 0
         returned_tiers = []
@@ -224,7 +227,7 @@ class OpenAIDirector(DirectorProvider):
         wait_for_budget=getattr(self,'wait_for_budget',False)
         if not isinstance(wait_for_budget,bool):raise ValueError('Budget wait mode must be boolean.')
         owner = 'luna-call-' + uuid.uuid4().hex
-        self._failure_trace={'began':began,'reasoning':reasoning,'requests':[],
+        self._failure_trace={'began':began,'hostEpoch':host_epoch,'reasoning':reasoning,'requests':[],
             'owner':owner,'attempts':request_timings,'usage':total_usage,'cost':0,'requestSize':request_size}
         for attempt in range(2):
             gate("Luna: " + role.split(".")[0])
@@ -365,6 +368,7 @@ class OpenAIDirector(DirectorProvider):
                     value = codec.decode(value)
                 self.validate_result(role,context,value,schema)
                 details = {"provider": "openai-luna", "model": self.model, "attempt": attempt + 1,
+                           **host_interruption_details(host_epoch),
                            'requestSize':request_size,
                            "reasoning": reasoning,
                            "estimatedUSD": estimated_cost,

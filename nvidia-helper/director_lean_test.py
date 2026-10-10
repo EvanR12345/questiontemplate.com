@@ -13,6 +13,31 @@ from director_wire import CompactDirectorWire
 
 
 class LeanDirectorTest(unittest.TestCase):
+    def test_compact_cuts_preserve_required_events_and_full_source_without_null_padding(self):
+        ctx={'people':[{'id':'mira','name':'Mira'}],
+            'sentences':[{'text':'Mira walks.'} for _ in range(134)],
+            'directorPayloadVersion':6,'requiredVisualChangeBoundaries':[0,20,80,120],
+            'cadenceTarget':{'approximateShots':40}}
+        original=storyboard(ctx);chosen={0,20,80,120}|set(range(1,37))
+        compact={'openingScene':original['openingScene'],
+            'requiredCuts':{f'cut{n}':original['cuts'][f'cut{n}'] for n in (0,20,80,120)},
+            'additionalCuts':[dict(original['cuts'][f'cut{n}'],startSentence=n) for n in sorted(chosen-{0,20,80,120})]}
+        ctx['directorPayloadVersion']=7
+        result=compile_storyboard(compact,ctx)
+        shots=result['detail']['shots']
+        self.assertEqual(len(shots),len(chosen));self.assertEqual(shots[0]['startSentence'],0)
+        self.assertEqual(shots[-1]['endSentence'],133)
+        self.assertTrue(all(a['endSentence']+1==b['startSentence'] for a,b in zip(shots,shots[1:])))
+        self.assertTrue(set((0,20,80,120)).issubset({s['startSentence'] for s in shots}))
+        for mutate in ('missing','duplicate','oversized','identity'):
+            bad=copy.deepcopy(compact)
+            if mutate=='missing':bad['requiredCuts'].pop('cut20')
+            elif mutate=='duplicate':bad['additionalCuts'][1]=bad['additionalCuts'][0]
+            elif mutate=='oversized':bad['additionalCuts']*=2
+            else:bad['requiredCuts']['cut0']['characters']=['invented-person']
+            with self.subTest(mutate=mutate),self.assertRaises(ValueError):compile_storyboard(bad,ctx)
+        self.assertLess(len(json.dumps(storyboard_schema(ctx))),len(json.dumps(storyboard_schema({**ctx,'directorPayloadVersion':6}))))
+
     def test_flex_is_accepted_without_enabling_premium_or_changing_voice_cadence(self):
         from studio_data import validate_project
         p=self.fixture();p['settings']['director']['processingTier']='flex'

@@ -3,6 +3,15 @@ const num=n=>n.toLocaleString('en-CA');
 const money=n=>'$'+n.toFixed(4);
 const time=n=>`${Math.floor(n/60)}m ${(n%60).toFixed(1)}s`;
 
+export function flexLunaHTML(data){
+  if(!data)return '';
+  return `<details open><summary>Flex Luna · measured pilot · ${money(data.pilotSettledUSD)}</summary>
+    <p>Same saved chapters, hybrid storyboard format, source facts, references, cadence and full fidelity reviews. Flex requested on every call, with no automatic Standard fallback. Fresh AI plans and shot counts differ; one clean run is limited history.</p>
+    <div class="evidence-table"><table><thead><tr><th>Format</th><th>Outcome</th><th>Chapters</th><th>Shots</th><th>Observed elapsed</th><th>Usable timing</th><th>Requests</th><th>API cost</th></tr></thead><tbody>${data.conditions.map(r=>`<tr><td>${esc(r.condition)}</td><td>${esc(r.status)}${r.rejection?' · '+esc(r.rejection):''}</td><td>${r.chapters.length}/2</td><td>${num(r.shots)}</td><td>${time(r.seconds)}</td><td>${r.hostInterrupted?'Excluded · laptop standby':r.timingEligible?'Limited history':'Excluded · failed or unresolved'}</td><td>${r.requests}</td><td>${money(r.estimatedUSD)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="caption">The interrupted run's charge is retained, but its standby-contaminated time is not used for forecasts. The planner uses a clean Flex measurement only for its matching research format; Lean production Flex timing remains unmeasured. No generated-image or complete-video quality claim.</p>
+    <p>Combined study: ${money(data.combinedSettledUSD)} settled + ${money(data.combinedReservedUSD)} reserved of ${money(data.totalCapUSD)}. Flex pilot: ${money(data.pilotSettledUSD)} of ${money(data.pilotCapUSD)}. The older uncertain request remains reserved. No GPU, images, audio regeneration or rendering in this pilot.</p></details>`;
+}
+
 export function chapterRequestHTML(data){
   if(!data)return '';
   const rows=data.conditions||[];

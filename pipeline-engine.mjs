@@ -1,7 +1,7 @@
 // A local scheduling model. This module never calls a paid provider or changes Studio projects.
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {directorForecast} from './pipeline-director-calibration.mjs?v=luna-forecast-20261010';
+import {directorForecast} from './pipeline-director-calibration.mjs?v=luna-flex-results-20261010';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'off', sample:20,

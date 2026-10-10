@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {standardLunaHTML,lunaAuditHTML,lunaRequestPage,chapterRequestHTML} from './pipeline-luna-efficiency.mjs';
+import {standardLunaHTML,lunaAuditHTML,lunaRequestPage,chapterRequestHTML,flexLunaHTML} from './pipeline-luna-efficiency.mjs';
+test('Flex evidence retains failed and standby-contaminated results without promising their latency',()=>{
+  const data=JSON.parse(fs.readFileSync(new URL('./pipeline-luna-flex.json',import.meta.url)));
+  const html=flexLunaHTML(data);
+  for(const text of ['Excluded · laptop standby','Excluded · failed','Limited history','remains reserved','no automatic Standard fallback'])assert.ok(html.includes(text));
+  assert.ok(data.combinedSettledUSD+data.combinedReservedUSD<=data.totalCapUSD);
+  assert.equal(data.conditions.filter(r=>r.timingEligible).length,1);
+});
 
 test('chapter request evidence distinguishes failures, grouping, active time and preserved production',()=>{
   const data={conditions:[{condition:'whole <probe>',status:'FAILED',chapters:[],shots:0,

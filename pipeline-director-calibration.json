@@ -199,7 +199,94 @@
           "activeSeconds": 2.437999963760376
         }
       ],
-      "scope": "One complete matched-pair run; full source and storyboard checks retained. Research format is not installed in production. No generated-image quality comparison."
+      "scope": "One complete matched-pair run; full source and storyboard checks retained. Research format is not installed in production. No generated-image quality comparison.",
+      "tiers": {
+        "flex": {
+          "status": "COMPLETE",
+          "timingEligible": true,
+          "samples": 1,
+          "calls": 13,
+          "shots": 111,
+          "stages": [
+            {
+              "name": "Casting supervisor",
+              "calls": 2,
+              "inputTokens": 6252,
+              "outputTokens": 980,
+              "callWorkSeconds": 23.516,
+              "estimatedUSD": 0.000557601,
+              "elapsedSpanSeconds": 212.52514243125916,
+              "activeSeconds": 23.516000032424927
+            },
+            {
+              "name": "Source fact analyst",
+              "calls": 2,
+              "inputTokens": 15341,
+              "outputTokens": 6972,
+              "callWorkSeconds": 199.406,
+              "estimatedUSD": 0.0025100499999999998,
+              "elapsedSpanSeconds": 307.35053300857544,
+              "activeSeconds": 199.4060001373291
+            },
+            {
+              "name": "Source continuity reviewer",
+              "calls": 2,
+              "inputTokens": 11809,
+              "outputTokens": 513,
+              "callWorkSeconds": 20.781,
+              "estimatedUSD": 0.0007187000000000001,
+              "elapsedSpanSeconds": 222.5818166732788,
+              "activeSeconds": 20.7810001373291
+            },
+            {
+              "name": "Visual storyboard director",
+              "calls": 2,
+              "inputTokens": 17389,
+              "outputTokens": 10614,
+              "callWorkSeconds": 132.172,
+              "estimatedUSD": 0.00352295,
+              "elapsedSpanSeconds": 278.6631808280945,
+              "activeSeconds": 132.17200016975403
+            },
+            {
+              "name": "Storyboard continuity supervisor",
+              "calls": 3,
+              "inputTokens": 32366,
+              "outputTokens": 1471,
+              "callWorkSeconds": 31.376,
+              "estimatedUSD": 0.001986051,
+              "elapsedSpanSeconds": 260.64348435401917,
+              "activeSeconds": 31.37600016593933
+            },
+            {
+              "name": "Workflow planner",
+              "calls": 1,
+              "inputTokens": 598,
+              "outputTokens": 207,
+              "callWorkSeconds": 4.844,
+              "estimatedUSD": 8.165e-05,
+              "elapsedSpanSeconds": 4.8440001010894775,
+              "activeSeconds": 4.8440001010894775
+            },
+            {
+              "name": "Targeted storyboard repair",
+              "calls": 1,
+              "inputTokens": 7801,
+              "outputTokens": 709,
+              "callWorkSeconds": 26.046,
+              "estimatedUSD": 0.0005673,
+              "elapsedSpanSeconds": 26.046000003814697,
+              "activeSeconds": 26.046000003814697
+            }
+          ],
+          "seconds": 445.25,
+          "estimatedUSD": 0.009944302,
+          "completedChapters": 2,
+          "sourceChapters": 2,
+          "unknownRequests": 0,
+          "scope": "Clean Flex observation; fresh plans/shot counts differ from Standard. Limited history, not an equal-quality or guaranteed-latency result."
+        }
+      }
     }
   ]
 }

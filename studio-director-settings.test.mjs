@@ -28,4 +28,6 @@ test('lean workflow preserves cadence, requires updated helper and supports Stan
   const flex=directorSettings({cadencePerMinute:6},{...lean,processingTier:'flex'},health);
   assert.equal(flex.processingTier,'flex');assert.equal(flex.cadencePerMinute,6);
   assert.match(directorSummary({director:flex}),/variable latency/);
+  assert.equal(directorSettings({},{...lean,compactCuts:true},health).compactCuts,true);
+  assert.throws(()=>directorSettings({},{...values,compactCuts:true},health),/Lean Luna/);
 });
