@@ -386,8 +386,12 @@ def validate_project(p):
         raise ValueError('Choose Standard, Flex or Fast Luna processing.')
     if p['settings'].get('director',{}).get('executionMode')=='staged-lean' and p['settings']['director'].get('processingTier','default')=='fast':
         raise ValueError('Lean Luna supports Standard or Flex processing; premium Fast is not enabled.')
-    if type(p['settings'].get('director',{}).get('factGroupSentences',48)) is not int or p['settings'].get('director',{}).get('factGroupSentences',48) not in (48,96,128):
-        raise ValueError('Choose a bounded source-fact group of 48, 96 or 128 sentences.')
+    from director_staged import fact_group_limits,visual_group_limits
+    fact_group_limits(p['settings'].get('director',{}))
+    visual_group_limits(p['settings'].get('director',{}))
+    from director_pipeline import validate_source_visual_overlap,fact_beats_mode
+    validate_source_visual_overlap(p['settings'].get('director',{}))
+    fact_beats_mode(p['settings'].get('director',{}))
     cadence=p['settings'].get('director',{}).get('cadencePerMinute')
     if cadence is not None and (type(cadence) not in (int,float) or not math.isfinite(cadence) or cadence<=0):
         raise ValueError('Director cadence must be a positive finite image rate or automatic.')

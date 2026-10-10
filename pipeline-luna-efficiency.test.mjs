@@ -1,7 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {standardLunaHTML,lunaAuditHTML,lunaRequestPage,chapterRequestHTML,flexLunaHTML} from './pipeline-luna-efficiency.mjs';
+import {standardLunaHTML,lunaAuditHTML,lunaRequestPage,chapterRequestHTML,flexLunaHTML,standardOptimizationHTML,standardStageHTML} from './pipeline-luna-efficiency.mjs';
+test('latest optimization evidence keeps rejected timings out of successful projections and retains costs',()=>{
+  const data={date:'today',scope:'Text only',sourceNarrationSeconds:100,
+    conditions:[{condition:'failed <compact>',status:'FAILED',rejection:'Duplicate source cut',chapters:[],shots:0,seconds:20,calls:3,inputTokens:20000,estimatedUSD:.01,timingEligible:false},
+    {condition:'dense',status:'COMPLETE',chapters:[{},{}],shots:10,seconds:30,calls:5,inputTokens:25000,estimatedUSD:.02,timingEligible:true}],
+    reviewProbe:[{case:'wrong speaker',condition:'focused',status:'COMPLETE',targetMatched:false,seconds:10,inputTokens:1000,estimatedUSD:.001}],
+    pilotSettledUSD:.031,pilotReservedUSD:.01,cumulativeLiabilityUSD:.5,cumulativeCapUSD:2,newUnknownRequests:1,activeRequests:0};
+  const before=structuredClone(data),html=standardOptimizationHTML(data,120);
+  assert.match(html,/failed &lt;compact&gt;/);assert.match(html,/Failed timings end at rejection/);
+  assert.match(html,/36m 0.0s/);assert.match(html,/Missed expected case/);
+  assert.match(html,/not an overall accuracy percentage/);assert.match(html,/Neither is the production review default/);
+  assert.match(html,/\$1.4400/);assert.doesNotMatch(html,/24m 0.0s/);
+  assert.deepEqual(data,before);assert.equal(standardOptimizationHTML(null),'');
+  for(const n of [0,-1,NaN,Infinity])assert.throws(()=>standardOptimizationHTML(data,n));
+});
+test('current per-pass evidence shows work overlap and failed charges without exposing source',()=>{
+  const data=JSON.parse(fs.readFileSync(new URL('./pipeline-luna-standard-20261010.json',import.meta.url)));
+  const run=data.conditions.findIndex(r=>r.condition==='dense-facts-v4'&&r.status==='COMPLETE');
+  const html=standardStageHTML(data,run);
+  for(const stage of data.conditions[run].stages)assert.ok(html.includes(stage.name));
+  assert.match(html,/Active interval union/);assert.match(html,/neither column adds to whole-plan elapsed/);
+  assert.match(html,/Failed work and paid repairs/);
+  assert.doesNotMatch(html,/sourceQuote|sourceText|apiKey|requestId|responseId/);
+  assert.equal(standardStageHTML(data,999),'<p>No test selected.</p>');
+});
+
 test('Flex evidence retains failed and standby-contaminated results without promising their latency',()=>{
   const data=JSON.parse(fs.readFileSync(new URL('./pipeline-luna-flex.json',import.meta.url)));
   const html=flexLunaHTML(data);

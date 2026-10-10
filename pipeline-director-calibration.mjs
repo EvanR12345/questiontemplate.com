@@ -1,6 +1,12 @@
 // Read-only forecasts. Selecting a profile never edits a Studio project or calls an API.
 export const DIRECTOR_PRICE_DATE='2026-10-10';
 export const DIRECTOR_PRICE_URL='https://developers.openai.com/api/docs/models/gpt-6-luna';
+export function directorProfileOptions(evidence){
+  const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return (evidence.directorCalibration?.profiles||[]).filter(p=>p.status==='COMPLETE'&&!p.unknownRequests&&p.completedChapters===p.sourceChapters)
+    .map(p=>`<option value="${escape(p.id)}">${escape(p.label)}</option>`).join('')+
+    '<option value="historical">Earlier classic calibration</option>';
+}
 export function directorForecast(config,evidence) {
   const id=config.directorProfile||'historical',tier=config.directorTier||'default';
   if(!['default','flex','fast'].includes(tier))throw Error('Choose Standard, Flex or Fast director processing.');
@@ -44,6 +50,6 @@ export function migrateDirectorForecast(config,saved=false,hasMoves=false) {
   // Keep an explicit old dollar override. The old built-in value is replaced
   // with receipt-derived pricing; manual timeline moves are handled by the UI.
   const manual=saved&&Math.abs(Number(config.directorCost)-.38798)>1e-8;
-  return {...config,directorProfile:'lean-standard',directorTier:'default',
+  return {...config,directorProfile:'lean-current-standard',directorTier:'default',
     directorCostMode:manual?'manual':'measured',flexLatencyFactor:1};
 }

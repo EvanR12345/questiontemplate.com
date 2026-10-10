@@ -1,13 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {directorForecast,migrateDirectorForecast} from './pipeline-director-calibration.mjs';
+import {directorForecast,migrateDirectorForecast,directorProfileOptions} from './pipeline-director-calibration.mjs';
 import {DEFAULTS,buildPlan,schedule,importSnapshot} from './pipeline-engine.mjs';
 import {compareGPUPlans} from './pipeline-gpu-comparison.mjs';
 import {startupSearch} from './pipeline-detail-ui.mjs';
 const evidence=JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url)));
 evidence.directorCalibration=JSON.parse(fs.readFileSync(new URL('./pipeline-director-calibration.json',import.meta.url)));
 const c={...DEFAULTS,intro:false,directorProfile:'small-groups-hybrid',directorCostMode:'measured'};
+test('every settled available calibration appears in the selector without missing new profiles',()=>{
+  const options=directorProfileOptions(evidence);
+  for(const p of evidence.directorCalibration.profiles)assert.ok(options.includes(`value="${p.id}"`));
+  assert.match(options,/value="lean-current-standard"/);
+  const bad={directorCalibration:{profiles:[{id:'bad',status:'FAILED'},
+    {id:'held',status:'COMPLETE',unknownRequests:1,completedChapters:2,sourceChapters:2}]}};
+  assert.doesNotMatch(directorProfileOptions(bad),/value="bad"|value="held"/);
+  assert.match(directorProfileOptions({}),/value="historical"/);
+});
 test('schedule uses latest complete chapter wall time and actual receipts once, with tested concurrency',()=>{
   const before=structuredClone(evidence),p=buildPlan(c,evidence),r=schedule(p);
   assert.deepEqual(r.diagnostics,[]);
@@ -62,12 +71,23 @@ test('new director rates feed GPU comparisons and rental startup search, not onl
 });
 test('migration preserves explicit costs and settings, and exported plans retain current calibration selection',()=>{
   const legacy={minutes:720,directorCost:.38798,gpu:'5090'};
-  const next=migrateDirectorForecast(legacy,true);assert.equal(next.directorProfile,'lean-standard');assert.equal(next.directorCostMode,'measured');assert.equal(next.minutes,720);
+  const next=migrateDirectorForecast(legacy,true);assert.equal(next.directorProfile,'lean-current-standard');assert.equal(next.directorCostMode,'measured');assert.equal(next.minutes,720);
   assert.equal(migrateDirectorForecast({...legacy,directorCost:.9},true).directorCostMode,'manual');
   assert.equal(migrateDirectorForecast(legacy,true,true).directorProfile,'historical'); // Do not erase a manually arranged eight-pass timeline on refresh.
   assert.deepEqual(migrateDirectorForecast(c,true),c);
   const input={version:1,type:'studio-pipeline-plan',config:c,preferences:{'c1-chapter':{notBefore:100}}};
   const loaded=importSnapshot(input,evidence);assert.equal(loaded.config.directorProfile,c.directorProfile);assert.deepEqual(loaded.preferences,input.preferences);
+});
+test('current format forecasts enter actual schedule once and retain older explicit profiles',()=>{
+  const config={...c,directorProfile:'lean-current-standard',policy:'current'};
+  const p=buildPlan(config,evidence),r=schedule(p);
+  assert.ok(Math.abs(p.director.measuredSeconds-165.859)<1e-8);
+  assert.ok(Math.abs(r.directorUSD-.032979708*7200/1050.23)<1e-8);
+  assert.ok(Math.abs(p.tasks.filter(t=>t.kind==='chapter').reduce((s,t)=>s+t.duration,0)-165.859*7200/1050.23)<1e-5);
+  const earlier={...config,directorProfile:'lean-standard'};
+  assert.deepEqual(migrateDirectorForecast(earlier,true),earlier);
+  assert.equal(directorForecast(earlier,evidence).measuredSeconds,200.625);
+  assert.match(p.director.scope,/matching attempt.*failed/);
 });
 test('long projections keep narration, image cadence, rendering and ordered handoffs intact',()=>{
   for(const minutes of [90,120,720,1440]){

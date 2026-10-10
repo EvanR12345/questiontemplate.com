@@ -22,9 +22,19 @@ def stream(value='{"summary":"complete"}', status="completed", **extra):
 
 
 class LunaTest(unittest.TestCase):
+    def test_capacity_diagnostics_never_copy_headers_or_invent_missing_limits(self):
+        from openai_director import numeric_rate_limits
+        headers={'x-ratelimit-limit-requests':'500','x-ratelimit-remaining-tokens':'0',
+                 'Authorization':'private credential','set-cookie':'private session',
+                 'x-ratelimit-remaining-requests':'secret-value','x-ratelimit-limit-tokens':'-1'}
+        self.assertEqual(numeric_rate_limits(headers),{'limit-requests':500,'remaining-tokens':0})
+        self.assertEqual(numeric_rate_limits(None),{})
+        for bad in ('١٠','1.5','inf','1'*19,True):
+            self.assertEqual(numeric_rate_limits({'x-ratelimit-limit-tokens':bad}),{})
+
     def test_flex_waits_for_capacity_without_timeout_resubmission_or_standard_fallback(self):
         from cost_control import SpendLedger
-        for tier,timeout in [('default',30),('flex',900)]:
+        for tier,timeout in [('default',120),('flex',900)]:
             with self.subTest(tier=tier),tempfile.TemporaryDirectory() as folder:
                 director=OpenAIDirector({'openaiServiceTier':tier},Path(folder))
                 director.key=lambda:'test-key'
@@ -46,6 +56,20 @@ class LunaTest(unittest.TestCase):
             self.assertEqual(request.call_count,1)
             state=director.spend_ledger.load()
             self.assertEqual(state['spentUSD'],0);self.assertEqual(state['reservedUSD'],0)
+
+    def test_standard_idle_timeout_keeps_unknown_charge_and_never_buys_a_second_call(self):
+        from cost_control import SpendLedger
+        with tempfile.TemporaryDirectory() as folder:
+            director=OpenAIDirector({'openaiServiceTier':'default'},Path(folder));director.key=lambda:'test-key'
+            director.spend_ledger=SpendLedger(Path(folder)/'ledger.json',.02)
+            with patch('openai_director.urllib.request.urlopen',side_effect=TimeoutError('idle read')) as request:
+                with self.assertRaises(TimeoutError):director.call('Test',{},obj({'summary':STR}),lambda *_:None)
+            self.assertEqual(request.call_count,1)
+            self.assertEqual(request.call_args.kwargs['timeout'],120)
+            state=director.spend_ledger.load()
+            self.assertEqual(state['spentUSD'],0);self.assertGreater(state['reservedUSD'],0)
+            self.assertEqual(len(state['requests']),1)
+            self.assertEqual(next(iter(state['requests'].values()))['status'],'UNKNOWN')
 
     def test_cached_progress_save_does_not_block_other_cache_publishers(self):
         import openai_director

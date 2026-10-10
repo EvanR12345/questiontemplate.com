@@ -44,10 +44,26 @@ class PerformanceTest(unittest.TestCase):
         old=profile_for('AI directing',self.project,{})
         self.project['settings']['director']['compactCuts']=True
         compact=profile_for('AI directing',self.project,{})
-        self.assertEqual(old['planVersion'],9);self.assertEqual(compact['planVersion'],10)
+        self.assertEqual(old['planVersion'],11);self.assertEqual(compact['planVersion'],13)
         self.assertNotEqual(old,compact)
         self.project['settings']['director']['processingTier']='flex'
         self.assertNotEqual(compact,profile_for('AI directing',self.project,{}))
+    def test_changed_request_packing_and_fact_windows_never_inherit_smaller_history(self):
+        d=self.project['settings']['director'];d.update(executionMode='staged-lean',factGroupSentences=128)
+        original=profile_for('AI directing',self.project,{})
+        d['visualPacking']='large';large=profile_for('AI directing',self.project,{})
+        self.assertEqual(large['visualGroupLimit'],{'sentences':40,'characters':18000,'targetShots':20})
+        self.assertNotEqual(original,large)
+        d['factGroupSentences']=256
+        self.assertNotEqual(large,profile_for('AI directing',self.project,{}))
+        wide=profile_for('AI directing',self.project,{})
+        d['sourceVisualOverlap']=True
+        self.assertNotEqual(wide,profile_for('AI directing',self.project,{}))
+        before=profile_for('AI directing',self.project,{})
+        d['factBeatsMode']='storyboard'
+        after=profile_for('AI directing',self.project,{})
+        self.assertEqual(after['factsVersion'],5);self.assertEqual(before['factsVersion'],4)
+        self.assertNotEqual(before,after)
     def test_one_run_does_not_outvote_three_independent_runs(self):
         for i in range(20):self.add('a'+str(i),'r1',100)
         self.add('b','r2',10);self.add('c','r3',10)

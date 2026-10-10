@@ -16,6 +16,71 @@ The later chapter-request study totals $0.492561112 settled plus $0.014212125 re
 
 # Staged Luna director: measurements and operating limits
 
+## Current-format optimization, October 10
+
+Standard processing remains recommended. Source facts retain at least medium
+reasoning, all narration and canonical state; initial reviews cover every shot.
+Reviews now receive the same dialogue cues as planning, while explicit source
+attributions override hints. Reaction shots remain valid. Targeted repairs
+recheck changed shots and neighbors. No premium Fast or image model change.
+
+The latest version separates fact-cache keys from audio timestamps: unchanged
+story facts can survive a narration-speed edit without reusing old visual timing.
+Generation history distinguishes fact versions, compact schemas, review cues,
+request sizes and overlap. Incompatible old results cannot train current ETAs.
+
+| Fresh condition | Elapsed | API estimate | Outcome |
+| --- | ---: | ---: | --- |
+| Current Lean format, 128 source sentences, facts v4 | 165.859 s | $0.032980 | Complete, 105 shots |
+| Identical current-format repeat | 166.547 s to rejection | $0.032691 | Chapter 2 failed fidelity |
+| Storyboard-owned emotional beats, facts v5 | 168.547 s | $0.031888 | Complete, 102 shots |
+| Compact cuts + storyboard-owned beats | 156.375 s | $0.032483 | Complete, 106 shots |
+| Accepted-source/visual overlap, facts v3 | 136.672 s | $0.029326 | Complete; a separate repeat failed |
+| Accepted-source/visual overlap, facts v5 | 165.953 s to rejection | $0.033274 | Chapter 2 failed fidelity |
+
+These are small fresh-plan samples, not statistical or picture-quality proof.
+Other failed conditions and their costs are retained in the planner evidence.
+The planner's current-format profile drives the proposed schedule, GPU
+comparisons and timed rental search. Earlier explicit profiles remain saved.
+Long-video projections scale two saved chapters; actual production history
+learns compatible observations independently. No 3x Standard promise.
+
+Advanced request controls are opt-in. Small visual groups and analyst-owned
+beats remain existing defaults. Larger groups failed fidelity checks. The new
+accepted-source overlap freezes each accepted group's inputs, shares the same
+API slots, bounds queued batches, drains submitted responses on failure, and
+never commits an unchecked chapter. It remains experimental.
+
+A frozen text-review comparison preserved all source/identity/action evidence
+while omitting timing, motion and production preferences. Input tokens fell
+about 25%, but one of three target errors was missed and checks were not faster.
+Full review context therefore remains active. These three cases are diagnostic
+probes, not a model-wide error-rate estimate.
+
+A second full-context probe returned only error locations, omitting issue prose
+and advisories. It also missed the injected speaker error, and its three checks
+averaged 13.56 seconds versus 10.26 seconds for the earlier full review probes.
+It cost $0.005882301 total. It remains research-only; no review coverage or repair
+diagnosis was removed from production. Fewer output fields did not guarantee
+fewer reasoning tokens or lower latency.
+
+Current measured source facts took 67.2 seconds of active client-call intervals;
+5,453 of their 8,381 output tokens were reasoning. Visual planning's summed
+168.5 seconds of work collapsed to 28.4 seconds of active intervals because it
+already overlapped. More visual slots alone cannot remove the ordered factual
+bottleneck. The website exposes reasoning as a subset of output, not an extra
+charge. Neither active intervals nor work totals are whole-plan elapsed time.
+
+The percentage-based Decisions API was probed on the same text. Existing key
+permissions returned HTTP 403 with zero settled cost; no key permissions were
+changed. It is not an active production gate. Probabilities require calibration.
+See [Decisions documentation](https://developers.openai.com/api/docs/guides/decisions).
+
+The current cumulative study cap is $2, including earlier current-study spending
+and retained unknown charges. This is distinct from the historical closed study.
+The public results contain settled API estimates and held liability separately;
+they are not an account invoice or a free-credit assumption.
+
 ## Latest: Standard-only Lean investigation, October 10
 
 Existing project settings are preserved. **Lean Luna · Standard · experimental**

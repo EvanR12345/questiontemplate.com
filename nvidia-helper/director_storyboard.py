@@ -18,12 +18,15 @@ def storyboard_schema(context):
         'camera':obj({key: copy.deepcopy(CAMERA['properties'][key]) for key in ('shot','angle','composition')}),
     })
     shot['properties']['camera']['properties']['composition'] = short_text(200)
+    # An unused source slot must be null, never a paid empty direction object.
+    # Keep the compiler's stronger whitespace/content checks as a second guard.
+    shot['properties']['action']['minLength']=1
     target=context.get('cadenceTarget',{}).get('approximateShots')
     maximum=min(len(context['sentences']),math.ceil(target*1.15)+1) if type(target) in (int,float) and target>0 else len(context['sentences'])
     minimum=min(maximum,max(1,math.ceil(target*.9))) if type(target) in (int,float) and target>0 else 1
     metadata={'purpose':short_text(160),'location':short_text(120),'mood':short_text(80),'pacingReason':short_text(160)}
     for field in metadata.values():field['minLength']=1
-    if context.get('directorPayloadVersion') in (6,7):
+    if context.get('directorPayloadVersion') in (6,7,8):
         # Source-keyed slots make duplicate/out-of-order cuts impossible while
         # Luna still chooses every optional cut. Definitions avoid repeating
         # the complete camera/action schema for each source sentence.
@@ -31,7 +34,7 @@ def storyboard_schema(context):
         fields={k:v for k,v in shot['properties'].items() if k!='startSentence'}
         direction=obj({**fields,'scene':{'anyOf':[scene,{'type':'null'}]}})
         required=set(context.get('requiredVisualChangeBoundaries',[])) | {0}
-        if context.get('directorPayloadVersion')==7:
+        if context.get('directorPayloadVersion') in (7,8):
             if any(type(n) is not int or not 0<=n<len(context['sentences']) for n in required):
                 raise ValueError('Required storyboard cut escapes its source range.')
             if len(required)>maximum:raise ValueError('Required changes exceed selected cadence; needs review.')
@@ -69,16 +72,30 @@ def repair_schema(context):
 def compile_storyboard(value, context):
     """The model chooses each cut; the application restores ends and indices."""
     count = len(context['sentences'])
-    if context.get('directorPayloadVersion')==7:
+    if context.get('directorPayloadVersion') in (7,8):
         validate_schema(value,storyboard_schema(context))
+        alternatives={}
         cuts={f'cut{n}':None for n in range(count)}
         cuts.update(copy.deepcopy(value['requiredCuts']))
         for entry in value['additionalCuts']:
             raw=copy.deepcopy(entry);n=raw.pop('startSentence')
-            if cuts[f'cut{n}'] is not None:raise ValueError('Duplicate source cut in chapter storyboard.')
+            if cuts[f'cut{n}'] is not None:
+                if context['directorPayloadVersion']==7:raise ValueError('Duplicate source cut in chapter storyboard.')
+                if not raw['action'].strip():raise ValueError('Empty alternative visual action.')
+                alternatives.setdefault(n,[]).append(raw)
+                continue
             cuts[f'cut{n}']=raw
-        return compile_storyboard({'openingScene':value['openingScene'],'cuts':cuts},
+        output=compile_storyboard({'openingScene':value['openingScene'],'cuts':cuts},
             {**context,'directorPayloadVersion':6})
+        minimum=storyboard_schema(context)['properties']['additionalCuts']['minItems']+len(value['requiredCuts'])
+        if len(output['detail']['shots'])<minimum:
+            raise ValueError('Distinct compact cuts fall below selected cadence; duplicates are alternatives, never extra pictures.')
+        for shot in output['detail']['shots']:
+            if shot['startSentence'] in alternatives:
+                shot['alternateDirections']=[dict(raw,qcStatus='UNREVIEWED') for raw in alternatives[shot['startSentence']]]
+                shot['timingRepair']={'reason':'Duplicate source cuts retained as unreviewed alternatives; primary direction still receives full fidelity review.',
+                    'alternativeCount':len(shot['alternateDirections'])}
+        return output
     if context.get('directorPayloadVersion')==6 and 'cuts' in value:
         shots=[]
         for n in range(count):
@@ -149,7 +166,8 @@ def compile_storyboard(value, context):
             # No second AI description of the same composition. The model-aware
             # prompt compiler already preserves every structured visual choice.
             direction=' '.join([raw['action'],raw['camera']['composition'],raw['expression'],raw['pose'],raw['lighting']]).strip()
-            if not direction:raise ValueError('Storyboard has empty visual direction.')
+            if not raw['action'].strip() or not direction:
+                raise ValueError('Storyboard has empty visual action. Use null for an unused cut.')
             result['prompts'].append({'shotIndex':i,'prompt':direction})
         end = result['detail']['shots'][-1]['endSentence']
         result['plan']['scenes'].append({key:scene[key] for key in ('purpose','location','mood','pacingReason')} |
@@ -172,7 +190,7 @@ def plan_storyboard(provider, context, gate):
                   if context.get('directorPayloadVersion')==6 else
                   'For each shot return only its startSentence. Starts must increase and begin at 0. '
                   'Each cut uses a DIFFERENT sentence index. Do not return two camera variations at the same startSentence. ')
-    if context.get('directorPayloadVersion')==7:
+    if context.get('directorPayloadVersion') in (7,8):
         shape=('Return openingScene metadata, requiredCuts and additionalCuts. '
             'Fill every fixed requiredCuts key with its direction. The number in cutN is the source sentence index. '
             'Never return null for a required cut. For other director-selected cuts return an additionalCuts array '

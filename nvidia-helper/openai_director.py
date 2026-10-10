@@ -18,6 +18,20 @@ from studio_performance import host_execution_gaps,host_interruption_details
 _cache_publish_lock = threading.Lock()
 
 
+def numeric_rate_limits(headers):
+    """Only documented numeric capacity fields; never copy arbitrary headers.
+
+    These diagnose capacity, not server execution or an ETA promise. Missing
+    fields stay absent, rather than inventing zero remaining capacity.
+    """
+    result={}
+    for name in ('limit-requests','limit-tokens','remaining-requests','remaining-tokens'):
+        value=headers.get('x-ratelimit-'+name) if headers is not None else None
+        if isinstance(value,str) and value.isascii() and value.isdecimal() and len(value)<=18:
+            result[name]=int(value)
+    return result
+
+
 def request_sizes(system,context,schema,field_names=None):
     """Counts, never raw prose or credentials. Characters are not token counts."""
     size=lambda value:len(json.dumps(value,ensure_ascii=False,separators=(',',':')))
@@ -234,6 +248,8 @@ class OpenAIDirector(DirectorProvider):
             req = urllib.request.Request("https://api.openai.com/v1/responses", data=json.dumps(body).encode(),
                     headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"})
             request_id = 'luna-' + uuid.uuid4().hex
+            # Trace support only, not idempotency or permission to replay.
+            req.add_header('X-Client-Request-Id',request_id)
             self._failure_trace['requests'].append(request_id)
             if ledger:
                 while True:
@@ -266,11 +282,13 @@ class OpenAIDirector(DirectorProvider):
                     observer('submitting', {'operationId': request_id, 'provider': 'openai-luna'})
                 submitted = True
                 dispatch_started=time.monotonic()
-                # Flex can wait for capacity longer than Standard. A 30-second
-                # socket timeout needlessly loses accepted requests/receipts.
+                # A bounded longer socket wait lets Standard reasoning/capacity
+                # spikes finish rather than abandoning an accepted receipt.
                 # Never resubmit or switch tiers on a timeout: the reservation
                 # remains UNKNOWN until its actual usage is reconciled.
-                with urllib.request.urlopen(req, timeout=900 if service_tier == 'flex' else 30) as response:
+                with urllib.request.urlopen(req, timeout=900 if service_tier == 'flex' else 120) as response:
+                    limits=numeric_rate_limits(getattr(response,'headers',None))
+                    if limits:timing['rateLimits']=limits
                     self.response = response
                     timing['headersSeconds']=time.monotonic()-dispatch_started
                     for line in response:

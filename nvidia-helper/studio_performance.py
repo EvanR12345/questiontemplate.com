@@ -88,10 +88,15 @@ def profile_for(stage, project, config, details=None):
         if director.get('executionMode','classic').startswith('staged'):
             lean=director.get('executionMode')=='staged-lean'
             profile['compactCuts']=director.get('compactCuts',False)
-            profile['planVersion']=10 if lean and profile['compactCuts'] else 9 if lean else 2
-            profile['factsVersion']=3
+            profile['planVersion']=13 if lean and profile['compactCuts'] else 11 if lean else 2
+            from director_pipeline import fact_beats_mode
+            profile['factsVersion']=5 if lean and fact_beats_mode(director)=='storyboard' else 4 if lean else 3
+            if lean:profile['reviewHintsVersion']=1
+            if lean:profile['sourceVisualOverlap']=director.get('sourceVisualOverlap',False)
             if lean:profile['factReasoning']='high' if director.get('reasoning')=='High' else 'medium'
-            profile['visualGroupLimit']={'sentences':12 if lean else 24,'characters':6000,'targetShots':8}
+            from director_staged import visual_group_limits
+            sentences,characters,shots=visual_group_limits(director)
+            profile['visualGroupLimit']={'sentences':sentences,'characters':characters,'targetShots':shots}
     elif stage in ('Image pipeline','Image + quality checks','Image generation','Visual QC','Character reference','Intro images'):
         if details.get('shot'):
             image=details.get('_shotSpec') or next((s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots']

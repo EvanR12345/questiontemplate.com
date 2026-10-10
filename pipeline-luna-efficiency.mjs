@@ -3,6 +3,37 @@ const num=n=>n.toLocaleString('en-CA');
 const money=n=>'$'+n.toFixed(4);
 const time=n=>`${Math.floor(n/60)}m ${(n%60).toFixed(1)}s`;
 
+export function standardStageHTML(data,index){
+  const run=data?.conditions?.[index];if(!run)return '<p>No test selected.</p>';
+  return `<p>${esc(run.condition)} · ${esc(run.status)} · observed elapsed ${time(run.seconds)}. Failed work and paid repairs remain included below.</p><div class="evidence-table"><table><thead><tr><th>Pass</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Reasoning inside output</th><th>Call work</th><th>Active interval union</th><th>Settled API cost</th></tr></thead><tbody>${(run.stages||[]).map(s=>`<tr><td>${esc(s.name)}</td><td>${s.calls}</td><td>${num(s.inputTokens)}</td><td>${num(s.outputTokens)}</td><td>${Number.isFinite(s.reasoningTokens)?num(s.reasoningTokens):'Not reported'}</td><td>${time(s.workSeconds)}</td><td>${time(s.activeSeconds)}</td><td>${money(s.estimatedUSD)}</td></tr>`).join('')}</tbody></table></div><p class="caption">Work sums client-call durations. Active interval union counts simultaneous calls in this pass once. Different passes can overlap too; neither column adds to whole-plan elapsed time. Returned output includes reasoning once; the reasoning column is a subset, never an extra charge. Characters in payload diagnostics are not tokens. This is text review, not generated-image inspection.</p>`;
+}
+
+export function mountStandardStages(host,data){
+  const details=host.querySelector('[data-standard-stages]');if(!details||!data)return;
+  const selector=details.querySelector('[data-standard-run]'),table=details.querySelector('[data-standard-stage-table]');
+  const render=()=>{table.innerHTML=standardStageHTML(data,Number(selector.value));};
+  details.addEventListener('toggle',()=>{if(details.open)render();});
+  selector.addEventListener('change',render);
+}
+
+export function standardOptimizationHTML(data,minutes=120){
+  if(!data)return '';
+  if(!Number.isFinite(minutes)||minutes<=0||!Number.isFinite(data.sourceNarrationSeconds)||data.sourceNarrationSeconds<=0)throw Error('Choose positive video and measured source durations.');
+  const rows=data.conditions||[],completed=rows.filter(r=>r.timingEligible);
+  const scale=minutes*60/data.sourceNarrationSeconds,max=Math.max(1,...completed.map(r=>r.seconds));
+  const review=data.reviewProbe||[];
+  return `<section><div class="section-head"><h2>Standard Luna · latest optimization tests</h2><span class="badge">${esc(data.date)}</span></div>
+    <p>${esc(data.scope)} Eight shared API slots; facts and targeted repairs use at least medium reasoning. “Fast” in the reasoning column means low reasoning, never premium Fast API processing.</p>
+    <div class="evidence-table"><table><thead><tr><th>Condition</th><th>Outcome</th><th>Chapters</th><th>Shots saved</th><th>Observed elapsed</th><th>Requests</th><th>Input tokens</th><th>Settled API cost</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.condition)}</td><td>${esc(r.status)}${r.rejection?' · '+esc(r.rejection):''}</td><td>${r.chapters.length}/2</td><td>${r.shots}</td><td>${time(r.seconds)}</td><td>${r.calls}</td><td>${num(r.inputTokens)}</td><td>${money(r.estimatedUSD)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="caption">Failed timings end at rejection; they are not successful production speed. Their charges remain in the study total. Original source and projects were preserved. No demonstrated 3× Standard speed guarantee.</p>
+    <details data-standard-stages><summary>Every current test · tokens, time and cost per pass</summary><label>Measured test<select data-standard-run>${rows.map((r,i)=>`<option value="${i}">${esc(r.condition)} · sample ${i+1} · ${esc(r.status)}</option>`).join('')}</select></label><div data-standard-stage-table></div></details>
+    <details><summary>Successful plans · measured chart and ${esc(minutes)}-minute director-only projection</summary>${completed.map(r=>`<div class="compare-row"><div class="label">${esc(r.condition)}</div><div class="track"><i style="width:${r.seconds/max*100}%;background:#89aa8f"><span>${time(r.seconds)}</span></i></div></div>`).join('')}
+    <div class="evidence-table"><table><thead><tr><th>Successful condition</th><th>Projected directing only</th><th>Projected API cost</th></tr></thead><tbody>${completed.map(r=>`<tr><td>${esc(r.condition)}</td><td>${time(r.seconds*scale)}</td><td>${money(r.estimatedUSD*scale)}</td></tr>`).join('')}</tbody></table></div><p class="caption">Linear extrapolation from ${time(data.sourceNarrationSeconds)} narration, not a complete-video invoice or measured long production. Excludes narration generation, images, setup, reviews of images, rendering, storage and delivery. Different plans, repairs, ambiguity and service capacity can change the result. Individual repeat samples remain separate.</p></details>
+    ${review.length?`<details><summary>Frozen review tests · errors versus harmless listener reaction</summary><div class="evidence-table"><table><thead><tr><th>Fixed case</th><th>Payload / response</th><th>Target decision</th><th>Elapsed</th><th>Input tokens</th><th>Output tokens</th><th>API cost</th></tr></thead><tbody>${review.map(r=>`<tr><td>${esc(r.case)}</td><td>${esc(r.condition)}</td><td>${r.status!=='COMPLETE'?esc(r.status):r.targetMatched?'Matched expected case':'Missed expected case'}</td><td>${time(r.seconds)}</td><td>${num(r.inputTokens)}</td><td>${num(r.outputTokens||0)}</td><td>${money(r.estimatedUSD)}</td></tr>`).join('')}</tbody></table></div><p class="caption">One trial per fixed case and format; the full/focused pair alternated order. These case decisions are not an overall accuracy percentage. Focused input and typed error-location output both missed the injected wrong-speaker case and were not faster. Neither is the production review default. Typed flags would also need a detailed diagnosis before repairs; output tokens include reasoning.</p></details>`:''}
+    ${(data.decisionsProbe||[]).length?`<p class="caption">Percentage-check Decisions endpoint: ${data.decisionsProbe.map(r=>`${esc(r.errorType||r.status)} · ${money(r.estimatedUSD)} settled`).join('; ')}. No production gate or credential expansion. Probabilities require a separately calibrated threshold.</p>`:''}
+    <p>New pilot: ${money(data.pilotSettledUSD)} settled + ${money(data.pilotReservedUSD)} held. Current cumulative study liability: ${money(data.cumulativeLiabilityUSD)} of ${money(data.cumulativeCapUSD)}. Earlier uncertain usage remains reserved; ${data.newUnknownRequests??0} new unresolved request(s). ${data.activeRequests?`${data.activeRequests} request(s) still active in this snapshot.`:''}</p></section>`;
+}
+
 export function flexLunaHTML(data){
   if(!data)return '';
   return `<details open><summary>Flex Luna · measured pilot · ${money(data.pilotSettledUSD)}</summary>

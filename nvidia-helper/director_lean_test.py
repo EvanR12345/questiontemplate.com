@@ -13,6 +13,109 @@ from director_wire import CompactDirectorWire
 
 
 class LeanDirectorTest(unittest.TestCase):
+    def test_storyboard_owned_beats_preserve_source_fact_requirements_and_ai_mood(self):
+        from director_provider import DirectorProvider
+        class Captured(DirectorProvider):
+            def call(self,role,context,schema,gate):
+                self.role=role;self.schema=schema
+                return {'summary':'Mira holds key','locations':[],'beats':[],'changes':[],
+                    'objectChanges':[],'environmentChanges':[],'dialogueSpeakers':[],
+                    'objects':['key'],'goals':[],'unresolved':[]}
+        provider=Captured();context={'sentences':[{'index':0,'text':'Mira takes the key.'}],
+            'chapterCast':[{'id':'mira','name':'Mira'}],'visualPlanningOwnsBeats':True}
+        result=provider.analyzeFacts(context,lambda *_:None)
+        self.assertEqual(provider.schema['properties']['beats']['maxItems'],0)
+        self.assertIn('extract ALL source facts',provider.role)
+        self.assertIn('changes',provider.schema['required']);self.assertIn('dialogueSpeakers',provider.schema['required'])
+        self.assertEqual(result['objects'],['key']);self.assertEqual(result['beats'],[])
+        from director_pipeline import fact_beats_mode
+        self.assertEqual(fact_beats_mode({}),'analyst')
+        with self.assertRaises(ValueError):fact_beats_mode({'factBeatsMode':'storyboard','executionMode':'classic'})
+        with self.assertRaises(ValueError):fact_beats_mode({'factBeatsMode':'off'})
+    def test_voice_timing_changes_reuse_identical_fact_inputs_but_visual_timing_changes(self):
+        p=self.fixture();p['settings']['director']['cadencePerMinute']=12
+        cid=p['characters'][0]['id'];facts=[];reviews=[];visuals=[]
+        class Director:
+            def analyzeFacts(self,context,gate):
+                facts.append(copy.deepcopy(context))
+                return {'summary':'Mira carries key','people':[],'locations':[],'beats':[],
+                    'changes':[],'environmentChanges':[],'objects':['key'],'goals':[],'unresolved':[]}
+            def checkSourceFacts(self,context,gate):
+                reviews.append(copy.deepcopy(context));return {'issues':[],'intentionalChanges':[],'objectChanges':[]}
+        class Service:
+            director=Director()
+            def gate(self,*_):pass
+            def director_calls(self,project,chid,calls,expected):
+                visuals.extend(copy.deepcopy(ctx) for method,ctx in calls if method=='planStoryboard')
+                return [compile_storyboard(storyboard(ctx),ctx) if method=='planStoryboard'
+                        else {'majorIssues':[],'advisories':[]} for method,ctx in calls]
+        ch=p['chapters'][0];group=copy.deepcopy(ch['audio']['sentences'][:4])
+        for scale in (1,1.1):
+            timed=[{**s,'start':s['start']*scale,'end':s['end']*scale} for s in group]
+            prepare_staged(Service(),p,ch,[timed],[{'id':cid,'name':'Mira'}],
+                {'characters':{cid:{'outfit':'gray coat'}},'environment':{'time':'night'}},{},'hash')
+        self.assertEqual(facts[0],facts[1]);self.assertEqual(reviews[0],reviews[1])
+        self.assertTrue(all(set(s)=={'index','text'} for s in facts[0]['sentences']))
+        self.assertEqual(facts[0]['priorState']['environment']['time'],'night')
+        self.assertNotEqual(visuals[0]['sentences'],visuals[1]['sentences'])
+        self.assertEqual(visuals[0]['cadenceTarget']['imagesPerMinute'],visuals[1]['cadenceTarget']['imagesPerMinute'])
+    def test_unused_cuts_cannot_buy_empty_directions_and_whitespace_is_rejected(self):
+        ctx={'people':[{'id':'mira'}],'sentences':[{'text':'Mira opens the door.'}],
+            'directorPayloadVersion':6,'requiredVisualChangeBoundaries':[0]}
+        value=storyboard(ctx);schema=storyboard_schema(ctx)
+        value['cuts']['cut0']['action']=''
+        with self.assertRaisesRegex(ValueError,'short|minLength|length'):validate_schema(value,schema)
+        value['cuts']['cut0']['action']='   '
+        with self.assertRaisesRegex(ValueError,'empty visual action'):compile_storyboard(value,ctx)
+    def test_request_packing_is_bounded_preserves_legacy_defaults_and_requires_lean(self):
+        from director_staged import fact_group_limits,visual_group_limits
+        self.assertEqual(fact_group_limits({}),(48,9000))
+        self.assertEqual(visual_group_limits({'executionMode':'staged-review'}),(24,6000,8))
+        d={'executionMode':'staged-lean','factGroupSentences':256,'visualPacking':'large'}
+        self.assertEqual(fact_group_limits(d),(256,32000));self.assertEqual(visual_group_limits(d),(40,18000,20))
+        for invalid in [True,0,257,'256']:
+            with self.assertRaises(ValueError):fact_group_limits({**d,'factGroupSentences':invalid})
+        with self.assertRaises(ValueError):fact_group_limits({**d,'executionMode':'staged-review'})
+        with self.assertRaises(ValueError):visual_group_limits({**d,'executionMode':'classic'})
+        with self.assertRaises(ValueError):visual_group_limits({**d,'visualPacking':'unbounded'})
+
+    def test_larger_visual_groups_keep_every_source_cut_and_state_at_boundaries(self):
+        p=self.fixture();p['settings']['director']['visualPacking']='large'
+        # Twelve images/min over five-second sentences selects each source
+        # sentence; the 20-shot cap splits40 sentences into safe20/20 groups.
+        p['settings']['customLayout']['imagesPerMinute']=12
+        ch=p['chapters'][0];cid=p['characters'][0]['id'];captured=[]
+        sentences=[{'index':n,'text':f'Mira holds key {n}.','start':n*5,'end':(n+1)*5} for n in range(40)]
+        class Director:
+            def analyzeFacts(self,context,gate):
+                return {'summary':'key carried','people':[],'locations':[],'beats':[],
+                    'changes':[{'characterId':cid,'field':'outfit','value':'red coat','reason':sentences[19]['text'],'sentence':19}],
+                    'environmentChanges':[],'objects':['key'],'goals':[],'unresolved':[],
+                    'dialogueSpeakers':[{'sentence':19,'characterId':cid,'cueSentence':20}]}
+            def checkSourceFacts(self,context,gate):return {'objectChanges':[],'issues':[],'intentionalChanges':[]}
+        class Service:
+            director=Director()
+            def gate(self,*args):pass
+            def director_calls(self,project,chid,calls,expected):
+                captured.extend(copy.deepcopy(calls))
+                return [compile_storyboard(storyboard(ctx),ctx) if method=='planStoryboard'
+                        else {'majorIssues':[],'advisories':[]} for method,ctx in calls]
+        before=copy.deepcopy(p)
+        output=prepare_staged(Service(),p,ch,[sentences],[{'id':cid,'name':'Mira'}],
+            {'characters':{cid:{'outfit':'gray coat'}}},{},'hash')
+        shots=output[0]['storyboard']['detail']['shots']
+        self.assertEqual([s['startSentence'] for s in shots],list(range(40)))
+        self.assertEqual(shots[-1]['endSentence'],39)
+        visuals=[ctx for method,ctx in captured if method=='planStoryboard']
+        self.assertEqual([len(ctx['sentences']) for ctx in visuals],[20,20])
+        self.assertIn(19,visuals[0]['requiredVisualChangeBoundaries'])
+        self.assertEqual(visuals[1]['priorState']['characters'][cid]['outfit'],'red coat')
+        self.assertEqual([len(ctx['shots']) for method,ctx in captured if method=='checkStoryboard'],[40])
+        review=next(ctx for method,ctx in captured if method=='checkStoryboard')
+        self.assertEqual(review['speakerHints'],[{'sentence':19,'characterId':cid,'cueSentence':20}])
+        self.assertEqual(visuals[0]['speakerHints'],[{'sentence':19,'characterId':cid,'cue':sentences[20]['text']}])
+        self.assertEqual(p,before)
+
     def test_compact_cuts_preserve_required_events_and_full_source_without_null_padding(self):
         ctx={'people':[{'id':'mira','name':'Mira'}],
             'sentences':[{'text':'Mira walks.'} for _ in range(134)],
@@ -37,6 +140,29 @@ class LeanDirectorTest(unittest.TestCase):
             else:bad['requiredCuts']['cut0']['characters']=['invented-person']
             with self.subTest(mutate=mutate),self.assertRaises(ValueError):compile_storyboard(bad,ctx)
         self.assertLess(len(json.dumps(storyboard_schema(ctx))),len(json.dumps(storyboard_schema({**ctx,'directorPayloadVersion':6}))))
+
+    def test_compact_duplicate_recovery_keeps_every_alternative_but_never_counts_it_as_a_picture(self):
+        ctx={'people':[{'id':'mira'}],'sentences':[{'text':f'Mira walks past door {n}.'} for n in range(6)],
+            'directorPayloadVersion':6,'requiredVisualChangeBoundaries':[0,3],
+            'cadenceTarget':{'approximateShots':4}}
+        source=storyboard(ctx)
+        value={'openingScene':source['openingScene'],
+            'requiredCuts':{f'cut{n}':source['cuts'][f'cut{n}'] for n in (0,3)},
+            'additionalCuts':[dict(source['cuts']['cut1'],startSentence=1),
+                dict(source['cuts']['cut2'],startSentence=2),
+                dict(source['cuts']['cut2'],startSentence=2,action='Mira peers through the doorway.') ]}
+        ctx['directorPayloadVersion']=8;before=copy.deepcopy(value)
+        result=compile_storyboard(value,ctx);shots=result['detail']['shots']
+        self.assertEqual([s['startSentence'] for s in shots],[0,1,2,3])
+        self.assertEqual(shots[-1]['endSentence'],5)
+        self.assertEqual(shots[2]['alternateDirections'][0]['action'],'Mira peers through the doorway.')
+        self.assertEqual(shots[2]['alternateDirections'][0]['qcStatus'],'UNREVIEWED')
+        self.assertEqual(len(result['prompts']),4);self.assertEqual(value,before)
+        # Different actions are retained, not counted twice or silently moved
+        # onto another sentence to pretend the cadence was satisfied.
+        bad=copy.deepcopy(value);bad['additionalCuts'][1]['startSentence']=1
+        bad['additionalCuts'][2]['startSentence']=1
+        with self.assertRaisesRegex(ValueError,'cadence'):compile_storyboard(bad,ctx)
 
     def test_flex_is_accepted_without_enabling_premium_or_changing_voice_cadence(self):
         from studio_data import validate_project
@@ -148,7 +274,7 @@ class LeanDirectorTest(unittest.TestCase):
 
     def test_learning_never_mixes_old_full_payload_or_fast_tier_with_lean_standard(self):
         p=self.fixture();lean=profile_for('AI directing',p,{})
-        self.assertEqual(lean['planVersion'],9);self.assertEqual(lean['tier'],'default')
+        self.assertEqual(lean['planVersion'],11);self.assertEqual(lean['tier'],'default')
         p['settings']['director']['executionMode']='staged-review'
         old=profile_for('AI directing',p,{})
         self.assertNotEqual(lean,old);self.assertEqual(old['planVersion'],2)
@@ -172,9 +298,13 @@ class LeanDirectorTest(unittest.TestCase):
         self.assertEqual(context['sentences'],source)
         self.assertEqual(context['priorState'],payload['priorState'])
         self.assertEqual(output,before)
+        payload['speakerHints']=[{'sentence':18,'characterId':'mira','cueSentence':19}]
+        context=repair_review_context(payload,output,[4,9])
+        self.assertEqual(context['speakerHints'],payload['speakerHints'])
         from director_provider import DirectorProvider
         class Reviewer(DirectorProvider):
             def call(self,role,context,schema,gate):
+                self.role=role
                 self.allowed=schema['properties']['majorIssues']['items']['properties']['shotIndex']['enum']
                 return {'majorIssues':[{'shotIndex':9,'sentence':18,'issue':'wrong owner'}],'advisories':[]}
         reviewer=Reviewer()
@@ -182,6 +312,12 @@ class LeanDirectorTest(unittest.TestCase):
         self.assertEqual(reviewer.allowed,[3,4,5,8,9])
         self.assertEqual(review['majorIssues'][0]['sourceQuote'],'18')
         self.assertEqual(review['coverage']['scope'],'repair-and-neighbors')
+        self.assertIn('post-repair check',reviewer.role)
+        full={**payload,'shots':output['detail']['shots'],'cameras':output['cameras']}
+        reviewer.checkStoryboard(full,lambda *args:None)
+        self.assertIn('initial full storyboard review',reviewer.role)
+        self.assertNotIn('initial review already examined',reviewer.role)
+        self.assertIn('listener reacting',reviewer.role)
         context['shots'][0]['shotIndex']=0
         with self.assertRaisesRegex(ValueError,'indices'):reviewer.checkStoryboard(context,lambda *args:None)
 

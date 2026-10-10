@@ -7,6 +7,30 @@ import copy
 import math
 import re
 from studio_data import apply_changes, align_evidence, normalize_object_change, grounded_object_changes
+from director_pipeline import fact_beats_mode
+
+
+FACT_GROUP_LIMITS={48:9000,96:18000,128:24000,256:32000}
+VISUAL_PACKING_LIMITS={'small':(12,6000,8),'balanced':(24,12000,12),'large':(40,18000,20)}
+
+
+def fact_group_limits(director):
+    count=director.get('factGroupSentences',48)
+    if type(count) is not int or count not in FACT_GROUP_LIMITS:
+        raise ValueError('Choose a bounded source-fact group of 48, 96, 128 or 256 sentences.')
+    if count==256 and director.get('executionMode')!='staged-lean':
+        raise ValueError('Wider source-fact groups require Lean Luna.')
+    return count,FACT_GROUP_LIMITS[count]
+
+
+def visual_group_limits(director):
+    packing=director.get('visualPacking','small')
+    if packing not in VISUAL_PACKING_LIMITS:
+        raise ValueError('Choose small, balanced or large visual request groups.')
+    if director.get('executionMode')!='staged-lean':
+        if packing!='small':raise ValueError('Larger visual request groups require Lean Luna.')
+        return 24,6000,8
+    return VISUAL_PACKING_LIMITS[packing]
 
 
 def relevant_main_cast(known, chapter, passes, previous=None):
@@ -92,13 +116,23 @@ def repair_review_context(payload, output, indices):
 
 
 def prepare_staged(service, project, chapter, groups, cast, state, memory, expected):
+    from director_pipeline import AcceptedVisualQueue,source_visual_overlap_enabled
+    enabled=source_visual_overlap_enabled(service,project['settings']['director'])
+    with AcceptedVisualQueue(service,project,chapter['id'],expected,enabled) as dispatch:
+        return _prepare_staged(service,project,chapter,groups,cast,state,memory,expected,dispatch)
+
+
+def _prepare_staged(service, project, chapter, groups, cast, state, memory, expected, dispatch):
     lean=project['settings']['director'].get('executionMode')=='staged-lean'
+    visual_sentence_limit,visual_character_limit,visual_shot_limit=visual_group_limits(project['settings']['director'])
     incoming = copy.deepcopy(state); story_memory = copy.deepcopy(memory)
     canonical = [{'id':c['id'],'name':c['name'],'description':c['description'],
                   'identity':c['permanentIdentity']} for c in project['characters']]
     known = {person['id'] for person in cast}
     prepared = []; calls = []; owners = []; review_inputs = []
     for index, group in enumerate(groups):
+        dispatch.check()
+        group_call_start=len(calls)
         service.gate(f'Accepting source facts {index+1}/{len(groups)}')
         text = [{'index':i,'text':s['text'],'start':s['start'],'end':s['end']} for i,s in enumerate(group)]
         prior = {k:copy.deepcopy(v) for k,v in incoming.items() if k!='appearanceHistory'}
@@ -113,11 +147,18 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
         # instructions are for the visual planner, not repeated factual context.
         fact_context=({key:context[key] for key in ('sentences','chapterCast','priorState','storyMemory')}
                       if lean else context)
+        # Narration clock values cannot change source facts. Keep sentence
+        # indices/text but avoid rebuying identical facts when only voice timing
+        # changes. Visual planning still receives its full audio timing/cadence.
+        fact_text=[{'index':s['index'],'text':s['text']} for s in text] if lean else text
+        if lean:fact_context['sentences']=fact_text
+        if lean and fact_beats_mode(project['settings']['director'])=='storyboard':
+            fact_context['visualPlanningOwnsBeats']=True
         analysis = service.director.analyzeFacts(fact_context,service.gate)
         if analysis['people']:
             raise ValueError('Staged analysis must use the accepted cast without creating new identities.')
         continuity = service.director.checkSourceFacts({'knownState':prior,'people':cast,
-            'objects':analysis['objects'],'changes':analysis['changes'],'sentences':text,'shots':[]},service.gate)
+            'objects':analysis['objects'],'changes':analysis['changes'],'sentences':fact_text,'shots':[]},service.gate)
         if 'correctedChanges' in continuity:analysis['changes']=copy.deepcopy(continuity['correctedChanges'])
         object_changes = align_evidence(grounded_object_changes(continuity['objectChanges'],analysis['objects'],cast),text)
         events = [normalize_object_change(e,analysis['objects'],cast) for e in analysis['changes']] + object_changes
@@ -144,7 +185,13 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
             # verbatim copy of every beat or summary of the future group.
             visual['analysis']={key:copy.deepcopy(analysis.get(key,[])) for key in ('locations','objects','environmentChanges')}
             # Unique source-keyed cut slots share scene/direction definitions.
-            visual['directorPayloadVersion']=7 if project['settings']['director'].get('compactCuts',False) else 6
+            visual['directorPayloadVersion']=8 if project['settings']['director'].get('compactCuts',False) else 6
+            # Reviews/repairs must receive the same proposed attributions as
+            # visual requests. These are hints, never replacements for source.
+            visual['speakerHints']=[{'sentence':e['sentence'],'characterId':e['characterId'],
+                'cueSentence':e['cueSentence']} for e in analysis.get('dialogueSpeakers',[])
+                if e['characterId'] in known and 0<=e['sentence']<len(text) and 0<=e['cueSentence']<len(text)]
+            visual['speakerHintInstruction']='Proposed speaker hints, not canonical facts. Exact narration and its actual attribution take precedence.'
         if type(cadence) in (int,float) and cadence>0:
             visual['cadenceTarget']={'imagesPerMinute':cadence,'approximateShots':max(1,round(duration*cadence/60)),
                 'instruction':'Keep this approximate selected cadence. Do not cut on every sentence. Split for genuinely distinct visible moments and required state changes; explain exceptions in pacingReason.'}
@@ -162,8 +209,8 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
             # Factual groups stay chronological; these smaller visual slices
             # remain independent and retain the same pictures-per-minute.
             seconds=text[n]['end']-text[visual_start]['start']
-            too_many_shots=type(cadence) in (int,float) and cadence>0 and seconds*cadence/60>8
-            if n>visual_start and (n-visual_start>=(12 if lean else 24) or visual_size+len(sentence['text'])>6000 or too_many_shots):
+            too_many_shots=type(cadence) in (int,float) and cadence>0 and seconds*cadence/60>visual_shot_limit
+            if n>visual_start and (n-visual_start>=visual_sentence_limit or visual_size+len(sentence['text'])>visual_character_limit or too_many_shots):
                 points.add(n);visual_start=n;visual_size=0
             visual_size+=len(sentence['text'])
         points=sorted(points)
@@ -199,8 +246,9 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
         for event in analysis.get('environmentChanges',[]):
             incoming.setdefault('environment',{})[event['field']] = event['value']
         story_memory = advance_memory(story_memory,analysis,chapter['number'],index)
+        dispatch.add(calls[group_call_start:])
     service.gate('Directing independent accepted visual groups')
-    outputs = service.director_calls(project,chapter['id'],calls,expected)
+    outputs = dispatch.finish(calls)
     if len(outputs)!=len(calls):raise ValueError('Incomplete staged visual groups; existing plan retained.')
     for item in prepared:item['storyboard']={'plan':{'scenes':[]},'detail':{'shots':[]},'cameras':[],'prompts':[]}
     for (owner,start),output in zip(owners,outputs):
@@ -275,4 +323,9 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
                     raise ValueError('Staged storyboard still has source-fidelity issues after one targeted repair. '
                         'Existing chapter stays intact. '+findings+
                         ' Review the draft/source before retrying; this is not a passed plan.')
+    if lean and fact_beats_mode(project['settings']['director'])=='storyboard':
+        for item in prepared:
+            item['analysis']['beats']=[{'sentence':scene['startSentence'],
+                'action':item['context']['sentences'][scene['startSentence']]['text'],
+                'emotion':scene['mood'],'origin':'accepted-storyboard-scene'} for scene in item['storyboard']['plan']['scenes']]
     return prepared

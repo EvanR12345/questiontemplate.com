@@ -259,6 +259,12 @@ class DirectorProvider:
             schema['properties']['changes']['maxItems']=0
             schema['properties']['objectChanges']['maxItems']=0
             schema['properties']['dialogueSpeakers']['maxItems']=0
+        if context.get('visualPlanningOwnsBeats') is True:
+            schema['properties']['beats']['maxItems']=0
+        beat_instruction=('Visual storyboard planning owns emotional beats and pacing. Leave beats empty; '
+            'still read every sentence and extract ALL source facts, changes and speaker cues. '
+            if context.get('visualPlanningOwnsBeats') is True else
+            'Return relevant story-beat indices with emotions; do not copy each beat action. ')
         result=self.call('Source fact analyst: Read ALL supplied source sentences in order using accepted cast and incoming state. '
             'Record every EXPLICIT clothing, hair, injury, held/dropped/transferred object and location/time/weather change. '
             'Store sustained physical restraint (bound/tied/handcuffed/released) in restraint, and explicitly established '
@@ -279,7 +285,7 @@ class DirectorProvider:
             'Each value describes ONLY the new delta stated in THAT ONE sentence, never accumulated injuries from the rest of a paragraph. '
             'The APPLICATION accumulates injuries from separate supported events. Different wounds at different moments need separate events. '
             'Do not turn hair being grabbed or pulled into a hairstyle change; that is a transient action. '
-            'Different moments require separate events. Return brief summary, relevant story-beat indices with emotions, '
+            'Different moments require separate events. '+beat_instruction+'Return brief summary, '
             'locations, objects, goals and unresolved facts. The application retrieves each beat action verbatim from source; '
             'do not copy source sentences or identity data into output. Do not repeat unchanged state. '
             'These facts will govern ALL later visuals and later groups; preserve essential possession, intentional appearance changes and reveals.',
@@ -406,11 +412,17 @@ class DirectorProvider:
         issues=arr(obj({'shotIndex':{'type':'integer','enum':indices},
             'sentence':{'type':'integer','enum':list(range(len(context['sentences'])))},
             'issue':short_text(300)})) | {'maxItems':12}
-        result=self.call('Storyboard continuity supervisor: Independently compare each supplied shot to its own narration, '
-            'When reviewShotIndices is supplied, use the explicit shotIndex field, not the position in the shorter shots array. '
+        scope_instruction=('When reviewShotIndices is supplied, use the explicit shotIndex field, not the position in the shorter shots array. '
             'This is a post-repair check of changed shots and their immediate neighbors. Full narration is context; '
             'report issues only for the supplied shots. The initial review already examined every shot. '
+            if 'reviewShotIndices' in context else
+            'This is the initial full storyboard review: examine EVERY supplied shot. No earlier review substitutes for this coverage. ')
+        result=self.call('Storyboard continuity supervisor: Independently compare each supplied shot to its own narration, '
             'accepted characters, chronological clothing/injury/object changes and incoming canonical state. '
+            +scope_instruction+
+            'Use supplied speakerHints as proposed attributions, checking their source cue against the actual narration. '
+            'A shot may show a listener reacting while someone else speaks; that is not a wrong speaker by itself. '
+            'An action explicitly assigning a quoted line to the wrong person IS a speaker error. '
             'Intentional supported changes are valid. Do not demand exact illustrative staging. '
             'Report invented major actions, wrong essential objects/owners, unknown or incorrectly assigned main people, '
             'or contradictions to explicit current appearance as majorIssues. Each major issue MUST identify zero-based shotIndex, '

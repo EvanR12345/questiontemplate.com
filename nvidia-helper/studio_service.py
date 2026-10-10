@@ -275,6 +275,9 @@ class StudioService:
             "cloudSchedulingAvailable":True,
             "stagedDirectorAvailable":True,
             "leanDirectorAvailable":True,
+            "leanPackingAvailable":True,
+            "sourceVisualOverlapAvailable":True,
+            "leanFactBeatsAvailable":True,
             "maxDirectorTasks":8,
             "storage": self.storage.status(),
             "hardware": hardware,
@@ -2914,8 +2917,8 @@ class StudioService:
         remote_director = isinstance(self.director, OpenAIDirector)
         group_chars, group_sentences = self.director_group_limits(remote_director)
         if remote_director and p['settings']['director'].get('executionMode','classic').startswith('staged'):
-            group_sentences=p['settings']['director'].get('factGroupSentences',48)
-            group_chars={48:9000,96:18000,128:24000}[group_sentences]
+            from director_staged import fact_group_limits
+            group_sentences,group_chars=fact_group_limits(p['settings']['director'])
         for item in timings:
             if current and (size + len(item["text"]) > group_chars or len(current) >= group_sentences):
                 groups.append(current)

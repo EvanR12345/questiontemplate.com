@@ -1,15 +1,15 @@
-import {migrateDirectorForecast} from './pipeline-director-calibration.mjs?v=luna-flex-results-20261010';
-import {createWorkerRequest} from './pipeline-worker-request.mjs?v=luna-flex-results-20261010';
+import {migrateDirectorForecast,directorProfileOptions} from './pipeline-director-calibration.mjs?v=luna-standard-optimization-20261010';
+import {createWorkerRequest} from './pipeline-worker-request.mjs?v=luna-standard-optimization-20261010';
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
 import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=luna-flex-results-20261010';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=luna-flex-results-20261010';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=luna-standard-optimization-20261010';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=luna-standard-optimization-20261010';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=luna-flex-results-20261010';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=luna-flex-results-20261010';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=luna-standard-optimization-20261010';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=luna-standard-optimization-20261010';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -20,7 +20,7 @@ let directorStudy,directorStudyLoading=false;
 async function loadDirectorStudy(){
   if(directorStudyLoading||directorStudy)return;directorStudyLoading=true;
   try{
-    const {mountDirectorStudy}=await import('./pipeline-director-study.mjs?v=luna-flex-results-20261010');
+    const {mountDirectorStudy}=await import('./pipeline-director-study.mjs?v=luna-standard-optimization-20261010');
     directorStudy=await mountDirectorStudy($('directorResearch'),config.minutes);
   }catch{$('directorResearch').textContent='Director study unavailable. The existing planner remains usable.';}
   finally{directorStudyLoading=false;}
@@ -33,8 +33,8 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=luna-flex-results-20261010',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=luna-flex-results-20261010',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=luna-standard-optimization-20261010',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=luna-standard-optimization-20261010',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -252,9 +252,10 @@ function tick(now){
 function download(name,value,type){const blob=new Blob([value],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function start(){
   try{
-    const response=await fetch('./pipeline-evidence.json?v=luna-flex-results-20261010');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
-    const directorReply=await fetch('./pipeline-director-calibration.json?v=luna-flex-results-20261010');
+    const response=await fetch('./pipeline-evidence.json?v=luna-standard-optimization-20261010');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
+    const directorReply=await fetch('./pipeline-director-calibration.json?v=luna-standard-optimization-20261010');
     if(directorReply.ok)evidence.directorCalibration=await directorReply.json();
+    $('directorProfile').innerHTML=directorProfileOptions(evidence);
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
     if(concurrencyResponse.ok){
       evidence.concurrency=await concurrencyResponse.json();
@@ -273,7 +274,7 @@ async function start(){
     }
     const choices=gpuChoices(evidence);
     $('gpu').innerHTML=choices.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
-    const measuredDefault={...DEFAULTS,directorProfile:evidence.directorCalibration?'lean-standard':'historical',directorCostMode:evidence.directorCalibration?'measured':'manual',gpu:'5090',resolution:'720p',encodingProfile:'fresh',executionMode:'hybrid',measurementAttempt:'5090-attempt-8'};
+    const measuredDefault={...DEFAULTS,directorProfile:evidence.directorCalibration?'lean-current-standard':'historical',directorCostMode:evidence.directorCalibration?'measured':'manual',gpu:'5090',resolution:'720p',encodingProfile:'fresh',executionMode:'hybrid',measurementAttempt:'5090-attempt-8'};
     try{config=selectGPUConfig(measuredDefault,evidence,measuredDefault.gpu);}catch{config={...DEFAULTS};}
     const resetDefault={...config};
     try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved){saved.config=migrateDirectorForecast(saved.config,true,Boolean(Object.keys(saved.preferences||{}).length));if(!evidence.directorCalibration&&saved.config.directorProfile!=='historical')throw Error('Director calibration unavailable');const state=importSnapshot(saved,evidence);config=state.config;preferences=state.preferences;uncertainty=Number.isFinite(saved.uncertainty)?Math.max(0,Math.min(100,saved.uncertainty)):20;}}catch{toast('Saved planner settings were invalid; using the default plan. Studio projects are unaffected.');}

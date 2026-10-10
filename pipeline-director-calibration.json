@@ -23,7 +23,7 @@
     },
     {
       "id": "lean-standard",
-      "label": "Lean Luna \u00b7 Standard \u00b7 experimental",
+      "label": "Lean Luna \u00b7 earlier v9 format \u00b7 Standard",
       "status": "COMPLETE",
       "seconds": 200.625,
       "estimatedUSD": 0.03356641299999996,
@@ -35,7 +35,7 @@
       "completedChapters": 2,
       "unknownRequests": 0,
       "stages": [],
-      "scope": "One completed run, but its identical repeat failed Chapter 2 fidelity review. Failure remains in evidence; no reliability or 3\u00d7 claim."
+      "scope": "Historical earlier v9 format; retained for saved planner selections. Its identical repeat failed fidelity review. Select current-format calibration for the updated helper."
     },
     {
       "id": "small-groups-hybrid",
@@ -287,6 +287,292 @@
           "scope": "Clean Flex observation; fresh plans/shot counts differ from Standard. Limited history, not an equal-quality or guaranteed-latency result."
         }
       }
+    },
+    {
+      "id": "lean-current-standard",
+      "label": "Lean Luna \u00b7 current format \u00b7 Standard",
+      "status": "COMPLETE",
+      "seconds": 165.85899999993853,
+      "estimatedUSD": 0.032979707999999996,
+      "calls": 37,
+      "shots": 105,
+      "slots": 8,
+      "installed": true,
+      "sourceChapters": 2,
+      "completedChapters": 2,
+      "unknownRequests": 0,
+      "stages": [
+        {
+          "name": "Casting supervisor",
+          "calls": 2,
+          "inputTokens": 6261,
+          "outputTokens": 1035,
+          "reasoningTokens": 346,
+          "workSeconds": 10.422,
+          "estimatedUSD": 0.0011436,
+          "activeSeconds": 10.42199993133545
+        },
+        {
+          "name": "Source fact analyst",
+          "calls": 3,
+          "inputTokens": 13710,
+          "outputTokens": 8381,
+          "reasoningTokens": 5453,
+          "workSeconds": 67.25,
+          "estimatedUSD": 0.005561501,
+          "activeSeconds": 67.24999976158142
+        },
+        {
+          "name": "Source continuity reviewer",
+          "calls": 3,
+          "inputTokens": 9604,
+          "outputTokens": 922,
+          "reasoningTokens": 767,
+          "workSeconds": 12.219000000000001,
+          "estimatedUSD": 0.0014214000000000002,
+          "activeSeconds": 12.219000101089478
+        },
+        {
+          "name": "Visual storyboard director",
+          "calls": 21,
+          "inputTokens": 70922,
+          "outputTokens": 19850,
+          "reasoningTokens": 4290,
+          "workSeconds": 168.516,
+          "estimatedUSD": 0.017017205,
+          "activeSeconds": 28.432331562042236
+        },
+        {
+          "name": "Storyboard continuity supervisor",
+          "calls": 5,
+          "inputTokens": 44823,
+          "outputTokens": 1921,
+          "reasoningTokens": 1698,
+          "workSeconds": 23.484,
+          "estimatedUSD": 0.005442802,
+          "activeSeconds": 22.467999935150146
+        },
+        {
+          "name": "Targeted storyboard repair",
+          "calls": 2,
+          "inputTokens": 15939,
+          "outputTokens": 1301,
+          "reasoningTokens": 801,
+          "workSeconds": 14.109,
+          "estimatedUSD": 0.0022444,
+          "activeSeconds": 14.108999967575073
+        },
+        {
+          "name": "Workflow planner",
+          "calls": 1,
+          "inputTokens": 598,
+          "outputTokens": 178,
+          "reasoningTokens": 64,
+          "workSeconds": 2.657,
+          "estimatedUSD": 0.0001488,
+          "activeSeconds": 2.6570000648498535
+        }
+      ],
+      "successfulSamples": 1,
+      "failedAttempts": 1,
+      "profileVersions": {
+        "factsVersion": 4,
+        "planVersion": 11,
+        "reviewHintsVersion": 1,
+        "directionSchemaVersion": 2
+      },
+      "scope": "One complete settled Standard text-plan sample on the current version. Small visual groups, 128-sentence source groups; full reviews retained. No source/visual overlap. 1 matching attempt(s) failed; successful ETA excludes their time/cost and is not a finish guarantee. Other condition failures remain published; no 3x or generated-image quality proof."
+    },
+    {
+      "id": "lean-beats-standard",
+      "label": "Storyboard-owned beats \u00b7 experimental \u00b7 Standard",
+      "status": "COMPLETE",
+      "seconds": 168.5470000000205,
+      "estimatedUSD": 0.03188791000000002,
+      "calls": 35,
+      "shots": 102,
+      "slots": 8,
+      "installed": true,
+      "sourceChapters": 2,
+      "completedChapters": 2,
+      "unknownRequests": 0,
+      "stages": [
+        {
+          "name": "Casting supervisor",
+          "calls": 2,
+          "inputTokens": 6236,
+          "outputTokens": 993,
+          "reasoningTokens": 348,
+          "workSeconds": 9.25,
+          "estimatedUSD": 0.0011201000000000002,
+          "activeSeconds": 9.25
+        },
+        {
+          "name": "Source fact analyst",
+          "calls": 3,
+          "inputTokens": 13609,
+          "outputTokens": 10858,
+          "reasoningTokens": 8436,
+          "workSeconds": 87.954,
+          "estimatedUSD": 0.006789901,
+          "activeSeconds": 87.9539999961853
+        },
+        {
+          "name": "Source continuity reviewer",
+          "calls": 3,
+          "inputTokens": 9619,
+          "outputTokens": 978,
+          "reasoningTokens": 700,
+          "workSeconds": 10.936,
+          "estimatedUSD": 0.0014509009999999999,
+          "activeSeconds": 10.935999870300293
+        },
+        {
+          "name": "Visual storyboard director",
+          "calls": 21,
+          "inputTokens": 69862,
+          "outputTokens": 19323,
+          "reasoningTokens": 4816,
+          "workSeconds": 168.42,
+          "estimatedUSD": 0.016647706,
+          "activeSeconds": 26.9150607585907
+        },
+        {
+          "name": "Storyboard continuity supervisor",
+          "calls": 4,
+          "inputTokens": 37167,
+          "outputTokens": 2009,
+          "reasoningTokens": 1848,
+          "workSeconds": 22.547,
+          "estimatedUSD": 0.0047212009999999995,
+          "activeSeconds": 19.67199993133545
+        },
+        {
+          "name": "Workflow planner",
+          "calls": 1,
+          "inputTokens": 598,
+          "outputTokens": 180,
+          "reasoningTokens": 71,
+          "workSeconds": 2.125,
+          "estimatedUSD": 0.0001498,
+          "activeSeconds": 2.125
+        },
+        {
+          "name": "Targeted storyboard repair",
+          "calls": 1,
+          "inputTokens": 8733,
+          "outputTokens": 270,
+          "reasoningTokens": 142,
+          "workSeconds": 3.641,
+          "estimatedUSD": 0.001008301,
+          "activeSeconds": 3.6410000324249268
+        }
+      ],
+      "successfulSamples": 1,
+      "failedAttempts": 0,
+      "profileVersions": {
+        "factsVersion": 5,
+        "planVersion": 11,
+        "reviewHintsVersion": 1,
+        "directionSchemaVersion": 2
+      },
+      "scope": "One complete settled Standard text-plan sample on the current version. Small visual groups, 128-sentence source groups; full reviews retained. No source/visual overlap. Other condition failures remain published; no 3x or generated-image quality proof."
+    },
+    {
+      "id": "lean-compact-standard",
+      "label": "Compact + storyboard beats \u00b7 experimental \u00b7 Standard",
+      "status": "COMPLETE",
+      "seconds": 156.375,
+      "estimatedUSD": 0.032482506999999994,
+      "calls": 39,
+      "shots": 106,
+      "slots": 8,
+      "installed": true,
+      "sourceChapters": 2,
+      "completedChapters": 2,
+      "unknownRequests": 0,
+      "stages": [
+        {
+          "name": "Casting supervisor",
+          "calls": 2,
+          "inputTokens": 6263,
+          "outputTokens": 744,
+          "reasoningTokens": 0,
+          "workSeconds": 7.686999999999999,
+          "estimatedUSD": 0.0009983000000000001,
+          "activeSeconds": 7.687000036239624
+        },
+        {
+          "name": "Source fact analyst",
+          "calls": 3,
+          "inputTokens": 13735,
+          "outputTokens": 6755,
+          "reasoningTokens": 5197,
+          "workSeconds": 58.188,
+          "estimatedUSD": 0.004751,
+          "activeSeconds": 58.187999963760376
+        },
+        {
+          "name": "Source continuity reviewer",
+          "calls": 3,
+          "inputTokens": 9202,
+          "outputTokens": 1241,
+          "reasoningTokens": 840,
+          "workSeconds": 12.906,
+          "estimatedUSD": 0.0015407,
+          "activeSeconds": 12.905999898910522
+        },
+        {
+          "name": "Visual storyboard director",
+          "calls": 21,
+          "inputTokens": 71147,
+          "outputTokens": 19298,
+          "reasoningTokens": 5245,
+          "workSeconds": 176.07600000000005,
+          "estimatedUSD": 0.016763704,
+          "activeSeconds": 28.33872151374817
+        },
+        {
+          "name": "Storyboard continuity supervisor",
+          "calls": 6,
+          "inputTokens": 45572,
+          "outputTokens": 2415,
+          "reasoningTokens": 2135,
+          "workSeconds": 29.857999999999997,
+          "estimatedUSD": 0.005764701,
+          "activeSeconds": 24.73300004005432
+        },
+        {
+          "name": "Targeted storyboard repair",
+          "calls": 3,
+          "inputTokens": 17148,
+          "outputTokens": 1587,
+          "reasoningTokens": 1055,
+          "workSeconds": 17.609,
+          "estimatedUSD": 0.002508301,
+          "activeSeconds": 14.151656150817871
+        },
+        {
+          "name": "Workflow planner",
+          "calls": 1,
+          "inputTokens": 598,
+          "outputTokens": 192,
+          "reasoningTokens": 66,
+          "workSeconds": 2.594,
+          "estimatedUSD": 0.000155801,
+          "activeSeconds": 2.5940001010894775
+        }
+      ],
+      "successfulSamples": 1,
+      "failedAttempts": 0,
+      "profileVersions": {
+        "factsVersion": 5,
+        "planVersion": 13,
+        "reviewHintsVersion": 1,
+        "directionSchemaVersion": 2
+      },
+      "scope": "One complete settled Standard text-plan sample on the current version. Small visual groups, 128-sentence source groups; full reviews retained. No source/visual overlap. Other condition failures remain published; no 3x or generated-image quality proof."
     }
-  ]
+  ],
+  "recommendedProfile": "lean-current-standard"
 }
