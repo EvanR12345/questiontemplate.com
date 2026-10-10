@@ -263,7 +263,11 @@ class OpenAIDirector(DirectorProvider):
                     observer('submitting', {'operationId': request_id, 'provider': 'openai-luna'})
                 submitted = True
                 dispatch_started=time.monotonic()
-                with urllib.request.urlopen(req, timeout=30) as response:
+                # Flex can wait for capacity longer than Standard. A 30-second
+                # socket timeout needlessly loses accepted requests/receipts.
+                # Never resubmit or switch tiers on a timeout: the reservation
+                # remains UNKNOWN until its actual usage is reconciled.
+                with urllib.request.urlopen(req, timeout=900 if service_tier == 'flex' else 30) as response:
                     self.response = response
                     timing['headersSeconds']=time.monotonic()-dispatch_started
                     for line in response:
@@ -411,7 +415,9 @@ class OpenAIDirector(DirectorProvider):
                 except Exception:
                     detail = ''
                 suffix = f' Saved request: {request_id}.' if ledger else ''
-                raise RuntimeError(f"Luna request failed (HTTP {error.code}). " + (detail or 'Check API billing, model access and structured-output settings.') + suffix) from None
+                flex_note = (' Flex capacity is temporarily unavailable; the selected tier was kept. '
+                             'Retry later or choose Standard explicitly.' if service_tier == 'flex' and error.code == 429 else '')
+                raise RuntimeError(f"Luna request failed (HTTP {error.code}). " + flex_note + (detail or 'Check API billing, model access and structured-output settings.') + suffix) from None
             finally:
                 if dispatch_started is not None:
                     timing.setdefault('streamSeconds',time.monotonic()-dispatch_started)

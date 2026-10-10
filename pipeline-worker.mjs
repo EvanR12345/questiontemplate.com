@@ -1,6 +1,6 @@
-import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=scheduling-20261009';
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=scheduling-20261009';
-import {startupSearch} from './pipeline-detail-ui.mjs?v=scheduling-20261009';
+import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=luna-forecast-20261010';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=luna-forecast-20261010';
+import {startupSearch} from './pipeline-detail-ui.mjs?v=luna-forecast-20261010';
 self.onmessage=({data})=>{
  try{
   if(data.type==='plan'){

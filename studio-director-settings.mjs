@@ -17,7 +17,7 @@ export function directorSettings(current, values, health) {
   if (['staged-review','staged-lean'].includes(mode)) {
     if (!health?.stagedDirectorAvailable) throw Error('Update and connect the shared helper before using staged Luna.');
     if (mode === 'staged-lean' && !health?.leanDirectorAvailable) throw Error('Update the shared helper before using Lean Luna.');
-    if (mode === 'staged-lean' && values.processingTier !== 'default') throw Error('Lean Luna uses Standard processing; choose Standard to avoid premium charges.');
+    if (mode === 'staged-lean' && values.processingTier === 'fast') throw Error('Lean Luna uses Standard or Flex processing; premium Fast is not enabled.');
     if (values.provider !== 'openai-luna' || values.imageProvider !== 'comfyui' || values.economyPanels)
       throw Error('Staged Luna requires Luna, ComfyUI cloud images and individual shots.');
     if (!(Number(values.apiBudget) > 0) || !Number.isFinite(Number(values.apiBudget)))

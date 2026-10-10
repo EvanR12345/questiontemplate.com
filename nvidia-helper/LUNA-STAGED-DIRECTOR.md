@@ -1,3 +1,11 @@
+## October 10: planner calibration and Flex
+
+The production planner now explicitly selects measured Classic Standard, Lean Standard, or the two research hybrid formats. Timeline, startup alternatives and GPU comparisons all use the selected complete director elapsed time and receipt cost. The measured concurrency is included once; adding more API slots cannot invent another speedup. Two-chapter scaling is a projection. Failed/unknown studies never provide speed calibrations; Lean's failed repeat remains visible.
+
+Lean now allows Standard or Flex; premium Fast remains blocked for Lean. Existing projects are not changed automatically. Flex uses the same prompts, checks, reasoning and structured schemas, with a 900-second socket wait instead of 30 seconds. There is no automatic Standard fallback or timeout resubmission. Flex capacity rejection is reported clearly, and uncertain accepted charges remain reserved. Flex timing is not measured yet; planner cost is half Standard for eligible Luna tokens, with an explicit editable latency assumption. GPU, storage, narration and rendering charges are not halved.
+
+The later chapter-request study totals $0.492561112 settled plus $0.014212125 reserved, inside its existing $1 cap; its unknown request remains unresolved. The older completion figures below describe earlier checkpoints, not current total authority.
+
 # Staged Luna director: measurements and operating limits
 
 ## Latest: Standard-only Lean investigation, October 10
@@ -32,7 +40,7 @@ Lean changes:
 - Send each identity once, frozen current state without repeated history, and
   only relevant visual facts. Full source narration remains authoritative.
 - Source-fact extraction and repairs use at least medium reasoning (high when
-  selected); visual work uses the selected reasoning. Standard is enforced in
+  selected); visual work uses the selected reasoning. Standard or Flex is accepted in
   both UI and project validation. Premium Fast is a separate optional older mode.
 - Initial storyboard review covers **every** shot. After the bounded repair,
   recheck changed shots and immediate neighbors with full source and state.

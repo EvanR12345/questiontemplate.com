@@ -22,6 +22,31 @@ def stream(value='{"summary":"complete"}', status="completed", **extra):
 
 
 class LunaTest(unittest.TestCase):
+    def test_flex_waits_for_capacity_without_timeout_resubmission_or_standard_fallback(self):
+        from cost_control import SpendLedger
+        for tier,timeout in [('default',30),('flex',900)]:
+            with self.subTest(tier=tier),tempfile.TemporaryDirectory() as folder:
+                director=OpenAIDirector({'openaiServiceTier':tier},Path(folder))
+                director.key=lambda:'test-key'
+                director.spend_ledger=SpendLedger(Path(folder)/'ledger.json',.02)
+                with patch('openai_director.urllib.request.urlopen',return_value=stream(service_tier=tier)) as request:
+                    director.call('Test',{},obj({'summary':STR}),lambda *_:None)
+                self.assertEqual(request.call_count,1)
+                self.assertEqual(request.call_args.kwargs['timeout'],timeout)
+                self.assertEqual(json.loads(request.call_args.args[0].data)['service_tier'],tier)
+
+    def test_flex_capacity_rejection_releases_only_unaccepted_usage_and_never_upgrades(self):
+        from cost_control import SpendLedger
+        with tempfile.TemporaryDirectory() as folder:
+            director=OpenAIDirector({'openaiServiceTier':'flex'},Path(folder));director.key=lambda:'test-key'
+            director.spend_ledger=SpendLedger(Path(folder)/'ledger.json',.02)
+            with patch('openai_director.urllib.request.urlopen',side_effect=urllib.error.HTTPError('test',429,'busy',{},io.BytesIO(b'{}'))) as request:
+                with self.assertRaisesRegex(RuntimeError,'Flex capacity is temporarily unavailable'):
+                    director.call('Test',{},obj({'summary':STR}),lambda *_:None)
+            self.assertEqual(request.call_count,1)
+            state=director.spend_ledger.load()
+            self.assertEqual(state['spentUSD'],0);self.assertEqual(state['reservedUSD'],0)
+
     def test_cached_progress_save_does_not_block_other_cache_publishers(self):
         import openai_director
         with tempfile.TemporaryDirectory() as folder:

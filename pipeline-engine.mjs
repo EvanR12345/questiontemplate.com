@@ -1,11 +1,13 @@
 // A local scheduling model. This module never calls a paid provider or changes Studio projects.
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
+import {directorForecast} from './pipeline-director-calibration.mjs?v=luna-forecast-20261010';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'off', sample:20,
   retries:0, warmCache:false, apiSlots:3, cpuOverlap:false, batch:24,
   exhaustive:false, earlyGpu:false, directorCost:.38798, qcCost:.0003, storageDaily:.168,
+  directorProfile:'historical',directorTier:'default',directorCostMode:'manual',flexLatencyFactor:1,
   pricingBasis:'published',containerGB:20,storageDays:1,quotedGPUHourly:0,quotedGPU:'',
   resolution:'legacy', videoResolution:'720p', videoFps:30, videoRenderer:'auto', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0 };
 
@@ -73,7 +75,7 @@ export function validateConfig(input, evidence) {
     c[key]=Number(c[key]);if(!Number.isFinite(c[key])||c[key]<min)throw Error(key+' must be a finite nonnegative number.');
   }
   if(typeof c.quotedGPU!=='string'||c.quotedGPU.length>100)throw Error('Invalid quoted GPU identity.');
-  for(const [key,lo,hi] of [['minutes',1,Infinity],['chapters',1,Infinity],['readyChapters',1,Infinity],['cadence',1,20],['introSeconds',10,60],['introImages',1,20],['sample',1,100],['retries',0,100],['apiSlots',1,3],['batch',1,Infinity],['directorCost',0,100],['qcCost',0,1],['storageDaily',0,10]]) {
+  for(const [key,lo,hi] of [['minutes',1,Infinity],['chapters',1,Infinity],['readyChapters',1,Infinity],['cadence',1,20],['introSeconds',10,60],['introImages',1,20],['sample',1,100],['retries',0,100],['apiSlots',1,c.directorProfile==='historical'?3:8],['batch',1,Infinity],['directorCost',0,100],['qcCost',0,1],['storageDaily',0,10]]) {
     if(!Number.isFinite(Number(c[key]))||Number(c[key])<lo||Number(c[key])>hi) throw Error(`Invalid ${key}: use ${hi===Infinity?'a finite number of at least '+lo:lo+'–'+hi}.`);
     c[key]=Number(c[key]);
   }
@@ -105,6 +107,7 @@ export function describePlan(input,evidence){return buildPlan(input,evidence,{me
 
 export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   const c=validateConfig(input,evidence),cal=evidence.calibration;
+  const director=directorForecast(c,evidence);
   const nativeProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&p.backend==='native');
   const cpuProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&(p.backend||'cpu')==='cpu')||cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
   const renderProfile=c.videoRenderer==='native'?nativeProfile:c.videoRenderer==='cpu'?cpuProfile:nativeProfile||cpuProfile;
@@ -128,7 +131,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   }
   if(!g)throw Error('This GPU has no legacy timing profile. Select a measured resolution.');
   g=priceGPU(g,c);
-  const capacities={api:c.policy==='serial'?1:c.apiSlots, cloud:1, remote:1, network:1, disk:1, cpu:c.cpuOverlap?2:1, audioGPU:1, imagePipe:1};
+  const capacities={api:director.aggregated?director.slots:c.policy==='serial'?1:c.apiSlots, cloud:1, remote:1, network:1, disk:1, cpu:c.cpuOverlap?2:1, audioGPU:1, imagePipe:1};
   const story=c.minutes*60-(c.intro?c.introSeconds:0);
   const count=Math.ceil(story/60*c.cadence),chapterSec=story/c.chapters;
   if(!Number.isSafeInteger(count))throw Error('Image count exceeds numeric precision; use a smaller planning scenario.');
@@ -137,7 +140,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   const available=Math.max(100,3000-c.chapters*20-40);
   if(c.chapters*14>30000)throw Error('The detailed browser chart exceeds its 30,000-operation memory budget. These project settings are valid, but require a larger-project view.');
   const groupSize=Math.max(c.batch,Math.ceil((count*(1+c.retries/100)+(c.intro?c.introImages:0))*8/available));
-  if(metadataOnly)return {config:c,gpu:g,measurement,renderProfile,groupSize};
+  if(metadataOnly)return {config:c,gpu:g,measurement,renderProfile,groupSize,director};
   const tasks=[];let seq=0;
   const add=(id,kind,chapter,duration,deps,resources={},extra={})=>{
     if(tasks.length>=30000)throw Error('The detailed browser chart exceeds its 30,000-operation memory budget. These project settings are valid, but require a larger-project view.');
@@ -152,13 +155,23 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
     const bible=add(prefix+'bible','bible',i,.3,['preflight'],{disk:1});
     audio[i]=add(prefix+'voice','voice',i,chapterSec/cal.voiceSampleSeconds*cal.voiceWallSeconds,[clean],{cpu:.8,audioGPU:1});
     timings[i]=add(prefix+'timing','timing',i,.5,[audio[i]],{cpu:.1});
-    const total=cal.directorSeconds/cal.narrationSeconds*chapterSec;
+    const total=director.secondsPerStorySecond*chapterSec;
     let prev=null;
+    if(director.aggregated){
+      const deps=[timings[i],bible,...(i>1?[handoffs[i-1]]:[])];
+      prev=add(prefix+'chapter','chapter',i,total,deps,{api:director.slots},{images,
+        name:'Chapter directing · all measured passes',directorProfile:director.id,
+        includedStages:director.stages,basis:`${director.label}: ${director.measuredSeconds.toFixed(3)}s for ${director.sourceSeconds}s of narration; ${director.calls} API requests, ${director.slots} tested slots. Includes source analysis, storyboards, fidelity checks and observed repairs once. ${director.scope}`});
+      prev=add(prefix+'handoff','handoff',i,.3,[prev],{disk:1},{images,basis:'Separate 0.3-second durable commit allowance. Full measured chapter directing is counted once above.'});
+      prompts[i]=prefix+'chapter';
+    }else{
     for(const [kind,weight] of [['analyst',.17],['chapter',.14],['scene',.18],['layout',.12],['workflow',.06],['continuity',.12],['prompt',.18],['handoff',.03]]) {
       const deps=prev?[prev]:[timings[i],bible,...(i>1?[handoffs[i-1]]:[])];
       prev=add(prefix+kind,kind,i,total*weight,deps,kind==='handoff'?{disk:1}:{api:1},{images});
     }
-    handoffs[i]=prev;prompts[i]=prefix+'prompt';
+    prompts[i]=prefix+'prompt';
+    }
+    handoffs[i]=prev;
   }
   if(c.intro){
     add('intro-plan','introPlan',0,8,['preflight'],{api:1});
@@ -238,7 +251,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
     }
   }
   return {version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
-    renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.backend==='native'?'local GTX 1650 GPU motion, one worker; shared narration GPU; full-story mux timed separately':renderProfile.mode==='chapter-export'?'fresh real-media CPU chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local CPU clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
+    director,renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.backend==='native'?'local GTX 1650 GPU motion, one worker; shared narration GPU; full-story mux timed separately':renderProfile.mode==='chapter-export'?'fresh real-media CPU chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local CPU clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
 }
 
 function fits(task,start,allocations,capacities) {
@@ -304,12 +317,12 @@ export function schedule(plan, preferences={}) {
   out.sort((a,b)=>a.start-b.start||a.priority-b.priority);
   const end=Math.max(...out.map(t=>t.end)),boot=completed.get('boot'),stop=completed.get('stop');
   const rentalSeconds=stop.end-boot.start,gpuWork=out.filter(t=>t.resources.remote).reduce((n,t)=>n+t.duration,0);
-  const directorUSD=plan.config.directorCost*plan.storySeconds/7200;
+  const directorUSD=plan.director.costPerTwoHours*plan.storySeconds/7200;
   const qcCount=out.filter(t=>t.kind==='vision').reduce((n,t)=>n+(t.images||0),0);
   const qcUSD=qcCount*plan.config.qcCost;
   return {tasks:out,end,rentalSeconds,gpuWork,gpuIdleSeconds:Math.max(0,rentalSeconds-gpuWork),
     ...costParts(rentalSeconds,plan.gpu.hourly,directorUSD,qcUSD,plan.config.storageDaily,plan.config.storageDays),
-    qcCount,diagnostics:validateSchedule(plan,out)};
+    directorUSD,qcUSD,qcCount,diagnostics:validateSchedule(plan,out)};
 }
 
 export function validateSchedule(plan,tasks) {

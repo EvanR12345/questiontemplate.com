@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-10",
+  "model": "gpt-6-luna",
+  "sourceNarrationSeconds": 1050.23,
+  "sourceWords": 2604,
+  "profiles": [
+    {
+      "id": "classic-standard",
+      "label": "Classic Luna \u00b7 Standard \u00b7 measured",
+      "status": "COMPLETE",
+      "seconds": 345.7030000000959,
+      "estimatedUSD": 0.04581651400000003,
+      "calls": 48,
+      "shots": 112,
+      "slots": 2,
+      "installed": true,
+      "sourceChapters": 2,
+      "completedChapters": 2,
+      "unknownRequests": 0,
+      "stages": [],
+      "scope": "One completed run. Full classic passes; latest Standard receipts."
+    },
+    {
+      "id": "lean-standard",
+      "label": "Lean Luna \u00b7 Standard \u00b7 experimental",
+      "status": "COMPLETE",
+      "seconds": 200.625,
+      "estimatedUSD": 0.03356641299999996,
+      "calls": 37,
+      "shots": 108,
+      "slots": 8,
+      "installed": true,
+      "sourceChapters": 2,
+      "completedChapters": 2,
+      "unknownRequests": 0,
+      "stages": [],
+      "scope": "One completed run, but its identical repeat failed Chapter 2 fidelity review. Failure remains in evidence; no reliability or 3\u00d7 claim."
+    },
+    {
+      "id": "small-groups-hybrid",
+      "label": "Small visual groups \u00b7 research \u00b7 fastest observed",
+      "status": "COMPLETE",
+      "seconds": 124.67200000002049,
+      "estimatedUSD": 0.02855100899999996,
+      "calls": 32,
+      "shots": 104,
+      "slots": 8,
+      "installed": false,
+      "sourceChapters": 2,
+      "completedChapters": 2,
+      "unknownRequests": 0,
+      "stages": [
+        {
+          "name": "Casting supervisor",
+          "calls": 2,
+          "inputTokens": 6240,
+          "outputTokens": 1023,
+          "callWorkSeconds": 10.203,
+          "estimatedUSD": 0.0011355010000000001,
+          "elapsedSpanSeconds": 69.09184193611145,
+          "activeSeconds": 10.202999830245972
+        },
+        {
+          "name": "Source fact analyst",
+          "calls": 2,
+          "inputTokens": 15339,
+          "outputTokens": 5729,
+          "callWorkSeconds": 41.031,
+          "estimatedUSD": 0.0043984,
+          "elapsedSpanSeconds": 87.36929535865784,
+          "activeSeconds": 41.03099989891052
+        },
+        {
+          "name": "Source continuity reviewer",
+          "calls": 2,
+          "inputTokens": 12232,
+          "outputTokens": 723,
+          "callWorkSeconds": 9.063,
+          "estimatedUSD": 0.001584701,
+          "elapsedSpanSeconds": 73.47552251815796,
+          "activeSeconds": 9.063000202178955
+        },
+        {
+          "name": "Visual storyboard director",
+          "calls": 21,
+          "inputTokens": 71692,
+          "outputTokens": 18550,
+          "callWorkSeconds": 180.43800000000002,
+          "estimatedUSD": 0.016444205,
+          "elapsedSpanSeconds": 86.08933019638062,
+          "activeSeconds": 31.401186227798462
+        },
+        {
+          "name": "Storyboard continuity supervisor",
+          "calls": 3,
+          "inputTokens": 31924,
+          "outputTokens": 1312,
+          "callWorkSeconds": 16.343,
+          "estimatedUSD": 0.003848402,
+          "elapsedSpanSeconds": 78.77981495857239,
+          "activeSeconds": 16.342999935150146
+        },
+        {
+          "name": "Targeted storyboard repair",
+          "calls": 1,
+          "inputTokens": 6475,
+          "outputTokens": 621,
+          "callWorkSeconds": 6.422,
+          "estimatedUSD": 0.000958,
+          "elapsedSpanSeconds": 6.421999931335449,
+          "activeSeconds": 6.421999931335449
+        },
+        {
+          "name": "Workflow planner",
+          "calls": 1,
+          "inputTokens": 598,
+          "outputTokens": 244,
+          "callWorkSeconds": 2.89,
+          "estimatedUSD": 0.0001818,
+          "elapsedSpanSeconds": 2.890000104904175,
+          "activeSeconds": 2.890000104904175
+        }
+      ],
+      "scope": "One complete matched-pair run; full source and storyboard checks retained. Research format is not installed in production. No generated-image quality comparison."
+    },
+    {
+      "id": "whole-chapter-hybrid",
+      "label": "One storyboard per chapter \u00b7 research \u00b7 lower API cost",
+      "status": "COMPLETE",
+      "seconds": 160.7970000000205,
+      "estimatedUSD": 0.016951101999999996,
+      "calls": 11,
+      "shots": 101,
+      "slots": 8,
+      "installed": false,
+      "sourceChapters": 2,
+      "completedChapters": 2,
+      "unknownRequests": 0,
+      "stages": [
+        {
+          "name": "Casting supervisor",
+          "calls": 2,
+          "inputTokens": 6266,
+          "outputTokens": 919,
+          "callWorkSeconds": 9.969000000000001,
+          "estimatedUSD": 0.0010861,
+          "elapsedSpanSeconds": 81.39330983161926,
+          "activeSeconds": 9.969000101089478
+        },
+        {
+          "name": "Source fact analyst",
+          "calls": 2,
+          "inputTokens": 15456,
+          "outputTokens": 6633,
+          "callWorkSeconds": 53.171,
+          "estimatedUSD": 0.004862099999999999,
+          "elapsedSpanSeconds": 106.18112254142761,
+          "activeSeconds": 53.1710000038147
+        },
+        {
+          "name": "Source continuity reviewer",
+          "calls": 2,
+          "inputTokens": 12164,
+          "outputTokens": 589,
+          "callWorkSeconds": 7.422000000000001,
+          "estimatedUSD": 0.001510902,
+          "elapsedSpanSeconds": 85.8960587978363,
+          "activeSeconds": 7.421999931335449
+        },
+        {
+          "name": "Visual storyboard director",
+          "calls": 2,
+          "inputTokens": 17470,
+          "outputTokens": 9575,
+          "callWorkSeconds": 70.422,
+          "estimatedUSD": 0.0065345,
+          "elapsedSpanSeconds": 120.38707876205444,
+          "activeSeconds": 70.42199993133545
+        },
+        {
+          "name": "Storyboard continuity supervisor",
+          "calls": 2,
+          "inputTokens": 23627,
+          "outputTokens": 870,
+          "callWorkSeconds": 11.405999999999999,
+          "estimatedUSD": 0.0027977,
+          "elapsedSpanSeconds": 92.93935036659241,
+          "activeSeconds": 11.405999898910522
+        },
+        {
+          "name": "Workflow planner",
+          "calls": 1,
+          "inputTokens": 598,
+          "outputTokens": 200,
+          "callWorkSeconds": 2.438,
+          "estimatedUSD": 0.0001598,
+          "elapsedSpanSeconds": 2.437999963760376,
+          "activeSeconds": 2.437999963760376
+        }
+      ],
+      "scope": "One complete matched-pair run; full source and storyboard checks retained. Research format is not installed in production. No generated-image quality comparison."
+    }
+  ]
+}

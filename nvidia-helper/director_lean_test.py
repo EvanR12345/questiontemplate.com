@@ -13,6 +13,18 @@ from director_wire import CompactDirectorWire
 
 
 class LeanDirectorTest(unittest.TestCase):
+    def test_flex_is_accepted_without_enabling_premium_or_changing_voice_cadence(self):
+        from studio_data import validate_project
+        p=self.fixture();p['settings']['director']['processingTier']='flex'
+        voice=copy.deepcopy(p['settings']['voice']);cadence=p['settings']['director'].get('cadencePerMinute')
+        validate_project(p)
+        self.assertEqual(p['settings']['director']['processingTier'],'flex')
+        self.assertEqual(p['settings']['voice'],voice)
+        self.assertEqual(p['settings']['director'].get('cadencePerMinute'),cadence)
+        p['settings']['director']['processingTier']='fast'
+        with self.assertRaisesRegex(ValueError,'premium Fast'):
+            validate_project(p)
+
     def fixture(self):
         p=ChapterDirectorAnalysisTest().fixture()
         p['settings']['director'].update(executionMode='staged-lean',parallelism=8,processingTier='default')

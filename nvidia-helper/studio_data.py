@@ -380,8 +380,8 @@ def validate_project(p):
         raise ValueError('Choose selected or adaptive director reasoning.')
     if p['settings'].get('director',{}).get('processingTier','default') not in ('default','flex','fast'):
         raise ValueError('Choose Standard, Flex or Fast Luna processing.')
-    if p['settings'].get('director',{}).get('executionMode')=='staged-lean' and p['settings']['director'].get('processingTier','default')!='default':
-        raise ValueError('Lean Luna uses Standard processing to avoid premium charges.')
+    if p['settings'].get('director',{}).get('executionMode')=='staged-lean' and p['settings']['director'].get('processingTier','default')=='fast':
+        raise ValueError('Lean Luna supports Standard or Flex processing; premium Fast is not enabled.')
     if type(p['settings'].get('director',{}).get('factGroupSentences',48)) is not int or p['settings'].get('director',{}).get('factGroupSentences',48) not in (48,96,128):
         raise ValueError('Choose a bounded source-fact group of 48, 96 or 128 sentences.')
     cadence=p['settings'].get('director',{}).get('cadencePerMinute')
