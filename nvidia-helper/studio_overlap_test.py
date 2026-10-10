@@ -286,14 +286,28 @@ class CloudOverlapTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'Visual QC'):self.run_story()
         images=len(self.provider.requests);checks=len(self.qc_requests)
         self.service.wait_for_overlap=False
-        # A peer QC response can be interrupted by the first failed review.
-        # Its unknown receipt must block retry before reaching the saved-image
-        # guard; it must never be treated as settled or buy replacement work.
-        with self.assertRaisesRegex(RuntimeError,'No replacement was purchased|unresolved') as caught:self.run_story()
-        if 'unresolved' in str(caught.exception):
-            ledger=json.loads((self.service.store.folder(self.project['id'])/'api-cost-ledger.json').read_text())
-            self.assertTrue(ledger['requests']);self.assertGreater(ledger['reservedUSD'],0)
+        with self.assertRaisesRegex(RuntimeError,'Visual QC'):self.run_story()
+        ledger=json.loads((self.service.store.folder(self.project['id'])/'api-cost-ledger.json').read_text())
+        self.assertFalse(ledger['requests']);self.assertEqual(len(ledger['receipts']),2)
         self.assertEqual(len(self.provider.requests),images);self.assertEqual(len(self.qc_requests),checks)
+        self.assertEqual(images,2)
+        self.assertEqual(self.service.renderer.full_calls,0)
+        p=self.service.store.load(self.project['id'])
+        self.assertFalse(p['chapters'][0]['scenes'][0]['shots'][0]['qc']['pass'])
+        self.assertEqual(len(p['production']['reviewRequiredShots']),1)
+
+    def test_paid_receive_gate_ignores_sibling_shutdown_but_honors_user_cancel(self):
+        runtime=CloudStoryOverlap(self.service,self.project,{'overlap':True})
+        context=runtime.main_context
+        try:
+            context.cancelled.set();self.service.paused=True;runtime._collecting_after_failure=True
+            runtime.receive_gate(context,'Collect terminal usage')
+            with self.assertRaises(JobCancelled):runtime.gate(context)
+            self.service.cancel=True
+            with self.assertRaises(JobCancelled):runtime.receive_gate(context)
+        finally:
+            self.service.cancel=False;self.service.paused=False
+            runtime.close('FAILED','fixture shutdown')
 
     def test_planned_clothing_change_remains_in_generation_and_qc_payloads(self):
         self.service.planned_change=True

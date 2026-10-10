@@ -143,6 +143,18 @@ class CloudStoryOverlap:
             raise ValueError('Chapter source changed during this run; current text and saved assets retained.')
         return current
 
+    def receive_gate(self, context, message=''):
+        """Collect receipts already bought, even when a sibling stops admission.
+
+        This never authorizes a new dispatch or a project commit. Those retain
+        their ordinary cancellation, immutable-input and selection guards.
+        """
+        from studio_service import JobCancelled
+        with self.root.cv:
+            if (self.root.closed or self.root.cancel or
+                    context.cancelled.is_set() and not getattr(self,'_collecting_after_failure',False)):
+                raise JobCancelled()
+
     def clone(self, context, main=False, snapshot=None):
         clone=copy.copy(self.root)
         clone.config=copy.deepcopy(self.root.config)
@@ -155,6 +167,7 @@ class CloudStoryOverlap:
         clone.checkpoint=lambda step,total,message:clone.gate(message,step,total,wait_paused=False)
         clone.director=LaneDirector(clone.config,clone.store.root,self.api_lane)
         clone.director.execution_observer=self.observer(context)
+        clone.director.receive_gate=lambda message:self.receive_gate(context,message)
         clone.director.wait_for_budget=True
         clone.providers=dict(self.root.providers) if main else {
             'existing':NoLocalGeneration(),'native-flux':NoLocalGeneration()}
@@ -227,7 +240,7 @@ class CloudStoryOverlap:
                 clone.select_director(snapshot)
                 # A sibling failure stops new dispatch/retries, but must not
                 # discard a paid response's receipt or completed cached result.
-                clone.director.receive_gate=lambda message:ordinary_gate(message,wait_paused=False)
+                clone.director.receive_gate=lambda message:self.receive_gate(context,message)
                 clone.director.timing_callback=lambda stage,seconds,details:clone.record_timing(
                     self.project,stage,seconds,details | {'chapter':get_chapter(snapshot,chapter)['number'],
                         'detail':True,'parallelDirector':True,
@@ -313,6 +326,8 @@ class CloudStoryOverlap:
                     qc=result['qc']
                     current=clone.store.load(self.project)
                     if qc_decision(current,get_shot(current,chapter,shot['id']),clone.store)['blocking']:
+                        if clone.collect_production_reviews(current):
+                            return {'status':'REVIEW_REQUIRED','qc':qc}
                         if not automatic_repairs(self.settings):
                             raise RuntimeError('Saved image needs your review. No repair was purchased; accept it to continue.')
                         current=clone.store.load(self.project)
@@ -321,7 +336,8 @@ class CloudStoryOverlap:
                             {'operation':operation,'_repairPrompt':qc.get('repairPrompt') or shot['prompt']})
                 else:
                     result=clone.measured_stage(self.project,'Image + quality checks',clone.generate,
-                        snapshot,chapter,shot['id'],shot['generationSettings']['seed'],{},
+                        snapshot,chapter,shot['id'],shot['generationSettings']['seed'],
+                        {'_collectReview':clone.collect_production_reviews(snapshot)},
                         chapter=get_chapter(snapshot,chapter)['number'],shot=shot['id'],executionId=context.identity)
                 if isinstance(result,dict) and result.get('status')=='SUPERSEDED':
                     raise StaleExecution('Shot changed during generation or QC; current edits retained before rendering.')
@@ -367,6 +383,7 @@ class CloudStoryOverlap:
                         'note':'Delivered-image throughput includes selected reviews and waiting inside active tasks; nested shot latencies are not added.'})
 
     def close(self, status, message=''):
+        self._collecting_after_failure=status not in ('COMPLETE','CANCELLED') and not self.root.cancel
         if status!='COMPLETE':
             for context in self.contexts:context.cancelled.set()
             with self.root.cv:self.root.cv.notify_all()

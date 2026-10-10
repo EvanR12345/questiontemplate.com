@@ -1530,6 +1530,10 @@ class StudioService:
             except BaseException as error:
                 state='CANCELLED' if isinstance(error,JobCancelled) else 'FAILED'
                 message=str(error)[:1800]
+                # Paid Luna replies can finish collecting receipts without an
+                # idle GPU rental while overlap.close waits for their threads.
+                rental=getattr(self,'_production_gpu',None)
+                if rental:rental.stop('production interrupted; collecting API receipts')
                 raise
             finally:
                 overlap.close(state,message)
@@ -1676,10 +1680,11 @@ class StudioService:
             self.production_progress(
                 pid, "Generating intro visual", chapterId=None, shotId=None
             )
-            self.intro_image(p)
+            self.intro_image(p, {'_collectReview':self.collect_production_reviews(p)})
         # Complete chapter AND intro images before local chapter rendering.
         rental=getattr(self,'_production_gpu',None)
         if rental:rental.stop('chapter and intro images finished')
+        self.require_production_reviews(pid)
         if cloud_flow:
             for index, chid in enumerate(chapters):
                 self.render_production_chapter(pid, chid, index, chapters)
@@ -1731,10 +1736,29 @@ class StudioService:
         target['renderStale']=True
 
 
+    def collect_production_reviews(self, project):
+        from studio_qc import policy
+        return bool(getattr(self,'_overlap',None) and policy(project['settings'])=='practical')
+
+    def retained_production_image(self, project, shot):
+        return bool(self.collect_production_reviews(project) and shot.get('imagePath')
+            and not shot.get('generationStale')
+            and self.store.has_asset(project['id'],shot['imagePath']))
+
+    def require_production_reviews(self, pid):
+        project=self.store.load(pid)
+        shots=[shot for chapter in project['chapters'] for scene in chapter['scenes'] for shot in scene['shots']]
+        if project['intro']['enabled']:shots+=project['intro'].get('shots',[])
+        flags=[shot['id'] for shot in shots if shot.get('imagePath') and qc_decision(project,shot,self.store)['blocking']]
+        if flags:
+            self.production_progress(pid,'Images saved · review required',reviewRequiredShots=flags)
+            raise RuntimeError(f'Visual QC: {len(flags)} saved images need review before rendering. '
+                'The GPU is stopped; no replacement was purchased. Review or repair the flagged shots, then continue.')
+
     def generate_production_chapter_images(self,pid,chid,index,chapters):
         p=self.store.load(pid)
         ch=get_chapter(p,chid)
-        if any(not self.saved_image_ready(p,s) for sc in ch['scenes'] for s in sc['shots']):
+        if any(not (self.saved_image_ready(p,s) or self.retained_production_image(p,s)) for sc in ch['scenes'] for s in sc['shots']):
             self.ensure_production_gpu()
         active_characters = {
             c["id"]
@@ -1797,7 +1821,7 @@ class StudioService:
         for shot_index, shot in enumerate(shots):
             # Cached shots need no per-shot progress writes to the entire
             # durable project. One chapter update below records completion.
-            if (self.saved_image_ready(p, shot)):
+            if self.saved_image_ready(p, shot) or self.retained_production_image(p,shot):
                 if getattr(self,'_overlap',None) and should_check(p,shot):
                     qc=shot.get('qc',{})
                     asset_hash=hashlib.sha256(self.store.asset(pid,shot['imagePath']).read_bytes()).hexdigest()
@@ -2337,7 +2361,7 @@ class StudioService:
                     self.store.mutate(p['id'], save_review)
                     latest=self.store.load(p['id'])
                     checked=next(s for s in latest['intro']['shots'] if s['id']==shot['id'])
-                    if qc_decision(latest,checked,self.store)['blocking']:
+                    if qc_decision(latest,checked,self.store)['blocking'] and not options.get('_collectReview'):
                         raise ValueError('Intro image needs manual review. Accept it or request a repair explicitly; no automatic repair was purchased.')
             return
         self.check_cloud_budget(p, provider)
@@ -4205,7 +4229,8 @@ class StudioService:
 
         self.store.mutate(p["id"], complete)
         current = self.store.load(p["id"])
-        if qc_decision(current,get_shot(current,chid,sid),self.store)["blocking"] and qc.get('status')!='PENDING':
+        if (qc_decision(current,get_shot(current,chid,sid),self.store)["blocking"]
+                and qc.get('status')!='PENDING' and not options.get('_collectReview')):
             raise RuntimeError(
                 "Visual QC needs your review. The image and AI findings are saved. Accept it to continue; repair requires a supported cost estimate."
             )
