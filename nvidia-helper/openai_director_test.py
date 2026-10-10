@@ -743,7 +743,7 @@ class OwnedBillingTest(unittest.TestCase):
         self.assertIsNone(self.director.response)
 
     def test_cache_publish_failure_keeps_a_previous_valid_result_and_the_charge(self):
-        real_replace=Path.replace
+        real_replace=os.replace
         def replace(path,target):
             if Path(target).parent.name=='director-cache':
                 # Model another publisher saving a valid result during our call.
@@ -751,7 +751,7 @@ class OwnedBillingTest(unittest.TestCase):
                 raise OSError('synthetic cache publication failure')
             return real_replace(path,target)
         with patch('openai_director.urllib.request.urlopen',return_value=stream()), \
-                patch.object(Path,'replace',replace):
+                patch('cost_control.os.replace',replace):
             with self.assertRaisesRegex(OSError,'cache publication failure'): self.call()
         cache=next((self.root/'director'/'director-cache').glob('*.json'))
         self.assertEqual(json.loads(cache.read_text()),{'summary':'previous valid result'})

@@ -21,6 +21,18 @@ LUNA_RATES = {'input': .10, 'cachedInput': .01, 'cacheWrite': .125, 'output': .5
 _lock = threading.RLock()
 
 
+def atomic_replace(source, destination):
+    """Publish a flushed snapshot despite brief Windows delete-sharing locks."""
+    for attempt in range(7):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError as error:
+            if getattr(error, 'winerror', None) not in (5, 32) or attempt == 6:
+                raise
+            time.sleep(.02 * 2**attempt)
+
+
 def _tokens(value):
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError('Token usage must contain nonnegative integers.')
@@ -183,7 +195,10 @@ class SpendLedger:
                 handle.write(json.dumps(state, separators=(',', ':'), allow_nan=False))
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(name, self.path)
+            # Windows readers/virus scanners can briefly hold the destination
+            # without delete sharing. Keep the same fully flushed snapshot and
+            # retry its atomic publication; never remove the old ledger first.
+            atomic_replace(name, self.path)
         finally:
             if name is not None:
                 name.unlink(missing_ok=True)
@@ -292,6 +307,31 @@ class SpendLedger:
             if row['status'] == 'HELD':
                 row.update(status='SUBMITTED', submitted=time.time())
             self._save(state)
+
+    def retain_response(self, request_id, response, *, owner):
+        """Retain paid response evidence before modifying the ledger snapshot.
+
+        This private append-only evidence contains output, not credentials or
+        request inputs. It does not settle usage or authorize another request.
+        A unique per-request file avoids replacing a scanner-held destination.
+        """
+        with self._guard():
+            state=self._read(); _,row=self._find(state,request_id,owner)
+            if row['status'] not in ('SUBMITTED','UNKNOWN'):
+                raise RuntimeError('Response evidence requires a submitted owned request.')
+            if not isinstance(response,dict):raise ValueError('Invalid response evidence.')
+            rid=response.get('id')
+            if rid is not None:_identifier(rid)
+            if row.get('responseId') and rid and row['responseId']!=rid:
+                raise ValueError('Conflicting response evidence.')
+            folder=self.path.parent/'api-response-evidence';folder.mkdir(exist_ok=True)
+            evidence={key:response[key] for key in
+                ('id','status','usage','service_tier','output','incomplete_details') if key in response}
+            record={'requestId':request_id,'owner':owner,'requestHash':row['requestHash'],
+                    'response':evidence,'recorded':time.time()}
+            with (folder/(request_id+'.jsonl')).open('a',encoding='utf-8') as handle:
+                handle.write(json.dumps(record,ensure_ascii=False,allow_nan=False)+'\n')
+                handle.flush();os.fsync(handle.fileno())
 
     def request_state(self, request_id, *, owner):
         with self._guard():

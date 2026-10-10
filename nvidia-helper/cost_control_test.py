@@ -7,6 +7,38 @@ from pathlib import Path
 from cost_control import SpendLedger, luna_cost
 
 class CostGuardTest(unittest.TestCase):
+    def test_transient_windows_publish_denial_retries_same_snapshot_before_dispatch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=SpendLedger(Path(folder)/'ledger.json', .02)
+            body={'model':'gpt-6-luna','max_output_tokens':100,'input':[]}
+            ledger.reserve(body, request_id='a', owner='a')
+            original_replace=__import__('os').replace
+            denied=PermissionError('temporary sharing denial'); denied.winerror=32
+            sources=[]
+            def replace(source, target):
+                sources.append(str(source))
+                if len(sources)<3: raise denied
+                return original_replace(source,target)
+            with patch('cost_control.os.replace', side_effect=replace), patch('cost_control.time.sleep') as sleep:
+                ledger.mark_submitted('a',owner='a')
+            self.assertEqual(len(set(sources)),1)
+            self.assertEqual(sleep.call_count,2)
+            self.assertEqual(ledger.load()['requests']['a']['status'],'SUBMITTED')
+            self.assertEqual(list(Path(folder).glob('*.writing')),[])
+
+    def test_persistent_windows_publish_denial_preserves_held_liability(self):
+        with tempfile.TemporaryDirectory() as folder:
+            ledger=SpendLedger(Path(folder)/'ledger.json', .02)
+            ledger.reserve({'model':'gpt-6-luna','max_output_tokens':100,'input':[]},request_id='a',owner='a')
+            before=ledger.path.read_bytes()
+            denied=PermissionError('persistent sharing denial'); denied.winerror=5
+            with patch('cost_control.os.replace',side_effect=denied) as replace, patch('cost_control.time.sleep'):
+                with self.assertRaises(PermissionError): ledger.mark_submitted('a',owner='a')
+            self.assertEqual(replace.call_count,7)
+            self.assertEqual(ledger.path.read_bytes(),before)
+            self.assertEqual(ledger.load()['requests']['a']['status'],'HELD')
+            self.assertEqual(list(Path(folder).glob('*.writing')),[])
+
     def test_fast_reserves_premium_and_settles_returned_tier_without_guessing(self):
         usage={'input_tokens':1000,'output_tokens':200}
         self.assertEqual(luna_cost(usage,'fast'),luna_cost(usage)*2)
@@ -162,6 +194,20 @@ class RequestOwnershipTest(unittest.TestCase):
         reopened.settle(self.usage,request_id='a',owner='chapter-a')
         self.assertIsNone(reopened.load()['pending'])
         self.assertAlmostEqual(reopened.load()['spentUSD'],.0000225)
+
+    def test_terminal_evidence_survives_snapshot_failure_without_releasing_charge(self):
+        self.reserve(); self.submit()
+        response={'id':'resp-a','status':'completed','usage':self.usage,
+                  'output':[{'type':'message','content':[{'type':'output_text','text':'saved'}]}],
+                  'request_inputs':'must not be retained'}
+        self.ledger.retain_response('a',response,owner='chapter-a')
+        with patch.object(self.ledger,'_save',side_effect=PermissionError('persistent failure')):
+            with self.assertRaises(PermissionError):self.ledger.bind_response('a','resp-a',owner='chapter-a')
+        record=json.loads((self.path.parent/'api-response-evidence/a.jsonl').read_text())
+        self.assertEqual(record['response']['output'],response['output'])
+        self.assertNotIn('request_inputs',record['response'])
+        self.assertEqual(self.ledger.load()['requests']['a']['status'],'SUBMITTED')
+        with self.assertRaises(PermissionError):self.ledger.retain_response('a',response,owner='different')
 
     def test_cancellation_before_and_after_dispatch_have_different_liability(self):
         self.reserve('a','owner-a'); bound=self.reserve('b','owner-b')

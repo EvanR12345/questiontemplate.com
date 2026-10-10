@@ -314,6 +314,9 @@ class OpenAIDirector(DirectorProvider):
                             response_id = event.get('response', {}).get('id')
                             if response_id:
                                 if ledger:
+                                    # Keep the actual receipt/output independently
+                                    # before a Windows snapshot publish can fail.
+                                    ledger.retain_response(request_id,event['response'],owner=owner)
                                     ledger.bind_response(request_id, response_id, owner=owner)
                                 if observer:
                                     observer('accepted', {'operationId': request_id, 'remoteId': response_id})
@@ -337,6 +340,8 @@ class OpenAIDirector(DirectorProvider):
                               if ledger else ' Existing saved stages remain available.')
                     raise RuntimeError('Luna connection ended before a complete response.' + suffix)
                 usage = completed.get('usage')
+                if ledger:
+                    ledger.retain_response(request_id,completed,owner=owner)
                 # A missing receipt tier must not turn requested premium
                 # processing into an artificially cheap estimate.
                 returned_tier = completed.get('service_tier') or service_tier
@@ -434,7 +439,8 @@ class OpenAIDirector(DirectorProvider):
                     # destination. Serialize this short publish step within the
                     # helper; separate helper processes are not enabled lanes.
                     with _cache_publish_lock:
-                        temporary.replace(cache)
+                        from cost_control import atomic_replace
+                        atomic_replace(temporary,cache)
                 finally:
                     if temporary is not None:
                         temporary.unlink(missing_ok=True)
