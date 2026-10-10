@@ -1,7 +1,39 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {standardLunaHTML,lunaAuditHTML,lunaRequestPage} from './pipeline-luna-efficiency.mjs';
+import {standardLunaHTML,lunaAuditHTML,lunaRequestPage,chapterRequestHTML} from './pipeline-luna-efficiency.mjs';
+
+test('chapter request evidence distinguishes failures, grouping, active time and preserved production',()=>{
+  const data={conditions:[{condition:'whole <probe>',status:'FAILED',chapters:[],shots:0,
+    seconds:100,requests:4,inputTokens:20000,outputTokens:5000,estimatedUSD:.01,
+    stages:[{name:'Visual storyboard director',calls:1,inputTokens:9000,outputTokens:4000,
+      activeSeconds:60,elapsedSpanSeconds:80,estimatedUSD:.003}]}]};
+  const before=structuredClone(data),html=chapterRequestHTML(data);
+  assert.ok(html.includes('whole &lt;probe&gt;'));assert.ok(html.includes('FAILED'));
+  assert.ok(html.includes('0 / 2'));assert.ok(html.includes('time until rejection'));
+  assert.ok(html.includes('1m 0.0s'));assert.ok(!html.includes('1m 20.0s'));
+  assert.ok(html.includes('response format constant'));assert.ok(html.includes('No production workflow'));
+  assert.deepEqual(data,before);assert.equal(chapterRequestHTML(null),'');
+});
+
+test('chapter study keeps unknown API usage reserved and all completed comparisons distinct',()=>{
+  const data=JSON.parse(fs.readFileSync(new URL('./pipeline-luna-standard.json',import.meta.url)));
+  const study=data.chapterRequestStudy;
+  assert.ok(study.conditions.length>=5);
+  assert.equal(data.pendingUsage,true);assert.equal(study.unknownRequests,1);
+  assert.ok(data.spentUSD+data.reservedUSD<=data.capUSD);
+  assert.equal(study.conditions.reduce((n,r)=>n+r.reservedUSD,0),data.reservedUSD);
+  for(const name of ['whole-chapter-hybrid','small-groups-hybrid']){
+    const r=study.conditions.find(r=>r.condition===name);
+    assert.equal(r.status,'COMPLETE');assert.equal(r.chapters.length,2);
+    assert.equal(r.unknownRequests,0);assert.ok(r.sourcePreserved);
+  }
+  const html=standardLunaHTML(data);
+  assert.ok(html.includes('Usage unresolved'));assert.ok(html.includes('reserved unknown cost')||html.includes('Reserved unknown cost'));
+  assert.ok(html.includes(data.reservedUSD.toFixed(4)));
+  const text=JSON.stringify(study);
+  for(const key of ['apiKey','requestId','responseId','privateRun','sourceText','referenceImages'])assert.ok(!text.includes(`"${key}"`));
+});
 
 test('complete historical audit reconciles every anonymous request, feature and experiment',()=>{
   const audit=JSON.parse(fs.readFileSync(new URL('./pipeline-luna-token-audit.json',import.meta.url)));
