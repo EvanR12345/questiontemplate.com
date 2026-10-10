@@ -197,7 +197,7 @@ class CloudImageTest(unittest.TestCase):
     def test_reference_cannot_be_uploaded_and_ignored_by_workflow(self):
         provider = self.provider()
         provider.validateSettings = lambda value: value
-        provider.healthCheck = lambda: {"installed": True}
+        provider.healthCheck = lambda **_: {"installed": True}
         provider.template = lambda: {"model": "qwen", "prompt": {}, "bindings": {}}
         with patch("image_provider.urllib.request.urlopen") as network:
             with self.assertRaisesRegex(ValueError, "no binding for reference 1"):
@@ -207,7 +207,7 @@ class CloudImageTest(unittest.TestCase):
     def test_source_and_references_cannot_exceed_workflow_limit(self):
         provider = self.provider()
         provider.validateSettings = lambda value: value
-        provider.healthCheck = lambda: {"installed": True}
+        provider.healthCheck = lambda **_: {"installed": True}
         provider.template = lambda: {"model": "qwen", "prompt": {}, "bindings": {}}
         with self.assertRaisesRegex(ValueError, "Too many references"):
             provider.generateImage({"settings": {"model": "qwen", "seed": 1, "steps": 40}, "prompt": "Repair watch", "operation": "edit", "sourceImage": "source", "referenceImages": ["first", "second", "third"]}, lambda *args: None)

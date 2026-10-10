@@ -222,6 +222,21 @@ class RequestOwnershipTest(unittest.TestCase):
         self.assertFalse(self.ledger.cancel('a',owner='owner-a'))
         self.assertEqual(len(self.ledger.load()['receipts']),1)
 
+    def test_explicit_lost_receipt_accounts_entire_bound_without_claiming_actual_usage(self):
+        bound=self.reserve();self.submit();before=self.ledger.load()['liabilityUSD']
+        self.assertEqual(self.ledger.account_unrecoverable('a',owner='chapter-a',reason='Reviewed lost receipt'),bound)
+        state=self.ledger.load()
+        self.assertEqual(state['liabilityUSD'],before)
+        self.assertEqual(state['spentUSD'],bound)
+        self.assertEqual(state['reservedUSD'],0)
+        self.assertTrue(state['receipts'][0]['actualUsageUnknown'])
+        self.assertFalse(state['receipts'][0]['usageConfirmed'])
+        self.assertFalse(state['receipts'][0]['uncharged'])
+        self.assertEqual(self.ledger.account_unrecoverable('a',owner='chapter-a',reason='Same recovery'),bound)
+        self.assertEqual(len(self.ledger.load()['receipts']),1)
+        self.reserve('b','chapter-b')
+        with self.assertRaises(RuntimeError):self.ledger.account_unrecoverable('b',owner='chapter-b',reason='Wrong state')
+
     def test_owner_cannot_settle_cancel_inspect_or_bind_another_request(self):
         self.reserve()
         before=self.path.read_bytes()

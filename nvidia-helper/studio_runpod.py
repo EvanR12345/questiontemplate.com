@@ -7,6 +7,7 @@ The helper must stay running for the independent deadline watchdog.
 import ipaddress,json,math,os,re,subprocess,threading,time,urllib.request,urllib.error
 from pathlib import Path
 from urllib.parse import urlparse
+from cost_control import atomic_replace
 
 
 class ManagedGPUError(RuntimeError):pass
@@ -37,7 +38,7 @@ def reconcile(config,path,client=None):
                  spentByProject=spent,reason='Recovered interrupted rental; verify actual billing')
     pending=path.with_suffix('.writing')
     with pending.open('w') as f:json.dump(state,f);f.flush();os.fsync(f.fileno())
-    pending.replace(path)
+    atomic_replace(pending,path)
     return state
 
 
@@ -46,6 +47,34 @@ class RunpodClient:
     def request(self,pod,action=None):
         if not re.fullmatch(r'[a-zA-Z0-9_-]{8,64}',pod):raise ValueError('Invalid configured Runpod pod identity.')
         if action not in (None,'start','stop'):raise ValueError('Only start and stop are supported.')
+        if action and self.config.get('runpodActionKeyFile'):
+            # Explicit legacy control path for an already approved GraphQL-only
+            # credential. Never switch credentials automatically after a 403.
+            # Reads keep their configured REST key and normalized pod contract.
+            cli=Path(self.config.get('runpodCLI',''))
+            if not cli.is_file():raise ManagedGPUError('Configured Runpod control CLI is unavailable.')
+            try:key=Path(self.config['runpodActionKeyFile']).read_text(encoding='utf-8-sig').strip()
+            except OSError:raise ManagedGPUError('Existing private worker control credential is unavailable.') from None
+            if not key.startswith('rpa_'):raise ManagedGPUError('Invalid private worker control credential.')
+            environment=os.environ.copy();environment['RUNPOD_API_KEY']=key
+            try:
+                result=subprocess.run([str(cli),'pod',action,pod],env=environment,
+                    capture_output=True,text=True,timeout=20,
+                    creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            except (OSError,subprocess.TimeoutExpired):
+                raise ManagedGPUError('Runpod control outcome is uncertain; check the saved rental state before retrying.') from None
+            if result.returncode:
+                # Keep raw CLI bodies private. Expose only a short provider
+                # reason, redacting credentials BEFORE truncation.
+                try:failure=json.loads(result.stderr or result.stdout)
+                except (ValueError,TypeError):failure={}
+                detail=failure.get('error','') if isinstance(failure,dict) else ''
+                detail=detail if isinstance(detail,str) else ''
+                detail=detail.replace(key,'[redacted]')
+                detail=re.sub(r'rpa_[A-Za-z0-9_-]+','[redacted]',detail)
+                detail=re.sub(r'https?://\S+','[provider URL]',detail)[:300]
+                raise ManagedGPUError('Existing Runpod worker control failed. '+detail+' Saved ownership and results are retained.')
+            return self.request(pod)
         try:key=json.loads(Path(self.config['runpodKeyFile']).read_text(encoding='utf-8'))['runpodApiKey']
         except (OSError,KeyError,ValueError):raise ManagedGPUError('Save a Runpod management credential in Cloud setup.') from None
         request=urllib.request.Request('https://api.runpod.io/v2/pods/'+pod+('/action' if action else ''),
@@ -59,7 +88,7 @@ class RunpodClient:
 
 
 class ProductionGPU:
-    def __init__(self,config,path,project,budget,provider,gate,report=lambda *_:None,client=None,connector=None,clock=time.time):
+    def __init__(self,config,path,project,budget,provider,gate,report=lambda *_:None,client=None,connector=None,clock=time.time,image_selection=None):
         self.config=config;self.path=Path(path);self.project=project;self.budget=budget
         self.provider=provider;self.gate=gate;self.report=report;self.clock=clock
         self.client=client or RunpodClient(config);self.connector=connector or self.connect
@@ -68,6 +97,7 @@ class ProductionGPU:
         if self.state.get('status') not in (None,'STOPPED'):
             raise ManagedGPUError('An earlier managed rental needs reconciliation. Check its saved pod state before another run; no second worker started.')
         self.owned=False;self.pod=config.get('runpodManagedPodId');self.rented=False
+        self.image_selection=image_selection
 
     def save(self,**values):
         with self.lock:
@@ -76,7 +106,7 @@ class ProductionGPU:
             temporary=self.path.with_suffix('.writing')
             with temporary.open('w',encoding='utf-8') as f:
                 json.dump(self.state,f);f.flush();os.fsync(f.fileno())
-            temporary.replace(self.path)
+            atomic_replace(temporary,self.path)
             self.report(dict(self.state))
 
     def ensure(self):
@@ -97,6 +127,9 @@ class ProductionGPU:
             if seconds<60:raise ManagedGPUError('GPU cap cannot cover startup and the 90-second shutdown allowance; no rental started.')
             self.started=self.clock();self.rate=rate;self.previous=previous
             self.deadline=self.started+seconds
+            # A stopped rental's elapsed cost, readiness and stopped timestamp
+            # belong to its saved project history, not this new rental window.
+            self.state={'spentByProject':dict(self.state.get('spentByProject',{}))}
             # Save ownership BEFORE dispatch: a lost start response is uncertain,
             # not permission to buy a second rental or discard the shutdown duty.
             self.owned=True;self.rented=True
@@ -116,7 +149,9 @@ class ProductionGPU:
                         if self.tunnel and self.tunnel.poll() is not None:
                             raise ManagedGPUError('Private SSH connection failed. Check the dedicated key and localhost port; no public image port was opened.')
                         self.provider._health=(0,None);self.provider._server_memory=(0,None)
-                        if self.provider.healthCheck().get('installed'):
+                        self.provider._node_catalog=(0,None)
+                        health=(self.provider.healthCheck(**self.image_selection) if self.image_selection else self.provider.healthCheck())
+                        if health.get('installed'):
                             self.check()
                             if not self.owned:raise ManagedGPUError('Rental closed during worker startup.')
                             self.save(status='RUNNING',ready=self.clock());return

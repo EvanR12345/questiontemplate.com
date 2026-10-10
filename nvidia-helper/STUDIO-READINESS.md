@@ -44,3 +44,17 @@ studio-runtime/readiness-tests; do not present fixture results as cloud runs.
 API contract: authenticated Runpod REST v2 OpenAPI snapshot, October 10:
 GET /v2/pods/{id}; POST /v2/pods/{id}/action with start or stop only.
 https://api.runpod.io/v2/openapi.json
+
+Existing GraphQL-only management credentials may be used through an explicitly
+configured installed Runpod CLI (`runpodCLI`, private `runpodActionKeyFile`).
+This is an alternate start/stop control path, never an automatic credentials
+switch after a 403. Normalized pod reads remain on the configured REST path.
+The key is passed privately in the child environment, not command arguments;
+CLI response bodies never enter error messages. No Serverless access is added.
+
+API ledger and director cache publication now retry the same flushed snapshot
+for brief Windows sharing locks. Private append-only response evidence is kept
+before receipt binding and settlement. A lost receipt stays unknown by default.
+Explicit operator acknowledgement can account its entire reservation as an
+unconfirmed maximum cost; it does not free budget or claim confirmed usage.
+There is no automatic timeout replay or unbounded paid recovery loop.

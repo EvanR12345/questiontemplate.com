@@ -41,6 +41,21 @@ class RentalTest(unittest.TestCase):
         self.client.status='RUNNING';r=self.rental()
         with self.assertRaisesRegex(ManagedGPUError,'separately running'):r.ensure()
         r.stop();self.assertNotIn('start',self.client.calls);self.assertNotIn('stop',self.client.calls)
+
+    def test_new_rental_does_not_inherit_old_stopped_time_or_cost(self):
+        self.path.write_text(json.dumps({'status':'STOPPED','started':1,'stopped':9,'ready':2,
+            'estimatedUSD':.9,'seconds':8,'spentByProject':{'project':.1}}))
+        r=self.rental()
+        try:
+            r.ensure()
+            self.assertNotIn('stopped',r.state)
+            self.assertNotIn('estimatedUSD',r.state)
+            self.assertEqual(r.state['ready'],100)
+            self.assertEqual(r.state['spentByProject'],{'project':.1})
+            self.clock[0]+=36;r.stop()
+            self.assertAlmostEqual(r.state['estimatedUSD'],.01)
+            self.assertAlmostEqual(r.state['spentByProject']['project'],.11)
+        finally:r.stop()
     def test_lost_start_response_still_owns_and_stops_exact_worker(self):
         self.client.fail_start=True;r=self.rental()
         with self.assertRaisesRegex(ManagedGPUError,'Lost start'):r.ensure()
@@ -77,12 +92,33 @@ class RentalTest(unittest.TestCase):
         with self.assertRaises(ValueError):RunpodClient({}).request('pod-test-123','terminate')
         with self.assertRaises(ValueError):RunpodClient({}).request('../other-pod')
 
+    def test_explicit_existing_cli_control_keeps_key_out_of_arguments_and_errors(self):
+        import io,subprocess
+        folder=Path(self.folder.name);cli=folder/'runpodctl.exe';cli.touch()
+        keyfile=folder/'action.txt';keyfile.write_text('rpa_private-existing-test')
+        readfile=folder/'read.json';readfile.write_text(json.dumps({'runpodApiKey':'read-only-test'}))
+        config={'runpodCLI':str(cli),'runpodActionKeyFile':str(keyfile),'runpodKeyFile':str(readfile)}
+        client=RunpodClient(config)
+        body=json.dumps({'id':'pod-test-123','status':'RUNNING'}).encode()
+        with patch('studio_runpod.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='{}')) as run, \
+                patch('studio_runpod.urllib.request.urlopen',return_value=io.BytesIO(body)) as read:
+            self.assertEqual(client.request('pod-test-123','start')['status'],'RUNNING')
+            self.assertEqual(run.call_args.args[0],[str(cli),'pod','start','pod-test-123'])
+            self.assertEqual(run.call_args.kwargs['env']['RUNPOD_API_KEY'],'rpa_private-existing-test')
+            self.assertEqual(read.call_args.args[0].get_method(),'GET')
+        for result in (SimpleNamespace(returncode=1,stderr='rpa_private-existing-test'),
+                       subprocess.TimeoutExpired('private',20)):
+            kwargs={'side_effect':result} if isinstance(result,Exception) else {'return_value':result}
+            with patch('studio_runpod.subprocess.run',**kwargs):
+                with self.assertRaises(ManagedGPUError) as error:client.request('pod-test-123','stop')
+                self.assertNotIn('rpa_private-existing-test',str(error.exception))
+
     def test_pipeline_finalizer_stops_owned_rental_on_success_cancel_and_failure(self):
         from studio_service import StudioService,JobCancelled
         for error in (None,JobCancelled(),ValueError('source changed')):
             service=StudioService.__new__(StudioService);service.config=self.config
             service.store=Mock();service.store.root=Path(self.folder.name)
-            service.store.load.return_value={'settings':{'image':{'provider':'comfyui'},'cloudWindow':{'gpuBudgetUSD':1}}}
+            service.store.load.return_value={'settings':{'image':{'provider':'comfyui','model':'flux','workflow':'flux-auto'},'cloudWindow':{'gpuBudgetUSD':1}}}
             service.providers={'comfyui':self.provider};service.gate=Mock()
             lease=Mock()
             service._produce_story=Mock(side_effect=error,return_value='finished')

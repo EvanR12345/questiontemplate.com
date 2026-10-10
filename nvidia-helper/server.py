@@ -244,7 +244,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
                     elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0]))
                     elif path=='/studio/publisher':self.reply(200,studio.publisher.status())
-                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey')})
+                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey','runpodActionKeyFile')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
                 except FileNotFoundError as error:

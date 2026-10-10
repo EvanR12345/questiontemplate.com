@@ -16,7 +16,7 @@ class RecoveryTest(unittest.TestCase):
     def provider(self):
         p=ComfyImageProvider({})
         p.validateSettings=lambda s:s
-        p.healthCheck=lambda:{'installed':True}
+        p.healthCheck=lambda **_:{'installed':True}
         p.template=lambda:{'model':'flux','name':'test','prompt':{'1':{'class_type':'Test','inputs':{}}},'bindings':{}}
         return p
     def request(self):

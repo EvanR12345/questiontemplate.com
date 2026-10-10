@@ -553,6 +553,7 @@ class ComfyImageProvider(ImageProvider):
         self.url = local_url(config.get("comfyEndpoint", "http://127.0.0.1:8188"))
         self._server_memory = (0, None)
         self._health = (0, None)
+        self._node_catalog = (0, None)
         self._uploads = {}
 
     def available_vram_gb(self):
@@ -675,14 +676,40 @@ class ComfyImageProvider(ImageProvider):
         # Their exact preset settings are stored with the resulting image.
         return template, settings | template.get("presetSettings", {})
 
-    def healthCheck(self):
+    def healthCheck(self, model=None, workflow=None):
         try:
             template = self.template()
-            stamp = (self.config.get("comfyWorkflow"), Path(self.config["comfyWorkflow"]).stat().st_mtime_ns)
+            catalog_stamp = (self.config.get("comfyWorkflow"), Path(self.config["comfyWorkflow"]).stat().st_mtime_ns)
+            stamp=catalog_stamp+(model,workflow)
             if self._health[1] and self._health[1][0] == stamp and time.time() - self._health[0] < 30:
                 return copy.deepcopy(self._health[1][1])
-            nodes = request_json(self.url + "/object_info", timeout=10)
+            if self._node_catalog[1] and self._node_catalog[1][0]==catalog_stamp and time.time()-self._node_catalog[0]<30:
+                nodes=self._node_catalog[1][1]
+            else:
+                nodes = request_json(self.url + "/object_info", timeout=10)
+                self._node_catalog=(time.time(),(catalog_stamp,nodes))
             templates = template.get("variants", [template])
+            selected=model or template.get('automaticWorkflows',{}).get(workflow,{}).get('model')
+            explicit=[t for t in templates if t['name']==workflow] if workflow else []
+            if explicit:templates=explicit
+            elif selected:
+                templates=[t for t in templates if t['model']==selected or
+                    selected==template['model'] and t['model'] not in template.get('modelCapabilities',{})]
+            if not templates:return {'installed':False,'models':[],'workflow':[],
+                'error':'Selected image model/workflow is not configured.'}
+            # Generic status may advertise the ready subset of a mixed bundle.
+            # Selected generation must validate only its relevant graphs; a
+            # deliberately removed unrelated checkpoint cannot block FLUX.
+            if not model and not workflow and len(templates)>1:
+                checks=[self.healthCheck(t['model'],t['name']) for t in templates]
+                ready=[t for t,check in zip(templates,checks) if check['installed']]
+                auto=[name for name,value in template.get('automaticWorkflows',{}).items()
+                      if any(t['model']==value['model'] for t in ready)]
+                return {'installed':bool(ready),'models':list(dict.fromkeys(t['model'] for t in ready)),
+                    'workflow':[t['name'] for t in ready]+auto,
+                    'unavailableWorkflows':[t['name'] for t,check in zip(templates,checks) if not check['installed']],
+                    'missingNodes':list(dict.fromkeys(n for check in checks for n in check.get('missingNodes',[]))) if not ready else [],
+                    'missingWeights':list(dict.fromkeys(n for check in checks for n in check.get('missingWeights',[]))) if not ready else []}
             missing = [
                 v["class_type"]
                 for t in templates for v in t["prompt"].values()
@@ -735,7 +762,7 @@ class ComfyImageProvider(ImageProvider):
             raise ValueError('ComfyUI generation timeout must be 30–3600 seconds.')
         s = self.validateSettings(r["settings"])
         t, s = self.resolve_template(r, s)
-        health = self.healthCheck()
+        health = self.healthCheck(model=t['model'],workflow=t.get('name'))
         if not health["installed"]:
             raise RuntimeError("ComfyUI workflow unavailable: " + str(health))
         if not self.template().get("variants") and s.get("model") != t["model"]:

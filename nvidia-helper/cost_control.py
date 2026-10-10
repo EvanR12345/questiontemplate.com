@@ -362,6 +362,28 @@ class SpendLedger:
             self._finish(state, rid, row, None, 0, False, True, 'default')
             return True
 
+    def account_unrecoverable(self, request_id, *, owner, reason):
+        """Explicit operator acknowledgement: charge the full unknown bound.
+
+        Never called by timeout/retry handling. Actual billing remains unknown;
+        keeping the maximum as spent cannot create extra budget for a deliberate
+        replacement. Retain the original request and its uncertainty evidence.
+        """
+        if not isinstance(reason,str) or not reason.strip() or len(reason)>1000:
+            raise ValueError('A concrete recovery reason is required.')
+        with self._guard():
+            state=self._read();rid,row=self._find(state,request_id,owner)
+            if rid not in state['requests']:
+                if row.get('billingStatus')=='UNCONFIRMED_MAXIMUM_ACCOUNTED':return row['estimatedUSD']
+                raise RuntimeError('A confirmed receipt cannot be rewritten as unknown.')
+            if row['status'] not in ('SUBMITTED','UNKNOWN'):
+                raise RuntimeError('Unsubmitted reservations must be cancelled, not charged.')
+            row.update(billingStatus='UNCONFIRMED_MAXIMUM_ACCOUNTED',recoveryReason=reason,
+                       actualUsageUnknown=True,acknowledged=time.time())
+            self._finish(state,rid,row,None,row['reservedUSD'],False,False,
+                         row.get('requestedServiceTier','default'))
+            return row['reservedUSD']
+
     def reject(self, request_id, http_status, *, owner):
         # Timeouts, conflicts and server errors are not proof of zero usage.
         if http_status not in (400, 401, 403, 404, 413, 415, 422, 429):

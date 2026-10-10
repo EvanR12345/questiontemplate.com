@@ -330,6 +330,8 @@ class StudioService:
             "runpodApiKey",
             "runpodManagedPodId",
             "runpodSSHKeyFile",
+            "runpodCLI",
+            "runpodActionKeyFile",
         }
         if not isinstance(data, dict) or any(k not in allowed for k in data):
             raise ValueError("Unknown helper configuration option.")
@@ -337,6 +339,9 @@ class StudioService:
             raise ValueError('Enter the existing reusable Runpod pod ID, or leave blank for external management.')
         if data.get('runpodSSHKeyFile') and not Path(data['runpodSSHKeyFile']).is_file():
             raise ValueError('The dedicated private SSH key file does not exist.')
+        for field in ('runpodCLI','runpodActionKeyFile'):
+            if data.get(field) and not Path(data[field]).is_file():
+                raise ValueError('The configured existing Runpod control file does not exist.')
         if 'renderWorkers' in data and (isinstance(data['renderWorkers'],bool)
                 or not isinstance(data['renderWorkers'],int) or not 1 <= data['renderWorkers'] <= 3):
             raise ValueError('Choose one to three render workers.')
@@ -1484,7 +1489,8 @@ class StudioService:
             raise ValueError('Managed rental requires the configured cloud ComfyUI workflow.')
         rental=ProductionGPU(self.config,self.store.root/'.managed-rental.json',pid,
             p['settings'].get('cloudWindow',{}),self.providers['comfyui'],self.gate,
-            lambda state:self.record_gpu_state(pid,state))
+            lambda state:self.record_gpu_state(pid,state),image_selection={
+                'model':p['settings']['image']['model'],'workflow':p['settings']['image']['workflow']})
         self._production_gpu=rental
         try:return self._produce_story(pid,options)
         finally:
