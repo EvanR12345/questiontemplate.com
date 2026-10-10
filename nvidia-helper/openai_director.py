@@ -73,6 +73,9 @@ class OpenAIDirector(DirectorProvider):
             expected=sorted({issue['changeIndex'] for issue in context['issues']})
             if sorted(entry['changeIndex'] for entry in value['corrections'])!=expected:
                 raise ValueError('Source correction omitted or duplicated a flagged fact.')
+        if role.startswith('Storyboard continuity supervisor:') and context.get('reviewBindingVersion')==1:
+            from storyboard_review import validate_findings
+            validate_findings(context,value)
         if role.startswith('Image prompt engineer:'):
             from director_tasks import validate_director_result
             validate_director_result('writeImagePrompt',context,value)
@@ -173,6 +176,11 @@ class OpenAIDirector(DirectorProvider):
         if not vision:
             reasoning=task_efforts.get(role.split(':')[0].split('.')[0],reasoning)
         compact_wire = self.config.get('openaiCompactWire', False) is True and not vision
+        # Source keys and fields are the review's semantic anchors. Keep them
+        # readable rather than asking the model to translate abbreviated keys
+        # while assigning findings across a long/sparse shot array.
+        if role.startswith('Storyboard continuity supervisor:') and context.get('reviewBindingVersion')==1:
+            compact_wire=False
         identity = {"provider": "openai-luna", "adapterVersion": 1, "model": self.model,
                     "role": role, "context": context, "schema": schema, "reasoning": reasoning, "vision": vision}
         if compact_wire: identity['wireVersion'] = 1
@@ -384,7 +392,19 @@ class OpenAIDirector(DirectorProvider):
                 if codec:
                     validate_schema(value, codec.schema)
                     value = codec.decode(value)
-                self.validate_result(role,context,value,schema)
+                try:
+                    self.validate_result(role,context,value,schema)
+                except ValueError as error:
+                    from storyboard_review import ReviewBindingError
+                    if not isinstance(error,ReviewBindingError) or attempt!=0:
+                        raise
+                    if ledger and ledger.request_state(request_id,owner=owner)['status']!='SETTLED':
+                        raise RuntimeError('Review binding repair requires a settled receipt; no duplicate purchase.') from None
+                    cache.parent.mkdir(parents=True,exist_ok=True)
+                    rejected=cache.with_suffix('.binding-invalid-'+uuid.uuid4().hex+'.json')
+                    rejected.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8')
+                    body['input'][0]['content']+=' Review binding correction: the previous settled answer cited narration outside the named shot. Re-examine all supplied shots. Copy each exact shotKey and cite only its ownNarration sentence indices. Do not transfer a finding to a different shot by counting array positions. Use full source for attribution, but the cited affected sentence must be inside the target cut. Return only grounded findings; listener reactions are permitted.'
+                    continue
                 details = {"provider": "openai-luna", "model": self.model, "attempt": attempt + 1,
                            **host_interruption_details(host_epoch),
                            'requestSize':request_size,

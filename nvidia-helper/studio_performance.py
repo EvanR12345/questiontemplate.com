@@ -91,7 +91,7 @@ def profile_for(stage, project, config, details=None):
             profile['planVersion']=13 if lean and profile['compactCuts'] else 11 if lean else 2
             from director_pipeline import fact_beats_mode
             profile['factsVersion']=5 if lean and fact_beats_mode(director)=='storyboard' else 4 if lean else 3
-            if lean:profile['reviewHintsVersion']=1
+            if lean:profile['reviewHintsVersion']=2
             if lean:profile['sourceVisualOverlap']=director.get('sourceVisualOverlap',False)
             if lean:profile['factReasoning']='high' if director.get('reasoning')=='High' else 'medium'
             from director_staged import visual_group_limits

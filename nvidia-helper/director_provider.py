@@ -404,12 +404,10 @@ class DirectorProvider:
         return {'issues':[],'intentionalChanges':[],'objectChanges':result['objectChanges']}
 
     def checkStoryboard(self,context,gate):
-        indices=context.get('reviewShotIndices',list(range(len(context['shots']))))
-        if not indices or any(type(n) is not int or n<0 for n in indices) or len(set(indices))!=len(indices):
-            raise ValueError('Invalid storyboard review scope.')
-        if 'reviewShotIndices' in context and [s.get('shotIndex') for s in context['shots']]!=indices:
-            raise ValueError('Sparse storyboard review indices do not match supplied shots.')
-        issues=arr(obj({'shotIndex':{'type':'integer','enum':indices},
+        from storyboard_review import bound_context,restore_findings
+        checked,bindings=bound_context(context)
+        issues=arr(obj({'shotKey':{'type':'string','enum':list(bindings)},
+            'category':{'type':'string','enum':['speaker','object','appearance','action','timing']},
             'sentence':{'type':'integer','enum':list(range(len(context['sentences'])))},
             'issue':short_text(300)})) | {'maxItems':12}
         scope_instruction=('When reviewShotIndices is supplied, use the explicit shotIndex field, not the position in the shorter shots array. '
@@ -425,8 +423,13 @@ class DirectorProvider:
             'An action explicitly assigning a quoted line to the wrong person IS a speaker error. '
             'Intentional supported changes are valid. Do not demand exact illustrative staging. '
             'Report invented major actions, wrong essential objects/owners, unknown or incorrectly assigned main people, '
-            'or contradictions to explicit current appearance as majorIssues. Each major issue MUST identify zero-based shotIndex, '
-            'sentence index; the application attaches its exact source text. Report lesser or uncertain matters as advisories. '
+            'or contradictions to explicit current appearance as majorIssues. Each major issue MUST copy the supplied shotKey, '
+            'and cite a sentence INSIDE that shot\'s ownNarration. Never count array positions or copy a camera index as a shotKey. '
+            'Use full narration and earlier/later attribution sentences to establish speaker identity, but cite the affected '
+            'sentence inside the named shot. For example a later "Jonathan said" can identify the speaker of the earlier quote. '
+            'verifiedDialogue contains only exact quotations whose named source attribution was verified by application code; '
+            'matching sourceSpeaker and depictedSpeaker is NOT a speaker error, even when another person listens in frame. '
+            'The application attaches its exact source text. Report lesser or uncertain matters as advisories. '
             'A shot may depict ANY coherent moment within its WHOLE inclusive startSentence–endSentence range, '
             'not only the first sentence. Earlier established appearance/objects/positions may persist. '
             'Do not flag a later sentence that belongs to the SAME shot as a future event. '
@@ -435,14 +438,9 @@ class DirectorProvider:
             'or major action for majorIssues. Do not require every illustrative detail to be explicitly narrated. '
             'Camera variations and compression are allowed only when source facts and cadence are preserved. '
             'Do not invent new events or revise accepted facts. Empty issue arrays mean no observed contradiction, not visual-image proof.',
-            context,obj({'majorIssues':issues,
+            checked,obj({'majorIssues':issues,
                          'advisories':arr(short_text(300)) | {'maxItems':12}}),gate)
-        for issue in result['majorIssues']:
-            if issue['shotIndex'] not in indices:raise ValueError('Storyboard issue is outside the reviewed scope.')
-            issue['sourceQuote']=context['sentences'][issue['sentence']]['text']
-        result['coverage']={'scope':'repair-and-neighbors' if 'reviewShotIndices' in context else 'all-shots',
-                            'shotIndices':indices}
-        return result
+        return restore_findings(checked,result)
 
     def repairStoryboard(self,context,gate):
         from director_storyboard import repair_schema

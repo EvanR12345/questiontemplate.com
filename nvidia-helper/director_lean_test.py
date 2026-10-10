@@ -305,11 +305,11 @@ class LeanDirectorTest(unittest.TestCase):
         class Reviewer(DirectorProvider):
             def call(self,role,context,schema,gate):
                 self.role=role
-                self.allowed=schema['properties']['majorIssues']['items']['properties']['shotIndex']['enum']
-                return {'majorIssues':[{'shotIndex':9,'sentence':18,'issue':'wrong owner'}],'advisories':[]}
+                self.allowed=schema['properties']['majorIssues']['items']['properties']['shotKey']['enum']
+                return {'majorIssues':[{'shotKey':'s18-e19','sentence':18,'issue':'wrong owner'}],'advisories':[]}
         reviewer=Reviewer()
         review=reviewer.checkStoryboard(context,lambda *args:None)
-        self.assertEqual(reviewer.allowed,[3,4,5,8,9])
+        self.assertEqual(reviewer.allowed,['s6-e7','s8-e9','s10-e11','s16-e17','s18-e19'])
         self.assertEqual(review['majorIssues'][0]['sourceQuote'],'18')
         self.assertEqual(review['coverage']['scope'],'repair-and-neighbors')
         self.assertIn('post-repair check',reviewer.role)

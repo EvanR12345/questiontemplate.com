@@ -566,13 +566,13 @@ class ProjectStore:
                 # the entire project a second time. Publish backup atomically.
                 backup = folder / "project.previous.tmp"
                 backup.write_bytes(previous_bytes)
-                backup.replace(folder / 'project.previous.json')
+                self.replace_snapshot(backup,folder / 'project.previous.json')
             p["updated"] = time.time()
             temp = folder / "project.tmp"
             temp.write_text(
                 json.dumps(p, ensure_ascii=False, separators=(',',':')), encoding="utf-8"
             )
-            temp.replace(path)
+            self.replace_snapshot(temp,path)
             metadata = folder / "revision.tmp"
             stamp = path.stat()
             metadata.write_text(
@@ -581,10 +581,21 @@ class ProjectStore:
                     "projectFile": [stamp.st_ino,stamp.st_size,stamp.st_mtime_ns,stamp.st_ctime_ns]}),
                 encoding="utf-8",
             )
-            metadata.replace(folder / "revision.json")
+            self.replace_snapshot(metadata,folder / "revision.json")
             if self.archive:
                 self.archive.enqueue(p['id'])
             return copy.deepcopy(p)
+
+    @staticmethod
+    def replace_snapshot(source,destination):
+        # Windows indexers/readers can briefly deny replacing an existing file.
+        # Retry the same atomic rename, never delete the destination or loosen
+        # permissions. Persistent denial still fails with originals intact.
+        for attempt in range(5):
+            try:return source.replace(destination)
+            except PermissionError as error:
+                if getattr(error,'winerror',None) not in (5,32) or attempt==4:raise
+                time.sleep(.01*2**attempt)
 
     def revision(self, id):
         with self.lock:

@@ -22,6 +22,35 @@ def stream(value='{"summary":"complete"}', status="completed", **extra):
 
 
 class LunaTest(unittest.TestCase):
+    def test_wrong_shot_review_retries_once_only_after_settled_usage(self):
+        from cost_control import SpendLedger
+        from storyboard_review import bound_context
+        from director_provider import arr,short_text
+        context,_=bound_context({'sentences':[{'text':'first'},{'text':'second'}],
+            'shots':[{'startSentence':0,'endSentence':0},{'startSentence':1,'endSentence':1}]})
+        schema=obj({'majorIssues':arr(obj({'shotKey':short_text(30),'sentence':{'type':'integer'},'issue':STR})),
+                    'advisories':arr(STR)})
+        bad={'majorIssues':[{'shotKey':'s0-e0','sentence':1,'issue':'wrong citation'}],'advisories':[]}
+        good={'majorIssues':[{'shotKey':'s1-e1','sentence':1,'issue':'grounded issue'}],'advisories':[]}
+        for second,success in ((good,True),(bad,False)):
+            with self.subTest(success=success),tempfile.TemporaryDirectory() as folder:
+                director=self.director(folder);director.spend_ledger=SpendLedger(Path(folder)/'ledger.json',1)
+                with patch('openai_director.urllib.request.urlopen',side_effect=[stream(json.dumps(bad)),stream(json.dumps(second))]) as request:
+                    if success:
+                        self.assertEqual(director.call('Storyboard continuity supervisor:',context,schema,lambda *_:None),good)
+                    else:
+                        with self.assertRaisesRegex(ValueError,'outside'):
+                            director.call('Storyboard continuity supervisor:',context,schema,lambda *_:None)
+                self.assertEqual(request.call_count,2)
+                self.assertIn('Review binding correction',json.loads(request.call_args.args[0].data)['input'][0]['content'])
+                state=director.spend_ledger.load()
+                self.assertEqual(len(state['receipts']),2);self.assertGreater(state['spentUSD'],0)
+                self.assertEqual(len(list((Path(folder)/'director-cache').glob('*.binding-invalid-*.json'))),1)
+                if success:
+                    with patch('openai_director.urllib.request.urlopen') as request:
+                        self.assertEqual(director.call('Storyboard continuity supervisor:',context,schema,lambda *_:None),good)
+                        request.assert_not_called()
+
     def test_capacity_diagnostics_never_copy_headers_or_invent_missing_limits(self):
         from openai_director import numeric_rate_limits
         headers={'x-ratelimit-limit-requests':'500','x-ratelimit-remaining-tokens':'0',

@@ -11,18 +11,19 @@ export function strategyOptions(value, eligible, legacyOverlap = false) {
   if (value !== 'legacy' && !eligible) throw Error('Timed generation requires cloud ComfyUI images, Luna and an API spending cap. Choose the existing workflow to use another configuration.');
   return {generationStrategy: value, overlap: value !== 'legacy' || legacyOverlap};
 }
-export function strategyDescription(value) {
+export function strategyDescription(value,managed=false) {
   const detail = value === 'align'
     ? 'Keeps chapter planning moving, then starts accepted images when matching timing history predicts the planning tail is covered, with a 15-second allowance. Without matching history it plans the chapters first. The allowance is a target, not a guaranteed finish.'
     : value === 'fastest'
       ? 'Starts accepted chapter images immediately while Luna plans the next chapter. Chapters needing new character portraits wait for planning to finish, protecting Luna’s canonical inputs. Story facts and handoffs stay ordered; one cloud image lane and the selected API concurrency limit remain in force.'
       : 'Uses the existing workflow and your overlap checkbox. Image admission can wait before directing the next chapter.';
-  return detail + ' GPU rental start and stop remain external. Choosing a timed image-dispatch strategy does not schedule a pod or guarantee lower rental cost.';
+  return detail + (managed ? ' Studio starts the configured stopped GPU when images are admitted and confirms shutdown before rendering. Keep the helper and laptop awake for its spending-window watchdog. Rental timing and costs are estimates until verified.' :
+    ' GPU rental start and stop remain external. Choosing a timed image-dispatch strategy does not schedule a pod or guarantee lower rental cost.');
 }
-export function strategySummary(value) {
+export function strategySummary(value,managed=false) {
   return (value==='align' ? 'Align image dispatch with ongoing chapter planning using matching history. Without matching history, plan first.' :
     value==='fastest' ? 'Start images for each ready chapter while Luna plans the next.' : 'Keep the existing workflow and overlap setting.') +
-    ' GPU rental must be started and stopped separately.';
+    (managed ? ' Studio manages the configured GPU during image generation.' : ' GPU rental must be started and stopped separately.');
 }
 export function forecastText(report) {
   if (!report) return 'Check readiness to load timing history. Old estimates are retained; incompatible settings are never treated as new measurements.';

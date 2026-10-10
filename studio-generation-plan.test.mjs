@@ -22,6 +22,8 @@ test('labels disclose actual dispatch, limited coverage and unknown estimates',(
   assert.match(strategyDescription('align'),/plans the chapters first/);
   assert.match(strategyDescription('fastest'),/one cloud image lane/);
   assert.match(strategyDescription('align'),/rental start and stop remain external/);
+  assert.match(strategyDescription('align',true),/confirms shutdown before rendering/);
+  assert.doesNotMatch(strategyDescription('align',true),/remain external/);
   const text=forecastText({history:{observations:4,runs:1},forecast:{planningSeconds:null,readyImageSeconds:12,unknownStages:['AI directing']}});
   assert.match(text,/directing: unknown/);assert.match(text,/partial work/);assert.match(text,/not guarantees/);
 });

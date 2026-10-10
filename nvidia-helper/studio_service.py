@@ -279,6 +279,8 @@ class StudioService:
             "sourceVisualOverlapAvailable":True,
             "leanFactBeatsAvailable":True,
             "maxDirectorTasks":8,
+            "managedGPU":{'configured':bool(self.config.get('runpodManagedPodId')),
+                          'podId':self.config.get('runpodManagedPodId',''),'watchdogLocation':'local-helper'},
             "storage": self.storage.status(),
             "hardware": hardware,
             "director": self.director.healthCheck(),
@@ -326,9 +328,15 @@ class StudioService:
             "openaiPromptCacheMode",
             "openaiServiceTier",
             "runpodApiKey",
+            "runpodManagedPodId",
+            "runpodSSHKeyFile",
         }
         if not isinstance(data, dict) or any(k not in allowed for k in data):
             raise ValueError("Unknown helper configuration option.")
+        if 'runpodManagedPodId' in data and data['runpodManagedPodId'] and not re.fullmatch(r'[A-Za-z0-9_-]{8,64}',str(data['runpodManagedPodId'])):
+            raise ValueError('Enter the existing reusable Runpod pod ID, or leave blank for external management.')
+        if data.get('runpodSSHKeyFile') and not Path(data['runpodSSHKeyFile']).is_file():
+            raise ValueError('The dedicated private SSH key file does not exist.')
         if 'renderWorkers' in data and (isinstance(data['renderWorkers'],bool)
                 or not isinstance(data['renderWorkers'],int) or not 1 <= data['renderWorkers'] <= 3):
             raise ValueError('Choose one to three render workers.')
@@ -494,8 +502,10 @@ class StudioService:
         if p['intro']['enabled']:
             images_needed |= bool(not p['intro'].get('visualPath') and not p['intro'].get('shots'))
             images_needed |= any(not s.get('imagePath') for s in p['intro'].get('shots',[]))
+        from studio_runpod import configured
+        managed=configured(self.config)
         if images_needed:
-            if selected_strategy=='align' and provider_name=='comfyui':
+            if (selected_strategy=='align' or managed) and provider_name=='comfyui':
                 try:
                     provider=self.provider(provider_name);catalog=provider.planningCatalog();image=p['settings']['image']
                     configured=image['model'] in catalog['models'] and image['workflow'] in catalog['workflow']
@@ -503,7 +513,20 @@ class StudioService:
                 except Exception:configured=False
                 check('images',configured,'Declared image workflow is configured for offline planning; this is not proof of a running worker.' if configured else
                     'Configure the selected image model/workflow before planning. No fallback was started.')
-                check('image-dispatch',False,'The image GPU may stay stopped during planning. Connect it before dispatch; unavailable live generation stops with saved plans, rather than renting a GPU automatically.',False)
+                if managed:
+                    window=p['settings'].get('cloudWindow',{});cap=window.get('gpuBudgetUSD')
+                    check('gpu-cap',type(cap) in (int,float) and math.isfinite(cap) and cap>0,
+                          'Automatic GPU startup needs a positive project GPU cap; its live rate is checked before startup.')
+                    check('gpu-connection',Path(self.config.get('runpodSSHKeyFile','')).is_file()
+                          and Path(self.config.get('runpodKeyFile','')).is_file(),
+                          'Managed image generation needs the existing dedicated SSH key and private Runpod management credential.')
+                    lease=self.store.root/'.managed-rental.json'
+                    try:lease_state=json.loads(lease.read_text()) if lease.exists() else {}
+                    except (OSError,ValueError):lease_state={'status':'UNKNOWN'}
+                    check('gpu-recovery',lease_state.get('status') in (None,'STOPPED'),
+                          'Earlier managed rental must be confirmed stopped before another run.')
+                else:
+                    check('image-dispatch',False,'The image GPU may stay stopped during planning. Connect it before dispatch; unavailable live generation stops with saved plans, rather than renting a GPU automatically.',False)
             else:
                 try:installed=bool(self.provider(provider_name).healthCheck().get('installed'))
                 except Exception:installed=False
@@ -529,10 +552,11 @@ class StudioService:
         storage=self.storage.status(pid)
         check('archive',storage.get('enabled') and storage.get('provider')=='Google Cloud Storage',
               'Permanent project and media archive must be connected to Google storage.')
-        check('rental',False,'A paused Studio queue does not stop a manually rented GPU. Keep its rental window bounded.',False)
-        check('strategy',True,LABELS[selected_strategy]+'. This controls image dispatch; GPU rental remains external. Uncalibrated alignment plans chapters first.',False)
+        check('rental',managed,'Studio starts only the configured stopped pod at image dispatch and confirms shutdown before rendering. Keep this helper and laptop awake: the deadline watchdog runs here; network failure can delay shutdown.' if managed else
+              'A paused Studio queue does not stop a manually rented GPU. Keep its rental window bounded.',False)
+        check('strategy',True,LABELS[selected_strategy]+'. Uncalibrated alignment plans chapters first.',False)
         return {'project':pid,'revision':p['revision'],'ready':all(x['ready'] for x in checks if x['blocking']),
-                'generationStrategy':selected_strategy,'rentalControl':'external',
+                'generationStrategy':selected_strategy,'rentalControl':'managed' if managed else 'external',
                 'voiceLocation':'local','renderLocation':'local','checks':checks,'paidRequestsSubmitted':0}
 
     def enqueue(self, pid, chapter, kind, shots=None, options=None):
@@ -1267,7 +1291,10 @@ class StudioService:
 
     def trace_report(self, pid):
         project = self.store.load(pid)
-        return self.trace.report(pid, project['settings'].get('cloudWindow'))
+        rental=project.get('production',{}).get('gpuRental',{})
+        window=({'cloudStartedAt':rental.get('started'),'cloudStoppedAt':rental.get('stopped')}
+                if rental else project['settings'].get('cloudWindow'))
+        return self.trace.report(pid,window)
 
     def performance_forecast(self,project,accepted=None):
         """Matching stage estimates; unknown work is never quietly zero."""
@@ -1448,13 +1475,45 @@ class StudioService:
                     latest['renderStale'] = True
                 self.store.mutate(p['id'], save)
 
-    def produce_story(self, pid, options):
+    def produce_story(self,pid,options):
+        from studio_runpod import configured,ProductionGPU
+        if getattr(self,'_overlap',None) or not configured(self.config):
+            return self._produce_story(pid,options)
+        p=self.store.load(pid)
+        if p['settings']['image']['provider']!='comfyui':
+            raise ValueError('Managed rental requires the configured cloud ComfyUI workflow.')
+        rental=ProductionGPU(self.config,self.store.root/'.managed-rental.json',pid,
+            p['settings'].get('cloudWindow',{}),self.providers['comfyui'],self.gate,
+            lambda state:self.record_gpu_state(pid,state))
+        self._production_gpu=rental
+        try:return self._produce_story(pid,options)
+        finally:
+            try:rental.stop('production ended')
+            finally:self._production_gpu=None
+
+    def ensure_production_gpu(self):
+        rental=getattr(self,'_production_gpu',None)
+        if rental:rental.ensure()
+
+    def record_gpu_state(self,pid,state):
+        def save(p):
+            run=p.setdefault('production',{});run['gpuRental']=state
+            if state.get('status')=='STOPPED':
+                history=run.setdefault('gpuRentalHistory',[])
+                if not any(h.get('started')==state.get('started') and h.get('podId')==state.get('podId') for h in history):
+                    history.append({k:v for k,v in state.items() if k!='spentByProject'})
+                run.setdefault('costs',{}).update(gpuWindowEstimatedUSD=state.get('spentByProject',{}).get(pid),
+                                                  gpuCostSource='managed rental windows; estimated, not invoice')
+        self.store.mutate(pid,save)
+
+    def _produce_story(self, pid, options):
         """One durable queue job; reuse completed stages and stop safely on errors."""
         p = self.store.load(pid)
         from studio_schedule import strategy,LABELS
         mode=strategy(options)
         self.store.mutate(pid,lambda q:q.setdefault('production',{}).update(
-            generationStrategy=mode,generationStrategyLabel=LABELS[mode],rentalControl='external'))
+            generationStrategy=mode,generationStrategyLabel=LABELS[mode],
+            rentalControl='managed' if getattr(self,'_production_gpu',None) else 'external'))
         if not getattr(self,'_overlap',None):self._performance_run_id=uid('run-')
         if options.get('overlap') and not getattr(self,'_overlap',None):
             from studio_overlap import CloudStoryOverlap
@@ -1613,6 +1672,8 @@ class StudioService:
             )
             self.intro_image(p)
         # Complete chapter AND intro images before local chapter rendering.
+        rental=getattr(self,'_production_gpu',None)
+        if rental:rental.stop('chapter and intro images finished')
         if cloud_flow:
             for index, chid in enumerate(chapters):
                 self.render_production_chapter(pid, chid, index, chapters)
@@ -1667,12 +1728,14 @@ class StudioService:
     def generate_production_chapter_images(self,pid,chid,index,chapters):
         p=self.store.load(pid)
         ch=get_chapter(p,chid)
+        if any(not self.saved_image_ready(p,s) for sc in ch['scenes'] for s in sc['shots']):
+            self.ensure_production_gpu()
         active_characters = {
             c["id"]
             for sc in ch["scenes"]
             for shot in sc["shots"]
             for c in shot["characters"]
-            if c["type"] == "main"
+            if c["type"] == "main" and not self.saved_image_ready(p,shot)
         }
         reference_provider = self.provider(p["settings"]["image"]["provider"])
         if reference_provider.getCapabilities().get("maxReferenceImages", 0):
@@ -2192,6 +2255,9 @@ class StudioService:
         self.store.mutate(p['id'], lambda q:q['intro'].update(shots=shots, directorProvider=p['settings']['director']['provider'], directorPlan=plan))
 
     def check_cloud_budget(self, p, provider):
+        rental=getattr(self,'_production_gpu',None)
+        if provider.id=='comfyui' and rental:
+            rental.check();return
         window = p['settings'].get('cloudWindow', {})
         if provider.id == 'comfyui' and window.get('cloudStartedAt'):
             from economy_studio import cloud_cost
@@ -2226,6 +2292,7 @@ class StudioService:
 
     def intro_image(self, p, options=None):
         options = options or {}
+        self.ensure_production_gpu()
         self.unload_models()
         provider = self.provider(p["settings"]["image"]["provider"])
         self.prepare_image_device(provider)
