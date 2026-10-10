@@ -1,7 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {standardLunaHTML,lunaAuditHTML,lunaRequestPage,chapterRequestHTML,flexLunaHTML,standardOptimizationHTML,standardStageHTML} from './pipeline-luna-efficiency.mjs';
+import {standardLunaHTML,lunaAuditHTML,lunaRequestPage,chapterRequestHTML,flexLunaHTML,standardOptimizationHTML,standardStageHTML,decisionsProbeHTML} from './pipeline-luna-efficiency.mjs';
+
+test('Decisions evidence keeps false alarms, repeat dependence and whole-request costs explicit',()=>{
+  const rows=[{case:'listener <reaction>',condition:'decisions-grouped-full',repetition:1,
+    questions:60,status:'COMPLETE',probability:.56,targetMatched:false,seconds:.641,inputTokens:48184,estimatedUSD:.004818401},
+    {case:'previous',condition:'decisions-full',status:'FAILED',errorType:'HTTP 403',seconds:.2,estimatedUSD:0}];
+  const before=structuredClone(rows),html=decisionsProbeHTML(rows);
+  for(const phrase of ['listener &lt;reaction&gt;','56.0%','Missed expected case','HTTP 403',
+    'Whole-request cost','Unavailable','not six independent stories','uncalibrated','not per image',
+    'have not been independently labeled'])assert.ok(html.includes(phrase));
+  assert.doesNotMatch(html,/NaN|undefined|credential expansion/);
+  assert.deepEqual(rows,before);assert.equal(decisionsProbeHTML(), '');
+});
 test('latest optimization evidence keeps rejected timings out of successful projections and retains costs',()=>{
   const data={date:'today',scope:'Text only',sourceNarrationSeconds:100,
     conditions:[{condition:'failed <compact>',status:'FAILED',rejection:'Duplicate source cut',chapters:[],shots:0,seconds:20,calls:3,inputTokens:20000,estimatedUSD:.01,timingEligible:false},

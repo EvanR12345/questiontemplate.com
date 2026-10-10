@@ -1,4 +1,4 @@
-import {standardLunaHTML,lunaAuditHTML,mountLunaRequests,flexLunaHTML,standardOptimizationHTML,mountStandardStages} from './pipeline-luna-efficiency.mjs?v=luna-standard-optimization-20261010';
+import {standardLunaHTML,lunaAuditHTML,mountLunaRequests,flexLunaHTML,standardOptimizationHTML,mountStandardStages} from './pipeline-luna-efficiency.mjs?v=decisions-evidence-20261010';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>'$'+value.toFixed(4);
 const duration=value=>{const seconds=Math.round(value);return `${Math.floor(seconds/60)}:${(seconds%60).toString().padStart(2,'0')}`;};
