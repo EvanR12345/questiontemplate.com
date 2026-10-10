@@ -491,7 +491,7 @@
     "Interval union uses completion timestamps minus adapter duration; approximate API busy time, not measured GPU utilization.",
     "Structural validity and reference counts do not establish visual quality or semantic faithfulness."
   ],
-  "installedBoundary": "Independent camera/workflow/continuity calls and prompt batches. Chapter handoffs and story fact extraction stay ordered. Shared three-slot API pool with visual QC.",
+  "installedBoundary": "Independent camera/workflow/continuity calls and prompt batches. Chapter handoffs and story fact extraction stay ordered. Classic uses a shared pool of up to three API slots with visual QC. New opt-in staged workflows permit up to eight; their Standard/Fast measurements and limitations are listed above, separately from this older calibration.",
   "nextCandidate": "Earlier factual handoff before prompt finishing, with separate fact/visual revisions and stale-result checks. Not implemented or timed.",
   "largerGroupPilot": {
     "wallSeconds": 102.92200000002049,
