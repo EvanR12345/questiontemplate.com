@@ -23,6 +23,17 @@ def storyboard_schema(context):
     minimum=min(maximum,max(1,math.ceil(target*.9))) if type(target) in (int,float) and target>0 else 1
     metadata={'purpose':short_text(160),'location':short_text(120),'mood':short_text(80),'pacingReason':short_text(160)}
     for field in metadata.values():field['minLength']=1
+    if context.get('directorPayloadVersion')==6:
+        # Source-keyed slots make duplicate/out-of-order cuts impossible while
+        # Luna still chooses every optional cut. Definitions avoid repeating
+        # the complete camera/action schema for each source sentence.
+        scene={'$ref':'#/$defs/scene'}
+        fields={k:v for k,v in shot['properties'].items() if k!='startSentence'}
+        direction=obj({**fields,'scene':{'anyOf':[scene,{'type':'null'}]}})
+        required=set(context.get('requiredVisualChangeBoundaries',[])) | {0}
+        slots={f'cut{n}':({'$ref':'#/$defs/direction'} if n in required else
+            {'anyOf':[{'$ref':'#/$defs/direction'},{'type':'null'}]}) for n in range(len(context['sentences']))}
+        return obj({'openingScene':scene,'cuts':obj(slots)}) | {'$defs':{'scene':obj(metadata),'direction':direction}}
     first=obj({**shot['properties'],**metadata,'startSentence':{'type':'integer','enum':[0]},
                'newScene':{'type':'boolean','enum':[True]}})
     variants=[first]
@@ -36,9 +47,10 @@ def storyboard_schema(context):
 
 
 def repair_schema(context):
-    fields=copy.deepcopy(storyboard_schema(context)['properties']['shots']['items']['anyOf'][0]['properties'])
+    items=storyboard_schema({**context,'directorPayloadVersion':2})['properties']['shots']['items']
+    fields=copy.deepcopy((items['anyOf'][0] if 'anyOf' in items else items)['properties'])
     fields.pop('startSentence')
-    for field in ('newScene','purpose','location','mood','pacingReason'):fields.pop(field)
+    for field in ('scene','newScene','purpose','location','mood','pacingReason'):fields.pop(field,None)
     fields['shotIndex']={'type':'integer','enum':context['repairIndices']}
     return obj({'repairs':arr(obj(fields)) | {'minItems':len(context['repairIndices']),'maxItems':len(context['repairIndices'])}})
 
@@ -46,6 +58,17 @@ def repair_schema(context):
 def compile_storyboard(value, context):
     """The model chooses each cut; the application restores ends and indices."""
     count = len(context['sentences'])
+    if context.get('directorPayloadVersion')==6 and 'cuts' in value:
+        shots=[]
+        for n in range(count):
+            raw=value['cuts'][f'cut{n}']
+            if raw is None:continue
+            entry=copy.deepcopy(raw);scene=entry.pop('scene')
+            if n==0:scene=value['openingScene']
+            entry.update(startSentence=n,newScene=scene is not None,
+                **(scene if scene is not None else {field:'' for field in ('purpose','location','mood','pacingReason')}))
+            shots.append(entry)
+        value={'shots':shots}
     if 'shots' in value:
         scenes=[]
         original_order=[shot['startSentence'] for shot in value['shots']]
@@ -81,7 +104,7 @@ def compile_storyboard(value, context):
         value={'scenes':normalized}
         flat=[shot for scene in value['scenes'] for shot in scene['shots']]
         starts=[shot['startSentence'] for shot in flat]
-    if len(flat)<storyboard_schema(context)['properties']['shots']['minItems']:
+    if context.get('directorPayloadVersion') not in (4,6) and len(flat)<storyboard_schema(context)['properties']['shots']['minItems']:
         raise ValueError('Distinct storyboard cuts fall below the selected cadence; no additional cuts were invented.')
     required = set(context.get('requiredVisualChangeBoundaries', []))
     if required - set(starts):
@@ -115,18 +138,30 @@ def compile_storyboard(value, context):
 
 
 def plan_storyboard(provider, context, gate):
+    scene_format=('The first shot MUST start a scene with newScene=true and its scene purpose/location/mood/pacingReason. '
+                  'For later shots choose newScene=true when the story needs a new scene; otherwise newScene=false and those four scene fields are empty. ')
+    shape='Return one flat shots array. '+scene_format
+    if context.get('directorPayloadVersion')==6:
+        shape=('Return openingScene metadata and cuts keyed cut0, cut1, etc. The NUMBER in each key is its source sentence index. '
+            'At every chosen cut return its visual direction. Use null at sentences that continue an existing shot. '
+            'cut0 and all requiredVisualChangeBoundaries must be non-null. Choose approximately cadenceTarget.approximateShots non-null cuts. '
+            'Each direction has scene=null to continue its scene, or scene metadata for a new scene. cut0 uses openingScene metadata. '
+            'Do not generate a picture at every sentence. Do not include an additional startSentence field. ')
+    start_format=('The application derives ordered startSentence values from cut keys. '
+                  if context.get('directorPayloadVersion')==6 else
+                  'For each shot return only its startSentence. Starts must increase and begin at 0. '
+                  'Each cut uses a DIFFERENT sentence index. Do not return two camera variations at the same startSentence. ')
     value = provider.call(ROLE +
         ' Work only on the accepted source facts and narration. Plan story-driven scenes, then individual visible shots, '
         'their cameras. The application compiles the complete model-aware image prompt from those AI decisions. '
         'Use the same visual cadence: favor 3–15 second shots; '
         'longer holds only for genuinely quiet beats. Do not reduce cuts to make planning faster. '
         'One shot depicts ONE simultaneous visible moment; separate successive actions and reveals. '
-        'Return one flat shots array. The first shot MUST start a scene with newScene=true and its scene purpose/location/mood/pacingReason. '
-        'For later shots choose newScene=true when the story needs a new scene; otherwise newScene=false and those four scene fields are empty. '
+        +shape+
         'Continuing shots inherit their previous scene. No separate scene IDs or arrays need to be repeated. '
-        'Follow cadenceTarget.approximateShots; the schema bounds the total shot count on BOTH sides to preserve the existing picture frequency. '
-        'For each shot return only its startSentence. Starts must increase, begin at 0 and include EVERY supplied '
-        'requiredVisualChangeBoundaries index. The application supplies each end from the next start and the final narration end; '
+        'Follow cadenceTarget.approximateShots; the application validates the total shot count on BOTH sides to preserve the existing picture frequency. '
+        +start_format+
+        'Include EVERY supplied requiredVisualChangeBoundaries index. The application supplies each end from the next start and the final narration end; '
         'no sentence can be skipped. New scenes begin at their first shot. Use only supplied character IDs and source actions. '
         'Choose meaningful cameras/composition, never random angle rotations. Action/pose/expression/light should be drawable, '
         'brief and specific. '
@@ -135,6 +170,13 @@ def plan_storyboard(provider, context, gate):
         'The application retains FULL canonical identity, current clothing/injury, references, source action and model-aware prompt. '
         'Never rewrite facts, remove clothing, infer ethnicity, add major people/props or render text. '
         'Follow the selected layout/style/custom targets. Keep continuity-sensitive objects correctly owned and placed. '
+        'For dialogue, preserve the actual named or described speaker in that shot range; do not assign every line to the protagonist. '
+        'A speaker attribution often follows the quotation. Read speakerHints and attribution cues; '
+        'an image can depict the speaker while the following sentence identifies who spoke. '
+        'For bystander reaction shots select the relevant accepted bystander/group ID, not the protagonist or attacking faction. '
+        'Known main characters need not appear in every shot. '
+        'Sustained restraints and posture in priorState/acceptedChanges persist until an explicit source change. '
+        'A bound kneeling character cannot stand or sit freely merely because the camera changes. '
         'Current appearance applies at each source event, not permanently across the whole group.',
         context, storyboard_schema(context), gate)
     validate_schema(value,storyboard_schema(context))

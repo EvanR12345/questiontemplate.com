@@ -274,6 +274,7 @@ class StudioService:
             "cloudOverlapAvailable":True,
             "cloudSchedulingAvailable":True,
             "stagedDirectorAvailable":True,
+            "leanDirectorAvailable":True,
             "maxDirectorTasks":8,
             "storage": self.storage.status(),
             "hardware": hardware,
@@ -733,9 +734,14 @@ class StudioService:
         if project['settings']['director'].get('executionMode','classic').startswith('staged'):
             # Separate config object; shared helper settings must not mutate.
             self.director.config = {**config,'openaiCompactWire':True}
+            if project['settings']['director'].get('executionMode')=='staged-lean':
+                # Spend reasoning on canonical facts; independent visual jobs
+                # retain the user's chosen effort. Do not buy premium API tier.
+                self.director.config['openaiTaskEffort']={role:('high' if self.director.reasoning=='High' else 'medium') for role in
+                    ('Source fact analyst','Source fact correction','Targeted storyboard repair')}
             if project['settings']['director'].get('reasoningProfile','selected')=='adaptive':
-                self.director.config['openaiTaskEffort']={role:'none' for role in
-                    ('Visual storyboard director','Workflow planner')}
+                self.director.config['openaiTaskEffort']={**self.director.config.get('openaiTaskEffort',{}),
+                    **{role:'none' for role in ('Visual storyboard director','Workflow planner')}}
         else:
             self.director.config = config
         if project['settings']['director'].get('processingTier'):
@@ -2885,6 +2891,11 @@ class StudioService:
                 state.setdefault("characters", {})[person["id"]] = copy.deepcopy(
                     person["defaultAppearance"]
                 )
+        if p['settings']['director'].get('executionMode')=='staged-lean':
+            from director_staged import relevant_main_cast
+            chapter_index=next(i for i,item in enumerate(p['chapters']) if item['id']==chid)
+            previous=next((item for item in reversed(p['chapters'][:chapter_index]) if item.get('scenes')),None)
+            known_people=relevant_main_cast(known_people,ch,passes,previous)
         chapter_cast = known_people + [
             {
                 "id": c["id"],

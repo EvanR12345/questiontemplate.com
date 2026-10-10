@@ -52,8 +52,11 @@ def profile_for(stage, project, config, details=None):
             layoutSettings=settings.get('customLayout',{}),maxOutputTokens=director.get('maxOutputTokens',12000),
             checkLevel=settings.get('qcCheckLevel','off'))
         if director.get('executionMode','classic').startswith('staged'):
-            profile['planVersion']=2
-            profile['visualGroupLimit']={'sentences':24,'characters':6000,'targetShots':8}
+            lean=director.get('executionMode')=='staged-lean'
+            profile['planVersion']=9 if lean else 2
+            profile['factsVersion']=3
+            if lean:profile['factReasoning']='high' if director.get('reasoning')=='High' else 'medium'
+            profile['visualGroupLimit']={'sentences':12 if lean else 24,'characters':6000,'targetShots':8}
     elif stage in ('Image pipeline','Image + quality checks','Image generation','Visual QC','Character reference','Intro images'):
         if details.get('shot'):
             image=details.get('_shotSpec') or next((s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots']

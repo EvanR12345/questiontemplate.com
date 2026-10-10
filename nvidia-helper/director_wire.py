@@ -37,6 +37,7 @@ class CompactDirectorWire:
         names = set()
         def fields(node):
             names.update(node.get('properties', {}))
+            for child in node.get('$defs',{}).values():fields(child)
             for child in node.get('properties', {}).values(): fields(child)
             if isinstance(node.get('items'), dict): fields(node['items'])
             for key in ('anyOf', 'oneOf', 'allOf'):
@@ -45,6 +46,10 @@ class CompactDirectorWire:
         alphabet = string.ascii_lowercase + string.ascii_uppercase
         self.keys = {key: alphabet[i] if i < len(alphabet) else 'k' + str(i)
                      for i, key in enumerate(sorted(names))}
+        # Source indices are semantic anchors, not redundant JSON labels.
+        # Keep cut12 readable instead of encoding it into an unrelated letter.
+        for key in names:
+            if re.fullmatch(r'cut\d+',key) or key in ('openingScene','cuts'):self.keys[key]=key
         self.original_schema = schema
         self.schema = self.encode_schema(schema)
         self.context = self.encode_values(context)
@@ -58,11 +63,15 @@ class CompactDirectorWire:
 
     def encode_schema(self, node):
         result = copy.deepcopy(node)
+        if '$defs' in node:result['$defs']={name:self.encode_schema(child) for name,child in node['$defs'].items()}
         if 'enum' in node: result['enum'] = self.encode_values(node['enum'])
         if 'properties' in node:
             result['properties'] = {}
             for name, child in node['properties'].items():
                 encoded = self.encode_schema(child)
+                # Structured Outputs rejects siblings on a bare $ref. Keep
+                # the original field meaning on a one-branch wrapper instead.
+                if '$ref' in encoded:encoded={'anyOf':[encoded]}
                 encoded['description'] = name + '. ' + child.get('description', '')
                 result['properties'][self.keys[name]] = encoded
             result['required'] = [self.keys[name] for name in node.get('required', [])]
@@ -73,10 +82,13 @@ class CompactDirectorWire:
 
     def decode(self, value, node=None, field=None):
         node = self.original_schema if node is None else node
+        if '$ref' in node:
+            from director_provider import schema_reference
+            return self.decode(value,schema_reference(node,self.original_schema),field)
         if 'anyOf' in node:
             from director_provider import validate_schema
             for branch in node['anyOf']:
-                try:validate_schema(value,self.encode_schema(branch))
+                try:validate_schema(value,self.encode_schema(branch),self.schema)
                 except ValueError:continue
                 return self.decode(value,branch,field)
             raise ValueError('Compact director value matches no allowed schema branch.')

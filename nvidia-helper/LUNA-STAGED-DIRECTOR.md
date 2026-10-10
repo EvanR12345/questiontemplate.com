@@ -1,5 +1,80 @@
 # Staged Luna director: measurements and operating limits
 
+## Latest: Standard-only Lean investigation, October 10
+
+Existing project settings are preserved. **Lean Luna · Standard · experimental**
+is an opt-in workflow, not a replacement default or a guaranteed 3× upgrade.
+No images, GPUs, audio regeneration or video production were used here.
+
+| Current two-chapter test | Elapsed | Requests | Input tokens | Shots | API estimate | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Fresh classic, Standard, 2 tasks | 345.703 s | 48 | 218,760 | 112 | $0.045817 | Complete |
+| Lean v9, Standard, 8 tasks | 200.625 s | 37 | 159,974 | 108 | $0.033566 | Complete |
+| Identical Lean v9 repeat | 190.390 s before stopping | 39 | 173,720 | Chapter 1: 44 | $0.035940 | Chapter 2 failed fidelity review |
+
+The complete run was 1.72× faster and 26.7% cheaper than the fresh baseline.
+Its failed repeat must not be counted as a successful speed sample. Different
+planning/review architectures and AI-selected shots mean this is not a pure
+concurrency ablation or identical-quality proof. A reliable 3× Standard-priced
+result remains **unproven**. No such multiplier was put into the main planner.
+
+This separate Standard-only study spent **$0.409352195 of its $1 cap**, including
+all 23 experiments/prototypes. Zero outstanding reservations. The older
+$0.944791171 study below is separate, not double-counted into this cap.
+
+Lean changes:
+
+- Source-keyed cut slots share schema definitions, prevent duplicate starts,
+  preserve required appearance/object changes and retain the selected cadence.
+- Relevant main cast is scoped for each chapter; the permanent character bible
+  and full saved history are retained. Ambiguous pronoun-only openings retain
+  possible actors. Casting still sees the full canonical library.
+- Send each identity once, frozen current state without repeated history, and
+  only relevant visual facts. Full source narration remains authoritative.
+- Source-fact extraction and repairs use at least medium reasoning (high when
+  selected); visual work uses the selected reasoning. Standard is enforced in
+  both UI and project validation. Premium Fast is a separate optional older mode.
+- Initial storyboard review covers **every** shot. After the bounded repair,
+  recheck changed shots and immediate neighbors with full source and state.
+  Unchanged distant shots are not checked twice. This changes recheck coverage;
+  it does not remove the initial review or prove every contradiction is detected.
+- Sustained restraints/posture and source dialogue-attribution hints improve
+  continuity. Hints remain proposals, never permission to rewrite story facts.
+- Remaining major issues still reject the plan, retaining saved work. Error
+  messages identify draft group/shot and remaining findings. No automatic
+  acceptance, endless repair loop or image-QC setting change.
+- Versioned performance profiles keep old/premium/different algorithms separate.
+  Successful compatible real production, rather than failed research, informs ETAs.
+- Studio shows retained Luna requests, tokens, per-pass work/cost and unknown
+  usage. New private diagnostics retain opaque receipt IDs and component
+  character counts, never raw requests or credentials. Characters are not tokens.
+
+Director-only linear two-hour projections: classic **39.50 min / $0.3141**;
+the successful current Lean sample **22.92 min / $0.2301**. These exclude voice,
+images, image QC, rentals, storage and rendering. They are not measured long
+productions and omit additional failed attempts outside each completed sample.
+
+## Complete historical token audit
+
+Production Planner → **Evidence** now shows an input-token chart, all 15 passes,
+removal consequences, all 21 experiment outcomes, and a paged/filterable view of
+**all 618 requests**. The audit reconciles **3,354,362 input / 452,500 output /
+0 cached input tokens / $0.944791171** exactly to the earlier ledger. It includes
+failed tests and Standard/Fast processing; this is not one video's story size.
+
+Every reported token is assigned to a request and feature. The exact internal
+allocation between instructions, schemas, source and identity cannot be recovered:
+the API supplies whole-request usage and old request bodies were not retained.
+No token shares inside those requests are guessed. Public data contains only
+anonymous scalars, not story text, portraits, credentials or account information.
+
+Call work totals 3,563.379 seconds across parallel requests. Removing a feature
+does not necessarily save that amount of elapsed time; removing checks may add
+wrong shots and paid image repairs. Historical per-pass charges are not measured
+ablation savings. The local complete CSV retains opaque receipt IDs for auditing.
+
+## Earlier premium Fast investigation
+
 Measured October 9 Toronto / October 10 UTC, 2026. Same GPT-6 Luna model,
 selected low reasoning, saved two-chapter story, cast, canonical references,
 style and existing narration timings. Fresh director caches for every run.

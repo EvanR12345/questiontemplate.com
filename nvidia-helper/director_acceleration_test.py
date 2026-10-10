@@ -18,11 +18,20 @@ from studio_data import apply_changes
 
 def storyboard(context):
     cid=context['people'][0]['id']
-    return {'shots':[{'newScene':True,'purpose':'follow the source','location':'school hallway','mood':'calm',
+    value={'shots':[{'newScene':True,'purpose':'follow the source','location':'school hallway','mood':'calm',
         'pacingReason':'one visible moment','startSentence':i,'characters':[cid],
         'action':s['text'],'expression':'calm','pose':'walking','lighting':'daylight',
         'motion':'slow zoom in','transition':'cut',
         'camera':{'shot':'medium wide','angle':'eye level','composition':'Mira foreground right'}} for i,s in enumerate(context['sentences'])]}
+    if context.get('directorPayloadVersion')==6:
+        opening={key:value['shots'][0][key] for key in ('purpose','location','mood','pacingReason')}
+        cuts={}
+        for raw in value['shots']:
+            entry=copy.deepcopy(raw);n=entry.pop('startSentence');entry.pop('newScene')
+            entry['scene']={key:entry.pop(key) for key in ('purpose','location','mood','pacingReason')}
+            cuts[f'cut{n}']=entry
+        return {'openingScene':opening,'cuts':cuts}
+    return value
 
 
 class CompactWireTest(unittest.TestCase):

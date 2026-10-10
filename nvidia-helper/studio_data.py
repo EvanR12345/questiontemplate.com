@@ -371,7 +371,7 @@ def validate_project(p):
         raise ValueError('Choose bounded parallel director calls: up to three classic or eight staged.')
     if 'concisePrompts' in p['settings'].get('director',{}) and type(p['settings']['director']['concisePrompts']) is not bool:
         raise ValueError('Concise director prompts must be enabled or disabled.')
-    if p['settings'].get('director',{}).get('executionMode','classic') not in ('classic','staged','staged-review'):
+    if p['settings'].get('director',{}).get('executionMode','classic') not in ('classic','staged','staged-review','staged-lean'):
         raise ValueError('Choose classic or staged Luna directing.')
     if p['settings'].get('director',{}).get('executionMode','classic').startswith('staged'):
         from studio_overlap import validate_overlap
@@ -380,6 +380,8 @@ def validate_project(p):
         raise ValueError('Choose selected or adaptive director reasoning.')
     if p['settings'].get('director',{}).get('processingTier','default') not in ('default','flex','fast'):
         raise ValueError('Choose Standard, Flex or Fast Luna processing.')
+    if p['settings'].get('director',{}).get('executionMode')=='staged-lean' and p['settings']['director'].get('processingTier','default')!='default':
+        raise ValueError('Lean Luna uses Standard processing to avoid premium charges.')
     if type(p['settings'].get('director',{}).get('factGroupSentences',48)) is not int or p['settings'].get('director',{}).get('factGroupSentences',48) not in (48,96,128):
         raise ValueError('Choose a bounded source-fact group of 48, 96 or 128 sentences.')
     cadence=p['settings'].get('director',{}).get('cadencePerMinute')

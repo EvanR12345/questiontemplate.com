@@ -5,7 +5,25 @@ Frozen snapshots are request-local; existing chapter/handoff/edit guards own com
 """
 import copy
 import math
+import re
 from studio_data import apply_changes, align_evidence, normalize_object_change, grounded_object_changes
+
+
+def relevant_main_cast(known, chapter, passes, previous=None):
+    """Request-local scope only; never edit the permanent character library."""
+    detected=[person for item in passes if item.get('pass')=='casting-supervisor'
+              for person in item.get('output',{}).get('people',[])]
+    names={person.get('name','').casefold() for person in detected}
+    ids={person.get('id') for person in detected}
+    ids.update(c['id'] for scene in chapter.get('scenes',[]) for shot in scene.get('shots',[]) for c in shot['characters'])
+    if previous and previous.get('scenes'):
+        ids.update(c['id'] for shot in previous['scenes'][-1]['shots'] for c in shot['characters'])
+    text=chapter['sourceText']
+    selected=[person for person in known if person['id'] in ids or person['name'].casefold() in names or
+        any(label and re.search(r'(?<!\w)'+re.escape(label)+r'(?!\w)',text,re.I)
+            for label in [person['name'],*person.get('aliases',[])])]
+    # Pronoun-only/ambiguous openings must not silently lose possible actors.
+    return copy.deepcopy(selected or known)
 
 
 def apply_source_changes(state,changes,chapter,scene):
@@ -60,7 +78,21 @@ def advance_memory(memory, analysis, chapter_number, group_index):
     }
 
 
+def repair_review_context(payload, output, indices):
+    """Initial review covers all shots; recheck changed directions and neighbors.
+
+    Source indices, full narration and chronological facts are unchanged. Explicit
+    shot indices prevent a sparse recheck from attaching issues to the wrong shot.
+    """
+    count=len(output['detail']['shots'])
+    selected=sorted({n for index in indices for n in (index-1,index,index+1) if 0<=n<count})
+    return {**payload,'reviewShotIndices':selected,'repairIndices':list(indices),
+        'shots':[dict(output['detail']['shots'][n],shotIndex=n) for n in selected],
+        'cameras':[output['cameras'][n] for n in selected]}
+
+
 def prepare_staged(service, project, chapter, groups, cast, state, memory, expected):
+    lean=project['settings']['director'].get('executionMode')=='staged-lean'
     incoming = copy.deepcopy(state); story_memory = copy.deepcopy(memory)
     canonical = [{'id':c['id'],'name':c['name'],'description':c['description'],
                   'identity':c['permanentIdentity']} for c in project['characters']]
@@ -70,12 +102,18 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
         service.gate(f'Accepting source facts {index+1}/{len(groups)}')
         text = [{'index':i,'text':s['text'],'start':s['start'],'end':s['end']} for i,s in enumerate(group)]
         prior = {k:copy.deepcopy(v) for k,v in incoming.items() if k!='appearanceHistory'}
+        if lean and 'characters' in prior:
+            prior['characters']={k:v for k,v in prior['characters'].items() if k in known}
         context = {'sentences':text,'knownMainCharacters':canonical,'priorState':prior,
                    'storyMemory':copy.deepcopy(story_memory),'chapterCast':cast,
                    'layoutMode':project['settings']['layoutMode'],'customTargets':project['settings']['customLayout'],
                    'visualConstraints':project['settings'].get('visualConstraints',''),
                    'productionDirection':project['settings'].get('productionDirection','')}
-        analysis = service.director.analyzeFacts(context,service.gate)
+        # Facts need the source, accepted identities and incoming state. Layout
+        # instructions are for the visual planner, not repeated factual context.
+        fact_context=({key:context[key] for key in ('sentences','chapterCast','priorState','storyMemory')}
+                      if lean else context)
+        analysis = service.director.analyzeFacts(fact_context,service.gate)
         if analysis['people']:
             raise ValueError('Staged analysis must use the accepted cast without creating new identities.')
         continuity = service.director.checkSourceFacts({'knownState':prior,'people':cast,
@@ -99,6 +137,14 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
         visual = {**context,'analysis':analysis,'people':cast,'acceptedChanges':events,
                   'requiredVisualChangeBoundaries':sorted({e['sentence'] for e in events}),
                   'style':project['settings']['style'],'promptFormat':'natural_language'}
+        if lean:
+            visual.pop('knownMainCharacters');visual.pop('chapterCast')
+            # Full facts remain in prepared/project data. Visual requests carry
+            # identity once and relevant locations/objects/changes, not another
+            # verbatim copy of every beat or summary of the future group.
+            visual['analysis']={key:copy.deepcopy(analysis.get(key,[])) for key in ('locations','objects','environmentChanges')}
+            # Unique source-keyed cut slots share scene/direction definitions.
+            visual['directorPayloadVersion']=6
         if type(cadence) in (int,float) and cadence>0:
             visual['cadenceTarget']={'imagesPerMinute':cadence,'approximateShots':max(1,round(duration*cadence/60)),
                 'instruction':'Keep this approximate selected cadence. Do not cut on every sentence. Split for genuinely distinct visible moments and required state changes; explain exceptions in pacingReason.'}
@@ -106,7 +152,9 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
         review_inputs.append(visual)
         # Required state changes are application-owned cut points. Independent
         # visual jobs cannot accidentally hide one inside an earlier-action shot.
-        points={0,len(text),*visual['requiredVisualChangeBoundaries']}
+        # A required SHOT cut is not a required API-request cut. Lean groups can
+        # hold multiple changes; exact indices and per-shot state stay locked.
+        points={0,len(text)} if lean else {0,len(text),*visual['requiredVisualChangeBoundaries']}
         visual_size=0;visual_start=0
         for n,sentence in enumerate(text):
             # Bound visible output as well as input. A long group with many
@@ -115,22 +163,31 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
             # remain independent and retain the same pictures-per-minute.
             seconds=text[n]['end']-text[visual_start]['start']
             too_many_shots=type(cadence) in (int,float) and cadence>0 and seconds*cadence/60>8
-            if n>visual_start and (n-visual_start>=24 or visual_size+len(sentence['text'])>6000 or too_many_shots):
+            if n>visual_start and (n-visual_start>=(12 if lean else 24) or visual_size+len(sentence['text'])>6000 or too_many_shots):
                 points.add(n);visual_start=n;visual_size=0
             visual_size+=len(sentence['text'])
         points=sorted(points)
         for start,end in zip(points,points[1:]):
             sliced=copy.deepcopy(visual)
             sliced['sentences']=[{**s,'index':n} for n,s in enumerate(text[start:end])]
-            sliced['requiredVisualChangeBoundaries']=[0]
+            sliced['requiredVisualChangeBoundaries']=sorted({0,*[n-start for n in visual['requiredVisualChangeBoundaries'] if start<=n<end]}) if lean else [0]
             sliced['priorState']=apply_source_changes(prior,[{'characterId':e['characterId'],'type':e['field'],
                 'to':{e['field']:e['value']},'reason':e['reason']} for e in events if e['sentence']<start],chapter['number'],'facts-visual')
+            # History belongs in persistent project data. A frozen current
+            # state already contains its effects; do not resend the full log.
+            if lean:sliced['priorState'].pop('appearanceHistory',None)
             for event in analysis.get('environmentChanges',[]):
                 if event['sentence']<start:sliced['priorState'].setdefault('environment',{})[event['field']]=event['value']
             sliced['acceptedChanges']=[{**e,'sentence':e['sentence']-start} for e in events if start<=e['sentence']<end]
-            sliced['analysis']=copy.deepcopy(analysis)
+            if lean:
+                sliced['speakerHints']=[{'sentence':e['sentence']-start,'characterId':e['characterId'],
+                    'cue':text[e['cueSentence']]['text']} for e in analysis.get('dialogueSpeakers',[])
+                    if start<=e['sentence']<end and e['characterId'] in known and 0<=e['cueSentence']<len(text)]
+                sliced['speakerHintInstruction']='Proposed speaker hints, not canonical facts. Exact narration and its actual attribution take precedence.'
+            sliced['analysis']=copy.deepcopy(visual['analysis'] if lean else analysis)
             for name in ('changes','environmentChanges','beats'):
-                sliced['analysis'][name]=[{**e,'sentence':e['sentence']-start} for e in analysis.get(name,[]) if start<=e['sentence']<end]
+                if not lean or name=='environmentChanges':
+                    sliced['analysis'][name]=[{**e,'sentence':e['sentence']-start} for e in analysis.get(name,[]) if start<=e['sentence']<end]
             sliced['adjacentNarration']={'before':[s['text'] for s in text[max(0,start-2):start]],
                                        'after':[s['text'] for s in text[end:min(len(text),end+2)]]}
             sliced['adjacentNarrationInstruction']='Adjacent text is context only; all returned shot actions must belong to sentences, never before/after context.'
@@ -155,18 +212,42 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
                 'startSentence':shot['startSentence']+start,'endSentence':shot['endSentence']+start})
         for field in ('cameras','prompts'):
             target[field].extend({**entry,'shotIndex':entry['shotIndex']+shot_offset} for entry in output[field])
-    if project['settings']['director'].get('executionMode') == 'staged-review':
+    if lean:
+        # Group-local pacing may vary. Check accepted distinct cuts against the
+        # whole selected cadence, never count duplicate camera alternatives as
+        # extra pictures and never fabricate source cuts to meet a quota.
+        cadence=project_cadence(project,chapter)
+        if type(cadence) in (int,float) and cadence>0:
+            duration=sum(group[-1]['end']-group[0]['start'] for group in groups)
+            target=duration*cadence/60
+            shots=sum(len(item['storyboard']['detail']['shots']) for item in prepared)
+            if shots<math.ceil(target*.9) or shots>math.ceil(target*1.2)+len(groups):
+                raise ValueError('Lean storyboard differs too much from the selected picture cadence; existing chapter retained.')
+    if project['settings']['director'].get('executionMode') in ('staged-review','staged-lean'):
         reviews = service.director_calls(project,chapter['id'],[('checkStoryboard',{
             **payload,'shots':output['detail']['shots'],'cameras':output['cameras'],
-            'visualDirection':output['prompts']}) for payload,output in zip(review_inputs,[item['storyboard'] for item in prepared])],expected)
+            **({} if lean else {'visualDirection':output['prompts']})}) for payload,output in zip(review_inputs,[item['storyboard'] for item in prepared])],expected)
         repair_calls=[];repair_owners=[]
         for index,(item,review) in enumerate(zip(prepared,reviews)):
             item['visualReview']=review
             if review['majorIssues']:
                 indices=sorted({issue['shotIndex'] for issue in review['majorIssues']})
-                repair_calls.append(('repairStoryboard',{**review_inputs[index],
+                repair_context={**review_inputs[index],
                     'shots':item['storyboard']['detail']['shots'],'cameras':item['storyboard']['cameras'],
-                    'issues':review['majorIssues'],'repairIndices':indices}))
+                    'issues':review['majorIssues'],'repairIndices':indices}
+                if lean:
+                    source=review_inputs[index]['sentences']
+                    repair_context['repairSlots']=[{'shotIndex':n,
+                        'startSentence':repair_context['shots'][n]['startSentence'],
+                        'endSentence':repair_context['shots'][n]['endSentence'],
+                        'ownNarration':source[repair_context['shots'][n]['startSentence']:repair_context['shots'][n]['endSentence']+1],
+                        'originalDirection':repair_context['shots'][n],
+                        'originalCamera':repair_context['cameras'][n]} for n in indices]
+                    # Only flagged directions need to be rewritten. Full source
+                    # and chronological state remain, but unrelated old shots
+                    # are not another large competing prompt.
+                    repair_context.pop('shots');repair_context.pop('cameras')
+                repair_calls.append(('repairStoryboard',repair_context))
                 repair_owners.append(index)
         if repair_calls:
             replacements=service.director_calls(project,chapter['id'],repair_calls,expected)
@@ -179,7 +260,9 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
                     output['cameras'][n]={'shotIndex':n,**corrected['camera']}
                     output['prompts'][n]={'shotIndex':n,'prompt':' '.join([corrected['action'],
                         corrected['camera']['composition'],corrected['expression'],corrected['pose'],corrected['lighting']]).strip()}
-            final_reviews=service.director_calls(project,chapter['id'],[('checkStoryboard',{
+            final_reviews=service.director_calls(project,chapter['id'],[('checkStoryboard',
+                repair_review_context(review_inputs[index],prepared[index]['storyboard'],
+                    [r['shotIndex'] for r in prepared[index]['repairHistory']['repairs']['repairs']]) if lean else {
                 **review_inputs[index],'shots':prepared[index]['storyboard']['detail']['shots'],
                 'cameras':prepared[index]['storyboard']['cameras'],'visualDirection':prepared[index]['storyboard']['prompts']})
                 for index in repair_owners],expected)
@@ -187,5 +270,9 @@ def prepare_staged(service, project, chapter, groups, cast, state, memory, expec
                 prepared[index]['visualReview']=review
                 prepared[index]['repairHistory']['finalReview']=review
                 if review['majorIssues']:
-                    raise ValueError('Staged storyboard still has source-fidelity issues after one targeted repair. Existing chapter stays intact; review the saved responses before retrying.')
+                    findings='; '.join(f"draft group {index+1}, shot {issue['shotIndex']+1}: {issue['issue']}"
+                                      for issue in review['majorIssues'][:3])
+                    raise ValueError('Staged storyboard still has source-fidelity issues after one targeted repair. '
+                        'Existing chapter stays intact. '+findings+
+                        ' Review the draft/source before retrying; this is not a passed plan.')
     return prepared

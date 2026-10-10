@@ -17,3 +17,12 @@ test('summary distinguishes reasoning from premium API processing and does not g
   const text=directorSummary({director:{...values,processingTier:'fast'}});
   assert.match(text,/2× Standard/);assert.match(text,/manual edits/);assert.doesNotMatch(text,/guaranteed|3× faster/);
 });
+test('lean workflow preserves cadence, requires updated helper and enforces Standard pricing',()=>{
+  const lean={...values,executionMode:'staged-lean'};
+  const health={stagedDirectorAvailable:true,leanDirectorAvailable:true};
+  const d=directorSettings({cadencePerMinute:6,reasoning:'Fast'},lean,health);
+  assert.equal(d.parallelism,8);assert.equal(d.cadencePerMinute,6);assert.equal(d.processingTier,'default');
+  assert.match(directorSummary({director:d}),/multiple shots per request/);
+  assert.throws(()=>directorSettings({},lean,{stagedDirectorAvailable:true}),/helper/);
+  assert.throws(()=>directorSettings({},{...lean,processingTier:'fast'},health),/Standard/);
+});

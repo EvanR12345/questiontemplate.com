@@ -286,7 +286,13 @@ class CloudOverlapTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'Visual QC'):self.run_story()
         images=len(self.provider.requests);checks=len(self.qc_requests)
         self.service.wait_for_overlap=False
-        with self.assertRaisesRegex(RuntimeError,'No replacement was purchased'):self.run_story()
+        # A peer QC response can be interrupted by the first failed review.
+        # Its unknown receipt must block retry before reaching the saved-image
+        # guard; it must never be treated as settled or buy replacement work.
+        with self.assertRaisesRegex(RuntimeError,'No replacement was purchased|unresolved') as caught:self.run_story()
+        if 'unresolved' in str(caught.exception):
+            ledger=json.loads((self.service.store.folder(self.project['id'])/'api-cost-ledger.json').read_text())
+            self.assertTrue(ledger['requests']);self.assertGreater(ledger['reservedUSD'],0)
         self.assertEqual(len(self.provider.requests),images);self.assertEqual(len(self.qc_requests),checks)
 
     def test_planned_clothing_change_remains_in_generation_and_qc_payloads(self):

@@ -202,7 +202,7 @@ class DirectorProvider:
             }
         )
         return self.call(
-            "Casting supervisor. Return a SMALL cast of distinct story roles, not every anonymous individual. Output id, name, type, description, evidence, aliases ONLY. Examples of role labels: scarred protagonist, opposing faction, protagonist allies, party crowd, screaming woman. Group anonymous soldiers/attackers by faction; NEVER create repeated entries named man. Resolve pronouns and aliases against known cast. Only central recurring protagonists and established main characters are main. Casualties and bystanders are temporary/supporting/group. evidence MUST be ONE brief verbatim quote from chapterText; NEVER list sentence numbers. Description records only stated identity traits and earliest clothing. Keep every field brief. Do not invent traits, names or events. Preserve known IDs where identity is clear. Aliases must appear in the story.",
+            "Casting supervisor. Return a SMALL cast of distinct story roles, not every anonymous individual. Output id, name, type, description, evidence, aliases ONLY. Examples of role labels: scarred protagonist, opposing faction, protagonist allies, party crowd, screaming woman. Group anonymous soldiers/attackers by faction; NEVER create repeated entries named man. The noun man may refer to DIFFERENT people. Distinguish an unnamed casualty from a living recurring fighter; incompatible source actions/death must not merge into a known main identity. Add a brief distinct temporary role label for an individually depicted victim when needed. Resolve pronouns and aliases against known cast. Only central recurring protagonists and established main characters are main. Casualties and bystanders are temporary/supporting/group. evidence MUST be ONE brief verbatim quote from chapterText; NEVER list sentence numbers. Description records only stated identity traits and earliest clothing. Keep every field brief. Do not invent traits, names or events. Preserve known IDs where identity is clear. Aliases must appear in the story.",
             context,
             obj({"people": arr(person)}),
             gate,
@@ -243,7 +243,7 @@ class DirectorProvider:
         if not count:raise ValueError('Factual analysis needs narration sentences.')
         ids=[p['id'] for p in context['chapterCast']]
         identity_field={'type':'string','enum':ids or ['none']}
-        appearance_fields=['outfit','hairStyle','injury','accessories','wetness','dirt','makeup','disguise','age','transformation','status']
+        appearance_fields=['outfit','hairStyle','injury','accessories','wetness','dirt','makeup','disguise','age','transformation','status','restraint','posture']
         change=indexed_evidence(CHANGE['properties'] | {'characterId':identity_field,
             'field':{'type':'string','enum':appearance_fields}},count)
         object_change=indexed_evidence(CHANGE['properties'] | {'characterId':identity_field},count)
@@ -252,16 +252,29 @@ class DirectorProvider:
             'beats':arr(obj({'sentence':{'type':'integer','enum':list(range(count))},'emotion':short_text(60)})),
             'changes':arr(change),'objectChanges':arr(object_change),
             'environmentChanges':arr(indexed_evidence(ENVIRONMENT_CHANGE['properties'],count)),
+            'dialogueSpeakers':arr(obj({'sentence':{'type':'integer','enum':list(range(count))},
+                'characterId':identity_field,'cueSentence':{'type':'integer','enum':list(range(count))}})),
             'objects':arr(short_text(80)),'goals':arr(short_text(160)),'unresolved':arr(short_text(180))})
         if not ids:
             schema['properties']['changes']['maxItems']=0
             schema['properties']['objectChanges']['maxItems']=0
+            schema['properties']['dialogueSpeakers']['maxItems']=0
         result=self.call('Source fact analyst: Read ALL supplied source sentences in order using accepted cast and incoming state. '
             'Record every EXPLICIT clothing, hair, injury, held/dropped/transferred object and location/time/weather change. '
+            'Store sustained physical restraint (bound/tied/handcuffed/released) in restraint, and explicitly established '
+            'resting or restrained posture (kneeling/seated/lying/standing again) in posture. These persist until the source changes them. '
+            'Do not record every transient combat gesture as a permanent posture. Do not conflate restraints with injury or clothing. '
+            'For dialogueSpeakers, associate each dialogue sentence with its actual speaker and attribution cue sentence. '
+            'The cue often FOLLOWS the quoted speech. Resolve a clear he/she cue from its own nearby passage; '
+            'omit ambiguous speakers. This is a proposed attribution, not permission to alter the narration. '
             'changes holds physical appearance/status updates ONLY. Goals, orders, intentions and casualty counts belong to summary/goals, '
             'never physical changes. objectChanges holds EXPLICIT possession/position updates to tangible objects. '
             'Object field names name the object (key, sword, phone); value states its possession/location, including the correct hand. '
             'Use existing IDs. Never infer new ethnicity, undressing, injuries, major events or identities. '
+            'Do not convert an uncertain observation into a certain cause: stopping an action does not prove why it stopped. '
+            'Descriptions of some people do not apply to the whole crowd. A role or pronoun must resolve to the same person '
+            'in its own source passage, not a similarly described person elsewhere. Record only newly stated changes, '
+            'never unspecified/unknown placeholders or guessed defaults. Omit an ambiguous update rather than inventing state. '
             'Unknown remains unknown. Record one source sentence index per change; the application restores exact evidence. '
             'Each value describes ONLY the new delta stated in THAT ONE sentence, never accumulated injuries from the rest of a paragraph. '
             'The APPLICATION accumulates injuries from separate supported events. Different wounds at different moments need separate events. '
@@ -355,7 +368,8 @@ class DirectorProvider:
             correction=self.call('Source fact correction: Correct ONLY flagged proposed physical/object changes. '
                 'Existing identity and every unflagged fact are locked. keep=false for an inference, goal, order, intention, '
                 'unsupported adjective or unobserved event; it is not a physical change. keep=true only when the exact '
-                'source supports the corrected field/value at the selected sentence. Do not turn capture into capture alive '
+                'source supports a SPECIFIC new field/value at the selected sentence. Unknown/not specified is not a correction: '
+                'use keep=false so the existing incoming state remains intact. Do not turn capture into capture alive '
                 'unless explicitly stated. Do not change character IDs. Return one correction per flagged changeIndex.',
                 {**context,'issues':result['majorIssues']},correction_schema,gate)
             if sorted(c['changeIndex'] for c in correction['corrections'])!=indices:
@@ -384,10 +398,18 @@ class DirectorProvider:
         return {'issues':[],'intentionalChanges':[],'objectChanges':result['objectChanges']}
 
     def checkStoryboard(self,context,gate):
-        issues=arr(obj({'shotIndex':{'type':'integer','enum':list(range(len(context['shots'])))},
+        indices=context.get('reviewShotIndices',list(range(len(context['shots']))))
+        if not indices or any(type(n) is not int or n<0 for n in indices) or len(set(indices))!=len(indices):
+            raise ValueError('Invalid storyboard review scope.')
+        if 'reviewShotIndices' in context and [s.get('shotIndex') for s in context['shots']]!=indices:
+            raise ValueError('Sparse storyboard review indices do not match supplied shots.')
+        issues=arr(obj({'shotIndex':{'type':'integer','enum':indices},
             'sentence':{'type':'integer','enum':list(range(len(context['sentences'])))},
             'issue':short_text(300)})) | {'maxItems':12}
         result=self.call('Storyboard continuity supervisor: Independently compare each supplied shot to its own narration, '
+            'When reviewShotIndices is supplied, use the explicit shotIndex field, not the position in the shorter shots array. '
+            'This is a post-repair check of changed shots and their immediate neighbors. Full narration is context; '
+            'report issues only for the supplied shots. The initial review already examined every shot. '
             'accepted characters, chronological clothing/injury/object changes and incoming canonical state. '
             'Intentional supported changes are valid. Do not demand exact illustrative staging. '
             'Report invented major actions, wrong essential objects/owners, unknown or incorrectly assigned main people, '
@@ -404,7 +426,10 @@ class DirectorProvider:
             context,obj({'majorIssues':issues,
                          'advisories':arr(short_text(300)) | {'maxItems':12}}),gate)
         for issue in result['majorIssues']:
+            if issue['shotIndex'] not in indices:raise ValueError('Storyboard issue is outside the reviewed scope.')
             issue['sourceQuote']=context['sentences'][issue['sentence']]['text']
+        result['coverage']={'scope':'repair-and-neighbors' if 'reviewShotIndices' in context else 'all-shots',
+                            'shotIndices':indices}
         return result
 
     def repairStoryboard(self,context,gate):
@@ -413,6 +438,11 @@ class DirectorProvider:
             'accepted cast, incoming state and exact reviewer source evidence. Narration start/end, scene boundaries, '
             'story facts, appearance events and other shots are locked by the application. '
             'Return one complete visual replacement per flagged shotIndex. Keep source speakers, object owners and actions correct. '
+            'When repairSlots are supplied, ownNarration is the ONLY narration belonging to that shot. '
+            'Do not borrow an action, curse, reveal or impact from a later shot. For dialogue preserve the source speaker, '
+            'including unnamed supporting speakers; never assume the protagonist speaks every line. '
+            'An issue about a wrong actor/faction requires correcting characters as well as action and pose. '
+            'A party guest/civilian crowd is not the attacking faction; choose its supplied group ID. '
             'Do not borrow an adjacent sentence action into this shot. Adjacent source context only resolves pronouns/speakers. '
             'Return short action, expression, pose, lighting, camera, motion and transition. No invented identities, undressing or major events.',
             context,repair_schema(context),gate)
@@ -828,15 +858,32 @@ class LocalQwenDirector(DirectorProvider):
         )
 
 
-def validate_schema(value, schema):
+def schema_reference(schema, root):
+    ref=schema.get('$ref')
+    if not isinstance(ref,str) or not ref.startswith('#/$defs/'):
+        raise ValueError('Only local director schema definitions are supported.')
+    target=root
+    try:
+        for key in ref[2:].split('/'):target=target[key.replace('~1','/').replace('~0','~')]
+    except (KeyError,TypeError):raise ValueError('Unknown director schema definition.') from None
+    if not isinstance(target,dict) or '$ref' in target:raise ValueError('Invalid director schema definition.')
+    return target
+
+
+def validate_schema(value, schema, root=None):
+    root=schema if root is None else root
+    if '$ref' in schema:return validate_schema(value,schema_reference(schema,root),root)
     if 'anyOf' in schema:
         for branch in schema['anyOf']:
-            try:validate_schema(value,branch);return
+            try:validate_schema(value,branch,root);return
             except ValueError:continue
         raise ValueError('Value does not match any allowed schema branch')
     if "enum" in schema and value not in schema["enum"]:
         raise ValueError("Invalid enum")
     kind = schema.get("type")
+    if kind == 'null':
+        if value is not None:raise ValueError('Expected null')
+        return
     if kind == "object":
         if not isinstance(value, dict) or any(
             k not in value for k in schema.get("required", [])
@@ -849,7 +896,7 @@ def validate_schema(value, schema):
             ):
                 raise ValueError("Unknown field")
             if k in schema["properties"]:
-                validate_schema(v, schema["properties"][k])
+                validate_schema(v, schema["properties"][k],root)
     elif kind == "array":
         if not isinstance(value, list):
             raise ValueError("Expected array")
@@ -858,14 +905,14 @@ def validate_schema(value, schema):
         ):
             raise ValueError("Array length violates schema bounds")
         for v in value:
-            validate_schema(v, schema["items"])
+            validate_schema(v, schema["items"],root)
     elif kind == "string":
         if not isinstance(value, str):
             raise ValueError("Expected string")
         if len(value) > schema.get("maxLength", len(value)) or len(value) < schema.get(
             "minLength", 0
         ):
-            raise ValueError("String length violates schema bounds")
+            raise ValueError(f"String length violates schema bounds (length={len(value)}, min={schema.get('minLength',0)}, max={schema.get('maxLength','unbounded')}).")
     elif kind == "integer" and (isinstance(value, bool) or not isinstance(value, int)):
         raise ValueError("Expected integer")
     elif kind == "integer" and (

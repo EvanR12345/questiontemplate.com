@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-10",
+  "model": "gpt-6-luna",
+  "processingTier": "default",
+  "sourceNarrationSeconds": 1050.23,
+  "sourceWords": 2604,
+  "originalShots": 103,
+  "baseline": {
+    "label": "Fresh classic \u00b7 Standard \u00b7 2 tasks",
+    "status": "COMPLETE",
+    "seconds": 345.7030000000959,
+    "estimatedUSD": 0.04581651400000003,
+    "shots": 112,
+    "calls": 48,
+    "inputTokens": 218760,
+    "outputTokens": 47881,
+    "completedChapters": 2
+  },
+  "runs": [
+    {
+      "label": "Lean v9 \u00b7 Standard \u00b7 8 tasks \u00b7 completed",
+      "status": "COMPLETE",
+      "seconds": 200.625,
+      "estimatedUSD": 0.03356641299999996,
+      "shots": 108,
+      "calls": 37,
+      "inputTokens": 159974,
+      "outputTokens": 35138,
+      "completedChapters": 2
+    }
+  ],
+  "repeat": {
+    "label": "Lean v9 repeat \u00b7 FAILED fidelity review",
+    "status": "FAILED",
+    "seconds": 190.39000000001397,
+    "estimatedUSD": 0.035940006999999996,
+    "shots": 44,
+    "calls": 39,
+    "inputTokens": 173720,
+    "outputTokens": 37136,
+    "completedChapters": 1
+  },
+  "attempts": [
+    {
+      "label": "01 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 22.109000000054948,
+      "estimatedUSD": 0.003829902,
+      "completedChapters": 0
+    },
+    {
+      "label": "02 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 27.07900000002701,
+      "estimatedUSD": 0.007246501000000001,
+      "completedChapters": 0
+    },
+    {
+      "label": "03 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 25.484000000054948,
+      "estimatedUSD": 0.004025101999999999,
+      "completedChapters": 0
+    },
+    {
+      "label": "04 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 46.65599999995902,
+      "estimatedUSD": 0.008504000999999999,
+      "completedChapters": 0
+    },
+    {
+      "label": "05 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 49.39100000006147,
+      "estimatedUSD": 0.008647501000000002,
+      "completedChapters": 0
+    },
+    {
+      "label": "06 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 47.625,
+      "estimatedUSD": 0.008499501999999999,
+      "completedChapters": 0
+    },
+    {
+      "label": "07 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 99.40599999995902,
+      "estimatedUSD": 0.017333803000000002,
+      "completedChapters": 0
+    },
+    {
+      "label": "08 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 46.45299999997951,
+      "estimatedUSD": 0.0084423,
+      "completedChapters": 0
+    },
+    {
+      "label": "09 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 43.81200000003446,
+      "estimatedUSD": 0.009190904,
+      "completedChapters": 0
+    },
+    {
+      "label": "10 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 61.26600000006147,
+      "estimatedUSD": 0.012924004000000003,
+      "completedChapters": 0
+    },
+    {
+      "label": "11 \u00b7 prototype",
+      "status": "COMPLETE",
+      "seconds": 175.60899999993853,
+      "estimatedUSD": 0.03408420599999999,
+      "completedChapters": 2
+    },
+    {
+      "label": "12 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 134.01500000001397,
+      "estimatedUSD": 0.029403004999999996,
+      "completedChapters": 1
+    },
+    {
+      "label": "13 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 49.89000000001397,
+      "estimatedUSD": 0.009371704000000008,
+      "completedChapters": 0
+    },
+    {
+      "label": "14 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 28.186999999918044,
+      "estimatedUSD": 0.0028115999999999974,
+      "completedChapters": 0
+    },
+    {
+      "label": "15 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 90.625,
+      "estimatedUSD": 0.014481802000000016,
+      "completedChapters": 0
+    },
+    {
+      "label": "16 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 73.76600000006147,
+      "estimatedUSD": 0.012818702999999987,
+      "completedChapters": 0
+    },
+    {
+      "label": "17 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 191.31199999991804,
+      "estimatedUSD": 0.035906206999999996,
+      "completedChapters": 1
+    },
+    {
+      "label": "18 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 73.46900000004098,
+      "estimatedUSD": 0.014417802000000007,
+      "completedChapters": 0
+    },
+    {
+      "label": "19 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 93.81200000003446,
+      "estimatedUSD": 0.015774803999999976,
+      "completedChapters": 0
+    },
+    {
+      "label": "20 \u00b7 prototype",
+      "status": "FAILED",
+      "seconds": 213.53200000000652,
+      "estimatedUSD": 0.03631590800000001,
+      "completedChapters": 1
+    },
+    {
+      "label": "Fresh classic \u00b7 Standard \u00b7 2 tasks",
+      "status": "COMPLETE",
+      "seconds": 345.7030000000959,
+      "estimatedUSD": 0.04581651400000003,
+      "completedChapters": 2
+    },
+    {
+      "label": "Lean v9 \u00b7 Standard \u00b7 8 tasks \u00b7 completed",
+      "status": "COMPLETE",
+      "seconds": 200.625,
+      "estimatedUSD": 0.03356641299999996,
+      "completedChapters": 2
+    },
+    {
+      "label": "Lean v9 repeat \u00b7 FAILED fidelity review",
+      "status": "FAILED",
+      "seconds": 190.39000000001397,
+      "estimatedUSD": 0.035940006999999996,
+      "completedChapters": 1
+    }
+  ],
+  "baselineNote": "Fresh classic baseline, followed by Lean and its repeat. Same source and selected low visual reasoning, but different planning/review architectures and generated shots; this is not a pure concurrency comparison.",
+  "spentUSD": 0.409352195,
+  "capUSD": 1,
+  "pendingUsage": false,
+  "experiments": 23,
+  "speedRatio": 1.723130218069014,
+  "costReductionFraction": 0.2673730480673423,
+  "recommendation": "Experimental opt-in, not a replacement default or a proven 3x Standard-priced upgrade.",
+  "stages": [
+    {
+      "stage": "Visual storyboard director",
+      "calls": 21,
+      "inputTokens": 66618,
+      "outputTokens": 18866,
+      "workSeconds": 181.46700000000004,
+      "estimatedUSD": 0.016094808999999998
+    },
+    {
+      "stage": "Storyboard continuity supervisor",
+      "calls": 5,
+      "inputTokens": 41398,
+      "outputTokens": 3156,
+      "workSeconds": 38.577999999999996,
+      "estimatedUSD": 0.005717801
+    },
+    {
+      "stage": "Source fact analyst",
+      "calls": 3,
+      "inputTokens": 17352,
+      "outputTokens": 8685,
+      "workSeconds": 72.609,
+      "estimatedUSD": 0.006077699999999999
+    },
+    {
+      "stage": "Targeted storyboard repair",
+      "calls": 2,
+      "inputTokens": 14939,
+      "outputTokens": 2142,
+      "workSeconds": 24.547,
+      "estimatedUSD": 0.002564901
+    },
+    {
+      "stage": "Source continuity reviewer",
+      "calls": 3,
+      "inputTokens": 12829,
+      "outputTokens": 987,
+      "workSeconds": 11.984,
+      "estimatedUSD": 0.001776401
+    },
+    {
+      "stage": "Casting supervisor",
+      "calls": 2,
+      "inputTokens": 6240,
+      "outputTokens": 1075,
+      "workSeconds": 11.687999999999999,
+      "estimatedUSD": 0.0011615010000000001
+    },
+    {
+      "stage": "Workflow planner",
+      "calls": 1,
+      "inputTokens": 598,
+      "outputTokens": 227,
+      "workSeconds": 3.016,
+      "estimatedUSD": 0.0001733
+    }
+  ]
+}

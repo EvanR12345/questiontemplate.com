@@ -1,3 +1,4 @@
+import {standardLunaHTML,lunaAuditHTML,mountLunaRequests} from './pipeline-luna-efficiency.mjs?v=luna-standard-2';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>'$'+value.toFixed(4);
 const duration=value=>{const seconds=Math.round(value);return `${Math.floor(seconds/60)}:${(seconds%60).toString().padStart(2,'0')}`;};
@@ -18,7 +19,7 @@ export function directorStudyHTML(study,minutes=120){
   const max=Math.max(...study.wholePlans.map(a=>a.wallSeconds));
   const measured=study.wholePlans.find(a=>a.id==='parallel-2');
   const stages=[...(measured?.stages||[])].sort((a,b)=>b.workSeconds-a.workSeconds);
-  return `<div class="section-head"><h2>Luna: measured directing improvements</h2><span class="badge">${esc(study.date)}</span></div>
+  return `${standardLunaHTML(study.standardStudy,minutes)}${lunaAuditHTML(study.tokenAudit)}<div class="section-head"><h2>Luna: earlier measured directing improvements</h2><span class="badge">${esc(study.date)}</span></div>
     <p>${esc(study.model)} · ${esc(study.reasoning)} reasoning · ${esc(study.serviceTier)} processing. Two saved chapters, ${duration(study.sourceNarrationSeconds)} of narration. Audio was reused; no images or complete videos were generated in this test.</p>
     <h3>Complete chapter planning</h3><div class="evidence-table"><table><thead><tr><th>Setting</th><th>Observed elapsed</th><th>API work¹</th><th>API cost</th><th>Shots planned</th></tr></thead><tbody>${study.wholePlans.map(a=>`<tr><td>${esc(a.label)}</td><td>${duration(a.wallSeconds)}</td><td>${duration(a.workSeconds)}</td><td>${money(a.estimatedUSD)}</td><td>${a.shots}</td></tr>`).join('')}</tbody></table></div>
     <div role="img" aria-label="Measured director elapsed time comparison">${study.wholePlans.map(a=>`<div class="compare-row"><div class="label">${esc(a.label)}</div><div class="track"><i style="width:${a.wallSeconds/max*100}%;background:#89aa8f"><span>${duration(a.wallSeconds)}</span></i></div></div>`).join('')}</div>
@@ -35,6 +36,13 @@ export function directorStudyHTML(study,minutes=120){
 export async function mountDirectorStudy(host,minutes=120){
   const response=await fetch(new URL('./pipeline-director-study.json',import.meta.url));
   if(!response.ok)throw Error('Director study unavailable.');
-  const study=await response.json();host.innerHTML=directorStudyHTML(study,minutes);
-  return {update(minutes){host.innerHTML=directorStudyHTML(study,minutes);}};
+  const study=await response.json();
+  const extras=await Promise.allSettled(['pipeline-luna-standard.json','pipeline-luna-token-audit.json'].map(async name=>{
+    const reply=await fetch(new URL('./'+name,import.meta.url));if(!reply.ok)throw Error('Supplement unavailable.');return reply.json();
+  }));
+  if(extras[0].status==='fulfilled')study.standardStudy=extras[0].value;
+  if(extras[1].status==='fulfilled')study.tokenAudit=extras[1].value;
+  const render=minutes=>{host.innerHTML=directorStudyHTML(study,minutes);mountLunaRequests(host,study.tokenAudit);};
+  render(minutes);
+  return {update:render};
 }
