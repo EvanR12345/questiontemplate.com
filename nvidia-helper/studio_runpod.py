@@ -53,6 +53,23 @@ def reconcile(config,path,client=None):
 
 class RunpodClient:
     def __init__(self,config):self.config=config
+    def gpu_catalog(self):
+        """Read live regional stock with the explicitly configured CLI credential."""
+        cli=Path(self.config.get('runpodCLI',''))
+        if not cli.is_file():raise ManagedGPUError('Configured Runpod inventory CLI is unavailable.')
+        try:key=Path(self.config['runpodActionKeyFile']).read_text(encoding='utf-8-sig').strip()
+        except (OSError,KeyError):raise ManagedGPUError('Existing private inventory credential is unavailable.') from None
+        if not key.startswith('rpa_'):raise ManagedGPUError('Invalid private inventory credential.')
+        environment=os.environ.copy();environment['RUNPOD_API_KEY']=key
+        try:
+            result=subprocess.run([str(cli),'gpu','list','--include-unavailable'],env=environment,
+                capture_output=True,text=True,timeout=20,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            if result.returncode:raise ValueError()
+            rows=json.loads(result.stdout)
+            if not isinstance(rows,list):raise ValueError()
+            return rows
+        except (OSError,ValueError,subprocess.TimeoutExpired):
+            raise ManagedGPUError('Live GPU availability could not be verified. No new worker started.') from None
     def request(self,pod,action=None):
         if not re.fullmatch(r'[a-zA-Z0-9_-]{8,64}',pod):raise ValueError('Invalid configured Runpod pod identity.')
         if action not in (None,'start','stop'):raise ValueError('Only start and stop are supported.')
@@ -126,12 +143,18 @@ class ProductionGPU:
         until=self.clock()+wait
         while True:
             self.gate('Waiting for a prepared '+(required or 'image GPU')+' worker; no rental started')
+            stock=None
+            if self.config.get('runpodCheckRegionalStock'):
+                stock={(g.get('gpuId'),d.get('dataCenterId')) for g in self.client.gpu_catalog()
+                    if isinstance(g,dict) for d in g.get('dataCenterAvailability',[])
+                    if isinstance(d,dict) and d.get('stockStatus') in ('Low','Medium','High')}
             eligible=[]
             for pid in ids:
                 self.gate('Checking prepared image worker availability; no rental started')
                 pod=self.client.request(pid)
                 gpu=pod.get('gpu') or {}
                 if pod.get('id')!=pid or required and gpu.get('id')!=required:continue
+                if stock is not None and (gpu.get('id'),pod.get('dataCenterId')) not in stock:continue
                 if pod.get('status') not in ('EXITED','ERROR') or 'start' not in pod.get('actions',[]):continue
                 rate=pod.get('cost')
                 if type(rate) not in (int,float) or not math.isfinite(rate) or rate<=0:continue

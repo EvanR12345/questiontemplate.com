@@ -125,6 +125,32 @@ class RentalTest(unittest.TestCase):
             'hourlyUSD':1,'project':'project'}))
         self.assertEqual(reconcile(self.config,self.path,self.client)['status'],'STOPPED')
 
+    def test_regional_stock_does_not_confuse_other_regions_with_prepared_host(self):
+        self.config.update(runpodRequiredGPUType='NVIDIA GeForce RTX 5090',runpodCheckRegionalStock=True)
+        r=self.rental();r.client=Mock()
+        r.client.request.return_value={'id':'pod-test-123','status':'EXITED','actions':['start'],'cost':.9,
+            'gpu':{'id':'NVIDIA GeForce RTX 5090'},'dataCenterId':'US-NE-1'}
+        r.client.gpu_catalog.return_value=[{'gpuId':'NVIDIA GeForce RTX 5090',
+            'dataCenterAvailability':[{'dataCenterId':'EU-RO-1','stockStatus':'High'}]}]
+        with self.assertRaisesRegex(ManagedGPUError,'No eligible'):r.ensure()
+        self.assertTrue(all(len(call.args)==1 for call in r.client.request.call_args_list))
+
+    def test_changed_gpu_after_start_is_stopped_before_provider_connection(self):
+        self.config.update(runpodRequiredGPUType='NVIDIA GeForce RTX 5090')
+        original=self.client.request
+        def request(pid,action=None):
+            row=original(pid,action);row['gpu']={'id':'NVIDIA GeForce RTX 5090' if self.client.status=='EXITED' else 'different GPU'}
+            return row
+        self.client.request=request;r=self.rental();r.connector=Mock()
+        with self.assertRaisesRegex(ManagedGPUError,'differs'):r.ensure()
+        r.connector.assert_not_called();self.assertEqual(r.state['status'],'STOPPED')
+
+    def test_live_stock_failure_does_not_start_a_worker(self):
+        self.config.update(runpodRequiredGPUType='NVIDIA GeForce RTX 5090',runpodCheckRegionalStock=True)
+        r=self.rental();r.client=Mock();r.client.gpu_catalog.side_effect=ManagedGPUError('inventory unavailable')
+        with self.assertRaisesRegex(ManagedGPUError,'inventory unavailable'):r.ensure()
+        r.client.request.assert_not_called()
+
     def test_explicit_existing_cli_control_keeps_key_out_of_arguments_and_errors(self):
         import io,subprocess
         folder=Path(self.folder.name);cli=folder/'runpodctl.exe';cli.touch()

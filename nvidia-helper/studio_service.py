@@ -279,8 +279,13 @@ class StudioService:
             "sourceVisualOverlapAvailable":True,
             "leanFactBeatsAvailable":True,
             "maxDirectorTasks":8,
-            "managedGPU":{'configured':bool(self.config.get('runpodManagedPodId')),
-                          'podId':self.config.get('runpodManagedPodId',''),'watchdogLocation':'local-helper'},
+            "managedGPU":{'configured':bool(self.config.get('runpodManagedPodId') or self.config.get('runpodPreparedPodIds')),
+                          'podId':self.config.get('runpodManagedPodId',''),'watchdogLocation':'local-helper',
+                          'requiredGPU':self.config.get('runpodRequiredGPUType',''),
+                          'preparedWorkers':len(self.config.get('runpodPreparedPodIds') or []),
+                          'waitSeconds':self.config.get('runpodAvailabilityWaitSeconds',0),
+                          'maxHourlyUSD':self.config.get('runpodMaxHourlyUSD'),
+                          'checkRegionalStock':bool(self.config.get('runpodCheckRegionalStock'))},
             "storage": self.storage.status(),
             "hardware": hardware,
             "director": self.director.healthCheck(),
@@ -333,6 +338,7 @@ class StudioService:
             "runpodRequiredGPUType",
             "runpodAvailabilityWaitSeconds",
             "runpodMaxHourlyUSD",
+            "runpodCheckRegionalStock",
             "runpodSSHKeyFile",
             "runpodCLI",
             "runpodActionKeyFile",
@@ -343,14 +349,19 @@ class StudioService:
             raise ValueError('Enter the existing reusable Runpod pod ID, or leave blank for external management.')
         if data.get('runpodSSHKeyFile') and not Path(data['runpodSSHKeyFile']).is_file():
             raise ValueError('The dedicated private SSH key file does not exist.')
+        if 'runpodPreparedPodIds' in data and not isinstance(data['runpodPreparedPodIds'],list):
+            raise ValueError('Prepared worker IDs must be a list.')
         if 'runpodPreparedPodIds' in data and data['runpodPreparedPodIds']:
             from studio_runpod import candidate_ids
             candidate_ids(data)
         if 'runpodRequiredGPUType' in data and (not isinstance(data['runpodRequiredGPUType'],str) or len(data['runpodRequiredGPUType'])>128):
             raise ValueError('Enter the exact GPU type ID.')
         for field,minimum,maximum in (('runpodAvailabilityWaitSeconds',0,86400),('runpodMaxHourlyUSD',.01,100)):
+            if field=='runpodMaxHourlyUSD' and data.get(field) is None:continue
             if field in data and (type(data[field]) not in (int,float) or not math.isfinite(data[field]) or not minimum<=data[field]<=maximum):
                 raise ValueError('Invalid GPU availability wait or hourly price limit.')
+        if 'runpodCheckRegionalStock' in data and type(data['runpodCheckRegionalStock']) is not bool:
+            raise ValueError('Regional stock checking must be on or off.')
         for field in ('runpodCLI','runpodActionKeyFile'):
             if data.get(field) and not Path(data[field]).is_file():
                 raise ValueError('The configured existing Runpod control file does not exist.')

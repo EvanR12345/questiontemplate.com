@@ -1,4 +1,5 @@
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
+import {gpuSettingsForm,gpuSettingsValues} from './studio-gpu-settings.mjs?v=5090-wait-20261011';
 import {directorLimits,directorSummary,directorSettings,directorRequestControls} from './studio-director-settings.mjs?v=luna-standard-controls-20261010';
 import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-state.mjs?v=forms-20261009';
 import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
@@ -1696,8 +1697,8 @@ function voicePreviewResults() {
 function wireSettings() {
   $('#configureManagedGPU').onclick=()=>action(async()=>{
     const config=await api('config');
-    formDialog('Automatic image GPU',`<p>Use one existing reusable Runpod pod with the installed FLUX workflow. Studio starts it at image dispatch and confirms shutdown before rendering, or on cancellation/error. It never creates or deletes pods.</p><label>Existing pod ID<input id="managedPodId" value="${escape(config.runpodManagedPodId || '')}" placeholder="Leave blank for external management"></label><label>Existing dedicated SSH private-key file<input id="managedSSHFile" value="${escape(config.runpodSSHKeyFile || '')}" placeholder="Absolute path on this laptop"></label><p class="muted">Requires your private Runpod management credential and a project GPU limit. Keep this laptop and helper awake: the deadline watchdog runs here. Network failures can delay shutdown; an unconfirmed stop blocks another rental until recovered. Saving this form starts no GPU.</p>`,async()=>{
-      health=await api('config',{runpodManagedPodId:$('#managedPodId').value.trim(),runpodSSHKeyFile:$('#managedSSHFile').value.trim()});render();
+    formDialog('Automatic image GPU',gpuSettingsForm(config),async()=>{
+      health=await api('config',gpuSettingsValues());render();
     });
   });
   $('#reconcileManagedGPU').onclick=()=>action(async()=>{

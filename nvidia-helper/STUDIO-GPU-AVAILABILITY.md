@@ -12,3 +12,7 @@ When opted in, Studio reads only those workers, excludes running workers, wrong 
 A provider advertising a start action is eligibility, not guaranteed physical capacity. If starting fails or its response is uncertain, Studio stops/reconciles that exact worker. It does not purchase another worker while ownership is unresolved. A GPU mismatch after startup stops the rental before image generation.
 
 This feature does not create workers, replicate model volumes or reserve capacity. Existing configuration is unchanged until a verified prepared pool is supplied. It cannot promise a 5090 will always be in stock. Never silently configure another GPU as a fallback.
+
+## Regional stock checks and Studio controls
+
+Studio Settings → Advanced AI settings → Automatic GPU startup / shutdown now exposes required GPU, wait minutes, hourly price ceiling and a prepared worker pool. Regional stock checking is optional and reads the configured CLI's live catalogue. Unknown or absent stock in a worker's region excludes that worker before purchase. Catalogue stock is regional, not proof that a stopped pod's specific physical host is free. Startup and model health are still verified, and failed/uncertain ownership must be reconciled before another purchase.
