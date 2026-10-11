@@ -8,7 +8,7 @@ effects become PCM in the same chapter WAV instead of spoken letters.
 import hashlib
 import re
 
-VERSION = 4
+VERSION = 5
 EFFECTS = {'bang', 'bam', 'boom', 'thud', 'click', 'beep', 'slash', 'whoosh', 'crash'}
 FLOW_VERSION = 1
 
@@ -144,6 +144,18 @@ def speech_text(text):
     text = re.sub(r'[\u200b-\u200d\ufeff]', '', text)
     # Quotes around a word are punctuation; internal apostrophes are meaningful.
     text = re.sub(r"(?<!\w)['\"]|['\"](?!\w)", '', text)
+    # Kokoro reads short stutter prefixes as letter names (H-He -> "aitch he").
+    # Remove only prefixes matching the following word. Keep T-shirt, X-ray,
+    # co-operate, bye-bye and unrelated hyphenated names unchanged.
+    def stutter(match):
+        prefixes = match[1].rstrip('-').split('-')
+        word = match[2]
+        if all(word.casefold().startswith(p.casefold()) and
+               (len(p) < len(word) or len(word) == 1 and word.casefold() in ('i','a'))
+               for p in prefixes):
+            return word
+        return match.group()
+    text = re.sub(r"\b((?:[A-Za-z]{1,3}-){1,3})([A-Za-z][A-Za-z'’]*)\b", stutter, text)
     def stretched(match):
         word = match.group()
         compact = re.sub(r'(.)\1+', r'\1', word.lower())

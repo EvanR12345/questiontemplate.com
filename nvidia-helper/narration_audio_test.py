@@ -21,7 +21,13 @@ class NarrationDeliveryTest(unittest.TestCase):
         self.assertEqual(speech_text('"NOOOOO!!!!"'), 'No!')
         self.assertEqual(speech_text('"Aaaaacckkkkkkk!!"'), 'Ah!')
         self.assertEqual(speech_text("'Boss' can't leave. NASA is here."), "Boss can't leave. NASA is here.")
-        self.assertEqual(speech_text('"H-He is dead!!"'), 'H-He is dead!')
+        self.assertEqual(speech_text('"H-He is dead!!"'), 'He is dead!')
+
+    def test_stutter_prefixes_are_not_letter_names_and_real_hyphens_remain(self):
+        self.assertEqual(speech_text('C-Crazy! B-B-Boss! Wh-what? I-I cannot leave.'),
+                         'Crazy! Boss! what? I cannot leave.')
+        phrase="T-shirt X-ray co-operate re-enter Jean-Luc bye-bye no-no can't NASA"
+        self.assertEqual(speech_text(phrase), phrase)
 
     def test_effects_and_emphasis_keep_order(self):
         parts = audio_segments('He shouted "NOOOOO!!!!". **BOOOOOOOOOOOOOOOOOOOM** *Bang* **very brave**')
@@ -48,6 +54,9 @@ class NarrationDeliveryTest(unittest.TestCase):
             self.assertEqual(prepared['kind'], 'pause')
             self.assertNotIn('ttsText', prepared)
         self.assertEqual(pronunciation_text("Shah can't leave. NASA."), "Shah can't leave. NASA.")
+        prepared=list(pipeline(speech_text('H-He is dead!')))[0].phonemes
+        intended=list(pipeline('He is dead!'))[0].phonemes
+        self.assertEqual(prepared,intended)
 
     def test_unmarked_cues_are_effects_only_in_isolation(self):
         self.assertEqual(audio_segments('Thud.')[0]['effect'], 'thud')
