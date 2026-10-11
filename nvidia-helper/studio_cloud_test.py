@@ -45,6 +45,24 @@ class CloudSaveTests(unittest.TestCase):
         self.assertEqual(progress['totalFiles'],1)
         self.assertEqual(progress['filesProcessed'],0)
         self.assertEqual(progress['uploadedBytes'],0)
+    def test_derived_encode_caches_are_not_uploaded_but_referenced_exports_are(self):
+        scratch='clip-'+'a'*24+'.mp4'
+        final='story-'+'b'*12+'.mp4'
+        self.store.asset(self.p['id'],scratch).write_bytes(b'rebuildable cache')
+        self.store.asset(self.p['id'],final).write_bytes(b'final export')
+        self.a.sync(self.p['id'])
+        manifest,_=self.a.manifest(self.p['id'],True)
+        self.assertNotIn(scratch,manifest['files'])
+        self.assertIn(final,manifest['files'])
+        self.assertTrue(self.store.asset(self.p['id'],scratch).is_file())
+        self.store.mutate(self.p['id'],lambda p:p.update(render={'path':scratch}))
+        self.a.sync(self.p['id'])
+        manifest,_=self.a.manifest(self.p['id'],True)
+        self.assertIn(scratch,manifest['files'])
+        self.store.mutate(self.p['id'],lambda p:p.update(render={}))
+        self.a.sync(self.p['id'])
+        manifest,_=self.a.manifest(self.p['id'],True)
+        self.assertIn(scratch,manifest['files']) # Previously saved copies survive.
     def test_cloud_presence_and_identity_checks_never_restore_media_to_laptop(self):
         from studio_qc import asset_hash
         original=sha(self.image);self.a.sync(self.p['id']);self.image.unlink()

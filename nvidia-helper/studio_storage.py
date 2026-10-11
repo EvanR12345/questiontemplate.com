@@ -15,6 +15,29 @@ from urllib.parse import quote
 
 MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.wav', '.m4a', '.mp4', '.json', '.flac'}
 
+def project_video_paths(project):
+    paths=set()
+    def visit(value):
+        if isinstance(value,str):
+            if len(value)<512 and value.lower().endswith('.mp4'):paths.add(value.replace('\\','/'))
+        elif isinstance(value,dict):
+            for child in value.values():visit(child)
+        elif isinstance(value,list):
+            for child in value:visit(child)
+    visit(project)
+    return paths
+
+def render_scratch(project, relative, references):
+    """Rebuildable, unreferenced encode caches; never originals or exports.
+
+    Existing cloud copies remain in history. This only avoids new uploads of
+    derived caches; final/chapter/part videos and any referenced asset stay saved.
+    """
+    if project.get('settings',{}).get('archiveRenderCache'):return False
+    name=Path(relative).name
+    if not re.fullmatch(r'(?:clip-[a-f0-9]{24}|intro-shot-[a-f0-9]{20}|intro-montage-[a-f0-9]{12}|story-[a-f0-9]{12}-visual)\.mp4',name):return False
+    return relative not in references
+
 def attachment_disposition(name):
     if not isinstance(name,str) or not name or len(name)>240 or any(ord(c)<32 or ord(c)==127 for c in name) or any(c in name for c in '\\/:') or name in ('.','..'):
         raise ValueError('Enter a plain download filename without folders or control characters.')
@@ -172,10 +195,12 @@ class R2Archive:
             raise ValueError('Cloud and helper revisions conflict. Both copies retained for review.')
         records = dict(old.get('files',{})) if old else {}
         uploaded = 0
+        video_references=project_video_paths(project)
         paths=[path for path in sorted(folder.rglob('*'))
             if path.is_file() and not path.is_symlink() and path.suffix.lower() in MEDIA
             and not any(x.startswith('.') or x=='working' for x in path.relative_to(folder).parts)
             and '.partial.' not in path.relative_to(folder).as_posix() and '.writing.' not in path.relative_to(folder).as_posix()
+            and not render_scratch(project,path.relative_to(folder).as_posix(),video_references)
             and path.name not in ('project.json','revision.json','project.previous.json')]
         for index,path in enumerate(paths):
             relative = path.relative_to(folder).as_posix()
