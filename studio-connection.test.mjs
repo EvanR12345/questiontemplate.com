@@ -2,7 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {resolveConnectedProject,canAdoptConnection} from './studio-connection.mjs';
+import {resolveConnectedProject,canAdoptConnection,connectionLoading} from './studio-connection.mjs';
+test('paired empty startup placeholders show loading while real offline drafts remain editable',()=>{
+  const placeholder={...fixture(),_connectionPlaceholder:true};
+  assert.equal(connectionLoading(placeholder,true,true),true);
+  assert.equal(connectionLoading(placeholder,true,false),false);
+  assert.equal(connectionLoading(placeholder,false,true),false);
+  assert.equal(connectionLoading({...fixture(),_unsynced:true},true,true),false);
+});
 import {createEditorSave} from './studio-editor-save.mjs';
 import {backupSnapshot} from './studio-project-safety.mjs';
 const deferred=()=>{let resolve,reject;return {promise:new Promise((yes,no)=>{resolve=yes;reject=no;}),get resolve(){return resolve;},get reject(){return reject;}};};

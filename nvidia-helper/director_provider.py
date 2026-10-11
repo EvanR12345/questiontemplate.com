@@ -289,6 +289,8 @@ class DirectorProvider:
             'changes holds physical appearance/status updates ONLY. Goals, orders, intentions and casualty counts belong to summary/goals, '
             'never physical changes. objectChanges holds EXPLICIT possession/position updates to tangible objects. '
             'Object field names name the object (key, sword, phone); value states its possession/location, including the correct hand. '
+            'Assign each object to its actual holder, including temporary characters. A nearby main character is not the owner '
+            'of another person\'s plate or glass. An injured target does not acquire the attacker\'s weapon. '
             'Use existing IDs. Never infer new ethnicity, undressing, injuries, major events or identities. '
             'Do not convert an uncertain observation into a certain cause: stopping an action does not prove why it stopped. '
             'Descriptions of some people do not apply to the whole crowd. A role or pronoun must resolve to the same person '

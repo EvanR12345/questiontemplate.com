@@ -218,6 +218,25 @@ class StudioService:
         self.director.stop()
         self.providers["native-flux"].unload()
 
+    def provider_status(self, key, provider):
+        """Reconnect does not wait for a deliberately stopped paid worker.
+
+        A declared catalogue is not live readiness. The production lease and
+        generation path still perform real model/workflow checks before use.
+        """
+        managed = self.config.get('runpodManagedPodId') or self.config.get('runpodPreparedPodIds')
+        if key=='comfyui' and managed:
+            lease_path=self.store.root/'.managed-rental.json'
+            try:state=json.loads(lease_path.read_text(encoding='utf-8')) if lease_path.exists() else {}
+            except (OSError,ValueError):state={'status':'UNKNOWN'}
+            status=state.get('status')
+            if status in (None,'STOPPED','UNKNOWN'):
+                try:catalog=provider.planningCatalog()
+                except Exception:catalog={'installed':False,'configured':False,'requiresLiveValidation':True}
+                return catalog | {'installed':False,'workerState':status or 'UNVERIFIED',
+                                  'liveProbeSkipped':True,'requiresLiveValidation':True}
+        return provider.healthCheck()
+
     def health(self):
         import shutil, subprocess
 
@@ -295,7 +314,7 @@ class StudioService:
                 "openai-luna": OpenAIDirector(self.config, self.store.root).healthCheck(),
             },
             "providers": {
-                k: v.healthCheck()
+                k: self.provider_status(k,v)
                 | {
                     "capabilities": v.getCapabilities(),
                     "recommended": v.getRecommendedSettings(),

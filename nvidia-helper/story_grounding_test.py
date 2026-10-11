@@ -169,5 +169,18 @@ class StoryGroundingTest(unittest.TestCase):
         shot.pop('manual');ch['analysis']['groups'][0]['changes'][0]['characterId']='attendant'
         self.assertTrue(require_shot(p,shot)['passed'])
 
+    def test_storyboard_compactness_never_erases_actor_target_weapon_relationships(self):
+        from director_acceleration_test import storyboard
+        from director_storyboard import plan_storyboard
+        sentence='A black-suited attacker holds the knife and grazes Rowan\'s shoulder while Rowan twists away to defend himself.'
+        context={'people':self.people[:1],'sentences':[{'index':0,'text':sentence,'start':0,'end':5}]}
+        provider=DirectorProvider();provider.call=Mock(return_value=storyboard(context))
+        result=plan_storyboard(provider,context,lambda *_:None)
+        self.assertEqual(result['detail']['shots'][0]['action'],sentence)
+        role=provider.call.call_args.args[0]
+        self.assertIn('suggestions, not limits',role)
+        self.assertIn('WHO acts on WHOM',role)
+        self.assertIn('does not mean the target holds the knife',role)
+
 
 if __name__=='__main__':unittest.main()

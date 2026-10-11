@@ -1,5 +1,11 @@
 // Reads and missing-project imports are separate from UI adoption. A slow reply
 // cannot choose which editor wins; the caller checks its editor revision.
+export function connectionLoading(project, hasPairingKey, pending) {
+  // An empty bootstrap placeholder is not the user's saved story or an
+  // offline edit. Real local drafts keep their mounted editable interface.
+  return Boolean(project?._connectionPlaceholder && hasPairingKey && pending);
+}
+
 export async function resolveConnectedProject({project,projects,providers,api}) {
   const local=project?._connectionPlaceholder?null:project;
   if(!local)return {project:projects.length

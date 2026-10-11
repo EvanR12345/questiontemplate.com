@@ -3,7 +3,7 @@ import {gpuSettingsForm,gpuSettingsValues} from './studio-gpu-settings.mjs?v=509
 import {directorLimits,directorSummary,directorSettings,directorRequestControls} from './studio-director-settings.mjs?v=luna-standard-controls-20261010';
 import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-state.mjs?v=forms-20261009';
 import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
-import {resolveConnectedProject,canAdoptConnection} from './studio-connection.mjs?v=connection-20261009';
+import {resolveConnectedProject,canAdoptConnection,connectionLoading} from './studio-connection.mjs?v=grounding-20261011b';
 import {checkpointProject,backupSnapshot,canApplyBackgroundProject} from './studio-project-safety.mjs?v=safety-20261009';
 import {createMediaLoader} from './studio-media-loader.mjs?v=media-20261009b';
 import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
@@ -55,6 +55,7 @@ let key = pairingKey(),
   saveTimer;
 let cacheWarning="";
 let connectionPromise;
+let initialConnectionPending=Boolean(key);
 const startingProduction=new Set();
 const strategyChoices=new Map(),strategyDirty=new Set(),performanceReports=new Map();
 const learnedCompletion=new Map();
@@ -139,7 +140,7 @@ async function api(path, body) {
   return helperJson("/studio/" + path, key, body);
 }
 async function cache() {
-  if(!project)return;
+  if(!project || project._connectionPlaceholder)return;
   const warnings=[];
   await checkpointProject(project,{
     connected,cloudEnabled:Boolean(health?.storage?.enabled),save:saveStudioProject,
@@ -204,11 +205,11 @@ async function reconnect() {
       project=resolved.project;
     health=info;queue=info.queue;projects=available;
     if(!projects.some(p=>p.id===project.id))projects=[{id:project.id,name:project.name,revision:project.revision,chapters:project.chapters.length},...projects];
-    mediaCache.clear();connected=true;chapterId=ch()?.id;
+    mediaCache.clear();connected=true;initialConnectionPending=false;chapterId=ch()?.id;
     await cache();render();
     if(project._unsynced)note('Your offline edits are retained. Review them, then use Sync offline edits; existing helper generations remain saved.');
   } catch(error) {
-    connected=false;
+    initialConnectionPending=false;connected=false;
     // Export and the mounted editor must retain the latest input even if its
     // browser checkpoint failed. No remote overwrite or automatic re-import.
     if(editorSave.dirty&&project){project=editorSnapshot();project._unsynced=true;}
@@ -480,6 +481,10 @@ function render() {
       '<div class="notice">Connecting to your shared helper…</div>';
     return;
   }
+  if(connectionLoading(project,key,initialConnectionPending)){
+    root.innerHTML='<div class="notice" role="status" aria-live="polite">Connecting to your shared helper… Loading your saved workspace. Your saved chapters and media remain intact.</div>';
+    return;
+  }
   const c = ch();
   chapterId = c?.id;
   if (!c) {
@@ -510,7 +515,7 @@ function render() {
         `<div class="notice"><strong>${escape(w.message)}</strong><p>${escape(w.categories.join(", "))}</p><button data-warning="${w.id}" data-choice="update">Update affected chapters</button> <button data-warning="${w.id}" data-choice="keep">Keep existing chapters</button></div>`,
     )
     .join("")}
-  <div class="studio-grid"><aside class="chapter-rail" aria-label="Chapters"><h2>Chapters</h2>${project.chapters.map((x) => `<button class="chapter-button ${x.id === c.id ? "selected" : ""}" data-chapter="${x.id}" ${x.id === c.id ? 'aria-current="true"' : ''}><span>${x.number.toString().padStart(2, "0")}</span><strong>${escape(x.name)}</strong><small>${escape(x.status.replaceAll("_", " "))}${x.continuityNeedsReview ? " · review continuity" : ""}</small></button>`).join("")}<button class="chapter-add" id="productionAddChapter">+ New chapter</button></aside>
+  <div class="studio-grid"><aside class="chapter-rail" aria-label="Chapters"><h2>Chapters</h2>${project.chapters.map((x) => `<button class="chapter-button ${x.id === c.id ? "selected" : ""}" data-chapter="${x.id}" ${x.id === c.id ? 'aria-current="true"' : ''}><span>${x.number.toString().padStart(2, "0")}</span><strong>${escape(x.name)}</strong><small>${escape(chapterDisplayStatus(project,x))}${x.continuityNeedsReview ? " · review continuity" : ""}</small></button>`).join("")}<button class="chapter-add" id="productionAddChapter">+ New chapter</button></aside>
   <div class="production-main"><div class="chapter-heading"><div><h2>${escape(c.name)}</h2><div class="subtitle">${escape(chapterDisplayStatus(project,c))} · ${escape(project.settings.image.model)}</div></div><details class="action-menu" data-ui="chapter-actions"><summary>Chapter actions</summary><div class="toolbar"><button id="productionDuplicate">Duplicate</button><button id="productionMoveUp" aria-label="Move chapter earlier">↑</button><button id="productionMoveDown" aria-label="Move chapter later">↓</button><button class="danger" id="productionDelete">Delete chapter</button></div></details></div>
   <nav class="workspace-tabs" role="tablist" aria-label="Chapter workflow">${[
     ["write", "Story", "Paste your chapter"],
@@ -657,7 +662,7 @@ function settings() {
       ["comfyui", "ComfyUI · local or cloud through SSH"],
     ],
     i.provider,
-  )}</select></label><label>Image model<select id="settingImageModel">${options(models, i.model)}</select></label><label>Workflow<select id="settingImageWorkflow">${options(selected?.workflow || [i.workflow], i.workflow)}</select></label><label>SD reference strength<input ${i.provider === "native-flux" ? "disabled" : ""} id="settingReferenceStrength" type="number" min="0" max="1" step=".05" value="${i.referenceStrength}"></label></div><p class="muted">${selected?.installed ? "Installed" : "Unavailable: configure this local backend before generating."} ${selected?.validated === false ? "This native configuration has not passed laptop validation yet." : ""} ${escape(selected?.capabilities?.referenceLimitations || "")}</p><button id="showModelNotes">Model evaluation and diagnosis</button> <button id="connectCloudImages">Connect Qwen cloud images</button></div>
+  )}</select></label><label>Image model<select id="settingImageModel">${options(models, i.model)}</select></label><label>Workflow<select id="settingImageWorkflow">${options(selected?.workflow || [i.workflow], i.workflow)}</select></label><label>SD reference strength<input ${i.provider === "native-flux" ? "disabled" : ""} id="settingReferenceStrength" type="number" min="0" max="1" step=".05" value="${i.referenceStrength}"></label></div><p class="muted">${selected?.installed ? "Installed" : selected?.configured && i.provider === "comfyui" && health?.managedGPU?.configured ? "Managed cloud workflow configured · the worker is validated when generation starts." : "Unavailable: configure this local backend before generating."} ${selected?.validated === false ? "This native configuration has not passed laptop validation yet." : ""} ${escape(selected?.capabilities?.referenceLimitations || "")}</p><button id="showModelNotes">Model evaluation and diagnosis</button> <button id="connectCloudImages">Connect Qwen cloud images</button></div>
   <div class="section-box"><h3>Economy storyboard canvases</h3><label class="inline"><input id="settingEconomyPanels" type="checkbox" ${s.economyPanels ? 'checked' : ''}>Four independent shots per Qwen canvas</label><p class="muted">Luna groups the shots; each crop is saved separately as a 640×360 landscape image. This can reduce generation calls by about 75%, with less detail and a risk of composition mixing. Individual full-resolution regeneration remains available. The helper does not start or stop rented GPUs.</p><button id="prepareStory">Prepare complete narration and director plan</button> <button id="prepareRestyle">Restyle existing shots</button></div>
   <div class="section-box" id="settings-voice"><h3>Voice</h3><div class="two-col"><label>Existing Kokoro voice<select id="settingVoice">${options(["am_michael", "am_fenrir", "am_puck", "bm_george", "af_heart", "af_bella", "af_nicole", "bf_emma"], s.voice)}</select></label><label>Speaking speed<input id="settingSpeed" type="number" min=".5" max="2" step=".05" value="${s.speed}"></label><label>Narration delivery<select id="settingNarrationDelivery">${options([["standard", "Standard · sentence timing"], ["cinematic", "Restrained cinematic · connected delivery"]], s.narrationDelivery || "standard")}</select></label><label>Sound effects<select id="settingSoundEffects">${options([["subtle", "Subtle · quieter than narration"], ["off", "Off · brief pauses"]], s.soundEffects || "subtle")}</select></label></div><p class="muted">Unsupported cries such as Ahhh and Aaagghhh become brief pauses. Marked effects and isolated cues such as Thud are never spelled as letters. The source story stays intact.</p><p class="muted">Cinematic delivery gives short connected sentences shared voice context. Sentences containing your emphasis phrases run 4% slower. Kokoro cannot accept acting prompts or guarantee a reference narrator’s pitch or emotion. Grouped sentence times use model duration estimates.</p><label>Emphasis phrases · one per line, up to 12<textarea id="settingEmphasisPhrases" rows="2">${escape((s.emphasisPhrases || []).join("\n"))}</textarea></label><label>Voice audition text<textarea id="voicePreviewText" rows="3">${escape(project.introHookProposal?.text || project.intro.voiceText || "He had already lost everything. This time, he would fight for a second chance.\nAhhh!\n*Slash*\nThud.\nNo! I can't leave you here.")}</textarea></label><div class="toolbar"><button id="voicePreviewGenerate">Preview selected voice</button><button id="voicePreviewRefresh">Refresh auditions</button></div><p class="muted">Exports use AAC at 128 kbps. Auditions use the same encoding when FFmpeg is configured; lossless WAV masters stay saved. Short fades protect speech joins. Bitrate does not change the narrator or remove noise inside a phrase.</p><p class="muted">Local audition only; chapter audio and shot timings stay saved. Listen before regenerating a chapter.</p><div id="voicePreviewResults">${voicePreviewResults()}</div></div>
   <div class="section-box" id="settings-intro"><h3>Optional intro</h3><p class="muted">Off starts directly with Chapter 1. Enabling reuses your saved intro assets and text; generation buttons run only when selected.</p><label class="inline"><input id="introEnabled" type="checkbox" ${project.intro.enabled ? "checked" : ""}>Enable intro</label><div class="two-col"><label>Duration: <span id="introDurationValue">${project.intro.duration}</span> seconds<input id="introDuration" type="range" min="10" max="30" step="1" value="${project.intro.duration}"></label><label>Placement<select id="introPlacement">${options(

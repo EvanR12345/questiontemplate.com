@@ -1,11 +1,25 @@
 """Standalone cloud edits own one guarded rental without touching audio."""
-import threading,unittest
+import threading,unittest,tempfile,json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock,patch
 from studio_service import StudioService
 
 class ImageRentalTest(unittest.TestCase):
+    def test_reconnect_catalogue_skips_stopped_worker_without_claiming_live_readiness(self):
+        with tempfile.TemporaryDirectory() as folder:
+            service=SimpleNamespace(config={'runpodManagedPodId':'test-pod'},store=SimpleNamespace(root=Path(folder)))
+            provider=Mock();provider.planningCatalog.return_value={'installed':False,'configured':True,'models':['klein']}
+            for status in (None,'STOPPED','UNKNOWN'):
+                if status:(Path(folder)/'.managed-rental.json').write_text(json.dumps({'status':status}))
+                result=StudioService.provider_status(service,'comfyui',provider)
+                self.assertFalse(result['installed']);self.assertTrue(result['liveProbeSkipped']);self.assertTrue(result['requiresLiveValidation'])
+            provider.healthCheck.assert_not_called()
+            (Path(folder)/'.managed-rental.json').write_text(json.dumps({'status':'RUNNING'}))
+            provider.healthCheck.return_value={'installed':True}
+            self.assertEqual(StudioService.provider_status(service,'comfyui',provider),{'installed':True})
+            provider.healthCheck.assert_called_once()
+
     def setUp(self):
         self.job={'project':'test','chapter':'chapter','shot':'shot','kind':'image'}
         self.project={'id':'test','settings':{'cloudWindow':{'gpuBudgetUSD':1}},'chapters':[{'id':'chapter','people':[]}],'characters':[]}
