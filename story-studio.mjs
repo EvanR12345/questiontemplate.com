@@ -1694,7 +1694,7 @@ async function newProject() {
   render();
 }
 async function saveSettingsIfVisible() {
-  if (tab === "settings") await saveSettings();
+  if (tab === "settings" && settingsDrafts.has(project.id)) await saveSettings();
 }
 function voicePreviewResults() {
   return (project.voicePreviews || []).slice().reverse().map(p => `<p>${escape(p.voice)} · ${p.speed}× · ${time(p.duration)} · ${escape(p.narrationDelivery || 'standard')} · ${escape(p.soundEffects || 'subtle')}${p.exportPath ? ' · AAC 128 kbps' : ' · lossless WAV'}</p><audio controls data-asset="${escape(p.exportPath || p.path)}"></audio>`).join('');
