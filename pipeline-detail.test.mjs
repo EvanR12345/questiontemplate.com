@@ -7,7 +7,8 @@ import {startupCandidates,startupBoundaries,imageAccountingHTML,ALIGNMENT_BUFFER
 const evidence=JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url),'utf8'));
 evidence.concurrency=JSON.parse(fs.readFileSync(new URL('./pipeline-concurrency.json',import.meta.url),'utf8'));
 const details=JSON.parse(fs.readFileSync(new URL('./pipeline-details.json',import.meta.url),'utf8'));
-const config={...DEFAULTS,gpu:'5090',resolution:'720p',encodingProfile:'fresh',executionMode:'hybrid',measurementAttempt:'5090-attempt-8'};
+// Retain the original checks-off startup fixture; Practical is tested separately.
+const config={...DEFAULTS,qc:'off',gpu:'5090',resolution:'720p',encodingProfile:'fresh',executionMode:'hybrid',measurementAttempt:'5090-attempt-8'};
 test('hybrid clients use the measured rate once, with two copies and four slots',()=>{
  const p=buildPlan(config,evidence),r=schedule(p);
  assert.equal(p.measurement.workers,2);assert.equal(p.measurement.clientSlots,4);
@@ -23,6 +24,10 @@ test('startup alternatives preserve work and dependencies and report finite esti
  for(const v of candidates){assert.deepEqual(v.result.diagnostics,[]);assert.equal(v.plan.attemptCount,candidates[0].plan.attemptCount);assert.ok(Number.isFinite(v.result.totalUSD));assert.ok(v.plan.tasks.find(t=>t.id==='boot').deps.includes('c'+v.readyChapters+'-handoff'));}
  assert.ok(candidates.some(v=>v.pareto));
  assert.throws(()=>buildPlan({...config,chapters:2,readyChapters:3},evidence),/cannot exceed/);
+});
+test('default Practical startup comparisons keep all visual checks and their costs',()=>{
+ const values=startupCandidates({...config,qc:DEFAULTS.qc,chapters:3},evidence);
+ for(const v of values){assert.equal(v.result.qcCount,v.plan.attemptCount);assert.ok(v.result.qcUSD>0);assert.deepEqual(v.result.diagnostics,[]);}
 });
 test('timed startup reduces waiting without delaying earliest image delivery or video finish',()=>{
  const candidates=startupCandidates(config,evidence),baseline=candidates[0],timed=candidates.find(v=>v.balanced);

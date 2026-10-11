@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createWorkerRequest} from './pipeline-worker-request.mjs';
 function fixture(){const workers=[];const request=createWorkerRequest(()=>{const w={terminated:0,terminate(){this.terminated++;},postMessage(data){this.data=data;}};workers.push(w);return w;});return {request,workers};}
+test('startup-search progress does not finish the calculation prematurely',async()=>{
+  const {request,workers}=fixture();const pending=request.run({type:'startup'});
+  workers[0].onmessage({data:{type:'progress',message:'Comparing chapter boundaries'}});
+  assert.equal(workers[0].terminated,0);assert.equal(typeof workers[0].onmessage,'function');
+  workers[0].onmessage({data:{type:'complete',values:[{readyChapters:4}]}});
+  assert.deepEqual((await pending).values,[{readyChapters:4}]);assert.equal(workers[0].terminated,1);
+});
 test('replacing an in-flight plan settles its caller and terminates its worker',async()=>{
   const {request,workers}=fixture();const first=request.run({chapters:80});const second=request.run({chapters:90});
   assert.equal(await first,null);assert.equal(workers[0].terminated,1);assert.equal(workers[0].onmessage,null);

@@ -139,7 +139,7 @@ test('timing metadata, image counts and intro are consistent',()=>{
   const p=buildPlan({...DEFAULTS,intro:false,chapters:2},evidence),r=schedule(p);assert.equal(p.imageCount,707);assert.ok(!p.tasks.some(t=>t.id.startsWith('intro-')));
   assert.equal(p.tasks.filter(t=>t.kind==='infer').reduce((n,t)=>n+t.images,0),707);
   assert.equal(p.tasks.filter(t=>t.kind==='render').reduce((n,t)=>n+t.videoSeconds,0),7200);
-  assert.equal(r.qcCount,0);
+  assert.equal(r.qcCount,707);
 });
 test('extra attempts appear exactly once in the image work',()=>{
   const p=buildPlan({...DEFAULTS,retries:10},evidence);assert.equal(p.attemptCount,780);assert.equal(p.tasks.filter(t=>t.kind==='infer').reduce((n,t)=>n+t.images,0),780);

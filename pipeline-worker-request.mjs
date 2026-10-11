@@ -16,7 +16,7 @@ export function createWorkerRequest(makeWorker){
       };
       try{
         worker=makeWorker();active={finish};
-        worker.onmessage=({data})=>data.type==='error'?finish(null,Error(data.message)):finish(data);
+        worker.onmessage=({data})=>{if(data.type==='progress')return;data.type==='error'?finish(null,Error(data.message)):finish(data);};
         worker.onerror=()=>finish(null,Error('The background planner could not load. Refresh the page to load its updated files.'));
         worker.postMessage(payload);
       }catch(error){finish(null,error);}

@@ -1,13 +1,14 @@
 // A local scheduling model. This module never calls a paid provider or changes Studio projects.
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {directorForecast} from './pipeline-director-calibration.mjs?v=luna-flex-results-20261010';
+import {directorForecast} from './pipeline-director-calibration.mjs?v=planner-settings-20261011';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
-  introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'off', sample:20,
+  introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'practical', sample:20,
   retries:0, warmCache:false, apiSlots:3, cpuOverlap:false, batch:24,
   exhaustive:false, earlyGpu:false, directorCost:.38798, qcCost:.0003, storageDaily:.168,
   directorProfile:'historical',directorTier:'default',directorCostMode:'manual',flexLatencyFactor:1,
+  directorActualSlots:0,qcSeconds:0,
   pricingBasis:'published',containerGB:20,storageDays:1,quotedGPUHourly:0,quotedGPU:'',
   resolution:'legacy', videoResolution:'720p', videoFps:30, videoRenderer:'auto', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0 };
 
@@ -75,6 +76,10 @@ export function validateConfig(input, evidence) {
     c[key]=Number(c[key]);if(!Number.isFinite(c[key])||c[key]<min)throw Error(key+' must be a finite nonnegative number.');
   }
   if(typeof c.quotedGPU!=='string'||c.quotedGPU.length>100)throw Error('Invalid quoted GPU identity.');
+  for(const [key,hi] of [['qcSeconds',3600],['directorActualSlots',8]]) {
+    c[key]=Number(c[key]??0);if(!Number.isFinite(c[key])||c[key]<0||c[key]>hi)throw Error('Invalid '+key+'.');
+  }
+  if(!Number.isInteger(c.directorActualSlots))throw Error('Director slots must be a whole number.');
   for(const [key,lo,hi] of [['minutes',1,Infinity],['chapters',1,Infinity],['readyChapters',1,Infinity],['cadence',1,20],['introSeconds',10,60],['introImages',1,20],['sample',1,100],['retries',0,100],['apiSlots',1,c.directorProfile==='historical'?3:8],['batch',1,Infinity],['directorCost',0,100],['qcCost',0,1],['storageDaily',0,10]]) {
     if(!Number.isFinite(Number(c[key]))||Number(c[key])<lo||Number(c[key])>hi) throw Error(`Invalid ${key}: use ${hi===Infinity?'a finite number of at least '+lo:lo+'–'+hi}.`);
     c[key]=Number(c[key]);
@@ -211,7 +216,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       }
       finalSaves.push(save);allPackSaves.push(save);lastPack=save;packNumber++;
       const q=Math.min(size,Math.max(0,wanted-checked));checked+=q;
-      if(q)finalReviews.push(add(p+'vision','vision',i,q*cal.qcSeconds,[save],{api:1},{images:q}));
+      if(q)finalReviews.push(add(p+'vision','vision',i,q*(c.qcSeconds||cal.qcSeconds),[save],{api:1},{images:q}));
       if(c.policy==='serial'&&q)lastPack=finalReviews.at(-1);
     }
     saves.push(...finalSaves);reviews.push(...finalReviews);

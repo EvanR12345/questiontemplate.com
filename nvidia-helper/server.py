@@ -241,6 +241,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/production-readiness':self.reply(200,studio.production_readiness(query['project'][0],{'overlap':query.get('overlap',['false'])[0]=='true','generationStrategy':query.get('generationStrategy',['legacy'])[0]}))
                     elif path=='/studio/trace':self.reply(200,studio.trace_report(query['project'][0]))
                     elif path=='/studio/performance':self.reply(200,studio.performance_report(query['project'][0]))
+                    elif path=='/studio/planner-profile':
+                        from studio_planner_profile import planner_profile
+                        self.reply(200,planner_profile(studio.store.load(query['project'][0]),studio.performance,studio.config))
                     elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
                     elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0]))
                     elif path=='/studio/publisher':self.reply(200,studio.publisher.status())

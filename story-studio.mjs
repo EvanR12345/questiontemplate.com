@@ -376,7 +376,8 @@ function offlineProject() {
       continuityStrictness: "Medium",
       appearanceHandling: "Automatic",
       maxImageRetries: 2,
-      visionQC: false,
+      visionQC: true,
+      qcCheckLevel: "practical",
       automaticRepair: false,
       qcPolicy: "practical",
       customLayout: {
@@ -477,6 +478,8 @@ function refreshBackgroundSummary() {
   // Update progress without replacing the story/narration editor or its selection.
 }
 function render() {
+  const plannerLink=$('#studioPlannerLink');
+  if(plannerLink)plannerLink.href='./pipeline.html'+(project&&!project._connectionPlaceholder?'?project='+encodeURIComponent(project.id):'');
   progressReader.clear();
   if (!project) {
     root.innerHTML =

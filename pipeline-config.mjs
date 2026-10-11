@@ -1,4 +1,4 @@
-import {describePlan} from './pipeline-engine.mjs?v=luna-flex-results-20261010';
+import {describePlan} from './pipeline-engine.mjs?v=planner-settings-20261011';
 
 export function gpuChoices(evidence) {
   const measured=(evidence.concurrency?.gpus||[]).filter(g=>
