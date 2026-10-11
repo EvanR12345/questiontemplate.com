@@ -125,6 +125,22 @@ class PracticalQCTest(unittest.TestCase):
             'combinedQCAndReplacementUpperUSD':.01,'maxImageRetriesCovered':2}}
         self.assertIsNotNone(repair_budget_reason(s));s['qcCostEstimate']['baselineGenerationUSD']=1
         s['qcCostEstimate']['maxImageRetriesCovered']=1;self.assertIsNotNone(repair_budget_reason(s))
+
+    def test_practical_automatic_repairs_only_major_defects_with_verified_budget(self):
+        settings={'qcCheckLevel':'practical','automaticRepair':True,'maxImageRetries':1,
+            'qcCostEstimate':{'baselineControlled':True,'includesAPI':True,'includesIncrementalRental':True,
+                'includesRechecks':True,'baselineGenerationUSD':1,'combinedQCAndReplacementUpperUSD':.08,
+                'maxImageRetriesCovered':1}}
+        def finding(severity,action='image_edit'):
+            return {'pass':False,'action':action,'issues':['Visible defect'],
+                    'findings':[{'issue':'Visible defect','severity':severity}]}
+        self.assertTrue(automatic_repairs(settings,finding('major')))
+        for severity in ('advisory','uncertain'):
+            self.assertFalse(automatic_repairs(settings,finding(severity)))
+        self.assertFalse(automatic_repairs(settings,finding('major','review')))
+        settings['qcCheckLevel']='off';self.assertFalse(automatic_repairs(settings,finding('major')))
+        settings['qcCheckLevel']='practical';settings['qcCostEstimate']['includesIncrementalRental']=False
+        self.assertFalse(automatic_repairs(settings,finding('major')))
     def test_existing_flagged_image_cannot_buy_a_replacement_without_cost_proof(self):
         from studio_service import StudioService
         from unittest.mock import Mock

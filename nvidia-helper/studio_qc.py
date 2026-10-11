@@ -127,8 +127,17 @@ def production_status(project, shot, store):
     if assessment['blocking']: return 'FAILED' if assessment['disposition']!='pending' else 'QC'
     return 'PASSED' if shot.get('qc', {}).get('pass') is True else 'COMPLETE'
 
-def automatic_repairs(settings):
-    return settings.get('qcCheckLevel') != 'off' and policy(settings)=='strict' and bool(settings.get('automaticRepair')) and repair_budget_reason(settings) is None
+def automatic_repairs(settings, qc=None):
+    # Explicit Off disables repairs. A missing check-level key preserves the
+    # existing saved-project semantics of an explicit automaticRepair toggle.
+    enabled = (settings.get('qcCheckLevel') != 'off' and bool(settings.get('automaticRepair'))
+               and int(settings.get('maxImageRetries',2))>0 and repair_budget_reason(settings) is None)
+    if not enabled or qc is None: return enabled
+    if qc.get('pass') is not False or qc.get('action') not in ('image_edit','regenerate'): return False
+    if policy(settings)=='strict': return True
+    # Practical/Sampled mode can fix a confirmed major defect, never spend on
+    # advisory/uncertain discrepancies or a manual-review-only instruction.
+    return 'major' in issue_levels(qc)
 
 def repair_budget_reason(settings):
     """Unknown combined overhead never authorizes spending to find it out.
@@ -136,6 +145,8 @@ def repair_budget_reason(settings):
     A future measured estimate must cover all configured retries, rechecks and
     incremental rental. Existing API/GPU absolute caps still govern dispatch.
     """
+    if int(settings.get('maxImageRetries',2))<1:
+        return 'Image repairs are disabled by the zero-retry limit.'
     estimate = settings.get('qcCostEstimate', {})
     if not isinstance(estimate,dict) or not all(estimate.get(k) is True for k in (
             'baselineControlled','includesAPI','includesIncrementalRental','includesRechecks')):
@@ -165,7 +176,9 @@ def project_view(store, pid):
         shot['qcDecision'] = decision(project,shot,store,context)
         if shot.get('imagePath'):shot['qcReviewSignature']=review_signature(project,shot,store,context)
     reason=repair_budget_reason(project['settings'])
-    project['qcRepairBudget']={'allowed':reason is None,'reason':reason,'overheadLimitPercent':project['settings'].get('qcOverheadLimitPercent',10)}
+    project['qcRepairBudget']={'allowed':reason is None,'reason':reason,'overheadLimitPercent':project['settings'].get('qcOverheadLimitPercent',10),
+                              'enabled':automatic_repairs(project['settings']),
+                              'scope':'major errors only' if policy(project['settings'])=='practical' else 'confirmed repair findings'}
     return project
 
 def accept_image(store, pid, chid, sid, options):

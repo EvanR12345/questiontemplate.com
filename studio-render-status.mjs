@@ -1,4 +1,17 @@
 // Renderer placement is independent of permanent storage and image generation.
+export function chapterDisplayStatus(project, chapter) {
+  const saved = String(chapter?.status || 'NOT_ANALYZED').replaceAll('_', ' ');
+  if (chapter?.status !== 'FAILED') return saved;
+  const shots = (chapter.scenes || []).flatMap(scene => scene.shots || []);
+  if (!shots.length || shots.some(shot => !shot.imagePath || shot.generationStale)) return saved;
+  // A prior attempt's failure remains in job history. A verified later export
+  // can be ready without silently certifying its unchecked visual contents.
+  if (project.settings?.qcCheckLevel === 'off' && chapter.render?.path && !chapter.renderStale)
+    return 'VIDEO READY · visual checks off';
+  if (shots.some(shot => shot.qcDecision?.blocking)) return 'REVIEW REQUIRED';
+  return saved;
+}
+
 export function rendererPlacement(connected, health = {}) {
   if (!connected) return {
     title: 'Renderer offline',

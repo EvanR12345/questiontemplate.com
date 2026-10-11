@@ -3,7 +3,7 @@ import math
 import re
 
 
-def check_shot(project, shot):
+def check_shot(project, shot, new_image=False):
     issues = []
     def add(code, severity, message):
         issues.append({'code': code, 'severity': severity, 'message': message})
@@ -11,6 +11,13 @@ def check_shot(project, shot):
     people = {c['id']: c for c in project.get('characters', [])}
     if chapter:
         people.update({c['id']: c for c in chapter.get('people', [])})
+        if (new_image or not shot.get('imagePath') or shot.get('generationStale')) and not shot.get('manual',{}).get('prompt'):
+            from story_grounding import owner_conflicts
+            changes=[event for group in chapter.get('analysis',{}).get('groups',[])
+                     for event in group.get('changes',[])]
+            if owner_conflicts(changes,list(people.values())):
+                add('SOURCE_OWNER_CONTRADICTION','error',
+                    'This saved chapter plan assigns an object to the wrong source person. Reanalyze the chapter or explicitly edit the shot prompt before buying new images; saved outputs remain intact.')
     else:
         add('UNKNOWN_CHAPTER', 'error', 'Shot chapter is absent from the project.')
     prompt = str(shot.get('prompt') or '').strip()
@@ -42,8 +49,8 @@ def check_shot(project, shot):
     return {'version': 1, 'passed': not any(i['severity'] == 'error' for i in issues), 'issues': issues}
 
 
-def require_shot(project, shot):
-    result = check_shot(project, shot)
+def require_shot(project, shot, new_image=False):
+    result = check_shot(project, shot, new_image)
     if not result['passed']:
         raise ValueError('Image preflight: ' + '; '.join(i['message'] for i in result['issues'] if i['severity'] == 'error'))
     return result

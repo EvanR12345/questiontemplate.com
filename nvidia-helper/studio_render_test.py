@@ -272,6 +272,10 @@ class RenderReuseTest(unittest.TestCase):
             renderer=VideoRenderer(store,{})
             with patch.object(renderer,'run',side_effect=self.save_output):
                 ch['render']=renderer.chapter(p,ch,lambda *_:None)
+            # This case tests reuse of explicitly archived render caches.
+            # Unreferenced rebuildable clips are intentionally omitted from
+            # the default archive to avoid doubling long-video uploads.
+            p['settings']['archiveRenderCache']=True
             p=store.save(p)
             archive=R2Archive(store,Path(original)/'absent');archive.close()
             archive.objects=Objects();archive.enabled=True;archive.sync(p['id'])

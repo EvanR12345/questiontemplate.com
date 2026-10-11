@@ -950,7 +950,17 @@ def visible_appearance(shot, selected):
                 held.append(kind)
         if len(held) == 1:
             named.add(held[0])
-    return {k:v for k,v in appearance.items() if k not in weapons or k in named}
+    physical = {'outfit','clothing','hairStyle','injury','accessories','wetness','dirt','makeup',
+                'disguise','age','transformation','status','restraint','posture','face','hair','eyes',
+                'skin','build','height','distinguishingMarks','watch','necklace','scar'}
+    visible = {}
+    for key,value in appearance.items():
+        if key in weapons and key not in named: continue
+        if key not in physical and re.search(r'\b(?:held|holding|carr(?:y|ies|ied)|hands?|floor|dropped|removed|stowed)\b',str(value),re.I):
+            words = [w for w in re.findall(r'[a-z]+',key.lower()) if w not in ('the','of','a','an')]
+            if words and not all(re.search(r'\b'+re.escape(w)+r's?\b',context,re.I) for w in words): continue
+        visible[key]=value
+    return visible
 
 
 def visual_continuity(value, names):
@@ -967,7 +977,7 @@ def visual_continuity(value, names):
 def format_prompt(project, shot, provider):
     from prompt_quality import focused
     use_focused = focused(project,shot)
-    if project["settings"].get("focusedPrompts") is True and shot.get("manual",{}).get("prompt"):
+    if shot.get("manual",{}).get("prompt"):
         return shot.get("prompt",""),shot.get("negativePrompt","")
     people = {c["id"]: c for c in project["characters"]}
     ch = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
@@ -1010,21 +1020,20 @@ def format_prompt(project, shot, provider):
     visual_constraints = project['settings'].get('imageVisualConstraints', project['settings'].get('visualConstraints', ''))
     if visual_constraints:
         parts.append('Production constraints: ' + visual_constraints)
-    parts.append('One continuous landscape scene; one simultaneous moment. Preserve identities and current clothing; only stated story changes override them.' if use_focused else 'One continuous landscape composition depicting one simultaneous moment. No collage, split panels, borders, labels or title text. Preserve the specified identities and current clothing; do not remove clothing without a stated story change.')
+    parts.append('One continuous landscape scene at one moment. Preserve identity and current clothing; only stated story changes override them. No extra important people, duplicate bodies, collage, borders or text.')
     if shot.get("continuity"):
         # Persistent environmental history is not an instruction to reenact an
         # earlier battle. Only stable scene conditions belong in this prompt.
         names = {key: person.get('name', key) for key, person in people.items()}
         names.update({place['id']: place.get('name', place['id']) for place in project.get('locations', [])})
-        continuity = visual_continuity({k:v for k,v in shot['continuity'].items()
-                      if k not in ('mood','gunfire','elapsedTime','condition')}, names)
+        from story_grounding import visual_environment
+        continuity = visual_continuity(visual_environment(shot), names)
         if continuity:
-            parts.append("Keep: " + json.dumps(continuity, ensure_ascii=False))
+            parts.append('Current scene: '+ '; '.join(f'{key}: {value}' for key,value in continuity.items()))
     caps = (provider.getModelCapabilities(shot.get('imageModel', ''))
             if hasattr(provider, 'getModelCapabilities') else provider.getCapabilities())
     prompt = (
         ". ".join(p for p in parts if p)
-        + (". No extra people, duplicate weapons, panels, borders, captions or watermark." if use_focused else ". No rendered text, captions, or additional important people.")
     )
     if caps.get("promptFormat") == "sd-tags":
         prompt = (
@@ -1058,9 +1067,14 @@ def reference_prompt(project, shot, metadata, operation="generate"):
                 continue
             notes.append(
                 f'Use image {index} as the identity reference for {person.get("name", ref["characterId"])}. '
-                "Preserve face and permanent traits. Current appearance overrides reference clothing: "
-                + json.dumps(appearances.get(ref["characterId"], {}), ensure_ascii=False) + "."
+                "Preserve face and permanent traits; the shot's current appearance controls clothing and pose."
             )
+            # Saved or hand-authored prompts may omit current appearance.
+            # Deduplicate only facts already in the body, never erase them.
+            body=shot.get('prompt','').casefold()
+            missing=[f'{key}: {value}' for key,value in appearances.get(ref['characterId'],{}).items()
+                     if value and str(value).casefold() not in body]
+            if missing:notes.append('Current appearance: '+ '; '.join(missing)+'.')
         elif ref.get("locationId"):
             notes.append(f"Use image {index} for the location architecture and palette, not character identity.")
         elif ref.get("referenceType") == "style":

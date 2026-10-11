@@ -15,6 +15,46 @@ import server_test as server_fixtures
 class DispatchSettingsTest(unittest.TestCase):
     setUp = full_fixtures.FullVideoTest.setUp
     tearDown = full_fixtures.FullVideoTest.tearDown
+    def repair_fixture(self):
+        self.service.prepare_story(self.project['id'],{})
+        p=self.service.store.load(self.project['id']);ch=p['chapters'][0];shot=ch['scenes'][0]['shots'][0]
+        for name,color in (('current.png','navy'),('older-source.png','red')):
+            Image.new('RGB',(128,128),color).save(self.service.store.asset(p['id'],name))
+        qc={'status':'FAILED','pass':False,'action':'image_edit','issues':['Wrong essential action'],
+            'findings':[{'issue':'Wrong essential action','severity':'major'}],'repairPrompt':'Fix only the essential action.'}
+        shot.update(imagePath='current.png',sourceImagePath='older-source.png',qc=copy.deepcopy(qc))
+        p['settings'].update(qcCheckLevel='practical',automaticRepair=True,maxImageRetries=1,
+            qcCostEstimate={'baselineControlled':True,'includesAPI':True,'includesIncrementalRental':True,
+                'includesRechecks':True,'baselineGenerationUSD':1,'combinedQCAndReplacementUpperUSD':.08,
+                'maxImageRetriesCovered':1})
+        p=self.service.store.save(p);self.service.providers['native-flux']=Mock()
+        provider=self.service.providers['existing']
+        provider.getCapabilities=lambda:{'maxReferenceImages':0,'supportsImageEditing':False}
+        self.service.visual_check=Mock(return_value=qc);self.service.record_timing=lambda *a:None
+        provider.generateImage=Mock(return_value={'pil':Image.new('RGB',(128,128),'green')})
+        return p,ch,shot,provider
+
+    def test_budgeted_repair_uses_latest_image_and_counts_first_request_as_replacement(self):
+        from image_provider import data_url
+        p,ch,shot,provider=self.repair_fixture()
+        StudioService.generate(self.service,p,ch['id'],shot['id'],123,
+            {'budgetedQCRepair':True,'operation':'edit','_repairPrompt':'Fix action.','_collectReview':True})
+        self.assertEqual(provider.generateImage.call_count,1)
+        self.assertEqual(provider.generateImage.call_args.args[0]['sourceImage'],data_url(self.service.store.asset(p['id'],'current.png')))
+        result=get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])
+        self.assertEqual(result['imageMetadata']['sourceImagePath'],'current.png')
+        self.assertEqual(result['sourceImagePath'],'current.png')
+        self.assertEqual(result['history'][0]['imagePath'],'current.png')
+        self.assertFalse(result['qc']['pass'])
+
+    def test_budgeted_failed_replacement_stops_at_limit_with_original_intact(self):
+        p,ch,shot,provider=self.repair_fixture()
+        provider.generateImage.side_effect=RuntimeError('Worker failed before output')
+        with self.assertRaisesRegex(RuntimeError,'Worker failed'):
+            StudioService.generate(self.service,p,ch['id'],shot['id'],123,{'budgetedQCRepair':True})
+        self.assertEqual(provider.generateImage.call_count,1)
+        self.assertEqual(get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])['imagePath'],'current.png')
+
     # Reuse the actual orchestration harness, not its image-generation override.
     def test_explicit_off_overrides_max_and_deferred_generation_without_paid_qc(self):
         self.service.prepare_story(self.project['id'], {})

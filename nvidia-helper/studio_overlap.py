@@ -326,14 +326,14 @@ class CloudStoryOverlap:
                     qc=result['qc']
                     current=clone.store.load(self.project)
                     if qc_decision(current,get_shot(current,chapter,shot['id']),clone.store)['blocking']:
-                        if clone.collect_production_reviews(current):
+                        if clone.collect_production_reviews(current) and not automatic_repairs(self.settings,qc):
                             return {'status':'REVIEW_REQUIRED','qc':qc}
-                        if not automatic_repairs(self.settings):
+                        if not automatic_repairs(self.settings,qc):
                             raise RuntimeError('Saved image needs your review. No repair was purchased; accept it to continue.')
                         current=clone.store.load(self.project)
                         operation='edit' if clone.provider('comfyui').getCapabilities().get('supportsImageEditing') else 'generate'
                         result=clone.generate(current,chapter,shot['id'],shot['generationSettings']['seed'],
-                            {'operation':operation,'_repairPrompt':qc.get('repairPrompt') or shot['prompt']})
+                            {'operation':operation,'budgetedQCRepair':True,'_repairPrompt':qc.get('repairPrompt') or shot['prompt']})
                 else:
                     result=clone.measured_stage(self.project,'Image + quality checks',clone.generate,
                         snapshot,chapter,shot['id'],shot['generationSettings']['seed'],

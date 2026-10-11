@@ -85,6 +85,7 @@ def profile_for(stage, project, config, details=None):
             mode=settings.get('generationMode','BALANCED'),style=settings.get('style'),
             layoutSettings=settings.get('customLayout',{}),maxOutputTokens=director.get('maxOutputTokens',12000),
             checkLevel=settings.get('qcCheckLevel','off'))
+        profile['sourceGroundingVersion']=1
         if director.get('executionMode','classic').startswith('staged'):
             lean=director.get('executionMode')=='staged-lean'
             profile['compactCuts']=director.get('compactCuts',False)
@@ -98,6 +99,7 @@ def profile_for(stage, project, config, details=None):
             sentences,characters,shots=visual_group_limits(director)
             profile['visualGroupLimit']={'sentences':sentences,'characters':characters,'targetShots':shots}
     elif stage in ('Image pipeline','Image + quality checks','Image generation','Visual QC','Character reference','Intro images'):
+        profile['visualGroundingVersion']=1
         if details.get('shot'):
             image=details.get('_shotSpec') or next((s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots']
                 if s['id']==details['shot']),{}) | {}

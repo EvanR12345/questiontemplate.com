@@ -8,6 +8,7 @@ import math
 import re
 from studio_data import apply_changes, align_evidence, normalize_object_change, grounded_object_changes
 from director_pipeline import fact_beats_mode
+from story_grounding import apply_environment_event, require_owners
 
 
 FACT_GROUP_LIMITS={48:9000,96:18000,128:24000,256:32000}
@@ -135,7 +136,7 @@ def _prepare_staged(service, project, chapter, groups, cast, state, memory, expe
         group_call_start=len(calls)
         service.gate(f'Accepting source facts {index+1}/{len(groups)}')
         text = [{'index':i,'text':s['text'],'start':s['start'],'end':s['end']} for i,s in enumerate(group)]
-        prior = {k:copy.deepcopy(v) for k,v in incoming.items() if k!='appearanceHistory'}
+        prior = {k:copy.deepcopy(v) for k,v in incoming.items() if k not in ('appearanceHistory','environmentHistory','environmentScopes')}
         if lean and 'characters' in prior:
             prior['characters']={k:v for k,v in prior['characters'].items() if k in known}
         context = {'sentences':text,'knownMainCharacters':canonical,'priorState':prior,
@@ -164,6 +165,7 @@ def _prepare_staged(service, project, chapter, groups, cast, state, memory, expe
         events = [normalize_object_change(e,analysis['objects'],cast) for e in analysis['changes']] + object_changes
         events=list({(e['characterId'],e['field'],e['value'],e['sentence']):e for e in events}.values())
         events.sort(key=lambda event:event['sentence'])
+        require_owners(events,cast)
         for event in events + analysis.get('environmentChanges',[]):
             n = event.get('sentence')
             if (type(n) is not int or not 0<=n<len(text) or not event.get('reason')
@@ -224,7 +226,9 @@ def _prepare_staged(service, project, chapter, groups, cast, state, memory, expe
             # state already contains its effects; do not resend the full log.
             if lean:sliced['priorState'].pop('appearanceHistory',None)
             for event in analysis.get('environmentChanges',[]):
-                if event['sentence']<start:sliced['priorState'].setdefault('environment',{})[event['field']]=event['value']
+                if event['sentence']<start:apply_environment_event(sliced['priorState'],event,chapter['number'],'facts-visual')
+            sliced['priorState'].pop('environmentHistory',None)
+            sliced['priorState'].pop('environmentScopes',None)
             sliced['acceptedChanges']=[{**e,'sentence':e['sentence']-start} for e in events if start<=e['sentence']<end]
             if lean:
                 sliced['speakerHints']=[{'sentence':e['sentence']-start,'characterId':e['characterId'],
@@ -244,7 +248,7 @@ def _prepare_staged(service, project, chapter, groups, cast, state, memory, expe
         incoming = apply_source_changes(incoming,[{'characterId':e['characterId'],'type':e['field'],
             'to':{e['field']:e['value']},'reason':e['reason']} for e in events],chapter['number'],'facts-'+str(index))
         for event in analysis.get('environmentChanges',[]):
-            incoming.setdefault('environment',{})[event['field']] = event['value']
+            apply_environment_event(incoming,event,chapter['number'],'facts-'+str(index))
         story_memory = advance_memory(story_memory,analysis,chapter['number'],index)
         dispatch.add(calls[group_call_start:])
     service.gate('Directing independent accepted visual groups')

@@ -201,12 +201,25 @@ class DirectorProvider:
                 "type": PERSON["properties"]["type"],
             }
         )
-        return self.call(
-            "Casting supervisor. Return a SMALL cast of distinct story roles, not every anonymous individual. Output id, name, type, description, evidence, aliases ONLY. Examples of role labels: scarred protagonist, opposing faction, protagonist allies, party crowd, screaming woman. Group anonymous soldiers/attackers by faction; NEVER create repeated entries named man. The noun man may refer to DIFFERENT people. Distinguish an unnamed casualty from a living recurring fighter; incompatible source actions/death must not merge into a known main identity. Add a brief distinct temporary role label for an individually depicted victim when needed. Resolve pronouns and aliases against known cast. Only central recurring protagonists and established main characters are main. Casualties and bystanders are temporary/supporting/group. evidence MUST be ONE brief verbatim quote from chapterText; NEVER list sentence numbers. Description records only stated identity traits and earliest clothing. Keep every field brief. Do not invent traits, names or events. Preserve known IDs where identity is clear. Aliases must appear in the story.",
-            context,
-            obj({"people": arr(person)}),
-            gate,
-        )
+        role = "Casting supervisor. Return a SMALL cast of distinct story roles, not every anonymous individual. Output id, name, type, description, evidence, aliases ONLY. Examples of role labels: scarred protagonist, opposing faction, protagonist allies, party crowd, screaming woman. Group anonymous soldiers/attackers by faction; NEVER create repeated entries named man. Keep individually staged people separate: a person sitting on a lap with a plate and another behind a chair with wine are two temporary roles, not a crowd or possessions of the nearest main character. Include explicit foreground prop holders, dialogue partners and targets even if unnamed. The noun man may refer to DIFFERENT people. Distinguish an unnamed casualty from a living recurring fighter; incompatible source actions/death must not merge into a known main identity. Add a brief distinct temporary role label for an individually depicted victim when needed. Resolve pronouns and aliases against known cast. Only central recurring protagonists and established main characters are main. Casualties and bystanders are temporary/supporting/group. evidence MUST be ONE brief verbatim quote from chapterText; NEVER list sentence numbers. Description records only stated identity traits and earliest clothing. Keep every field brief. Do not invent traits, names or events. Preserve known IDs where identity is clear. Aliases must appear in the story."
+        schema = obj({"people": arr(person)})
+        result = self.call(role,context,schema,gate)
+        from story_grounding import casting_gaps
+        missing = casting_gaps(context['chapterText'],context.get('knownPeople',[])+result['people'])
+        if missing:
+            # One targeted correction only. No regex-created identities and no
+            # additional request when the initial casting covers the source.
+            repaired = self.call(role+' Correct the missing individually staged roles in coverageEvidence. Return only missing roles; retain accepted IDs for known people.',
+                {**context,'knownPeople':context.get('knownPeople',[])+result['people'],'coverageEvidence':missing},schema,gate)
+            for detected in repaired['people']:
+                quote = detected.get('evidence','').strip().strip('\"\u201c\u201d').strip()
+                if not quote or quote.casefold() not in context['chapterText'].casefold():
+                    raise ValueError('Casting repair lacks exact source evidence; existing chapter remains intact.')
+                if not any(p['id']==detected['id'] or p['name'].casefold()==detected['name'].casefold() for p in result['people']):
+                    result['people'].append(detected)
+            if casting_gaps(context['chapterText'],context.get('knownPeople',[])+result['people']):
+                raise ValueError('Casting omitted individually staged people after one correction. Review detected people before generating; existing chapter remains intact.')
+        return result
 
     def analyzeStory(self, context, gate):
         # Copying quotes causes paraphrase and multi-sentence evidence failures.
@@ -344,6 +357,7 @@ class DirectorProvider:
         return plan_storyboard(self,context,gate)
 
     def checkSourceFacts(self,context,gate):
+        from story_grounding import owner_conflicts, require_owners
         fields=list(dict.fromkeys(re.sub(r'[^a-z0-9_]','',x.lower().split()[-1]) for x in context.get('objects',[]) if x.strip()))
         ids=[p['id'] for p in context['people']]
         changes=indexed_evidence(CHANGE['properties'] | {'field':{'type':'string','enum':fields or ['object']},
@@ -363,11 +377,17 @@ class DirectorProvider:
             obj({'majorIssues':major,
                  'objectChanges':arr(changes) | {'maxItems':len(context['sentences'])*2 if fields and ids else 0}}),gate)
         result=restore_source_evidence(result,context,('objectChanges',))
+        # Source quotes are not enough: they must describe this character.
+        # Merge deterministic contradictions with the normal bounded review.
+        detected=owner_conflicts(proposals,context['people'])
+        seen={issue['changeIndex'] for issue in result['majorIssues']}
+        result['majorIssues'] += [issue for issue in detected if issue['changeIndex'] not in seen]
         if result['majorIssues']:
             import copy
             indices=sorted({issue['changeIndex'] for issue in result['majorIssues']})
             correction_schema=obj({'corrections':arr(obj({
                 'changeIndex':{'type':'integer','enum':indices},'keep':BOOL,
+                'characterId':{'type':'string','enum':ids or ['none']},
                 'field':short_text(80),'value':short_text(200),
                 'sentence':{'type':'integer','enum':list(range(len(context['sentences'])))}})) |
                 {'minItems':len(indices),'maxItems':len(indices)}})
@@ -376,7 +396,8 @@ class DirectorProvider:
                 'unsupported adjective or unobserved event; it is not a physical change. keep=true only when the exact '
                 'source supports a SPECIFIC new field/value at the selected sentence. Unknown/not specified is not a correction: '
                 'use keep=false so the existing incoming state remains intact. Do not turn capture into capture alive '
-                'unless explicitly stated. Do not change character IDs. Return one correction per flagged changeIndex.',
+                'unless explicitly stated. Correct an explicitly wrong object owner using an accepted character ID only. '
+                'Never alter permanent identities. If the actual owner is missing or ambiguous use keep=false. Return one correction per flagged changeIndex.',
                 {**context,'issues':result['majorIssues']},correction_schema,gate)
             if sorted(c['changeIndex'] for c in correction['corrections'])!=indices:
                 raise ValueError('Source correction omitted or duplicated a flagged fact.')
@@ -386,7 +407,7 @@ class DirectorProvider:
                 if i not in replacements:corrected.append(copy.deepcopy(event));continue
                 fixed=replacements[i]
                 if fixed['keep']:
-                    corrected.append({**event,'field':fixed['field'],'value':fixed['value'],
+                    corrected.append({**event,'characterId':fixed['characterId'],'field':fixed['field'],'value':fixed['value'],
                         'sentence':fixed['sentence'],'reason':context['sentences'][fixed['sentence']]['text']})
             checked_context={**context,'changes':corrected}
             # Exactly one correction round. A second rejection is never hidden.
@@ -399,8 +420,10 @@ class DirectorProvider:
                     'objectChanges':arr(changes) | {'maxItems':len(context['sentences'])*2 if fields and ids else 0}}),gate)
             checked=restore_source_evidence(checked,context,('objectChanges',))
             if checked['majorIssues']:raise ValueError('Source facts remain unsupported after one correction; existing chapter remains intact.')
+            require_owners(corrected+result['objectChanges']+checked['objectChanges'],context['people'])
             return {'issues':[],'intentionalChanges':[],'objectChanges':result['objectChanges']+checked['objectChanges'],
                     'correctedChanges':corrected,'sourceRepair':{'initialIssues':result['majorIssues'],'correction':correction}}
+        require_owners(result['objectChanges'],context['people'])
         return {'issues':[],'intentionalChanges':[],'objectChanges':result['objectChanges']}
 
     def checkStoryboard(self,context,gate):

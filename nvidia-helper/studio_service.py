@@ -20,6 +20,7 @@ from studio_render import VideoRenderer
 from studio_gpu_render import create_renderer
 from studio_qc import decision as qc_decision, production_status, automatic_repairs, repair_budget_reason, check_level, should_check, policy as qc_policy
 from prompt_quality import generation_measurements
+from story_grounding import apply_environment_event, set_environment_location, visual_environment, require_owners
 from production_trace import ProductionTrace
 from prompt_preflight import require_shot
 from queue_estimates import remaining_time, timing_profile
@@ -523,6 +524,14 @@ class StudioService:
             checks.append({'name':name,'ready':bool(ready),'message':message,'blocking':blocking})
         chapters=[c for c in p['chapters'] if c['sourceText'].strip()]
         check('chapters',bool(chapters),'Story chapters are ready.' if chapters else 'Paste at least one chapter.')
+        from story_grounding import owner_conflicts
+        bad_sources=[chapter for chapter in chapters if owner_conflicts(
+            [event for group in chapter.get('analysis',{}).get('groups',[]) for event in group.get('changes',[])],
+            p['characters']+chapter.get('people',[]))]
+        if bad_sources:
+            names=', '.join(chapter['name'] for chapter in bad_sources)
+            check('source-grounding',False,
+                  f'Saved source ownership needs correction in {names}. Reanalyze before generating new images. Existing videos and originals stay saved.',False)
         unresolved=self.execution_journal.unresolved_project(pid)
         check('recovery',not unresolved,'Saved remote work is resolved.' if not unresolved else
               'Reconcile the saved remote request IDs before starting; no automatic duplicate purchases.')
@@ -592,6 +601,13 @@ class StudioService:
         check('rental',managed,'Studio starts only the configured stopped pod at image dispatch and confirms shutdown before rendering. Keep this helper and laptop awake: the deadline watchdog runs here; network failure can delay shutdown.' if managed else
               'A paused Studio queue does not stop a manually rented GPU. Keep its rental window bounded.',False)
         check('strategy',True,LABELS[selected_strategy]+'. Uncalibrated alignment plans chapters first.',False)
+        level=check_level(p['settings'])
+        check('visual-checks',level!='off',
+              f'Visual checks: {level}. Technical decoder/black-image checks always remain active.',False)
+        if p['settings'].get('automaticRepair'):
+            reason=repair_budget_reason(p['settings'])
+            check('automatic-repairs',automatic_repairs(p['settings']),
+                  reason or ('Automatic repairs are enabled for confirmed major errors.' if qc_policy(p['settings'])=='practical' else 'Bounded automatic repairs are enabled.'),False)
         return {'project':pid,'revision':p['revision'],'ready':all(x['ready'] for x in checks if x['blocking']),
                 'generationStrategy':selected_strategy,'rentalControl':'managed' if managed else 'external',
                 'voiceLocation':'local','renderLocation':'local','checks':checks,'paidRequestsSubmitted':0}
@@ -1534,7 +1550,7 @@ class StudioService:
             reason=repair_budget_reason(project['settings'])
             if reason:raise ValueError(reason)
         # Validate the submitted shot before buying cold startup time.
-        require_shot(project,shot)
+        require_shot(project,shot,new_image=True)
         rental=getattr(self,'_queued_image_rental',None)
         if rental is None:
             rental=ProductionGPU(self.config,self.store.root/'.managed-rental.json',project['id'],
@@ -1907,7 +1923,7 @@ class StudioService:
                 continue
             if (shot.get('imagePath') and not shot.get('generationStale')
                     and shot.get('qc',{}).get('pass') is False
-                    and not automatic_repairs(p['settings'])):
+                    and not automatic_repairs(p['settings'],shot.get('qc',{}))):
                 raise RuntimeError('Saved image needs your review. No replacement was purchased; accept this image to continue.')
             self.production_progress(
                 pid,
@@ -3129,7 +3145,7 @@ class StudioService:
                 }
                 for c in p["characters"]
             ]
-            compact_state = {k: v for k, v in state.items() if k != "appearanceHistory"}
+            compact_state = {k: v for k, v in state.items() if k not in ("appearanceHistory","environmentHistory","environmentScopes")}
             context = {
                 "sentences": text,
                 "knownMainCharacters": canonical,
@@ -3551,6 +3567,7 @@ class StudioService:
             analysis["changes"] = sorted(
                 analysis["changes"] + object_changes, key=lambda e: e["sentence"]
             )
+            require_owners(analysis['changes'],cast)
             known_ids = {x["id"] for x in cast}
             cursor = 0
             for si, rs in enumerate(ranges):
@@ -3584,16 +3601,14 @@ class StudioService:
                 for ds in [s for s in details if s["sceneIndex"] == si]:
                     sa, sb = ds["startSentence"], ds["endSentence"]
                     changes = []
-                    state.setdefault("environment", {}).update(
-                        location=rs["location"], locationId=scene["locationId"]
-                    )
+                    set_environment_location(state,rs['location'],scene['locationId'])
                     for e in analysis.get("environmentChanges", []):
                         if (
                             sa <= e["sentence"] <= sb
                             and e["reason"].casefold()
                             in group[e["sentence"]]["text"].casefold()
                         ):
-                            state["environment"][e["field"]] = e["value"]
+                            apply_environment_event(state,e,ch['number'],id)
                     for e in analysis["changes"]:
                         if sa <= e["sentence"] <= sb:
                             cid = mapping.get(e["characterId"], e["characterId"])
@@ -4030,7 +4045,7 @@ class StudioService:
                 and shot.get('qc',{}).get('pass') is False):
             reason=repair_budget_reason(p['settings'])
             if reason:raise ValueError(reason)
-        preflight = require_shot(p, shot)
+        preflight = require_shot(p, shot,new_image=True)
         expected_spec = self.visual_spec_signature(p, shot)
         expected_path = shot.get('imagePath','')
         def selected_digest(project):
@@ -4076,12 +4091,14 @@ class StudioService:
                 p, shot, ref_metadata, request["operation"]
             ) + " " + request["prompt"]
         if request["operation"] in ("edit", "inpaint"):
-            source = shot.get("sourceImagePath") or shot.get("imagePath")
+            source = (shot.get('imagePath') if options.get('budgetedQCRepair') else
+                      shot.get("sourceImagePath") or shot.get("imagePath"))
             if not source:
                 raise ValueError(
                     "Image repair needs a generated or uploaded source image."
                 )
             request["sourceImage"] = data_url(self.store.asset(p["id"], source))
+            shot['sourceImagePath']=source
             request["mask"] = options.get("mask")
         retries = int(p["settings"]["maxImageRetries"])
         qc = {"status": "PENDING" if should_check(p,shot) else "UNCHECKED", "pass": None,
@@ -4092,6 +4109,11 @@ class StudioService:
         max_attempts = (
             retries + 1 + (1 if p["settings"]["image"].get("fallbackEnabled") else 0)
         )
+        if options.get('budgetedQCRepair'):
+            if retries<1:raise ValueError('Image repair is disabled by the zero-retry limit.')
+            # This first request is already a replacement, not a free initial
+            # image. Do not silently purchase maxImageRetries + 1 repairs.
+            max_attempts=retries
         for attempt in range(max_attempts):
             self.gate(f'Generating {ch["name"]} · shot {sid} · attempt {attempt+1}')
             self.check_cloud_budget(p, provider)
@@ -4112,6 +4134,8 @@ class StudioService:
                         "time": time.time(),
                     }
                 )
+                if attempt>=max_attempts-1:
+                    raise
                 fallback = p["settings"]["image"].get("fallback")
                 if (
                     not fallback_used
@@ -4201,7 +4225,7 @@ class StudioService:
                         'reason':'Shot or selected image changed during generation; current selection preserved.'})
                     return False
                 if s.get("imagePath"):
-                    s["history"].append(
+                    s.setdefault('history',[]).append(
                         {
                             "imagePath": s["imagePath"],
                             "metadata": s.get("imageMetadata", {}),
@@ -4212,6 +4236,7 @@ class StudioService:
                     imagePath=relative,
                     imageMetadata=metadata,
                     referenceImages=ref_metadata,
+                    sourceImagePath=metadata.get('sourceImagePath') or '',
                     retryCount=attempt,
                     status="QC",
                     qc=copy.deepcopy(qc),
@@ -4260,7 +4285,7 @@ class StudioService:
             if (
                 qc.get("pass") is False
                 and qc.get("action") != "review"
-                and automatic_repairs(self.store.load(p["id"])["settings"])
+                and automatic_repairs(self.store.load(p["id"])["settings"],qc)
                 and attempt < retries
             ):
                 self.status(p["id"], chid, "REPAIRING")
@@ -4268,6 +4293,7 @@ class StudioService:
                 if (
                     provider.getCapabilities()["supportsImageEditing"]
                     and provider.id != "existing"
+                    and len(references)<provider.getCapabilities().get('maxReferenceImages',0)
                 ):
                     request.update(operation="edit", sourceImage=data_url(path))
                 if request.get("operation") == "edit":
@@ -4425,6 +4451,13 @@ class StudioService:
         ]
         expected['characters'] = [copy.deepcopy(c) | {'appearanceState': visible_appearance(shot, c)}
                                   for c in shot['characters']]
+        expected['continuity'] = visual_environment(shot)
+        chapter = get_chapter(p,shot['chapterId']) if shot.get('chapterId') else None
+        scene = next((scene for scene in chapter.get('scenes',[]) if scene['id']==shot.get('sceneId')),None) if chapter else None
+        scene_ids = {c['id'] for c in (scene.get('characters',[]) if scene else shot['characters'])}
+        expected['scenePeople'] = [{'id':c['id'],'name':c['name'],'type':c['type'],'description':c.get('description','')}
+                                  for c in (chapter.get('people',[]) if chapter else []) if c['id'] in scene_ids]
+        expected['framingPolicy'] = ('Shot characters are the intended visible focal cast. Source-grounded scene people may appear in the background when consistent with narration; do not flag them as invented solely because they are not focal characters. Do not require every scene person in a close-up. Wrong identity, reversed actions and severe duplicated bodies remain major errors.')
         expected['narrationSegment'] = shot.get('narrationSegment', '')
         expected['inventoryContext'] = {c['id']: {k:v for k,v in c.get('appearanceState', {}).items()
             if k in ('gun','hammer','knife','sword','bomb')} for c in shot['characters']}

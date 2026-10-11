@@ -9,7 +9,7 @@ import {createMediaLoader} from './studio-media-loader.mjs?v=media-20261009b';
 import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=connection-20261009";
 import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
-import {rendererPlacement} from './studio-render-status.mjs?v=render-research-20261009';
+import {rendererPlacement,chapterDisplayStatus} from './studio-render-status.mjs?v=grounding-20261011';
 import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=readiness-20261010';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
 import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=files-progress-20261010';
@@ -463,12 +463,12 @@ function refreshBackgroundSummary() {
     if (!chapter) continue;
     button.querySelector("strong").textContent = chapter.name;
     button.querySelector("small").textContent =
-      chapter.status.replaceAll("_", " ") +
+      chapterDisplayStatus(project,chapter) +
       (chapter.continuityNeedsReview ? " · review continuity" : "");
   }
   const subtitle = root.querySelector(".chapter-heading .subtitle");
   if (subtitle)
-    subtitle.textContent = `${ch().status.replaceAll("_", " ")} · ${project.settings.image.model} · ${project.settings.image.workflow}`;
+    subtitle.textContent = `${chapterDisplayStatus(project,ch())} · ${project.settings.image.model} · ${project.settings.image.workflow}`;
   const summary = root.querySelector("#productionContent > .stats");
   if (summary) summary.outerHTML = stats();
   // Update progress without replacing the story/narration editor or its selection.
@@ -511,7 +511,7 @@ function render() {
     )
     .join("")}
   <div class="studio-grid"><aside class="chapter-rail" aria-label="Chapters"><h2>Chapters</h2>${project.chapters.map((x) => `<button class="chapter-button ${x.id === c.id ? "selected" : ""}" data-chapter="${x.id}" ${x.id === c.id ? 'aria-current="true"' : ''}><span>${x.number.toString().padStart(2, "0")}</span><strong>${escape(x.name)}</strong><small>${escape(x.status.replaceAll("_", " "))}${x.continuityNeedsReview ? " · review continuity" : ""}</small></button>`).join("")}<button class="chapter-add" id="productionAddChapter">+ New chapter</button></aside>
-  <div class="production-main"><div class="chapter-heading"><div><h2>${escape(c.name)}</h2><div class="subtitle">${escape(c.status.replaceAll("_", " "))} · ${escape(project.settings.image.model)}</div></div><details class="action-menu" data-ui="chapter-actions"><summary>Chapter actions</summary><div class="toolbar"><button id="productionDuplicate">Duplicate</button><button id="productionMoveUp" aria-label="Move chapter earlier">↑</button><button id="productionMoveDown" aria-label="Move chapter later">↓</button><button class="danger" id="productionDelete">Delete chapter</button></div></details></div>
+  <div class="production-main"><div class="chapter-heading"><div><h2>${escape(c.name)}</h2><div class="subtitle">${escape(chapterDisplayStatus(project,c))} · ${escape(project.settings.image.model)}</div></div><details class="action-menu" data-ui="chapter-actions"><summary>Chapter actions</summary><div class="toolbar"><button id="productionDuplicate">Duplicate</button><button id="productionMoveUp" aria-label="Move chapter earlier">↑</button><button id="productionMoveDown" aria-label="Move chapter later">↓</button><button class="danger" id="productionDelete">Delete chapter</button></div></details></div>
   <nav class="workspace-tabs" role="tablist" aria-label="Chapter workflow">${[
     ["write", "Story", "Paste your chapter"],
     ["narration", "Narration", "Review & listen"],
@@ -649,7 +649,7 @@ function settings() {
   const level = checkLevel(s), w = {enabled:false, type:"text", text:"Studio", imagePath:"", position:"bottom-right", widthPercent:12, opacity:.65, marginPercent:2, color:"#FFFFFF", ...s.watermark};
   const models = selected?.models || [i.model];
   return `<h2>Project settings</h2><p class="muted">Saved for this project. Use the sections below, then save your changes.</p><div class="toolbar"><button data-save-settings>Save changes</button><a href="#settings-checks">Checks</a><a href="#settings-intro">Intro</a><a href="#settings-watermark">Watermark</a><a href="#settings-video">Video</a><a href="#settings-voice">Voice</a><a href="#settings-cost">Spending limits</a></div><label>Project name<input id="settingProjectName" value="${escape(project.name)}"></label><div class="two-col"><label>Visual style<select id="settingStyle">${options(["cinematic illustration", "anime", "manga", "storybook", "photorealistic cinema", "full-color manhwa", "dark fantasy"], s.style)}</select></label><label>Director layout<select id="settingLayout">${options(["AUTO", "CINEMATIC", "DYNAMIC", "MANGA / ANIME", "STORYBOOK", "CUSTOM"], s.layoutMode)}</select></label><label>Generation mode<select id="settingGenerationMode">${options(["QUICK", "BALANCED", "MAX QUALITY"], s.generationMode)}</select></label><label>Image quality preset<select id="settingImagePreset">${options(["Fast Local", "Balanced Quality", "Maximum Quality", "Character Reference", "Image Repair", "Anime/Manga", "Cinematic", "Storybook"], i.preset)}</select></label></div>
-  <div class="section-box" id="settings-checks"><h3>Visual checks</h3><div class="two-col"><label>Check level<select id="settingCheckLevel">${options([["off", "Off · no automatic or manual paid checks"], ["sampled", "Sampled · first shot + a stable sample"], ["practical", "Practical · every new image"], ["strict", "Strict · every new image"]], level)}</select></label><label>Sample about one image in<input id="settingSampleEvery" type="number" min="2" max="20" step="1" value="${s.qcSampleEvery ?? 5}"></label><label>How findings affect production<select id="settingQCPolicy">${options([["practical", "Practical · minor differences are advisory"], ["strict", "Strict · detailed review"]], ["practical","strict"].includes(level) ? level : s.qcPolicy || "practical")}</select></label></div><p class="muted">Sampled checks include the first shot of each chapter and planned intro, then select roughly one in N using stable shot IDs. Resuming keeps the same selection. Skipped images stay “Not checked.” Off also overrides MAX QUALITY. Existing AI findings and your image acceptances stay saved.</p><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""} ${level !== "off" && (level === "strict" || level === "sampled" && s.qcPolicy === "strict") ? "" : "disabled"}>Allow automatic retries in strict review</label><p class="muted">Practical review treats minor pose, framing, expression and prop detail differences as advice. Clear story or identity errors need your review. Strict retries also need a verified estimate for checks, replacement images, rechecks and extra rental within the 10% overhead ceiling. ${escape(project.qcRepairBudget?.reason || "Missing cost evidence keeps automatic repairs on hold.")}</p></div>
+  <div class="section-box" id="settings-checks"><h3>Visual checks</h3><p role="status"><strong>Automatic repairs: ${s.automaticRepair ? project.qcRepairBudget?.enabled ? "Enabled · bounded by verified cost and retry limits" : "On hold · see the cost requirement below" : "Off · checks report issues without replacing images"}</strong></p><div class="two-col"><label>Check level<select id="settingCheckLevel">${options([["off", "Off · no automatic or manual paid checks"], ["sampled", "Sampled · first shot + a stable sample"], ["practical", "Practical · every new image"], ["strict", "Strict · every new image"]], level)}</select></label><label>Sample about one image in<input id="settingSampleEvery" type="number" min="2" max="20" step="1" value="${s.qcSampleEvery ?? 5}"></label><label>How findings affect production<select id="settingQCPolicy">${options([["practical", "Practical · minor differences are advisory"], ["strict", "Strict · detailed review"]], ["practical","strict"].includes(level) ? level : s.qcPolicy || "practical")}</select></label></div><p class="muted">Sampled checks include the first shot of each chapter and planned intro, then select roughly one in N using stable shot IDs. Resuming keeps the same selection. Skipped images stay “Not checked.” Off also overrides MAX QUALITY. Existing AI findings and your image acceptances stay saved.</p><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""} ${level !== "off" ? "" : "disabled"}>Allow bounded automatic repairs · major errors only in Practical mode</label><p class="muted">Practical review treats minor pose, framing, expression and prop detail differences as advice. Automatic repairs target confirmed major story, identity or anatomy errors; uncertain findings need review. Repairs are on hold until a verified estimate covers checks, replacements, rechecks and extra rental within your 10% overhead ceiling. Enabling this option does not buy a repair or raise your budget. ${escape(project.qcRepairBudget?.reason || "Missing cost evidence keeps automatic repairs on hold.")}</p></div>
   <div class="section-box"><h3>Image generator</h3><label class="inline"><input id="settingFocusedPrompts" type="checkbox" ${s.focusedPrompts === true ? "checked" : ""}>Focused story facts for newly planned images</label><p class="muted">Optional guidance based on the prompt test: keep explicit gender, established people count and prop ownership; shorten repeated reference instructions. Existing shots and manual prompts stay saved. Prompts have no fixed word quota and are never cut off. A universal speed, price or quality winner was not established.</p><div class="two-col"><label>Image provider<select id="settingImageProvider">${options(
     [
       ["existing", "Existing SD fallback / DreamShaper"],
@@ -1727,7 +1727,7 @@ function wireSettings() {
     if (["practical", "strict"].includes(level)) $("#settingQCPolicy").value = level;
     $("#settingQCPolicy").disabled = level !== "sampled";
     $("#settingSampleEvery").disabled = level !== "sampled";
-    $("#settingRepair").disabled = level === "off" || $("#settingQCPolicy").value !== "strict";
+    $("#settingRepair").disabled = level === "off";
     if ($("#settingRepair").disabled) $("#settingRepair").checked = false;
   };
   $("#settingCheckLevel").onchange = updateChecks;
@@ -2064,7 +2064,7 @@ async function poll() {
           else {
             refreshBackgroundSummary();
             $("#productionSaveState").textContent =
-              "Background results saved · " + ch().status.replaceAll("_", " ");
+              "Background results saved · " + chapterDisplayStatus(project,ch());
           }
         }
       }
