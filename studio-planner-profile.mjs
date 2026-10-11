@@ -26,6 +26,8 @@ export function plannerSettings(config, profile, evidence) {
   if(id&&profiles.some(p=>p.id===id))next.directorProfile=id;
   else warnings.push('This director workflow has no matching measured profile. Existing timing is a comparison reference.');
   next.directorActualSlots=d.parallelism||1;next.apiSlots=next.directorActualSlots;
+  if(profile.imageTasks>3)
+    warnings.push(`Studio admits up to ${profile.imageTasks} image/check tasks while keeping one GPU image lane. Older three-task throughput does not measure this new pipeline; no speedup is assumed until matching production completes.`);
   next.directorCostMode='measured';
   next.earlyGpu=false;next.gpuStartSeconds=0;
   if(profile.generationStrategy==='align'&&!profile.timedHistoryReady){
@@ -47,5 +49,5 @@ export function plannerSettings(config, profile, evidence) {
 
 export function profileSummary(p) {
   const s=p.settings,v=s.video,i=s.image,d=s.director;
-  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${d.processingTier||'default'} processing`;
+  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${p.imageTasks||3} image/check tasks, one GPU lane · ${d.processingTier||'default'} processing`;
 }

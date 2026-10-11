@@ -6,7 +6,7 @@ import time
 from contextlib import contextmanager
 from openai_director import OpenAIDirector
 from studio_data import digest, get_chapter, get_shot, uid
-from studio_qc import decision as qc_decision, automatic_repairs
+from studio_qc import decision as qc_decision, automatic_repairs, check_level
 from studio_execution import (CommitCoordinator, CoordinatedStore, CoordinatedTrace,
     ExecutionJournal, ImageLane, LaneProvider, BoundedExecutions, UnresolvedExecution)
 
@@ -33,6 +33,22 @@ class StaleExecution(ValueError):
     pass
 
 
+def shot_task_limit(project, options):
+    """Keep one image lane supplied while bounded API reviews are in flight.
+
+    This is admission concurrency, not additional model copies or GPUs. A
+    modest five-task ceiling bounds snapshots, API reservations and recovery.
+    Explicit settings retain the caller's smaller limit.
+    """
+    settings = project['settings']
+    parallelism = settings['director'].get('parallelism', 1)
+    default = min(5, max(3, parallelism + 1)) if check_level(settings) != 'off' else 3
+    limit = options.get('overlapShots', default)
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 2 <= limit <= 5:
+        raise ValueError('Choose two to five in-flight cloud shot tasks.')
+    return limit
+
+
 def validate_overlap(project, options):
     settings=project['settings']
     if settings['image']['provider']!='comfyui' or settings['director'].get('provider')!='openai-luna':
@@ -45,13 +61,11 @@ def validate_overlap(project, options):
     fallback=settings['image'].get('fallback',{})
     if settings['image'].get('fallbackEnabled') and fallback.get('provider')!='comfyui':
         raise ValueError('Cloud overlap requires a cloud-only image fallback.')
-    limit=options.get('overlapShots',3)
-    if isinstance(limit,bool) or not isinstance(limit,int) or not 2<=limit<=3:
-        raise ValueError('Choose two or three in-flight cloud shots.')
     director_limit=settings['director'].get('parallelism',1)
     director_max=8 if settings['director'].get('executionMode','classic').startswith('staged') else 3
     if isinstance(director_limit,bool) or not isinstance(director_limit,int) or not 1<=director_limit<=director_max:
         raise ValueError('Choose bounded parallel director calls: up to three classic or eight staged.')
+    shot_task_limit(project, options)
     for chapter in project['chapters']:
         for scene in chapter['scenes']:
             if any(shot['imageProvider']!='comfyui' for shot in scene['shots']):
@@ -88,11 +102,11 @@ class CloudStoryOverlap:
         self.main_context=self.admit(project,None,None,'story',digest({'sources':[c['sourceText'] for c in project['chapters']],
             'settings':self.settings}))
         self.main=self.clone(self.main_context,main=True)
-        self.pool=BoundedExecutions(options.get('overlapShots',3),self.main.gate)
+        self.pool=BoundedExecutions(shot_task_limit(project, options),self.main.gate)
         self.chapter_dependencies=[]
         self.chapters=[chapter['id'] for chapter in project['chapters'] if chapter['sourceText'].strip()]
         self.chapter_futures={}
-        self.image_tasks=options.get('overlapShots',3)
+        self.image_tasks=self.pool.limit
         self.pipeline_observations=[]
         self.pipeline_recorded=False
         if self.strategy!='legacy':

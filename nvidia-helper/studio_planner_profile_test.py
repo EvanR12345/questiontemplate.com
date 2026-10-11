@@ -33,6 +33,18 @@ class PlannerProfileTest(unittest.TestCase):
         c2=copy.deepcopy(c);c2['audio']={};p['chapters'].append(c2)
         self.assertFalse(planner_profile(p)['narrationComplete'])
 
+    def test_new_pipeline_admission_does_not_inherit_old_three_task_throughput(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db=PerformanceStore(Path(folder)/'history.db');p=new_project()
+            p['settings']['director'].update(executionMode='staged-lean',parallelism=4)
+            old=profile_for('Image pipeline',p,{}, {'imageTasks':3})
+            db.record('old','run',old,{'kind':'images','value':1},9,{})
+            r=planner_profile(p,db,{})
+            self.assertEqual(r['imageTasks'],5)
+            self.assertIsNone(r['estimates']['images']['seconds'])
+            self.assertEqual(profile_for('Image pipeline',p,{})['imageTasks'],5)
+            db.close()
+
     def test_history_only_matches_recorded_settings(self):
         with tempfile.TemporaryDirectory() as folder:
             db=PerformanceStore(Path(folder)/'history.db');p=new_project();cfg={}

@@ -118,7 +118,8 @@ def profile_for(stage, project, config, details=None):
             automaticRepair=settings.get('automaticRepair',False),maxRetries=settings.get('maxImageRetries',0),
             style=settings.get('style'))
         if stage=='Image pipeline':
-            profile.update(imageTasks=details.get('imageTasks',3),director=director.get('provider'),
+            from studio_overlap import shot_task_limit
+            profile.update(imageTasks=details.get('imageTasks',shot_task_limit(project,{})),director=director.get('provider'),
                 directorParallelism=director.get('parallelism',1),reasoning=director.get('reasoning','Balanced'))
     elif stage in ('Render chapter','Assemble full video'):
         profile.update(width=video.get('width'),height=video.get('height'),fps=video.get('fps'),

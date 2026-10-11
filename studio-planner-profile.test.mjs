@@ -54,3 +54,11 @@ test('fastest starts at first chapter; per-chapter intro is not miscounted',()=>
  const p=profile();p.generationStrategy='fastest';assert.equal(plannerSettings(DEFAULTS,p,evidence).config.readyChapters,1);
  p.intro={enabled:true,placement:'every_chapter',duration:15};assert.throws(()=>plannerSettings(DEFAULTS,p,evidence),/Per-chapter/);
 });
+
+test('new admission capacity is shown without claiming a measured speedup',()=>{
+ const p=profile();p.imageTasks=5;
+ const result=plannerSettings(DEFAULTS,p,evidence);
+ assert.match(result.warnings.join(' '),/five|5 image\/check tasks/);
+ assert.match(result.warnings.join(' '),/no speedup is assumed/);
+ assert.match(profileSummary(p),/5 image\/check tasks, one GPU lane/);
+});

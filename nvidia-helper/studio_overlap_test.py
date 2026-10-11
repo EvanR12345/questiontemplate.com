@@ -13,7 +13,7 @@ from PIL import Image
 from full_video_test import Harness,Renderer
 from studio_data import new_project,new_chapter,get_chapter,get_shot
 from studio_service import StudioService,JobCancelled
-from studio_overlap import CloudStoryOverlap,validate_overlap,NoLocalGeneration
+from studio_overlap import CloudStoryOverlap,validate_overlap,NoLocalGeneration,shot_task_limit
 from studio_qc import should_check
 
 
@@ -227,8 +227,26 @@ class CloudOverlapTest(unittest.TestCase):
             if change=='cap':p['settings']['budget']={}
             if change=='provider':p['settings']['director']['provider']='local-qwen'
             if change=='fallback':p['settings']['image']['fallbackEnabled']=True
-            if change=='slots':options['overlapShots']=4
+            if change=='slots':options['overlapShots']=6
             with self.assertRaises(ValueError):validate_overlap(p,options)
+
+    def test_checked_pipeline_admission_tracks_api_slots_without_extra_image_lanes(self):
+        p=copy.deepcopy(self.project)
+        p['settings']['director'].update(executionMode='staged-lean',parallelism=4)
+        self.assertEqual(shot_task_limit(p,{}),5)
+        self.assertEqual(shot_task_limit(p,{'overlapShots':2}),2)
+        p['settings']['director']['parallelism']=8
+        self.assertEqual(shot_task_limit(p,{}),5)
+        p['settings']['qcCheckLevel']='off'
+        self.assertEqual(shot_task_limit(p,{}),3)
+
+    def test_five_task_production_keeps_single_gpu_lane_and_saves_all_results(self):
+        self.run_story(overlapShots=5)
+        p=self.service.store.load(self.project['id'])
+        self.assertEqual(self.provider.peak,1)
+        self.assertEqual(len(self.provider.requests),2)
+        self.assertEqual(len(self.qc_requests),2)
+        self.assertEqual(p['production']['status'],'COMPLETE')
 
     def test_scoped_cancellation_retains_own_unknown_but_other_submitted_qc_finishes(self):
         self.cancel_during_qc=True

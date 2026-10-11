@@ -285,8 +285,8 @@ class LaneProvider:
 
 class BoundedExecutions:
     def __init__(self, limit, gate):
-        if isinstance(limit,bool) or not isinstance(limit,int) or not 2<=limit<=3:
-            raise ValueError('Choose two or three in-flight cloud shots.')
+        if isinstance(limit,bool) or not isinstance(limit,int) or not 2<=limit<=5:
+            raise ValueError('Choose two to five in-flight cloud shot tasks.')
         self.pool=ThreadPoolExecutor(max_workers=limit,thread_name_prefix='studio-shot')
         self.limit,self.gate=limit,gate
         self.pending=set()

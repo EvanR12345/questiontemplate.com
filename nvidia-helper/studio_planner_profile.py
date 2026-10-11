@@ -13,6 +13,7 @@ GROUPS = {
 }
 
 def planner_profile(project, performance=None, config=None):
+    from studio_overlap import shot_task_limit
     source = project['settings']
     settings = {k: copy.deepcopy(source[k]) for k in FIELDS if k in source}
     for group, fields in GROUPS.items():
@@ -37,6 +38,7 @@ def planner_profile(project, performance=None, config=None):
     return {'version':1, 'project':project['id'], 'name':project['name'],
         'revision':project.get('revision', 0), 'settings':settings,
         'generationStrategy':project.get('generationStrategy', 'align'),
+        'imageTasks':shot_task_limit(project,{}),
         'intro':{k:copy.deepcopy(intro[k]) for k in ('enabled','duration','placement') if k in intro},
         'introImages':len(intro.get('shots', [])), 'chapters':len(chapters),
         'plannedShots':len(shots), 'narrationSeconds':audio_seconds,
