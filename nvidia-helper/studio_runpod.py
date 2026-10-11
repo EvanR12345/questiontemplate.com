@@ -227,6 +227,7 @@ class ProductionGPU:
                         self.connector(current)
                         if self.tunnel and self.tunnel.poll() is not None:
                             raise ManagedGPUError('Private SSH connection failed. Check the dedicated key and localhost port; no public image port was opened.')
+                        self.bootstrap(current)
                         self.provider._health=(0,None);self.provider._server_memory=(0,None)
                         self.provider._node_catalog=(0,None)
                         health=(self.provider.healthCheck(**self.image_selection) if self.image_selection else self.provider.healthCheck())
@@ -258,6 +259,58 @@ class ProductionGPU:
               f'127.0.0.1:{endpoint.port}:127.0.0.1:8188','root@'+address]
         self.tunnel=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+
+    def bootstrap(self,pod):
+        """Rebuild only explicitly opted-in ephemeral worker models after a stop.
+
+        This runs inside the owned rental watchdog, never before the spending
+        gate. No credentials or project assets are sent to the worker here.
+        """
+        ids=self.config.get('runpodBootstrapKleinPodIds',[])
+        if self.pod not in ids or getattr(self,'bootstrapped',False):return
+        if self.pod not in candidate_ids(self.config):
+            raise ManagedGPUError('Bootstrap worker is outside the prepared pool.')
+        self.check();self.gate('Preparing verified image model weights on the cloud worker')
+        direct=pod.get('ssh',{}).get('direct') or {}
+        try:ipaddress.ip_address(direct.get('host'))
+        except (TypeError,ValueError):raise ManagedGPUError('Private bootstrap SSH address is unavailable.') from None
+        port=direct.get('port')
+        if type(port) is not int or not 1<=port<=65535 or direct.get('username')!='root':
+            raise ManagedGPUError('Invalid bootstrap SSH connection.')
+        from studio_worker_bootstrap import remote_script
+        args=['ssh','-i',self.config['runpodSSHKeyFile'],'-p',str(port),'-o','BatchMode=yes',
+            '-o','ConnectTimeout=5','-o','StrictHostKeyChecking=accept-new',
+            '-o','UserKnownHostsFile='+str(self.path.with_suffix('.known-hosts')),
+            'root@'+direct['host'],'python3 -']
+        until=min(self.deadline-20,self.started+300)
+        # RUNNING and an advertised port can precede a usable SSH service.
+        # Probe only transport readiness; no inference is dispatched/retried.
+        while True:
+            self.check();self.gate('Waiting for the private image-worker connection')
+            if not self.owned or self.clock()>=until:
+                raise ManagedGPUError('Private model preparation connection exceeded startup window.')
+            probe=subprocess.run(args[:-1]+['test -d /workspace/runpod-slim/ComfyUI/models'],
+                stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                timeout=8,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            if probe.returncode==0:break
+            self.finished.wait(2)
+        process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+            text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        first=True
+        try:
+            while True:
+                self.check();self.gate('Preparing verified image model weights on the cloud worker')
+                if not self.owned or self.clock()>=until:
+                    raise ManagedGPUError('Model preparation exceeded the bounded startup window.')
+                try:
+                    output,_=process.communicate(input=remote_script() if first else None,timeout=1)
+                    break
+                except subprocess.TimeoutExpired:first=False
+            if process.returncode or 'MODELS_VERIFIED' not in output:
+                raise ManagedGPUError('Cloud model preparation failed; no image request submitted.')
+            self.bootstrapped=True
+        finally:
+            if process.poll() is None:process.kill();process.communicate()
 
     def check(self):
         if self.error:raise ManagedGPUError(self.error)

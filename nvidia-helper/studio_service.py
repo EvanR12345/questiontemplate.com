@@ -339,6 +339,7 @@ class StudioService:
             "runpodAvailabilityWaitSeconds",
             "runpodMaxHourlyUSD",
             "runpodCheckRegionalStock",
+            "runpodBootstrapKleinPodIds",
             "runpodSSHKeyFile",
             "runpodCLI",
             "runpodActionKeyFile",
@@ -354,6 +355,14 @@ class StudioService:
         if 'runpodPreparedPodIds' in data and data['runpodPreparedPodIds']:
             from studio_runpod import candidate_ids
             candidate_ids(data)
+        if 'runpodBootstrapKleinPodIds' in data:
+            values=data['runpodBootstrapKleinPodIds']
+            if not isinstance(values,list) or len(values)>20 or any(not isinstance(v,str) or not re.fullmatch(r'[A-Za-z0-9_-]{8,64}',v) for v in values):
+                raise ValueError('Klein bootstrap requires explicit prepared worker IDs.')
+            effective=self.config|data
+            from studio_runpod import candidate_ids
+            if values and not set(values).issubset(candidate_ids(effective)):
+                raise ValueError('Model restore workers must belong to the selected prepared pool.')
         if 'runpodRequiredGPUType' in data and (not isinstance(data['runpodRequiredGPUType'],str) or len(data['runpodRequiredGPUType'])>128):
             raise ValueError('Enter the exact GPU type ID.')
         for field,minimum,maximum in (('runpodAvailabilityWaitSeconds',0,86400),('runpodMaxHourlyUSD',.01,100)):

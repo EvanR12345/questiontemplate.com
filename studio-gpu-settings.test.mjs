@@ -8,6 +8,11 @@ test('GPU controls preserve exact model, deduplicate workers and convert waiting
  assert.equal(result.runpodRequiredGPUType,'NVIDIA GeForce RTX 5090');assert.equal(result.runpodCheckRegionalStock,true);
 });
 test('clearing optional hourly cap preserves project-budget enforcement',()=>assert.equal(gpuSettingsValues(documentFor({managedPrice:''})).runpodMaxHourlyUSD,null));
+test('model restore is explicit and follows the selected pool, otherwise primary',()=>{
+ assert.deepEqual(gpuSettingsValues(documentFor({managedRestoreModels:true})).runpodBootstrapKleinPodIds,['worker456']);
+ assert.deepEqual(gpuSettingsValues(documentFor({managedRestoreModels:true,managedPodPool:''})).runpodBootstrapKleinPodIds,['worker123']);
+ assert.deepEqual(gpuSettingsValues(documentFor({managedRestoreModels:false})).runpodBootstrapKleinPodIds,[]);
+});
 test('rejects malformed pool and invalid limits',()=>{
  for (const patch of [{managedPodPool:'../escape'},{managedWaitMinutes:'Infinity'},{managedWaitMinutes:''},{managedPrice:'0'},{managedPrice:'NaN'},{managedPodId:'',managedPodPool:''}]) assert.throws(()=>gpuSettingsValues(documentFor(patch)));
 });
