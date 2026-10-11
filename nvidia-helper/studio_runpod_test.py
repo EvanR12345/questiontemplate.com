@@ -92,6 +92,39 @@ class RentalTest(unittest.TestCase):
         with self.assertRaises(ValueError):RunpodClient({}).request('pod-test-123','terminate')
         with self.assertRaises(ValueError):RunpodClient({}).request('../other-pod')
 
+    def test_prepared_pool_picks_cheapest_exact_gpu_without_starting_others(self):
+        self.config.update(runpodPreparedPodIds=['pod-test-123','pod-test-456','pod-test-789'],
+                           runpodRequiredGPUType='NVIDIA GeForce RTX 5090',runpodMaxHourlyUSD=1)
+        rows={pid:{'id':pid,'status':'EXITED','actions':['start'],'cost':cost,'gpu':{'id':gpu}}
+              for pid,cost,gpu in [('pod-test-123',.8,'NVIDIA GeForce RTX 5090'),
+                                  ('pod-test-456',.6,'NVIDIA GeForce RTX 5090'),
+                                  ('pod-test-789',.2,'NVIDIA RTX PRO 6000')]}
+        r=self.rental();r.client=Mock();r.client.request.side_effect=lambda pid:rows[pid]
+        self.assertEqual(r.select_prepared_worker()['id'],'pod-test-456')
+        self.assertTrue(all(len(c.args)==1 for c in r.client.request.call_args_list))
+
+    def test_unavailable_exact_gpu_never_substitutes_or_rents(self):
+        self.config.update(runpodRequiredGPUType='NVIDIA GeForce RTX 5090',runpodAvailabilityWaitSeconds=0)
+        r=self.rental()
+        with self.assertRaisesRegex(ManagedGPUError,'No eligible'):r.ensure()
+        self.assertNotIn('start',self.client.calls)
+
+    def test_availability_wait_is_cancellable_before_any_purchase(self):
+        self.config.update(runpodRequiredGPUType='NVIDIA GeForce RTX 5090',runpodAvailabilityWaitSeconds=60)
+        r=self.rental();calls=[]
+        def gate(message):
+            calls.append(message)
+            if len(calls)>3:raise RuntimeError('cancelled')
+        r.gate=gate
+        with self.assertRaisesRegex(RuntimeError,'cancelled'):r.ensure()
+        self.assertNotIn('start',self.client.calls)
+
+    def test_reconcile_saved_pool_worker_not_current_primary(self):
+        self.config['runpodPreparedPodIds']=['pod-test-123','pod-test-456']
+        self.path.write_text(json.dumps({'podId':'pod-test-456','status':'STARTING','started':1,
+            'hourlyUSD':1,'project':'project'}))
+        self.assertEqual(reconcile(self.config,self.path,self.client)['status'],'STOPPED')
+
     def test_explicit_existing_cli_control_keeps_key_out_of_arguments_and_errors(self):
         import io,subprocess
         folder=Path(self.folder.name);cli=folder/'runpodctl.exe';cli.touch()

@@ -13,7 +13,16 @@ from cost_control import atomic_replace
 class ManagedGPUError(RuntimeError):pass
 
 
-def configured(config):return bool(config.get('runpodManagedPodId'))
+def configured(config):return bool(config.get('runpodManagedPodId') or config.get('runpodPreparedPodIds'))
+
+
+def candidate_ids(config):
+    """Only explicitly prepared workers; never discover/adopt account-wide pods."""
+    values=config.get('runpodPreparedPodIds') or [config.get('runpodManagedPodId')]
+    if not isinstance(values,list) or not 1<=len(values)<=20 or any(
+            not isinstance(v,str) or not re.fullmatch(r'[A-Za-z0-9_-]{8,64}',v) for v in values):
+        raise ManagedGPUError('Configure one to twenty verified prepared worker IDs.')
+    return list(dict.fromkeys(values))
 
 
 def reconcile(config,path,client=None):
@@ -23,7 +32,7 @@ def reconcile(config,path,client=None):
     state=json.loads(path.read_text())
     if state.get('status')=='STOPPED':return state
     pod=state.get('podId')
-    if pod!=config.get('runpodManagedPodId'):
+    if pod not in candidate_ids(config):
         raise ManagedGPUError('The interrupted rental belongs to another configured pod. Restore that configuration before reconciling.')
     client=client or RunpodClient(config)
     current=client.request(pod)
@@ -99,6 +108,50 @@ class ProductionGPU:
         self.owned=False;self.pod=config.get('runpodManagedPodId');self.rented=False
         self.image_selection=image_selection
 
+    def select_prepared_worker(self):
+        """Bounded, cancellable free reads before purchasing one rental.
+
+        A start action is eligibility, not a capacity guarantee. A failed/uncertain
+        start still follows ownership and shutdown reconciliation; never buys a
+        second worker automatically. Each registered worker needs the same model.
+        """
+        ids=candidate_ids(self.config)
+        required=self.config.get('runpodRequiredGPUType','')
+        wait=self.config.get('runpodAvailabilityWaitSeconds',0)
+        if not isinstance(required,str) or len(required)>128 or type(wait) not in (int,float) or not math.isfinite(wait) or not 0<=wait<=86400:
+            raise ManagedGPUError('Invalid GPU availability policy.')
+        # Preserve the established single-worker behavior unless opted in.
+        if not required and not self.config.get('runpodPreparedPodIds'):
+            return self.client.request(self.pod)
+        until=self.clock()+wait
+        while True:
+            self.gate('Waiting for a prepared '+(required or 'image GPU')+' worker; no rental started')
+            eligible=[]
+            for pid in ids:
+                self.gate('Checking prepared image worker availability; no rental started')
+                pod=self.client.request(pid)
+                gpu=pod.get('gpu') or {}
+                if pod.get('id')!=pid or required and gpu.get('id')!=required:continue
+                if pod.get('status') not in ('EXITED','ERROR') or 'start' not in pod.get('actions',[]):continue
+                rate=pod.get('cost')
+                if type(rate) not in (int,float) or not math.isfinite(rate) or rate<=0:continue
+                maximum=self.config.get('runpodMaxHourlyUSD')
+                if maximum is not None:
+                    if type(maximum) not in (int,float) or not math.isfinite(maximum) or maximum<=0:
+                        raise ManagedGPUError('Set a positive maximum hourly GPU price.')
+                    if rate>maximum:continue
+                eligible.append((rate,pid,pod))
+            if eligible:
+                _,self.pod,pod=min(eligible,key=lambda item:(item[0],item[1]))
+                return pod
+            if self.clock()>=until:
+                raise ManagedGPUError('No eligible prepared GPU became available within the wait limit. No rental started and no different GPU substituted.')
+            # Cancellation is checked at least once a second, even while waiting.
+            for _ in range(min(30,max(1,math.ceil(until-self.clock())))):
+                self.gate('Waiting for GPU availability; no rental started')
+                if self.finished.wait(1):raise ManagedGPUError('GPU availability wait cancelled.')
+                if self.clock()>=until:break
+
     def save(self,**values):
         with self.lock:
             self.state.update(values)
@@ -115,7 +168,7 @@ class ProductionGPU:
             if self.owned:return
             if self.rented:raise ManagedGPUError('This rental was already closed; start another saved production job for additional images.')
             self.gate('Checking the configured image GPU')
-            pod=self.client.request(self.pod)
+            pod=self.select_prepared_worker()
             if pod.get('id')!=self.pod or pod.get('status') not in ('EXITED','ERROR') or 'start' not in pod.get('actions',[]):
                 raise ManagedGPUError('Managed generation requires its configured stopped pod. Studio will not adopt or stop a separately running GPU.')
             rate=pod.get('cost');cap=self.budget.get('gpuBudgetUSD');previous=self.budget.get('gpuPreviouslySpentUSD',0)
@@ -143,6 +196,9 @@ class ProductionGPU:
                     self.check();self.gate('Starting the image GPU and private connection')
                     current=self.client.request(self.pod)
                     if current.get('status')=='RUNNING':
+                        required=self.config.get('runpodRequiredGPUType')
+                        if required and (current.get('gpu') or {}).get('id')!=required:
+                            raise ManagedGPUError('Started worker GPU differs from the required GPU; shutting down without generating images.')
                         if not (current.get('ssh',{}).get('direct') or {}).get('host'):
                             self.finished.wait(1);continue
                         self.connector(current)
