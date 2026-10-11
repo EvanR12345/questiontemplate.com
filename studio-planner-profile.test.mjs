@@ -60,5 +60,6 @@ test('new admission capacity is shown without claiming a measured speedup',()=>{
  const result=plannerSettings(DEFAULTS,p,evidence);
  assert.match(result.warnings.join(' '),/five|5 image\/check tasks/);
  assert.match(result.warnings.join(' '),/no speedup is assumed/);
+ assert.match(result.warnings.join(' '),/28-call Luna QC-only pilot found no measured advantage/);
  assert.match(profileSummary(p),/5 image\/check tasks, one GPU lane/);
 });

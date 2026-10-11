@@ -27,7 +27,7 @@ export function plannerSettings(config, profile, evidence) {
   else warnings.push('This director workflow has no matching measured profile. Existing timing is a comparison reference.');
   next.directorActualSlots=d.parallelism||1;next.apiSlots=next.directorActualSlots;
   if(profile.imageTasks>3)
-    warnings.push(`Studio admits up to ${profile.imageTasks} image/check tasks while keeping one GPU image lane. Older three-task throughput does not measure this new pipeline; no speedup is assumed until matching production completes.`);
+    warnings.push(`Studio admits up to ${profile.imageTasks} image/check tasks while keeping one GPU image lane. Older three-task throughput does not measure this new pipeline; no speedup is assumed until matching production completes. A 28-call Luna QC-only pilot found no measured advantage for five tasks; complete image-generation throughput remains untested.`);
   next.directorCostMode='measured';
   next.earlyGpu=false;next.gpuStartSeconds=0;
   if(profile.generationStrategy==='align'&&!profile.timedHistoryReady){
