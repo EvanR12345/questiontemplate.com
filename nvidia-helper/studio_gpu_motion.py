@@ -75,7 +75,7 @@ def motion_coordinates(motion,width,height,index,frames,amount=.06,easing='linea
     if easing=='smooth':progress=3*progress**2-2*progress**3
     zoom=1.;x=y=None
     if motion=='slow zoom in':zoom=1+amount*progress
-    elif motion=='slow zoom out':zoom=1+amount-amount*progress
+    elif motion=='slow zoom out':zoom=1+amount*(1-progress)
     elif motion in ('pan left','pan right','pan up','pan down'):
         zoom=1.08
         if motion=='pan left':x=(width-width/zoom)*(1-progress)

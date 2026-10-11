@@ -610,7 +610,7 @@ function qualityDecision(shot) {
   return shot.qcDecision || {disposition: shot.qc?.pass === true ? "passed" : shot.qc?.pass === false ? "review" : "unreviewed", blocking: shot.qc?.pass === false && shot.qc?.action !== "review"};
 }
 function qualityLabel(shot) {
-  return ({accepted: "Accepted by you", advisory: "Advisory · production continues", review: "Needs your review", pending: "QC pending", passed: "AI passed", unreviewed: "Not checked"})[qualityDecision(shot).disposition] || "Needs review";
+  return ({checks_off: "Visual checks off · findings retained", accepted: "Accepted by you", advisory: "Advisory · production continues", review: "Needs your review", pending: "QC pending", passed: "AI passed", unreviewed: "Not checked"})[qualityDecision(shot).disposition] || "Needs review";
 }
 function promptMeasurements(shot) {
   const m = shot.imageMetadata?.promptMeasurements;
@@ -1392,7 +1392,7 @@ async function shotAction(sid, act) {
       );
     formDialog(
       "Repair this shot",
-      `<label>Targeted repair instruction<textarea id="repairPrompt" rows="3">${escape(s.prompt)}</textarea></label>${s.imageProvider === "existing" ? '<label>White = repair, black = keep<input id="repairMask" type="file" accept="image/*"></label>' : '<p class="muted">The current image is the source; identity references are attached when supported.</p>'}`,
+      `<label>Targeted repair instruction<textarea id="repairPrompt" rows="3">${escape(s.qc?.repairPrompt || s.prompt)}</textarea></label>${s.imageProvider === "existing" ? '<label>White = repair, black = keep<input id="repairMask" type="file" accept="image/*"></label>' : '<p class="muted">The current image is the source; identity references are attached when supported.</p>'}`,
       async () => {
         await patch(
           "shot",

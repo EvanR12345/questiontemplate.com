@@ -300,8 +300,9 @@ class CloudOverlapTest(unittest.TestCase):
         runtime=CloudStoryOverlap(self.service,self.project,{'overlap':True})
         context=runtime.main_context
         try:
+            runtime.main.select_director(self.project)
             context.cancelled.set();self.service.paused=True;runtime._collecting_after_failure=True
-            runtime.receive_gate(context,'Collect terminal usage')
+            runtime.main.director.receive_gate('Collect terminal usage')
             with self.assertRaises(JobCancelled):runtime.gate(context)
             self.service.cancel=True
             with self.assertRaises(JobCancelled):runtime.receive_gate(context)

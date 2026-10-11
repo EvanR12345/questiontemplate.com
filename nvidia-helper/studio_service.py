@@ -788,7 +788,10 @@ class StudioService:
             # A remote request cannot be suspended by pausing its local reader.
             # Collect/save the current response, but keep ordinary dispatch gates
             # paused. Cancellation/shutdown still interrupt this receive gate.
-            self.director.receive_gate = lambda message: self.gate(message, wait_paused=False)
+            if getattr(self,'_overlap',None):
+                self.director.receive_gate=lambda message:self._overlap.receive_gate(self.execution_context,message)
+            else:
+                self.director.receive_gate = lambda message: self.gate(message, wait_paused=False)
 
     def prepare_director_device(self, project):
         # Remote Luna uses no laptop VRAM. Moving the voice weights to CPU for
@@ -955,6 +958,10 @@ class StudioService:
                     self.gate("Waiting for GPU helper")
                 try:
                     p = self.store.load(job["project"])
+                    burst=getattr(self,'_queued_image_rental',None)
+                    if burst and (job['kind']!='image' or burst.project!=job['project']):
+                        try:burst.stop('queue switched project or operation')
+                        finally:self._queued_image_rental=None
                     direct_stage={'image':'Image generation','qc':'Visual QC','narration':'Narration',
                         'render-chapter':'Render chapter','render-full':'Assemble full video',
                         'character-reference':'Character reference','intro-image':'Intro images'}.get(job['kind'])
@@ -1011,6 +1018,7 @@ class StudioService:
                                     self.store.load(p["id"]), job["chapter"], options
                                 )
                     elif job["kind"] == "image":
+                        self.begin_queued_image_rental(p,job,options)
                         self.generate(
                             p, job["chapter"], job["shot"], job["seed"], options
                         )
@@ -1134,6 +1142,9 @@ class StudioService:
                 except Exception:
                     pass
             finally:
+                try:self.finish_queued_image_rental(job,state)
+                except Exception as error:
+                    state='FAILED';message=type(error).__name__+': '+str(error)[:1800]
                 if job["kind"] in ("produce-story", "prepare-story"):
 
                     def run_finished(p):
@@ -1479,6 +1490,36 @@ class StudioService:
                     get_chapter(latest, chapter['id'])['renderStale'] = True
                     latest['renderStale'] = True
                 self.store.mutate(p['id'], save)
+
+    def begin_queued_image_rental(self,project,job,options):
+        """Reuse an owned rental only through a contiguous same-project burst."""
+        from studio_runpod import configured,ProductionGPU
+        shot=options.get('shotSnapshot') or get_shot(project,job['chapter'],job['shot'])
+        if not configured(self.config) or shot['imageProvider']!='comfyui':return
+        # Do not rent merely to discover that an unbudgeted repair is blocked.
+        if options.get('budgetedQCRepair') or (shot.get('imagePath') and not shot.get('generationStale')
+                and shot.get('qc',{}).get('pass') is False):
+            reason=repair_budget_reason(project['settings'])
+            if reason:raise ValueError(reason)
+        rental=getattr(self,'_queued_image_rental',None)
+        if rental is None:
+            rental=ProductionGPU(self.config,self.store.root/'.managed-rental.json',project['id'],
+                project['settings'].get('cloudWindow',{}),self.providers['comfyui'],self.gate,
+                lambda state:self.record_gpu_state(project['id'],state),
+                image_selection={'model':shot['imageModel'],'workflow':shot['workflow']})
+            self._queued_image_rental=rental
+        rental.ensure()
+
+    def finish_queued_image_rental(self,job,status):
+        rental=getattr(self,'_queued_image_rental',None)
+        if rental is None:return
+        with self.cv:
+            next_job=self.db.execute("SELECT project,kind FROM jobs WHERE status='QUEUED' ORDER BY priority DESC,created LIMIT 1").fetchone()
+            keep=(status=='COMPLETE' and not self.paused and not self.cancel and not self.closed
+                and next_job and next_job['project']==job['project'] and next_job['kind']=='image')
+        if keep:return
+        try:rental.stop('queued image burst finished or interrupted')
+        finally:self._queued_image_rental=None
 
     def produce_story(self,pid,options):
         from studio_runpod import configured,ProductionGPU

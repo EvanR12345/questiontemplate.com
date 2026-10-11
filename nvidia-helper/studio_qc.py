@@ -106,6 +106,10 @@ def issue_levels(qc):
 def decision(project, shot, store, context=None):
     qc = shot.get('qc', {})
     mode = policy(project['settings'])
+    if project['settings'].get('qcCheckLevel')=='off':
+        # An explicit user choice disables visual gating, never erases findings
+        # or certifies story correctness. File/decoder checks remain separate.
+        return {'disposition':'checks_off','blocking':False,'policy':mode}
     if qc.get('status')=='PENDING': return {'disposition':'pending','blocking':True,'policy':mode}
     if valid_acceptance(project, shot, store,context): return {'disposition':'accepted','blocking':False,'policy':mode}
     if qc.get('pass') is True: return {'disposition':'passed','blocking':False,'policy':mode}

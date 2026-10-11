@@ -329,7 +329,7 @@ class VideoRenderer:
         for index,shot in enumerate(shots):
             if qc_decision(p,shot,self.store)['blocking']:
                 raise ValueError(f'Shot {index+1} needs review. Accept this image or request a repair before rendering.')
-        if any(s.get('qc', {}).get('status') == 'PENDING' for s in shots):
+        if p['settings'].get('qcCheckLevel')!='off' and any(s.get('qc', {}).get('status') == 'PENDING' for s in shots):
             raise ValueError('Finish pending image quality checks before rendering.')
         if ch["audio"].get("textDigest") and ch["audio"]["textDigest"] != digest(
             ch["cleanNarrationText"]
@@ -633,7 +633,7 @@ class VideoRenderer:
             clips, lengths = [], []
             cursor = 0.0
             for index, shot in enumerate(intro['shots']):
-                if shot.get('qc', {}).get('status') == 'PENDING':
+                if p['settings'].get('qcCheckLevel')!='off' and shot.get('qc', {}).get('status') == 'PENDING':
                     raise ValueError('Finish pending intro image quality checks before rendering.')
                 if qc_decision(p,shot,self.store)['blocking']:
                     raise ValueError(f'Intro shot {index+1} needs review. Accept it or request a repair before rendering.')

@@ -33,6 +33,15 @@ class PracticalQCTest(unittest.TestCase):
         self.p['settings']['automaticRepair']=True
         self.assertTrue(decision(self.p,self.shot,self.store)['blocking'])
         self.assertFalse(automatic_repairs(self.p['settings']))
+    def test_explicit_checks_off_retains_major_finding_without_certifying_it(self):
+        self.shot['qc'].update(issues=['wrong character'],status='PENDING')
+        raw=copy.deepcopy(self.shot['qc'])
+        self.p['settings']['qcCheckLevel']='off'
+        self.assertFalse(decision(self.p,self.shot,self.store)['blocking'])
+        self.assertEqual(decision(self.p,self.shot,self.store)['disposition'],'checks_off')
+        self.assertEqual(self.shot['qc'],raw)
+        self.p['settings']['qcCheckLevel']='practical'
+        self.assertTrue(decision(self.p,self.shot,self.store)['blocking'])
     def test_uncertain_legacy_claim_is_reviewable_not_silently_approved(self):
         self.shot['qc']['issues']=['Something might be wrong.']
         self.assertTrue(decision(self.p,self.shot,self.store)['blocking'])
