@@ -8,6 +8,10 @@ test('finished video shows cloud save progress and never treats an older revisio
   storage.projects.project.revision=12;
   assert.equal(videoDeliveryStatus(p,storage).cloudReady,true);
   storage.projects.project.status='UPLOADING';assert.match(videoDeliveryStatus(p,storage).label,/saving/);
+  storage.projects.project.syncProgress={filesProcessed:24,totalFiles:139};
+  assert.match(videoDeliveryStatus(p,storage).label,/24 \/ 139 files processed/);
+  storage.projects.project.syncProgress.filesProcessed='unsafe';
+  assert.doesNotMatch(videoDeliveryStatus(p,storage).label,/files processed/);
   storage.projects.project.status='FAILED';assert.equal(videoDeliveryStatus(p,storage).retry,true);
   assert.equal(videoDeliveryStatus(p,{enabled:false}).cloudReady,false);
   assert.equal(videoDeliveryStatus(p,undefined).cloudReady,false);

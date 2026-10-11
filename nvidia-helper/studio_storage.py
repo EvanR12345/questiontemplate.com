@@ -96,6 +96,7 @@ class R2Archive:
         self.state_path = store.root / 'cloud-sync.json'
         self.cv = threading.Condition(threading.RLock()); self.stopped = False
         self.pending = set(); self.states = {}; self.objects = objects
+        self.active_project = None
         self.configuration_error='';self.journal_error=''
         if self.state_path.exists():
             try:self.states = json.loads(self.state_path.read_text(encoding='utf-8'))
@@ -142,7 +143,7 @@ class R2Archive:
         if not self.enabled: return
         with self.cv:
             self.pending.add(pid)
-            self.states.setdefault(pid,{}).update(status='PENDING')
+            self.states.setdefault(pid,{}).update(status='UPLOADING' if self.active_project==pid else 'PENDING')
             self.persist(); self.cv.notify_all()
 
     def status(self, pid=None):
@@ -171,11 +172,16 @@ class R2Archive:
             raise ValueError('Cloud and helper revisions conflict. Both copies retained for review.')
         records = dict(old.get('files',{})) if old else {}
         uploaded = 0
-        for path in sorted(folder.rglob('*')):
-            if not path.is_file() or path.is_symlink() or path.suffix.lower() not in MEDIA: continue
+        paths=[path for path in sorted(folder.rglob('*'))
+            if path.is_file() and not path.is_symlink() and path.suffix.lower() in MEDIA
+            and not any(x.startswith('.') or x=='working' for x in path.relative_to(folder).parts)
+            and '.partial.' not in path.relative_to(folder).as_posix() and '.writing.' not in path.relative_to(folder).as_posix()
+            and path.name not in ('project.json','revision.json','project.previous.json')]
+        for index,path in enumerate(paths):
             relative = path.relative_to(folder).as_posix()
-            if any(x.startswith('.') or x=='working' for x in path.relative_to(folder).parts) or '.partial.' in relative or '.writing.' in relative: continue
-            if path.name in ('project.json','revision.json','project.previous.json'): continue
+            with self.cv:
+                if self.active_project==pid:
+                    self.states[pid]['syncProgress']={'filesProcessed':index,'totalFiles':len(paths),'uploadedBytes':uploaded}
             self.store.asset(pid, relative)  # Reject traversal and unsupported asset paths.
             before = stable_file(path); previous = records.get(relative,{})
             if previous.get('stamp') == list(before): continue
@@ -334,13 +340,16 @@ class R2Archive:
             with self.cv:
                 if self.stopped: return
                 if not self.pending: self.cv.wait(3); continue
-                pid=self.pending.pop(); self.states.setdefault(pid,{})['status']='UPLOADING'; self.persist()
+                pid=self.pending.pop(); self.active_project=pid
+                self.states.setdefault(pid,{})['status']='UPLOADING'; self.persist()
             try: self.sync(pid)
             except Exception:
                 # SDK errors may contain credential-adjacent URLs. Never return their raw text.
                 with self.cv:
                     self.states[pid].update(status='FAILED',error='Cloud save failed. Local work is retained. Check access, connection and revision conflicts; retry cloud save.')
                     self.persist()
+            finally:
+                with self.cv:self.active_project=None
 
     def close(self):
         with self.cv: self.stopped=True; self.cv.notify_all()

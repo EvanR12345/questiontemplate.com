@@ -33,6 +33,18 @@ class CloudSaveTests(unittest.TestCase):
         self.a.objects=self.obj;self.a.enabled=True;self.store.archive=self.a
         self.image=self.store.folder(self.p['id'])/'art.png';Image.new('RGB',(640,360),'purple').save(self.image)
     def tearDown(self):self.tmp.cleanup()
+    def test_edit_during_upload_preserves_active_status_and_progress(self):
+        self.a.active_project=self.p['id']
+        self.a.states[self.p['id']]={'status':'UPLOADING'}
+        self.a.enqueue(self.p['id'])
+        self.assertEqual(self.a.status()['projects'][self.p['id']]['status'],'UPLOADING')
+        self.assertIn(self.p['id'],self.a.pending)
+        self.obj.fail=True
+        with self.assertRaises(RuntimeError):self.a.sync(self.p['id'])
+        progress=self.a.status()['projects'][self.p['id']]['syncProgress']
+        self.assertEqual(progress['totalFiles'],1)
+        self.assertEqual(progress['filesProcessed'],0)
+        self.assertEqual(progress['uploadedBytes'],0)
     def test_cloud_presence_and_identity_checks_never_restore_media_to_laptop(self):
         from studio_qc import asset_hash
         original=sha(self.image);self.a.sync(self.p['id']);self.image.unlink()

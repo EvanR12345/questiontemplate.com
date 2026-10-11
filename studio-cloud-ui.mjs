@@ -14,7 +14,10 @@ export function videoDeliveryStatus(project,storage){
   if(state.status==='SYNCED'&&Number.isSafeInteger(state.revision)&&state.revision>=project.revision)
     return {cloudReady:true,retry:false,label:'Saved in '+storage.provider};
   if(state.status==='FAILED')return {cloudReady:false,retry:true,label:'Video ready in helper · cloud save failed; retry cloud save'};
-  return {cloudReady:false,retry:false,label:'Video ready in helper · saving to '+storage.provider};
+  const progress=state.syncProgress;
+  const detail=progress&&Number.isSafeInteger(progress.filesProcessed)&&progress.filesProcessed>=0&&Number.isSafeInteger(progress.totalFiles)&&progress.totalFiles>0
+    ?` · ${Math.min(progress.filesProcessed,progress.totalFiles)} / ${progress.totalFiles} files processed`:'';
+  return {cloudReady:false,retry:false,label:'Video ready in helper · saving to '+storage.provider+detail};
 }
 export async function directCloudDownload(projectId,path,name,api,document=globalThis.document){
   const result=await api('media-link',{project:projectId,path,download:name});
