@@ -1,4 +1,6 @@
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
+import {imagePresetChanges} from './studio-image-presets.mjs?v=short-video-20261011';
+import {videoRecipePatch,videoSettingsHTML} from './studio-video-settings.mjs?v=short-video-20261011';
 import {gpuSettingsForm,gpuSettingsValues} from './studio-gpu-settings.mjs?v=5090-wait-20261011';
 import {directorLimits,directorSummary,directorSettings,directorRequestControls} from './studio-director-settings.mjs?v=luna-standard-controls-20261010';
 import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-state.mjs?v=forms-20261009';
@@ -654,6 +656,7 @@ function settings() {
   const level = checkLevel(s), w = {enabled:false, type:"text", text:"Studio", imagePath:"", position:"bottom-right", widthPercent:12, opacity:.65, marginPercent:2, color:"#FFFFFF", ...s.watermark};
   const models = selected?.models || [i.model];
   return `<h2>Project settings</h2><p class="muted">Saved for this project. Use the sections below, then save your changes.</p><div class="toolbar"><button data-save-settings>Save changes</button><a href="#settings-checks">Checks</a><a href="#settings-intro">Intro</a><a href="#settings-watermark">Watermark</a><a href="#settings-video">Video</a><a href="#settings-voice">Voice</a><a href="#settings-cost">Spending limits</a></div><label>Project name<input id="settingProjectName" value="${escape(project.name)}"></label><div class="two-col"><label>Visual style<select id="settingStyle">${options(["cinematic illustration", "anime", "manga", "storybook", "photorealistic cinema", "full-color manhwa", "dark fantasy"], s.style)}</select></label><label>Director layout<select id="settingLayout">${options(["AUTO", "CINEMATIC", "DYNAMIC", "MANGA / ANIME", "STORYBOOK", "CUSTOM"], s.layoutMode)}</select></label><label>Generation mode<select id="settingGenerationMode">${options(["QUICK", "BALANCED", "MAX QUALITY"], s.generationMode)}</select></label><label>Image quality preset<select id="settingImagePreset">${options(["Fast Local", "Balanced Quality", "Maximum Quality", "Character Reference", "Image Repair", "Anime/Manga", "Cinematic", "Storybook"], i.preset)}</select></label></div>
+  ${videoSettingsHTML(project)}
   <div class="section-box" id="settings-checks"><h3>Visual checks</h3><p role="status"><strong>Automatic repairs: ${s.automaticRepair ? project.qcRepairBudget?.enabled ? "Enabled · bounded by verified cost and retry limits" : "On hold · see the cost requirement below" : "Off · checks report issues without replacing images"}</strong></p><div class="two-col"><label>Check level<select id="settingCheckLevel">${options([["off", "Off · no automatic or manual paid checks"], ["sampled", "Sampled · first shot + a stable sample"], ["practical", "Practical · every new image"], ["strict", "Strict · every new image"]], level)}</select></label><label>Sample about one image in<input id="settingSampleEvery" type="number" min="2" max="20" step="1" value="${s.qcSampleEvery ?? 5}"></label><label>How findings affect production<select id="settingQCPolicy">${options([["practical", "Practical · minor differences are advisory"], ["strict", "Strict · detailed review"]], ["practical","strict"].includes(level) ? level : s.qcPolicy || "practical")}</select></label></div><p class="muted">Sampled checks include the first shot of each chapter and planned intro, then select roughly one in N using stable shot IDs. Resuming keeps the same selection. Skipped images stay “Not checked.” Off also overrides MAX QUALITY. Existing AI findings and your image acceptances stay saved.</p><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""} ${level !== "off" ? "" : "disabled"}>Allow bounded automatic repairs · major errors only in Practical mode</label><p class="muted">Practical review treats minor pose, framing, expression and prop detail differences as advice. Automatic repairs target confirmed major story, identity or anatomy errors; uncertain findings need review. Repairs are on hold until a verified estimate covers checks, replacements, rechecks and extra rental within your 10% overhead ceiling. Enabling this option does not buy a repair or raise your budget. ${escape(project.qcRepairBudget?.reason || "Missing cost evidence keeps automatic repairs on hold.")}</p></div>
   <div class="section-box"><h3>Image generator</h3><label class="inline"><input id="settingFocusedPrompts" type="checkbox" ${s.focusedPrompts === true ? "checked" : ""}>Focused story facts for newly planned images</label><p class="muted">Optional guidance based on the prompt test: keep explicit gender, established people count and prop ownership; shorten repeated reference instructions. Existing shots and manual prompts stay saved. Prompts have no fixed word quota and are never cut off. A universal speed, price or quality winner was not established.</p><div class="two-col"><label>Image provider<select id="settingImageProvider">${options(
     [
@@ -1700,6 +1703,18 @@ function voicePreviewResults() {
   return (project.voicePreviews || []).slice().reverse().map(p => `<p>${escape(p.voice)} · ${p.speed}× · ${time(p.duration)} · ${escape(p.narrationDelivery || 'standard')} · ${escape(p.soundEffects || 'subtle')}${p.exportPath ? ' · AAC 128 kbps' : ' · lossless WAV'}</p><audio controls data-asset="${escape(p.exportPath || p.path)}"></audio>`).join('');
 }
 function wireSettings() {
+  $('#videoRecipeSource').innerHTML=projects.map(p=>`<option value="${escape(p.id)}" ${p.id===project.id?'selected':''}>${escape(p.name)}</option>`).join('');
+  $('#copyVideoRecipe').onclick=()=>action(async()=>{
+    if(queue?.current)throw Error('Wait for the current production job to finish before changing its setup.');
+    await saveSettingsIfVisible();
+    const target=project,sourceId=$('#videoRecipeSource').value;
+    const source=await api('project?id='+encodeURIComponent(sourceId));
+    if(project!==target||settingsDrafts.has(target.id))throw Error('The editor changed while loading the setup. Your edits were retained; try again after saving.');
+    const receipt=source.render?.settingsSnapshot||source.chapters.find(c=>c.render?.settingsSnapshot)?.render.settingsSnapshot;
+    const update=videoRecipePatch(target,receipt);
+    await patch('project',target.id,{...update,_imageSelectedByUser:true},true);
+    note('Saved video setup applied for future generation. Existing shots, audio, exports and spending caps were preserved.');
+  });
   $('#configureManagedGPU').onclick=()=>action(async()=>{
     const config=await api('config');
     formDialog('Automatic image GPU',gpuSettingsForm(config),async()=>{
@@ -1808,25 +1823,18 @@ function wireSettings() {
       await patch("project", project.id, { settings }, true);
     });
   $("#settingImagePreset").onchange = (e) => {
-    const native = $("#settingImageProvider").value === "native-flux";
-    const refs = ["Fast Local", "Character Reference", "Image Repair"].includes(
-      e.target.value,
-    );
-    $("#settingSteps").value = native
-      ? 4
-      : e.target.value === "Fast Local"
-        ? 8
-        : e.target.value === "Maximum Quality"
-          ? 30
-          : 20;
-    $("#settingGuidance").value = native ? 1 : 7;
-    if (native) $("#settingResolution").value = refs ? "384x384" : "448x448";
-    if (e.target.value === "Anime/Manga") $("#settingStyle").value = "anime";
-    if (e.target.value === "Cinematic")
-      $("#settingStyle").value = "photorealistic cinema";
-    if (e.target.value === "Storybook") $("#settingStyle").value = "storybook";
-    for(const id of ['settingSteps','settingGuidance','settingResolution','settingStyle'])settingsDrafts.remember(project.id,$('#'+id));
+    const result=imagePresetChanges({...project.settings.image,
+      provider:$('#settingImageProvider').value,model:$('#settingImageModel').value,
+      steps:Number($('#settingSteps').value),guidance:Number($('#settingGuidance').value)},
+      e.target.value,$('#settingStyle').value);
+    $('#settingSteps').value=result.image.steps;
+    $('#settingGuidance').value=result.image.guidance;
+    $('#settingSampler').value=result.image.sampler;
+    $('#settingScheduler').value=result.image.scheduler;
+    $('#settingStyle').value=result.style;
+    for(const id of ['settingSteps','settingGuidance','settingSampler','settingScheduler','settingStyle'])settingsDrafts.remember(project.id,$('#'+id));
     settingsDraftStatus();
+    note(result.note);
   };
   $("#editCustomLayout").onclick = () =>
     jsonDialog("Custom layout targets", project.settings.customLayout, (v) =>

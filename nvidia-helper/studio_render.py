@@ -4,6 +4,7 @@ import copy, hashlib, json, math, os, shutil, subprocess, time, wave
 from pathlib import Path
 from studio_qc import decision as qc_decision
 from studio_data import digest
+from studio_video_settings import capture as capture_video_settings
 from render_queue import render_unique_clips
 
 SUPPORTED_MOTIONS = {'static','slow zoom in','slow zoom out','pan left','pan right','pan up','pan down'}
@@ -528,6 +529,7 @@ class VideoRenderer:
             "duration": ch["audio"]["duration"],
             "created": time.time(),
             "downloadName": f"chapter-{ch['number']:03d}.mp4",
+            "settingsSnapshot": capture_video_settings(p, ch),
         }
 
     def watermark_export(self, p, result, gate):
@@ -854,6 +856,7 @@ class VideoRenderer:
             "signature": signature,
             "downloadName": p["name"] + ".mp4",
             "created": time.time(),
+            "settingsSnapshot": capture_video_settings(p),
         },gate)
 
     def engagement_export(self, p, result, gate, namespace='full'):
