@@ -8,8 +8,9 @@ from studio_service import StudioService
 class ImageRentalTest(unittest.TestCase):
     def setUp(self):
         self.job={'project':'test','chapter':'chapter','shot':'shot','kind':'image'}
-        self.project={'id':'test','settings':{'cloudWindow':{'gpuBudgetUSD':1}}}
-        self.shot={'imageProvider':'comfyui','imageModel':'klein','workflow':'klein','qc':{}}
+        self.project={'id':'test','settings':{'cloudWindow':{'gpuBudgetUSD':1}},'chapters':[{'id':'chapter','people':[]}],'characters':[]}
+        self.shot={'id':'shot','chapterId':'chapter','start':0,'end':1,'prompt':'A clear drawn scene.','characters':[],
+            'imageProvider':'comfyui','imageModel':'klein','workflow':'klein','qc':{}}
         self.service=SimpleNamespace(config={'runpodManagedPodId':'test-pod'},
             store=SimpleNamespace(root=Path('unused-fixture')),providers={'comfyui':Mock()},
             cv=threading.Condition(),db=Mock(),gate=Mock(),record_gpu_state=Mock(),
@@ -37,5 +38,11 @@ class ImageRentalTest(unittest.TestCase):
         self.shot.update(imagePath='saved.png',qc={'pass':False})
         with patch('studio_runpod.ProductionGPU') as factory:
             with self.assertRaisesRegex(ValueError,'unverified'):
+                StudioService.begin_queued_image_rental(self.service,self.project,self.job,{'shotSnapshot':self.shot})
+            factory.assert_not_called()
+    def test_invalid_prompt_never_buys_cold_startup(self):
+        self.shot['prompt']=''
+        with patch('studio_runpod.ProductionGPU') as factory:
+            with self.assertRaisesRegex(ValueError,'preflight'):
                 StudioService.begin_queued_image_rental(self.service,self.project,self.job,{'shotSnapshot':self.shot})
             factory.assert_not_called()

@@ -1501,6 +1501,8 @@ class StudioService:
                 and shot.get('qc',{}).get('pass') is False):
             reason=repair_budget_reason(project['settings'])
             if reason:raise ValueError(reason)
+        # Validate the submitted shot before buying cold startup time.
+        require_shot(project,shot)
         rental=getattr(self,'_queued_image_rental',None)
         if rental is None:
             rental=ProductionGPU(self.config,self.store.root/'.managed-rental.json',project['id'],
