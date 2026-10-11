@@ -6,10 +6,31 @@ from pathlib import Path
 from unittest.mock import Mock
 from studio_data import ProjectStore, new_project, validate_project
 from studio_service import StudioService
+from studio_render import VideoRenderer
 import full_video_test as fixtures
 
 
 class IntroPreparationTest(unittest.TestCase):
+    def test_review_metadata_does_not_rerender_intro_but_major_flags_block_cache(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=ProjectStore(folder);project=store.save(new_project())
+            project['settings']['qcCheckLevel']='practical'
+            shot={'id':'intro-shot','imagePath':'art.png','start':0,'end':15,'motion':'static','qc':{'pass':True}}
+            project['intro'].update(enabled=True,duration=15,shots=[shot])
+            store.asset(project['id'],'art.png').write_bytes(b'unchanged image')
+            renderer=VideoRenderer(store,{})
+            renderer.cached_asset=Mock(return_value=True)
+            original=renderer.raw_intro(project,lambda *_:None)
+            shot['qc']={'pass':False,'issues':['Framing slightly wider'],'findings':[{'issue':'Framing slightly wider','severity':'advisory'}]}
+            self.assertEqual(renderer.raw_intro(project,lambda *_:None),original)
+            shot['qc']={'pass':False,'issues':['Wrong main character'],'findings':[{'issue':'Wrong main character','severity':'major'}]}
+            renderer.cached_asset.reset_mock()
+            with self.assertRaisesRegex(ValueError,'needs review'):
+                renderer.raw_intro(project,lambda *_:None)
+            renderer.cached_asset.assert_not_called()
+            project['settings']['qcCheckLevel']='off'
+            self.assertEqual(renderer.raw_intro(project,lambda *_:None),original)
+
     def test_reuse_checks_script_and_voice_but_explicit_regeneration_still_runs(self):
         with tempfile.TemporaryDirectory() as folder:
             service=StudioService.__new__(StudioService);service.store=ProjectStore(folder)
