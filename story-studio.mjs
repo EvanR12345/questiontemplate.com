@@ -1750,14 +1750,18 @@ function wireSettings() {
     }
     selector.innerHTML=options(Array.from({length:maximum},(_,i)=>[String(i+1),`${i+1} · ${i ? 'concurrent' : 'serial'}`]),String(selected));
   };
+  let manualRepairChoice=$('#settingUnattended')?.checked ? !!project.settings.automaticRepair : $('#settingRepair').checked;
   const updateChecks = () => {
     const level = $("#settingCheckLevel").value;
     if (["practical", "strict"].includes(level)) $("#settingQCPolicy").value = level;
     $("#settingQCPolicy").disabled = level !== "sampled";
     $("#settingSampleEvery").disabled = level !== "sampled";
-    $("#settingRepair").disabled = level === "off";
-    if ($("#settingRepair").disabled) $("#settingRepair").checked = false;
+    const automatic=$('#settingUnattended')?.checked===true;
+    $("#settingRepair").disabled = level === "off" || automatic;
+    $("#settingRepair").checked = level !== "off" && (automatic || manualRepairChoice);
   };
+  $('#settingRepair').onchange=()=>{manualRepairChoice=$('#settingRepair').checked;};
+  $('#settingUnattended').onchange=updateChecks;
   $("#settingCheckLevel").onchange = updateChecks;
   $("#settingQCPolicy").onchange = updateChecks;
   updateChecks();

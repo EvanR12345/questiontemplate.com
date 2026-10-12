@@ -7,6 +7,22 @@ import {selectedStrategy,strategyOptions} from './studio-generation-plan.mjs';
 const source=fs.readFileSync(new URL('./story-studio.mjs',import.meta.url),'utf8');
 const deferred=()=>{let resolve,reject;return {promise:new Promise((y,n)=>{resolve=y;reject=n;}),get resolve(){return resolve;},get reject(){return reject;}};};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('repair control reflects automatic completion and restores manual choices without disabling checks',()=>{
+ const controls={'#settingUnattended':{checked:true},'#settingCheckLevel':{value:'practical'},
+ '#settingQCPolicy':{},'#settingSampleEvery':{},'#settingRepair':{checked:false}};
+ const context={$:name=>controls[name],project:{settings:{automaticRepair:false}}};
+ vm.runInNewContext(source.slice(source.indexOf('  let manualRepairChoice='),source.indexOf('  const updateWatermark =')),context);
+ assert.equal(controls['#settingRepair'].checked,true);assert.equal(controls['#settingRepair'].disabled,true);
+ controls['#settingUnattended'].checked=false;controls['#settingUnattended'].onchange();
+ assert.equal(controls['#settingRepair'].checked,false);assert.equal(controls['#settingRepair'].disabled,false);
+ controls['#settingRepair'].checked=true;controls['#settingRepair'].onchange();
+ controls['#settingUnattended'].checked=true;controls['#settingUnattended'].onchange();
+ controls['#settingUnattended'].checked=false;controls['#settingUnattended'].onchange();
+ assert.equal(controls['#settingRepair'].checked,true);
+ controls['#settingCheckLevel'].value='off';controls['#settingCheckLevel'].onchange();
+ assert.equal(controls['#settingRepair'].checked,false);assert.equal(controls['#settingRepair'].disabled,true);
+});
 function fixture(api){
   const controls=new Map(),calls=[],tasks=[],notes=[];
   const get=selector=>{if(!controls.has(selector))controls.set(selector,{value:selector==='#productionStrategy'?'align':'a',checked:false,innerHTML:'',addEventListener(){},click(){}});return controls.get(selector);};
