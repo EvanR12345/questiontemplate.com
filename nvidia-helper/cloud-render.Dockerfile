@@ -6,7 +6,7 @@ WORKDIR /opt/studio
 # Explicit source allowlist: no models, local media, project exports or secrets.
 COPY studio_cloud_render.py studio_render.py studio_data.py studio_storage.py \
      google_storage.py studio_qc.py studio_branding.py studio_engagement.py \
-     render_queue.py studio_video_settings.py studio_render_inputs.py ./
+     render_queue.py studio_video_settings.py studio_render_inputs.py studio_automation.py ./
 RUN useradd --uid 10001 --create-home studio && mkdir /work && chown studio:studio /work
 USER studio
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 STUDIO_FFMPEG=/usr/bin/ffmpeg STUDIO_RENDER_WORKERS=1

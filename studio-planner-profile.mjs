@@ -19,6 +19,8 @@ export function plannerSettings(config, profile, evidence) {
   // A retry ceiling is not a measured replacement percentage.
   if(!s.automaticRepair)next.retries=0;
   else warnings.push('Automatic repairs are enabled. Extra attempts remain your scenario allowance; a retry limit is not an error rate.');
+  if(s.unattendedProduction)
+    warnings.push('Full-video automation is enabled: confirmed major errors use bounded repairs within saved caps; minor or uncertain Practical findings remain warnings. Repair work is separate from the initial image burst; the final finish time depends on how many repairs are needed.');
   next.directorTier=d.processingTier||'default';
   const profiles=evidence.directorCalibration?.profiles||[];
   let id=d.executionMode==='classic'?'classic-standard':d.executionMode==='staged-lean'?
@@ -28,6 +30,8 @@ export function plannerSettings(config, profile, evidence) {
   next.directorActualSlots=d.parallelism||1;next.apiSlots=next.directorActualSlots;
   if(profile.imageTasks>3)
     warnings.push(`Studio admits up to ${profile.imageTasks} image/check tasks while keeping one GPU image lane. Older three-task throughput does not measure this new pipeline; no speedup is assumed until matching production completes. A 28-call Luna QC-only pilot found no measured advantage for five tasks; complete image-generation throughput remains untested.`);
+  if(profile.imageExecution?.backend==='comfyui-api' && !profile.imageExecution.multipleModelCopiesVerified)
+    warnings.push('The current production connection uses one ComfyUI queue. Faster multi-copy or hybrid GPU benchmarks are comparison targets, not verified throughput for this running production backend.');
   next.directorCostMode='measured';
   next.earlyGpu=false;next.gpuStartSeconds=0;
   if(profile.generationStrategy==='align'&&!profile.timedHistoryReady){
@@ -49,5 +53,5 @@ export function plannerSettings(config, profile, evidence) {
 
 export function profileSummary(p) {
   const s=p.settings,v=s.video,i=s.image,d=s.director;
-  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${p.imageTasks||3} image/check tasks, one GPU lane · ${d.processingTier||'default'} processing`;
+  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · ${s.unattendedProduction?'automatic completion and bounded repairs':'manual review policy'} · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${p.imageTasks||3} image/check tasks, one GPU lane · ${d.processingTier||'default'} processing`;
 }

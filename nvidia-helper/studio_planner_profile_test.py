@@ -48,6 +48,7 @@ class PlannerProfileTest(unittest.TestCase):
     def test_history_only_matches_recorded_settings(self):
         with tempfile.TemporaryDirectory() as folder:
             db=PerformanceStore(Path(folder)/'history.db');p=new_project();cfg={}
+            p['settings']['unattendedProduction']=False
             profile=profile_for('Visual QC',p,cfg)
             db.record('ok','run',profile,{'kind':'images','value':1},7,{'estimatedUSD':.0002})
             db.record('bad','run',profile,{'kind':'images','value':1},200,{'status':'FAILED'})
@@ -55,5 +56,15 @@ class PlannerProfileTest(unittest.TestCase):
             self.assertEqual(r['seconds'],7);self.assertEqual(r['samples'],1)
             p['settings']['image']['model']='different'
             self.assertIsNone(planner_profile(p,db,cfg)['estimates']['visualQC']['seconds']);db.close()
+
+    def test_forecast_matches_automatic_full_video_policy_without_changing_saved_settings(self):
+        p=new_project();before=copy.deepcopy(p)
+        r=planner_profile(p)
+        self.assertTrue(r['settings']['unattendedProduction'])
+        self.assertTrue(r['settings']['automaticRepair'])
+        self.assertEqual(r['settings']['qcRepairBudgetMode'],'project-cap')
+        self.assertEqual(p,before)
+        p['settings']['unattendedProduction']=False
+        self.assertFalse(planner_profile(p)['settings']['automaticRepair'])
 
 if __name__=='__main__':unittest.main()

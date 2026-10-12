@@ -76,6 +76,14 @@ class PerformanceTest(unittest.TestCase):
             raw=json.dumps(profile_for(stage,self.project,config))
             for value in ('SECRET','private-host','private-ip',self.project['id'],'A tale.'):
                 self.assertNotIn(value,raw)
+    def test_deferred_repairs_have_separate_compatible_timing_history(self):
+        old=profile_for('Image pipeline',self.project,{})
+        self.project['settings'].update(unattendedProduction=True,qcRepairBudgetMode='project-cap')
+        current=profile_for('Image pipeline',self.project,{})
+        self.assertNotEqual(old,current)
+        repair=profile_for('Automatic image repair',self.project,{})
+        self.assertEqual(repair['repairTiming'],'deferred')
+        self.assertEqual(observation_units('Automatic image repair',self.project,{}),{'kind':'images','value':1})
     def test_expired_history_and_invalid_units_never_become_zero_speed(self):
         self.add('one','r1',10)
         self.assertIsNone(self.store.estimate(self.profile,{'kind':'characters','value':100},10000+91*86400)['seconds'])

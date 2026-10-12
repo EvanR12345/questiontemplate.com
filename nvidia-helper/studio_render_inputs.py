@@ -10,6 +10,10 @@ def visual_spec_signature(project, shot, store, renderer=None):
     settings = {k:v for k,v in shot.get('generationSettings',{}).items() if k != 'seed'}
     ids = {person['id'] for person in shot.get('characters',[])}
     chapter = get_chapter(project,shot['chapterId'])
+    intro = project.get('intro', {})
+    source = ({k:intro.get(k) for k in ('voiceText','sourceBrief','duration')}
+              if any(s.get('id')==shot.get('id') for s in intro.get('shots',[]))
+              else chapter.get('sourceText',''))
     people = [person for person in project['characters']+chapter.get('people',[]) if person['id'] in ids]
     references = [ref for person in people for ref in person.get('references',[])]
     references += [ref for location in project.get('locations',[]) if location['id']==shot.get('locationId')
@@ -28,7 +32,7 @@ def visual_spec_signature(project, shot, store, renderer=None):
         else:fingerprint=hashlib.sha256(path.read_bytes()).hexdigest()
         fingerprints.append({'reference':ref,'bytes':fingerprint})
     return digest({'shot':{k:shot.get(k) for k in fields},'settings':settings,
-        'source':chapter.get('sourceText',''),'style':project['settings']['style'],
+        'source':source,'style':project['settings']['style'],
         'constraints':project['settings'].get('imageVisualConstraints',project['settings'].get('visualConstraints','')),
         'people':[{k:person.get(k) for k in ('id','description','permanentIdentity','references')}
                   for person in people],'referenceAssets':fingerprints})

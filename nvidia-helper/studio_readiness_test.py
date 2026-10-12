@@ -99,6 +99,24 @@ class ReadinessReviewTest(unittest.TestCase):
         report=self.check();self.assertFalse(report['ready'])
         self.assertFalse(next(c for c in report['checks'] if c['name']=='automatic-repairs')['ready'])
 
+    def test_unattended_preflight_projects_repairs_without_mutating_saved_policy(self):
+        self.major();before=copy.deepcopy(self.store.load(self.pid))
+        report=self.service.production_readiness(self.pid,{'unattended':True})
+        row=next(c for c in report['checks'] if c['name']=='saved-visual-reviews')
+        self.assertTrue(row['ready']);self.assertIn('repaired automatically',row['message'])
+        self.assertEqual(self.store.load(self.pid),before)
+        self.service.ensure_production_gpu.assert_not_called()
+
+    def test_unattended_invalid_combined_cap_is_blocking_before_paid_work(self):
+        def cloud(p):
+            p['settings'].update(director={'provider':'openai-luna'},
+                budget={'openaiUSD':1,'totalUSD':1},cloudWindow={'gpuBudgetUSD':1})
+            p['settings']['image']['provider']='comfyui'
+        self.store.mutate(self.pid,cloud)
+        report=self.service.production_readiness(self.pid,{'unattended':True})
+        row=next(c for c in report['checks'] if c['name']=='unattended-caps')
+        self.assertFalse(row['ready']);self.assertTrue(row['blocking']);self.assertIn('exceed',row['message'])
+
     def test_cloud_archiving_does_not_claim_long_video_will_fit_small_disk(self):
         with patch('shutil.disk_usage',return_value=shutil._ntuple_diskusage(10*2**30,9*2**30,2**30)):
             report=self.check()

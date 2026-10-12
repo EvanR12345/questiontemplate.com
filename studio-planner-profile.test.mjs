@@ -63,3 +63,11 @@ test('new admission capacity is shown without claiming a measured speedup',()=>{
  assert.match(result.warnings.join(' '),/28-call Luna QC-only pilot found no measured advantage/);
  assert.match(profileSummary(p),/5 image\/check tasks, one GPU lane/);
 });
+
+test('automatic completion shows repairs without inventing a measured replacement rate',()=>{
+ const p=profile();p.settings.unattendedProduction=true;p.settings.automaticRepair=true;
+ const result=plannerSettings({...DEFAULTS,retries:7},p,evidence);
+ assert.equal(result.config.retries,7);
+ assert.match(result.warnings.join(' '),/bounded repairs within saved caps/);
+ assert.match(profileSummary(p),/automatic completion and bounded repairs/);
+});

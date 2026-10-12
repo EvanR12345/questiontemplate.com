@@ -168,7 +168,11 @@ class R2Archive:
         if not self.enabled: return
         with self.cv:
             self.pending.add(pid)
-            self.states.setdefault(pid,{}).update(status='UPLOADING' if self.active_project==pid else 'PENDING')
+            state=self.states.setdefault(pid,{})
+            if state.get('error'):
+                state.setdefault('errorHistory',[]).append({'time':time.time(),'message':state['error']})
+                state['errorHistory']=state['errorHistory'][-16:]
+            state.update(status='UPLOADING' if self.active_project==pid else 'PENDING',error='')
             self.persist(); self.cv.notify_all()
 
     def status(self, pid=None):

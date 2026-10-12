@@ -293,6 +293,7 @@ class StudioService:
             "studioProtocol": 1,
             "cloudOverlapAvailable":True,
             "cloudSchedulingAvailable":True,
+            "unattendedProductionAvailable":True,
             "stagedDirectorAvailable":True,
             "leanDirectorAvailable":True,
             "leanPackingAvailable":True,
@@ -537,10 +538,18 @@ class StudioService:
         """Read-only checks before the first potentially paid production stage."""
         import shutil
         p=self.store.load(pid);options=options or {};checks=[]
+        unattended=options.get('unattended') is True
+        if unattended:
+            from studio_automation import run_settings
+            p['settings']=run_settings(p['settings'])
         from studio_schedule import strategy,LABELS
         selected_strategy=strategy(options)
         def check(name, ready, message, blocking=True):
             checks.append({'name':name,'ready':bool(ready),'message':message,'blocking':blocking})
+        if unattended:
+            from studio_automation import project_cap_reason
+            cap_reason=project_cap_reason(p['settings'])
+            check('unattended-caps',cap_reason is None,cap_reason or 'Automatic production uses the existing saved caps; no spending limit is raised.')
         chapters=[c for c in p['chapters'] if c['sourceText'].strip()]
         check('chapters',bool(chapters),'Story chapters are ready.' if chapters else 'Paste at least one chapter.')
         from story_grounding import owner_conflicts
@@ -578,13 +587,15 @@ class StudioService:
         # acceptance, Off and permitted automatic repairs retain their semantics.
         review_context={'files':{},'reviews':{},'chapters':{c['id']:c for c in p['chapters']},
                         'intro':{s['id'] for s in p['intro'].get('shots',[])}}
-        review_flags=[s for s in saved_shots if s.get('imagePath') and not s.get('generationStale')
+        blocking_reviews=[s for s in saved_shots if s.get('imagePath') and not s.get('generationStale')
                       and s.get('qc',{}).get('pass') is False
                       and s.get('qc',{}).get('status')!='PENDING'
                       and self.store.has_asset(pid,s['imagePath'])
-                      and qc_decision(p,s,self.store,review_context)['blocking']
-                      and not automatic_repairs(p['settings'],s.get('qc',{}))]
-        check('saved-visual-reviews',not review_flags,
+                      and qc_decision(p,s,self.store,review_context)['blocking']]
+        review_flags=[s for s in blocking_reviews if not automatic_repairs(p['settings'],s.get('qc',{}))]
+        if unattended and any(s.get('imagePath') and qc_decision(p,s,self.store,review_context)['blocking'] for s in saved_shots): images_needed=True
+        check('saved-visual-reviews',not review_flags or unattended,
+              'Saved major findings will be repaired automatically within the saved caps; warnings remain visible.' if unattended and blocking_reviews else
               f'{len(review_flags)} saved images need review before the full video can finish. Review or explicitly repair those shots first; completed images and findings stay saved.'
               if review_flags else 'No saved visual findings currently block the full video.')
         from studio_runpod import configured
@@ -658,9 +669,15 @@ class StudioService:
         p = self.store.load(pid)
         self.require_resolved_execution(pid,kind)
         options = options or {}
+        if 'unattended' in options and type(options['unattended']) is not bool:
+            raise ValueError('Unattended production must be enabled or disabled.')
         if kind=='produce-story':
             from studio_schedule import strategy
             strategy(options)
+            if options.get('unattended'):
+                from studio_automation import project_cap_reason, run_settings
+                reason=project_cap_reason(run_settings(p['settings']))
+                if reason:raise ValueError(reason)
         if options.get('preflightRevision') is not None and options['preflightRevision']!=p['revision']:
             raise ValueError('Project changed after readiness checks. Check the current project before starting.')
         if 'overlap' in options and not isinstance(options['overlap'],bool):
@@ -1041,7 +1058,10 @@ class StudioService:
             trace_job = self.trace.begin(job['project'], 'Queue: ' + job['kind'],
                                          {'jobId': job['id']}, kind='job')
             trace_token=self.trace.parent.set(trace_job)
+            from studio_power import ProductionPowerRequest
+            power=ProductionPowerRequest(enabled=job['kind'] in ('produce-story','prepare-story','render-full','render-chapter'))
             try:
+                power.acquire()
                 self.legacy_queue.control("yield-audio")
                 self.legacy_queue.control("pause")
                 while not self.gpu_lock.acquire(timeout=0.25):
@@ -1235,6 +1255,7 @@ class StudioService:
                 try:self.finish_queued_image_rental(job,state)
                 except Exception as error:
                     state='FAILED';message=type(error).__name__+': '+str(error)[:1800]
+                finally:power.release()
                 if job["kind"] in ("produce-story", "prepare-story"):
 
                     def run_finished(p):
@@ -1506,6 +1527,8 @@ class StudioService:
 
     @staticmethod
     def analysis_is_current(project, chapter, previous_audio):
+        from studio_automation import source_conflicts
+        if chapter.get('proposedPlan') or source_conflicts(project, chapter): return False
         participating = {cast['id'] for scene in chapter['scenes'] for shot in scene['shots'] for cast in shot['characters']}
         def relevant(state):
             return {'characters': {k: v for k, v in state.get('characters', {}).items() if k in participating},
@@ -1614,6 +1637,11 @@ class StudioService:
         finally:self._queued_image_rental=None
 
     def produce_story(self,pid,options):
+        if options.get('unattended') is True:
+            from studio_automation import run_settings, project_cap_reason
+            reason=project_cap_reason(run_settings(self.store.load(pid)['settings']))
+            if reason:raise ValueError(reason)
+            self.store.mutate(pid,lambda p:p.update(settings=run_settings(p['settings'])),skip_unchanged=True)
         from studio_runpod import configured,ProductionGPU
         if getattr(self,'_overlap',None) or not configured(self.config):
             return self._produce_story(pid,options)
@@ -1743,7 +1771,7 @@ class StudioService:
                     self.analyze_chapter,
                     p,
                     chid,
-                    {"managedPipeline": True,"offlinePlanning":cloud_flow},
+                    {"managedPipeline": True,"offlinePlanning":cloud_flow,"unattended":options.get('unattended') is True},
                     chapter=ch["number"],
                 )
                 p = self.store.load(pid)
@@ -1818,6 +1846,8 @@ class StudioService:
             )
             self.intro_image(p, {'_collectReview':self.collect_production_reviews(p)})
         # Complete chapter AND intro images before local chapter rendering.
+        if p['settings'].get('unattendedProduction'):
+            self.complete_automatic_reviews(pid)
         rental=getattr(self,'_production_gpu',None)
         if rental:rental.stop('chapter and intro images finished')
         self.require_production_reviews(pid)
@@ -1855,8 +1885,8 @@ class StudioService:
             latest.update(render=result, renderStale=False)
             latest.setdefault('exports',{})[result.get('exportDestination','youtube')]=result
             latest["production"].update(
-                status="COMPLETE",
-                stage="Full video ready",
+                status="ARCHIVING" if latest['settings'].get('unattendedProduction') else "COMPLETE",
+                stage="Saving complete video to cloud" if latest['settings'].get('unattendedProduction') else "Full video ready",
                 videoPath=result["path"],
                 completedChapters=len(chapters),
             )
@@ -1864,6 +1894,82 @@ class StudioService:
 
         if not self.store.mutate(pid, saved):
             raise ValueError('Story changed during assembly. The completed earlier version is saved in render history. Render the current version when ready.')
+        if self.store.load(pid)['settings'].get('unattendedProduction'):
+            self.wait_for_cloud_save(pid)
+            self.store.mutate(pid,lambda p:p['production'].update(status='COMPLETE',stage='Full video ready in cloud storage'))
+            self.wait_for_cloud_save(pid)
+
+    def wait_for_cloud_save(self, pid):
+        """Wait for the existing archive owner; never race a second uploader."""
+        if not self.storage.enabled:
+            raise RuntimeError('Cloud archive is unavailable; completed local video is preserved.')
+        revision=self.store.load(pid)['revision'];self.storage.enqueue(pid)
+        deadline=time.monotonic()+max(30,min(7200,float(self.config.get('cloudSaveTimeoutSeconds',3600))))
+        retries=0
+        while True:
+            self.gate()
+            state=self.storage.status(pid)
+            saved=state.get('projects',{}).get(pid,{})
+            if state.get('error'):
+                raise RuntimeError('Cloud save failed; the completed video remains saved locally.')
+            if saved.get('error'):
+                if retries>=2:raise RuntimeError('Cloud save retries exhausted; the completed video remains saved locally.')
+                retries+=1;self.storage.enqueue(pid)
+                continue
+            if saved.get('revision',-1)>=revision and saved.get('status')=='SYNCED':return
+            if time.monotonic()>=deadline:
+                raise RuntimeError('Cloud save deadline reached; the completed video is preserved and archive retry remains queued.')
+            time.sleep(.25)
+
+    def complete_automatic_reviews(self,pid):
+        """Repair confirmed findings once under the durable per-shot retry ceiling."""
+        p=self.store.load(pid)
+        for chapter in p['chapters']:
+            for scene in chapter['scenes']:
+                for shot in scene['shots']:
+                    current=self.store.load(pid);item=get_shot(current,chapter['id'],shot['id'])
+                    if not item.get('imagePath') or not qc_decision(current,item,self.store)['blocking']:continue
+                    if item.get('manual',{}).get('imagePath'):
+                        raise RuntimeError('Automatic review found a major error in a manually locked image; original selection and findings retained.')
+                    qc=item.get('qc',{})
+                    if not automatic_repairs(current['settings'],qc):
+                        raise RuntimeError('Automatic quality checks could not resolve this shot within the selected policy; saved assets and findings retained.')
+                    signature=self.visual_spec_signature(current,item)
+                    used=item.get('automaticRepairAttempts',0) if item.get('automaticRepairSpec')==signature else 0
+                    if used>=current['settings']['maxImageRetries']:
+                        raise RuntimeError('Automatic image repair limit reached; saved assets and findings retained.')
+                    self.production_progress(pid,'Repairing confirmed visual errors automatically',shotId=item['id'])
+                    self.ensure_production_gpu()
+                    provider=self.provider(item['imageProvider'])
+                    operation='edit' if provider.getCapabilities().get('supportsImageEditing') else 'generate'
+                    self.measured_stage(pid,'Automatic image repair',self.generate,current,chapter['id'],item['id'],
+                        item['generationSettings']['seed'],{'operation':operation,'budgetedQCRepair':True,
+                            '_repairPrompt':qc.get('repairPrompt') or item['prompt'],'_collectReview':True},
+                        chapter=chapter['number'],shot=item['id'])
+                    latest=self.store.load(pid)
+                    if qc_decision(latest,get_shot(latest,chapter['id'],item['id']),self.store)['blocking']:
+                        raise RuntimeError('Automatic image repairs exhausted without a usable result; saved assets and findings retained.')
+        if self.store.load(pid)['intro']['enabled']:
+            for original in self.store.load(pid)['intro'].get('shots',[]):
+                for _ in range(self.store.load(pid)['settings']['maxImageRetries']):
+                    current=self.store.load(pid);item=next(s for s in current['intro']['shots'] if s['id']==original['id'])
+                    if not qc_decision(current,item,self.store)['blocking']:break
+                    if not automatic_repairs(current['settings'],item.get('qc',{})):
+                        raise RuntimeError('Automatic intro quality checks could not resolve the image; original assets retained.')
+                    self.intro_image(current,{'repairShot':item['id'],'_collectReview':True})
+                latest=self.store.load(pid);item=next(s for s in latest['intro']['shots'] if s['id']==original['id'])
+                if qc_decision(latest,item,self.store)['blocking']:
+                    raise RuntimeError('Automatic intro repair limit reached; original assets and findings retained.')
+
+    def reserve_automatic_repair(self,pid,chid,sid,signature,intro=False):
+        """Consume a durable retry before dispatch, including uncertain attempts."""
+        def reserve(project):
+            item=next(s for s in project['intro']['shots'] if s['id']==sid) if intro else get_shot(project,chid,sid)
+            used=item.get('automaticRepairAttempts',0) if item.get('automaticRepairSpec')==signature else 0
+            if used>=project['settings']['maxImageRetries']:
+                raise ValueError('Automatic repair limit reached; saved work retained.')
+            item.update(automaticRepairSpec=signature,automaticRepairAttempts=used+1)
+        self.store.mutate(pid,reserve)
 
     @staticmethod
     def retain_superseded_render(target, result):
@@ -1874,7 +1980,7 @@ class StudioService:
 
     def collect_production_reviews(self, project):
         from studio_qc import policy
-        return bool(getattr(self,'_overlap',None) and policy(project['settings'])=='practical')
+        return bool((getattr(self,'_overlap',None) or project['settings'].get('unattendedProduction')) and policy(project['settings'])=='practical')
 
     def retained_production_image(self, project, shot):
         return bool(self.collect_production_reviews(project) and shot.get('imagePath')
@@ -1888,6 +1994,8 @@ class StudioService:
         flags=[shot['id'] for shot in shots if shot.get('imagePath') and qc_decision(project,shot,self.store)['blocking']]
         if flags:
             self.production_progress(pid,'Images saved · review required',reviewRequiredShots=flags)
+            if project['settings'].get('unattendedProduction'):
+                raise RuntimeError(f'Automatic quality checks failed for {len(flags)} images; completed assets and findings retained.')
             raise RuntimeError(f'Visual QC: {len(flags)} saved images need review before rendering. '
                 'The GPU is stopped; no replacement was purchased. Review or repair the flagged shots, then continue.')
 
@@ -1925,7 +2033,7 @@ class StudioService:
             chapter = get_chapter(latest, chid)
             for scene in chapter["scenes"]:
                 for shot in scene["shots"]:
-                    if self.saved_image_ready(latest, shot):
+                    if self.saved_image_ready(latest, shot) or self.retained_production_image(latest,shot):
                         continue
                     provider = self.provider(shot["imageProvider"])
                     settings = shot["generationSettings"]
@@ -1958,13 +2066,19 @@ class StudioService:
             # Cached shots need no per-shot progress writes to the entire
             # durable project. One chapter update below records completion.
             if self.saved_image_ready(p, shot) or self.retained_production_image(p,shot):
-                if getattr(self,'_overlap',None) and should_check(p,shot):
+                if (getattr(self,'_overlap',None) or p['settings'].get('unattendedProduction')) and should_check(p,shot):
                     qc=shot.get('qc',{})
                     asset_hash=hashlib.sha256(self.store.asset(pid,shot['imagePath']).read_bytes()).hexdigest()
                     if (qc.get('checkedImagePath')!=shot['imagePath'] or qc.get('checkedImageSHA256')!=asset_hash
                             or qc.get('shotSpecSignature')!=self.visual_spec_signature(p,shot)
                             or qc.get('status') in (None,'PENDING','UNREVIEWED')):
-                        self._overlap.submit_shot(self.store.load(pid),chid,shot,review_only=True)
+                        if getattr(self,'_overlap',None):
+                            self._overlap.submit_shot(self.store.load(pid),chid,shot,review_only=True)
+                        else:
+                            review=self.measured_stage(pid,'Visual QC',self.inspect_shot,self.store.load(pid),chid,shot['id'],
+                                                       chapter=ch['number'],shot=shot['id'])
+                            if not review['selected']:
+                                raise RuntimeError('Shot changed during automatic review; current edits and results retained.')
                 continue
             if (shot.get('imagePath') and not shot.get('generationStale')
                     and shot.get('qc',{}).get('pass') is False
@@ -1994,7 +2108,7 @@ class StudioService:
                         chid,
                         shot["id"],
                         shot["generationSettings"]["seed"],
-                        {},
+                        {'_collectReview':self.collect_production_reviews(p),'deferAutomaticRepair':p['settings'].get('unattendedProduction',False)},
                         chapter=ch["number"],
                         shot=shot["id"],
                     )
@@ -2427,6 +2541,17 @@ class StudioService:
 
     def intro_image(self, p, options=None):
         options = options or {}
+        if options.get('repairShot'):
+            selected=next((s for s in p['intro'].get('shots',[]) if s['id']==options['repairShot']),None)
+            if selected is None:raise ValueError('Intro repair shot is unavailable; original assets retained.')
+            reason=repair_budget_reason(p['settings'])
+            if reason:raise ValueError(reason)
+            if selected.get('manual',{}).get('imagePath'):
+                raise ValueError('Intro image is manually locked; original selection retained.')
+            signature=self.visual_spec_signature(p,selected)
+            if (selected.get('automaticRepairSpec')==signature
+                    and selected.get('automaticRepairAttempts',0)>=p['settings']['maxImageRetries']):
+                raise ValueError('Automatic intro repair limit reached; no rental started.')
         self.ensure_production_gpu()
         self.unload_models()
         provider = self.provider(p["settings"]["image"]["provider"])
@@ -2435,35 +2560,67 @@ class StudioService:
             raise ValueError('Local image generation is disabled for this project.')
         if p['intro'].get('shots'):
             for shot in p['intro']['shots']:
-                if shot.get('imagePath') and self.store.has_asset(p['id'], shot['imagePath']):
+                repair=options.get('repairShot')==shot['id']
+                if options.get('repairShot') and not repair:continue
+                if shot.get('imagePath') and self.store.has_asset(p['id'], shot['imagePath']) and not repair:
                     continue
+                expected_spec=self.visual_spec_signature(p,shot)
+                expected_path=shot.get('imagePath','')
+                expected_hash=self.store.asset_digest(p['id'],expected_path) if expected_path else None
+                operation='edit' if repair and provider.getCapabilities().get('supportsImageEditing') else 'generate'
+                if repair:
+                    reason=repair_budget_reason(p['settings'])
+                    if reason:raise ValueError(reason)
+                    self.reserve_automatic_repair(p['id'],None,shot['id'],self.visual_spec_signature(p,shot),intro=True)
                 self.check_cloud_budget(p, provider)
-                references, metadata = select_references(p, shot, self.store, provider)
+                references, metadata = select_references(p, shot, self.store, provider,reserved_slots=1 if operation=='edit' else 0)
                 settings = provider.validateSettings(shot['generationSettings'])
-                prompt = reference_prompt(p, shot, metadata) + ' ' + shot['prompt'] if references else shot['prompt']
+                base_prompt=(shot.get('qc',{}).get('repairPrompt') or shot['prompt']) if repair else shot['prompt']
+                prompt = reference_prompt(p, shot, metadata,operation) + ' ' + base_prompt if references else base_prompt
                 result = provider.generateImage({'prompt': prompt, 'negativePrompt': '', 'referenceImages': references,
-                    'settings': settings, 'workflow': shot['workflow'], 'operation': 'generate'}, self.checkpoint)
+                    'settings': settings, 'workflow': shot['workflow'], 'operation': operation,
+                    **({'sourceImage':data_url(self.store.asset(p['id'],shot['imagePath']))} if operation=='edit' else {})}, self.checkpoint)
                 name = shot['id'] + '-' + uid() + '.png'
                 target = self.store.folder(p['id']) / name
                 partial = target.with_suffix('.partial.png')
                 result.pop('pil').save(partial, 'PNG'); partial.replace(target)
                 def save_intro(latest):
                     item = next(s for s in latest['intro']['shots'] if s['id']==shot['id'])
+                    selected=item.get('imagePath','')
+                    selected_hash=self.store.asset_digest(p['id'],selected) if selected else None
+                    if (selected!=expected_path or selected_hash!=expected_hash
+                            or self.visual_spec_signature(latest,item)!=expected_spec):
+                        item.setdefault('history',[]).append({'imagePath':name,'imageMetadata':result,
+                            'selected':False,'reason':'Intro changed during generation; current edits retained.'})
+                        return False
+                    if item.get('imagePath'):
+                        item.setdefault('history',[]).append({k:copy.deepcopy(item.get(k)) for k in ('imagePath','imageMetadata','qc')})
                     item.update(imagePath=name, status='COMPLETE', referenceImages=metadata,
                         imageMetadata=result | {'prompt': prompt, 'referenceImages': metadata}, qc={'status': 'PENDING' if should_check(p,shot) else 'UNCHECKED', 'pass': None, 'checkLevel': check_level(p['settings'])})
                     latest['renderStale'] = True
-                self.store.mutate(p['id'], save_intro)
+                    return True
+                if not self.store.mutate(p['id'], save_intro):
+                    raise RuntimeError('Intro changed during automatic generation; current edits and completed image retained.')
                 if should_check(p,shot) and not options.get('deferQC'):
                     review_shot = shot | {'intentionalAppearanceChanges': shot.get('intentionalAppearanceChanges', [])}
                     self.director.timing_callback = lambda stage,seconds,details: self.record_timing(p['id'], stage, seconds, details | {'intro': True, 'detail': True})
                     qc = self.visual_check(self.store.load(p['id']), review_shot, target)
                     qc['status'] = 'PASSED' if qc['pass'] else 'REVIEW_REQUIRED'
+                    qc.update(checkedImagePath=name,checkedImageSHA256=self.store.asset_digest(p['id'],name),
+                              shotSpecSignature=expected_spec)
                     def save_review(latest):
                         item = next(s for s in latest['intro']['shots'] if s['id'] == shot['id'])
+                        if (item.get('imagePath')!=name
+                                or self.store.asset_digest(p['id'],name)!=qc['checkedImageSHA256']
+                                or self.visual_spec_signature(latest,item)!=expected_spec):
+                            self.retain_stale_qc(item,qc,name)
+                            return False
                         item['qc'] = qc
                         item['qcDecision']=qc_decision(latest,item,self.store)
                         item['status']=production_status(latest,item,self.store)
-                    self.store.mutate(p['id'], save_review)
+                        return True
+                    if not self.store.mutate(p['id'], save_review):
+                        raise RuntimeError('Intro changed during automatic review; current edits and findings retained.')
                     latest=self.store.load(p['id'])
                     checked=next(s for s in latest['intro']['shots'] if s['id']==shot['id'])
                     if qc_decision(latest,checked,self.store)['blocking'] and not options.get('_collectReview'):
@@ -3850,6 +4007,12 @@ class StudioService:
             state = copy.deepcopy(original.get("state", state))
             memory = copy.deepcopy(original.get("memory", memory))
 
+        if options.get('unattended') and any(scene.get('manual') or any(s.get('manual') for s in scene['shots']) for scene in ch['scenes']):
+            from studio_automation import preserve_manual_plan
+            scenes=preserve_manual_plan(ch['scenes'],scenes)
+            known={person['id'] for person in people}
+            people += [copy.deepcopy(person) for person in ch.get('people',[]) if person['id'] not in known]
+
         def finish(latest):
             chapter = get_chapter(latest, chid)
             if self.analysis_input_signature(latest,chid)!=expected_analysis:
@@ -3872,7 +4035,7 @@ class StudioService:
                 for s in scene["shots"]
                 if s.get("manual")
             ] + [s for s in chapter["scenes"] if s.get("manual")]
-            if manual_shots and not options.get("replaceManual", False):
+            if manual_shots and not options.get("replaceManual", False) and not options.get('unattended'):
                 chapter["proposedPlan"] = {
                     "scenes": scenes,
                     "people": people,
@@ -3885,6 +4048,8 @@ class StudioService:
                     }
                 )
                 return
+            if options.get('unattended') and chapter.get('proposedPlan'):
+                chapter.setdefault('proposedPlanHistory',[]).append(chapter.pop('proposedPlan'))
             chapter.update(
                 people=people,
                 scenes=scenes,
@@ -4115,6 +4280,10 @@ class StudioService:
             shot['sourceImagePath']=source
             request["mask"] = options.get("mask")
         retries = int(p["settings"]["maxImageRetries"])
+        if options.get('deferAutomaticRepair'):retries=0
+        if options.get('budgetedQCRepair') and p['settings'].get('unattendedProduction'):
+            used=shot.get('automaticRepairAttempts',0) if shot.get('automaticRepairSpec')==expected_spec else 0
+            retries=max(0,retries-used)
         qc = {"status": "PENDING" if should_check(p,shot) else "UNCHECKED", "pass": None,
               "checkLevel": check_level(p["settings"]), "sampleEvery": p["settings"].get("qcSampleEvery",5)}
         attempts = []
@@ -4131,6 +4300,8 @@ class StudioService:
         for attempt in range(max_attempts):
             self.gate(f'Generating {ch["name"]} · shot {sid} · attempt {attempt+1}')
             self.check_cloud_budget(p, provider)
+            if p['settings'].get('unattendedProduction') and (options.get('budgetedQCRepair') or attempt>0):
+                self.reserve_automatic_repair(p['id'],chid,sid,expected_spec)
             try:
                 with self.trace.span(p['id'], 'Image backend', {'chapter': ch['number'], 'shot': sid,
                                                                'provider': provider.id, 'model': settings['model'], 'seed': seed}):
@@ -4298,7 +4469,7 @@ class StudioService:
                     return {'status':'SUPERSEDED','imagePath':relative,'selected':False}
             if (
                 qc.get("pass") is False
-                and qc.get("action") != "review"
+                and (qc.get("action") != "review" or p['settings'].get('unattendedProduction'))
                 and automatic_repairs(self.store.load(p["id"])["settings"],qc)
                 and attempt < retries
             ):

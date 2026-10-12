@@ -59,6 +59,19 @@ class StudioDataTest(unittest.TestCase):
             self.assertEqual(reloaded['revision'],old['revision']+1)
             self.assertNotIn(b'\n',path.read_bytes())
 
+    def test_internal_mutation_does_not_copy_a_discarded_snapshot_and_public_save_stays_detached(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            store=ProjectStore(folder);source=new_project('Original')
+            returned=store.save(source);returned['name']='Caller changed returned object'
+            self.assertEqual(source['name'],'Original')
+            self.assertEqual(store.load(source['id'])['name'],'Original')
+            with patch('studio_data.copy.deepcopy',side_effect=AssertionError('Discarded full copy')):
+                result=store.mutate(source['id'],lambda p:p.update(name='Updated'))
+            self.assertEqual(result['name'],'Updated')
+            result['name']='Caller changed mutation result'
+            self.assertEqual(store.load(source['id'])['name'],'Updated')
+
     def test_direct_job_times_survive_retries_without_double_counting(self):
         from studio_service import StudioService
         p = new_project()

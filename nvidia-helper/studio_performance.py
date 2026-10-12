@@ -98,7 +98,7 @@ def profile_for(stage, project, config, details=None):
             from director_staged import visual_group_limits
             sentences,characters,shots=visual_group_limits(director)
             profile['visualGroupLimit']={'sentences':sentences,'characters':characters,'targetShots':shots}
-    elif stage in ('Image pipeline','Image + quality checks','Image generation','Visual QC','Character reference','Intro images'):
+    elif stage in ('Image pipeline','Image + quality checks','Image generation','Visual QC','Character reference','Intro images','Automatic image repair'):
         profile['visualGroundingVersion']=1
         if details.get('shot'):
             image=details.get('_shotSpec') or next((s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots']
@@ -117,6 +117,8 @@ def profile_for(stage, project, config, details=None):
             sampleEvery=settings.get('qcSampleEvery',5),backend=backend,execution='single-image-lane',
             automaticRepair=settings.get('automaticRepair',False),maxRetries=settings.get('maxImageRetries',0),
             style=settings.get('style'))
+        if settings.get('unattendedProduction'):
+            profile.update(unattended=True,repairBudgetMode=settings.get('qcRepairBudgetMode','overhead'),repairTiming='deferred')
         if stage=='Image pipeline':
             from studio_overlap import shot_task_limit
             profile.update(imageTasks=details.get('imageTasks',shot_task_limit(project,{})),director=director.get('provider'),
@@ -142,7 +144,7 @@ def observation_units(stage, project, details):
         if not chapter:return None
         return {'kind':'characters','value':len(chapter.get('cleanNarrationText') or chapter['sourceText'])}
     if stage=='Image pipeline':return {'kind':'images','value':details.get('images',0)}
-    if stage in ('Image + quality checks','Image generation','Visual QC','Character reference','Intro images'):
+    if stage in ('Image + quality checks','Image generation','Visual QC','Character reference','Intro images','Automatic image repair'):
         return {'kind':'images','value':1}
     if stage=='Render chapter':
         duration=chapter.get('audio',{}).get('duration') if chapter else None

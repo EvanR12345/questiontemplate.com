@@ -549,7 +549,7 @@ class ProjectStore:
             except FileNotFoundError:raise ProjectNotFound('Saved project not found.') from None
             return json.loads(source)
 
-    def save(self, p, expected=None):
+    def save(self, p, expected=None, *, _return_copy=True):
         validate_project(p)
         with self.lock:
             folder = self.folder(p["id"])
@@ -585,7 +585,10 @@ class ProjectStore:
             self.replace_snapshot(metadata,folder / "revision.json")
             if self.archive:
                 self.archive.enqueue(p['id'])
-            return copy.deepcopy(p)
+            # mutate() already owns a freshly loaded private snapshot and drops
+            # this return value. Avoid duplicating its full history on every
+            # progress write; public save() keeps its detached-result contract.
+            return copy.deepcopy(p) if _return_copy else None
 
     @staticmethod
     def replace_snapshot(source,destination):
@@ -614,7 +617,7 @@ class ProjectStore:
             result = fn(p)
             if result is UNCHANGED:return p
             if not skip_unchanged or p != before:
-                self.save(p)
+                self.save(p, _return_copy=False)
             return result if result is not None else p
 
     def list(self):

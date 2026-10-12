@@ -33,6 +33,13 @@ class CloudSaveTests(unittest.TestCase):
         self.a.objects=self.obj;self.a.enabled=True;self.store.archive=self.a
         self.image=self.store.folder(self.p['id'])/'art.png';Image.new('RGB',(640,360),'purple').save(self.image)
     def tearDown(self):self.tmp.cleanup()
+    def test_retry_clears_stale_error_but_retains_failure_history(self):
+        self.a.states[self.p['id']]={'status':'FAILED','error':'previous upload failed','revision':3}
+        self.a.enqueue(self.p['id'])
+        result=self.a.status()['projects'][self.p['id']]
+        self.assertEqual(result['error'],'');self.assertEqual(result['status'],'PENDING')
+        self.assertEqual(result['revision'],3)
+        self.assertEqual(result['errorHistory'][0]['message'],'previous upload failed')
     def test_edit_during_upload_preserves_active_status_and_progress(self):
         self.a.active_project=self.p['id']
         self.a.states[self.p['id']]={'status':'UPLOADING'}

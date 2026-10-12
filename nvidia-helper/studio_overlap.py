@@ -340,6 +340,8 @@ class CloudStoryOverlap:
                     qc=result['qc']
                     current=clone.store.load(self.project)
                     if qc_decision(current,get_shot(current,chapter,shot['id']),clone.store)['blocking']:
+                        if snapshot['settings'].get('unattendedProduction'):
+                            return {'status':'REVIEW_REQUIRED','qc':qc}
                         if clone.collect_production_reviews(current) and not automatic_repairs(self.settings,qc):
                             return {'status':'REVIEW_REQUIRED','qc':qc}
                         if not automatic_repairs(self.settings,qc):
@@ -351,7 +353,8 @@ class CloudStoryOverlap:
                 else:
                     result=clone.measured_stage(self.project,'Image + quality checks',clone.generate,
                         snapshot,chapter,shot['id'],shot['generationSettings']['seed'],
-                        {'_collectReview':clone.collect_production_reviews(snapshot)},
+                        {'_collectReview':clone.collect_production_reviews(snapshot),
+                         'deferAutomaticRepair':snapshot['settings'].get('unattendedProduction',False)},
                         chapter=get_chapter(snapshot,chapter)['number'],shot=shot['id'],executionId=context.identity)
                 if isinstance(result,dict) and result.get('status')=='SUPERSEDED':
                     raise StaleExecution('Shot changed during generation or QC; current edits retained before rendering.')

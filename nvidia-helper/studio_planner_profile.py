@@ -3,7 +3,7 @@ import copy
 from studio_qc import check_level
 from studio_performance import profile_for
 
-FIELDS = ('style','generationMode','layoutMode','voice','speed','narrationDelivery',
+FIELDS = ('unattendedProduction','qcRepairBudgetMode','style','generationMode','layoutMode','voice','speed','narrationDelivery',
           'soundEffects','automaticRepair','maxImageRetries','cloudImagesOnly')
 GROUPS = {
     'video': ('width','height','fps','renderer','crf','imageFit','motionMode','zoomAmount','motionEasing'),
@@ -14,6 +14,9 @@ GROUPS = {
 
 def planner_profile(project, performance=None, config=None):
     from studio_overlap import shot_task_limit
+    if project['settings'].get('unattendedProduction') is not False:
+        from studio_automation import run_settings
+        project = {**project, 'settings':run_settings(project['settings'])}
     source = project['settings']
     settings = {k: copy.deepcopy(source[k]) for k in FIELDS if k in source}
     for group, fields in GROUPS.items():
@@ -39,9 +42,11 @@ def planner_profile(project, performance=None, config=None):
         'revision':project.get('revision', 0), 'settings':settings,
         'generationStrategy':project.get('generationStrategy', 'align'),
         'imageTasks':shot_task_limit(project,{}),
+        'imageExecution':{'backend':'comfyui-api' if source.get('image',{}).get('provider')=='comfyui' else source.get('image',{}).get('provider'),
+                          'gpuLanes':1,'multipleModelCopiesVerified':False},
         'intro':{k:copy.deepcopy(intro[k]) for k in ('enabled','duration','placement') if k in intro},
         'introImages':len(intro.get('shots', [])), 'chapters':len(chapters),
         'plannedShots':len(shots), 'narrationSeconds':audio_seconds,
         'narrationComplete':bool(chapters) and all(c.get('audio', {}).get('duration', 0)>0 for c in chapters),
         'estimates':estimates, 'timedHistoryReady':all(estimates.get(k,{}).get('seconds') is not None for k in ('director','narration','images')),
-        'scope':'Saved production settings, not unsaved editor choices. Read-only; no generation, paid calls or project changes.'}
+        'scope':'Saved production settings with the selected full-video automation policy, not unsaved editor choices. Read-only; no generation, paid calls or project changes.'}

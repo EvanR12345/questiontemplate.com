@@ -30,6 +30,10 @@ def should_check(project, shot):
     return int(hashlib.sha256(key.encode()).hexdigest()[:16], 16) % interval == 0
 
 def validate_checks(settings):
+    if 'unattendedProduction' in settings and type(settings['unattendedProduction']) is not bool:
+        raise ValueError('Unattended production must be enabled or disabled.')
+    if settings.get('qcRepairBudgetMode', 'overhead') not in ('overhead', 'project-cap'):
+        raise ValueError('Choose measured overhead or the saved project cap for repairs.')
     if settings.get('qcCheckLevel', 'off') not in CHECK_LEVELS:
         raise ValueError('Choose Off, Sampled, Practical or Strict checks.')
     interval = settings.get('qcSampleEvery', 5)
@@ -117,8 +121,11 @@ def decision(project, shot, store, context=None):
         # Preserve prior semantics for deliberately disabled/unavailable vision.
         return {'disposition':'unreviewed','blocking':False,'policy':mode}
     levels = issue_levels(qc)
+    if mode == 'practical' and project['settings'].get('unattendedProduction') and levels and 'major' not in levels:
+        return {'disposition':'advisory','blocking':False,'policy':mode,'issueLevels':levels,
+                'warning':'Unattended Practical mode retains minor/uncertain findings as warnings.'}
     if mode=='strict':
-        return {'disposition':'review','blocking':qc.get('action')!='review','policy':mode,'issueLevels':levels}
+        return {'disposition':'review','blocking':bool(project['settings'].get('unattendedProduction')) or qc.get('action')!='review','policy':mode,'issueLevels':levels}
     minor = bool(levels) and all(level=='advisory' for level in levels)
     return {'disposition':'advisory' if minor else 'review','blocking':not minor,'policy':mode,'issueLevels':levels}
 
@@ -133,7 +140,9 @@ def automatic_repairs(settings, qc=None):
     enabled = (settings.get('qcCheckLevel') != 'off' and bool(settings.get('automaticRepair'))
                and int(settings.get('maxImageRetries',2))>0 and repair_budget_reason(settings) is None)
     if not enabled or qc is None: return enabled
-    if qc.get('pass') is not False or qc.get('action') not in ('image_edit','regenerate'): return False
+    if qc.get('pass') is not False: return False
+    if qc.get('action') not in ('image_edit','regenerate') and not (
+            settings.get('unattendedProduction') and 'major' in issue_levels(qc)): return False
     if policy(settings)=='strict': return True
     # Practical/Sampled mode can fix a confirmed major defect, never spend on
     # advisory/uncertain discrepancies or a manual-review-only instruction.
@@ -147,6 +156,9 @@ def repair_budget_reason(settings):
     """
     if int(settings.get('maxImageRetries',2))<1:
         return 'Image repairs are disabled by the zero-retry limit.'
+    if settings.get('qcRepairBudgetMode') == 'project-cap':
+        from studio_automation import project_cap_reason
+        return project_cap_reason(settings)
     estimate = settings.get('qcCostEstimate', {})
     if not isinstance(estimate,dict) or not all(estimate.get(k) is True for k in (
             'baselineControlled','includesAPI','includesIncrementalRental','includesRechecks')):
