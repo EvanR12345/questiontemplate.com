@@ -74,7 +74,7 @@ const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-work
 const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pipeline-admission-pilot-20261011',import.meta.url),{type:'module'}));
 const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pipeline-admission-pilot-20261011',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
-let computeGeneration=0,controlTimer;
+let computeGeneration=0,renderedGeneration=-1,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
 const snapshot=()=>({pricingChecked:PRICING_DATE,pricingSource:PRICING_URL,type:'studio-pipeline-plan',version:VERSION,config:{...config},preferences:structuredClone(preferences),uncertainty,studioSource:{project:studioProject,following:studioFollowing}});
 function checkpoint(manual=true){history.push(snapshot());if(history.length>40)history.shift();$('undo').disabled=false;if(manual)studioManual();}
@@ -98,6 +98,12 @@ async function rebuild(){
   const generation=++computeGeneration;plannerRequest.cancel();comparisonRequest.cancel();comparisonPendingKey='';
   const startupHost=$('startTradeoffs');startupHost._startupGeneration=(startupHost._startupGeneration||0)+1;startupHost._startupWorker?.terminate();startupHost._startupWorker=null;startupHost._startupKey=null;
   $('saved').textContent='Calculating in the background…';
+  $('export').disabled=true;$('play').disabled=true;
+  $('timeline').inert=true;$('taskInspector').inert=true;
+  $('plannerWorkspace').setAttribute('aria-busy','true');
+  $('metricTime').textContent='Calculating…';$('metricCost').textContent='—';
+  $('metricRange').textContent='Updated estimate pending';
+  $('metricCostParts').textContent='Waiting for the current settings';
   try{
     const computed=await plannerRequest.run({type:'plan',config,evidence,preferences});
     if(!computed||generation!==computeGeneration)return;
@@ -140,7 +146,11 @@ async function rebuild(){
     directorStudy?.update(config.minutes);
     mountStartupTradeoffs($('startTradeoffs'),config,evidence,settings=>{checkpoint();config={...config,...settings,earlyGpu:false,policy:'proposed'};preferences={};setControls();rebuild();toast('GPU startup timing applied to the planner. Production settings remain unchanged.');});
     if(view==='gpus')renderGPUs();persist();
-  }catch(e){if(generation!==computeGeneration)return;$('error').textContent=e.message;$('error').hidden=false;}
+    renderedGeneration=generation;
+    $('export').disabled=false;$('play').disabled=false;
+    $('timeline').inert=false;$('taskInspector').inert=false;
+    $('plannerWorkspace').setAttribute('aria-busy','false');
+  }catch(e){if(generation!==computeGeneration)return;$('error').textContent=e.message;$('error').hidden=false;$('metricTime').textContent='Unavailable';$('metricRange').textContent='The current settings could not be calculated';$('plannerWorkspace').setAttribute('aria-busy','false');}
 }
 function renderTimeline(){
   if(!result||view!=='schedule')return;
@@ -335,12 +345,12 @@ async function start(){
       if(k==='chapters'){next.readyChapters=Math.min(next.readyChapters,next.chapters);}
       if(k!=='gpuStartSeconds'&&k!=='uncertainty'&&next.gpuStartSeconds>0){next.gpuStartSeconds=0;toast('Timed GPU startup cleared after settings changed. Recalculate using Spend less on rented waiting.');}
       // Never silently change the user's check level to satisfy installed overlap.
-      try{if(['gpu','resolution','encodingProfile'].includes(k))next=selectGPUConfig(next,evidence,next.gpu);buildPlan(next,evidence);const u=Number($('uncertainty').value);if(!Number.isFinite(u)||u<0||u>100)throw Error('Sensitivity must be 0–100%.');checkpoint();config=next;uncertainty=u;preferences={};selected=null;setControls();rebuild();if(['gpu','resolution','encodingProfile'].includes(k))toast('Automatically selected fastest tested settings: '+executionLabel(plan));}catch(e){toast(e.message);setControls();}
+      try{if(['gpu','resolution','encodingProfile'].includes(k))next=selectGPUConfig(next,evidence,next.gpu);const nextPlan=buildPlan(next,evidence);const u=Number($('uncertainty').value);if(!Number.isFinite(u)||u<0||u>100)throw Error('Sensitivity must be 0–100%.');checkpoint();config=next;uncertainty=u;preferences={};selected=null;setControls();rebuild();if(['gpu','resolution','encodingProfile'].includes(k))toast('Automatically selected fastest tested settings: '+executionLabel(nextPlan));}catch(e){toast(e.message);setControls();}
       };
       $(k).addEventListener('change',()=>{clearTimeout(controlTimer);apply();});
       $(k).addEventListener('input',()=>{clearTimeout(controlTimer);controlTimer=setTimeout(apply,350);});
     }
-    $('fastestGPU').onclick=()=>{try{const next=selectGPUConfig(config,evidence,config.gpu);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();toast('Fastest tested settings applied: '+executionLabel(plan));}catch(e){toast(e.message);}};
+    $('fastestGPU').onclick=()=>{try{const next=selectGPUConfig(config,evidence,config.gpu),nextPlan=buildPlan(next,evidence);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();toast('Fastest tested settings applied: '+executionLabel(nextPlan));}catch(e){toast(e.message);}};
     document.querySelectorAll('[data-view]').forEach((b,i)=>{b.onclick=()=>switchView(b.dataset.view);b.onkeydown=e=>{const tabs=[...document.querySelectorAll('[data-view]')];const next=e.key==='ArrowRight'?tabs[(i+1)%tabs.length]:e.key==='ArrowLeft'?tabs[(i+tabs.length-1)%tabs.length]:null;if(next){e.preventDefault();next.focus();switchView(next.dataset.view);}};});
     $('chapterFocus').onchange=()=>{focus=$('chapterFocus').value;renderTimeline();renderInspector();};$('zoom').onchange=renderTimeline;
     $('compactPreparation').onchange=()=>{preparationCompact=$('compactPreparation').checked;renderTimeline();};
@@ -351,6 +361,7 @@ async function start(){
     $('reset').onclick=()=>{checkpoint();config={...resetDefault};preferences={};uncertainty=20;selected=null;setControls();rebuild();toast('Default planning scenario restored with fastest tested settings.');};
     $('play').onclick=()=>{if(playing){stopPlay();return;}if(matchMedia('(prefers-reduced-motion: reduce)').matches){toast('Animation disabled by your reduced-motion setting. Task details remain available.');return;}playing=true;playStarted=performance.now();$('play').textContent='Stop simulation';playFrame=requestAnimationFrame(tick);};
     $('export').onclick=()=>{
+      if(renderedGeneration!==computeGeneration){toast('Wait for the current settings to finish calculating before exporting.');return;}
       const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,productionUSD:result.productionUSD,storageUSD:result.storageUSD,totalUSD:result.totalUSD,pricing:plan.gpu.pricing},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};
       download(`studio-plan-${config.gpu}-${config.minutes}min.json`,JSON.stringify(value,null,2),'application/json');toast('Exported schedule, task IDs, dependencies, resource limits and evidence.');
     };
