@@ -361,7 +361,9 @@ async function start(){
     $('reset').onclick=()=>{checkpoint();config={...resetDefault};preferences={};uncertainty=20;selected=null;setControls();rebuild();toast('Default planning scenario restored with fastest tested settings.');};
     $('play').onclick=()=>{if(playing){stopPlay();return;}if(matchMedia('(prefers-reduced-motion: reduce)').matches){toast('Animation disabled by your reduced-motion setting. Task details remain available.');return;}playing=true;playStarted=performance.now();$('play').textContent='Stop simulation';playFrame=requestAnimationFrame(tick);};
     $('export').onclick=()=>{
-      if(renderedGeneration!==computeGeneration){toast('Wait for the current settings to finish calculating before exporting.');return;}
+      const controls=readControls();
+      if(config.directorCostMode==='measured')controls.directorCost=config.directorCost;
+      if(renderedGeneration!==computeGeneration||JSON.stringify(controls)!==JSON.stringify(config)||Number($('uncertainty').value)!==uncertainty){toast('Wait for the current settings to finish calculating before exporting.');return;}
       const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,productionUSD:result.productionUSD,storageUSD:result.storageUSD,totalUSD:result.totalUSD,pricing:plan.gpu.pricing},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};
       download(`studio-plan-${config.gpu}-${config.minutes}min.json`,JSON.stringify(value,null,2),'application/json');toast('Exported schedule, task IDs, dependencies, resource limits and evidence.');
     };
