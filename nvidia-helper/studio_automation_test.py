@@ -239,3 +239,36 @@ class AutomaticProductionTest(unittest.TestCase):
         before=self.service.visual_spec_signature(p,shot)
         p['intro']['voiceText']='The gate remained locked.'
         self.assertNotEqual(before,self.service.visual_spec_signature(p,shot))
+
+    def intro_review_fixture(self):
+        self.service.prepare_story(self.project['id'],{})
+        p=self.service.store.load(self.project['id']);shot=copy.deepcopy(p['chapters'][0]['scenes'][0]['shots'][0])
+        self.service.store.asset(p['id'],'intro-fixture.png').write_bytes(b'saved intro bytes')
+        shot.update(imagePath='intro-fixture.png',qc={'pass':True,'status':'PASSED'})
+        p['settings']=run_settings(p['settings'])
+        p['intro'].update(enabled=True,shots=[shot],voiceText='The key opened a gate.')
+        return self.service.store.save(p),shot
+
+    def test_saved_intro_pass_is_refreshed_once_then_reused_until_inputs_change(self):
+        p,shot=self.intro_review_fixture()
+        self.service.visual_check=Mock(return_value={'pass':True,'issues':[],'action':'accept'})
+        self.service.inspect_intro(p,sampled_only=True)
+        self.service.inspect_intro(self.service.store.load(p['id']),sampled_only=True)
+        self.assertEqual(self.service.visual_check.call_count,1)
+        self.service.store.mutate(p['id'],lambda q:q['intro'].update(voiceText='The gate remained locked.'))
+        self.service.inspect_intro(self.service.store.load(p['id']),sampled_only=True)
+        self.assertEqual(self.service.visual_check.call_count,2)
+
+    def test_intro_review_for_old_input_cannot_certify_new_manual_selection(self):
+        p,shot=self.intro_review_fixture()
+        self.service.store.asset(p['id'],'manual-intro.png').write_bytes(b'new manual bytes')
+        def check(*args):
+            self.service.store.mutate(p['id'],lambda q:q['intro']['shots'][0].update(imagePath='manual-intro.png'))
+            return {'pass':True,'issues':[],'action':'accept'}
+        self.service.visual_check=Mock(side_effect=check)
+        with self.assertRaisesRegex(RuntimeError,'current edits'):
+            self.service.inspect_intro(p,sampled_only=True)
+        current=self.service.store.load(p['id'])['intro']['shots'][0]
+        self.assertEqual(current['imagePath'],'manual-intro.png')
+        self.assertEqual(current['qc']['status'],'PENDING')
+        self.assertFalse(current['qcHistory'][-1]['selected'])

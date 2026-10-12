@@ -1950,6 +1950,7 @@ class StudioService:
                     if qc_decision(latest,get_shot(latest,chapter['id'],item['id']),self.store)['blocking']:
                         raise RuntimeError('Automatic image repairs exhausted without a usable result; saved assets and findings retained.')
         if self.store.load(pid)['intro']['enabled']:
+            self.inspect_intro(self.store.load(pid),sampled_only=True)
             for original in self.store.load(pid)['intro'].get('shots',[]):
                 for _ in range(self.store.load(pid)['settings']['maxImageRetries']):
                     current=self.store.load(pid);item=next(s for s in current['intro']['shots'] if s['id']==original['id'])
@@ -2522,22 +2523,40 @@ class StudioService:
                     message=message, budgetBlocked=True, updated=time.time()))
                 raise CloudBudgetPaused(message)
 
-    def inspect_intro(self, p):
+    def inspect_intro(self, p, sampled_only=False):
         if p['settings'].get('qcCheckLevel') == 'off':
+            if sampled_only:return
             raise ValueError('Visual checks are Off. Enable checks in Settings first.')
         for shot in p['intro'].get('shots', []):
+            if sampled_only and not should_check(p,shot):continue
             if not shot.get('imagePath'):
                 raise ValueError('Generate every intro shot before visual review.')
-            if shot.get('qc', {}).get('status') == 'PASSED':
-                continue
+            checked_path=shot['imagePath']
+            checked_digest=self.store.asset_digest(p['id'],checked_path)
+            checked_spec=self.visual_spec_signature(p,shot)
+            existing=shot.get('qc',{})
+            if qc_decision(p,shot,self.store)['disposition']=='accepted':continue
+            if (existing.get('checkedImagePath')==checked_path
+                    and existing.get('checkedImageSHA256')==checked_digest
+                    and existing.get('shotSpecSignature')==checked_spec
+                    and (existing.get('status')=='PASSED' or sampled_only
+                         and existing.get('status') not in (None,'PENDING','UNREVIEWED'))):continue
             qc = self.visual_check(p, shot | {'intentionalAppearanceChanges': shot.get('intentionalAppearanceChanges', [])}, self.store.asset(p['id'], shot['imagePath']))
             qc['status'] = 'PASSED' if qc['pass'] else 'REVIEW_REQUIRED' if qc.get('action') == 'review' else 'FAILED'
+            qc.update(checkedImagePath=checked_path,checkedImageSHA256=checked_digest,shotSpecSignature=checked_spec)
             def save(latest):
                 item = next(s for s in latest['intro']['shots'] if s['id'] == shot['id'])
+                if (item.get('imagePath')!=checked_path
+                        or self.store.asset_digest(p['id'],checked_path)!=checked_digest
+                        or self.visual_spec_signature(latest,item)!=checked_spec):
+                    self.retain_stale_qc(item,qc,checked_path)
+                    return False
                 item.update(qc=qc)
                 item['qcDecision']=qc_decision(latest,item,self.store)
                 item['status']=production_status(latest,item,self.store)
-            self.store.mutate(p['id'], save)
+                return True
+            if not self.store.mutate(p['id'], save):
+                raise RuntimeError('Intro changed during visual review; current edits and earlier findings retained.')
 
     def intro_image(self, p, options=None):
         options = options or {}
