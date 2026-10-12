@@ -187,6 +187,34 @@ class IntroTest(unittest.TestCase):
 
 
 class RenderReuseTest(unittest.TestCase):
+    def test_full_assembly_cannot_replace_a_chapter_edited_during_its_render(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,ch=self.setup_project(folder)
+            ch['sourceText']='Original story text.'
+            ch['scenes'][0]['id']='scene-fixture'
+            for shot in ch['scenes'][0]['shots']:
+                shot.update(sceneId='scene-fixture',chapterId=ch['id'],characters=[],
+                            generationSettings={},camera={},status='COMPLETE')
+            ch['render']={'path':'previous-selected.mp4'}
+            p=store.save(p);ch=p['chapters'][0]
+            renderer=VideoRenderer(store,{})
+            def encode(project,chapter,gate):
+                store.asset(p['id'],'earlier-chapter.mp4').write_bytes(b'earlier completed version')
+                store.mutate(p['id'],lambda latest:latest['chapters'][0].update(
+                    sourceText='New manual story text',renderStale=True))
+                return {'path':'earlier-chapter.mp4','duration':2,'signature':'earlier'}
+            with patch.object(renderer,'chapter',side_effect=encode), \
+                 patch.object(renderer,'run',side_effect=self.save_output), \
+                 patch.object(renderer,'concat',side_effect=lambda files,target,*args,**kw:target.write_bytes(b'joined')):
+                with self.assertRaisesRegex(ValueError,'Chapter changed during full-story assembly'):
+                    renderer.full(p,lambda *_:None)
+            saved=store.load(p['id'])['chapters'][0]
+            self.assertEqual(saved['sourceText'],'New manual story text')
+            self.assertEqual(saved['render']['path'],'previous-selected.mp4')
+            self.assertTrue(saved['renderStale'])
+            self.assertFalse(saved['renderHistory'][-1]['selected'])
+            self.assertTrue(store.asset(p['id'],'earlier-chapter.mp4').is_file())
+
     def setup_project(self, folder):
         store = ProjectStore(folder)
         p = store.save(new_project())
@@ -236,7 +264,9 @@ class RenderReuseTest(unittest.TestCase):
 
     def test_mid_render_image_edit_cannot_poison_the_old_clip_cache(self):
         with tempfile.TemporaryDirectory() as folder:
-            store,p,ch=self.setup_project(folder);renderer=VideoRenderer(store,{})
+            # Isolate the changed source. A parallel unchanged shot may validly
+            # finish and be checkpointed even when this shot is rejected.
+            store,p,ch=self.setup_project(folder);renderer=VideoRenderer(store,{'renderWorkers':1})
             previous=store.asset(p['id'],'previous.mp4');previous.write_bytes(b'keep previous video')
             def changed(args,*_):
                 self.save_output(args)

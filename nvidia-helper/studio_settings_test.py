@@ -102,7 +102,10 @@ class DispatchSettingsTest(unittest.TestCase):
 
 class SettingsContractTest(unittest.TestCase):
     def test_stable_sampling_new_defaults_and_legacy_compatibility(self):
-        p=new_project();self.assertEqual(check_level(p['settings']),'off')
+        p=new_project();self.assertEqual(check_level(p['settings']),'practical')
+        # Saved projects without the new default retain legacy check behavior.
+        p['settings'].pop('qcCheckLevel');p['settings']['visionQC']=False
+        self.assertEqual(check_level(p['settings']),'off')
         p['settings']['generationMode']='MAX QUALITY';self.assertEqual(check_level(p['settings']),'practical')
         p['settings']['qcCheckLevel']='off';self.assertFalse(should_check(p,{'id':'a'}))
         p['settings'].update(qcCheckLevel='sampled',qcSampleEvery=5)

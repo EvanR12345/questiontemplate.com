@@ -560,7 +560,7 @@ class VideoRenderer:
             "chapters": [ch],
             "intro": p["intro"] | {"placement": "full_story_only"},
         }
-        result = self.full(single, gate)
+        result = self.full(single, gate, publication_project=p)
         return result | {
             "downloadName": base["downloadName"],
             "introDuration": self.intro_duration(p),
@@ -722,7 +722,7 @@ class VideoRenderer:
         )
         return destination
 
-    def full(self, p, gate):
+    def full(self, p, gate, publication_project=None):
         files = []
         audios = []
         durations = []
@@ -767,19 +767,32 @@ class VideoRenderer:
         for ch in p["chapters"]:
             if not ch["sourceText"].strip():
                 continue
+            from studio_render_inputs import render_submission_signature
+            # Chapter parts and per-chapter intros deliberately derive settings
+            # from the project. Guard the original inputs, not these overrides.
+            requested_inputs=render_submission_signature(publication_project or p,self.store,self,ch['id'])
             result = self.chapter(p, ch, gate)
 
             chapter_result = self.watermark_export(p,result,gate)
             def chapter_saved(latest):
-                c = next(c for c in latest["chapters"] if c["id"] == ch["id"])
+                c = next((c for c in latest["chapters"] if c["id"] == ch["id"]),None)
+                if c is None or render_submission_signature(latest,self.store,self,ch['id'])!=requested_inputs:
+                    target=c if c is not None else latest
+                    target.setdefault('renderHistory',[]).append(chapter_result | {'selected':False,
+                        'chapterId':ch['id'],'reason':'Chapter changed during full-story assembly; current edits and selection retained.'})
+                    target['renderStale']=True
+                    latest['renderStale']=True
+                    return False
                 if (
                     c.get("render", {}).get("path")
                     and c["render"]["path"] != chapter_result["path"]
                 ):
                     c.setdefault("renderHistory", []).append(c["render"])
                 c.update(render=chapter_result, renderStale=bool(p["intro"]["enabled"] and p["intro"]["placement"] == "every_chapter"))
+                return True
 
-            self.store.mutate(p["id"], chapter_saved)
+            if not self.store.mutate(p["id"], chapter_saved):
+                raise ValueError('Chapter changed during full-story assembly. The completed earlier version is saved; current edits and selected exports are retained.')
             if p["intro"]["enabled"] and p["intro"]["placement"] == "every_chapter":
                 add_intro()
             files.append(self.store.asset(p["id"], result["path"]))
@@ -965,7 +978,7 @@ class VideoRenderer:
             partial['settings'].setdefault('engagement',{})['splitEnabled']=False
             if offset and partial['intro']['placement']=='full_story_only':
                 partial['intro']['enabled']=False
-            result=self.full(partial,gate)
+            result=self.full(partial,gate,publication_project=p)
             end=cursor+result['duration']
             parts.append(result | {'number':len(parts)+1,'start':cursor,'end':end,
                 'chapterIds':[ch['id'] for ch in group], 'chapterNames':[ch['name'] for ch in group],

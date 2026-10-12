@@ -956,7 +956,10 @@ def visible_appearance(shot, selected):
     visible = {}
     for key,value in appearance.items():
         if key in weapons and key not in named: continue
-        if key not in physical and re.search(r'\b(?:held|holding|carr(?:y|ies|ied)|hands?|floor|dropped|removed|stowed)\b',str(value),re.I):
+        # Weapons have already passed their named/unambiguous-held test above.
+        # Requiring their literal name again would erase "weapon raised" + the
+        # single canonical held gun, leaving the generator to invent its type.
+        if key not in physical and key not in weapons and re.search(r'\b(?:held|holding|carr(?:y|ies|ied)|hands?|floor|dropped|removed|stowed)\b',str(value),re.I):
             words = [w for w in re.findall(r'[a-z]+',key.lower()) if w not in ('the','of','a','an')]
             if words and not all(re.search(r'\b'+re.escape(w)+r's?\b',context,re.I) for w in words): continue
         visible[key]=value

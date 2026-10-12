@@ -11,6 +11,23 @@ import full_video_test as fixtures
 
 
 class IntroPreparationTest(unittest.TestCase):
+    def test_full_resume_regenerates_missing_intro_file_without_rebuying_chapter_images(self):
+        fixture=fixtures.FullVideoTest();fixture.setUp();service=fixture.service
+        try:
+            service.produce_story(fixture.project['id'],{})
+            before=sum(c[0]=='image' for c in service.calls)
+            service.store.mutate(fixture.project['id'],lambda p:p['intro'].update(
+                enabled=True,visualPrompt='A story-supported opening.',visualPath='missing-intro.png'))
+            def replacement(p,options):
+                service.store.asset(p['id'],'replacement-intro.png').write_bytes(b'fixture intro')
+                service.store.mutate(p['id'],lambda latest:latest['intro'].update(visualPath='replacement-intro.png'))
+            service.intro_image=Mock(side_effect=replacement)
+            service.produce_story(fixture.project['id'],{})
+            service.intro_image.assert_called_once()
+            self.assertEqual(sum(c[0]=='image' for c in service.calls),before)
+            self.assertEqual(service.store.load(fixture.project['id'])['production']['status'],'COMPLETE')
+        finally:fixture.tearDown()
+
     def test_review_metadata_does_not_rerender_intro_but_major_flags_block_cache(self):
         with tempfile.TemporaryDirectory() as folder:
             store=ProjectStore(folder);project=store.save(new_project())

@@ -1,4 +1,4 @@
-import copy, json, os, subprocess, tempfile, time, unittest, wave
+import copy, json, os, shutil, subprocess, sys, tempfile, time, unittest, wave
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -37,7 +37,8 @@ class ExportSettingsTests(unittest.TestCase):
         p['settings']['engagement'].update(splitEnabled=True,splitMode='chapters',exportDestination='patreon')
         before=copy.deepcopy(p);renderer=VideoRenderer(None,{})
         seen=[]
-        def full(part,gate):
+        def full(part,gate,publication_project=None):
+            self.assertEqual(publication_project,p)
             seen.append(copy.deepcopy(part))
             return {'path':f'part{len(seen)}.mp4','duration':10*len(part['chapters']),
                 'exportDestination':settings(part)['exportDestination']}
@@ -52,6 +53,25 @@ class ExportSettingsTests(unittest.TestCase):
 
 
 class CloudRenderTests(unittest.TestCase):
+    def test_cloud_container_source_allowlist_imports_without_repository_fallback(self):
+        root=Path(__file__).parent
+        recipe=(root/'cloud-render.Dockerfile').read_text(encoding='utf-8')
+        copy_line=recipe.split('COPY ',1)[1].split('./',1)[0].replace('\\',' ')
+        names=copy_line.split()
+        self.assertIn('studio_video_settings.py',names)
+        self.assertIn('studio_render_inputs.py',names)
+        with tempfile.TemporaryDirectory() as folder:
+            for name in names:shutil.copy2(root/name,Path(folder)/name)
+            environment=os.environ.copy();environment.pop('PYTHONPATH',None)
+            result=subprocess.run([sys.executable,'-B','-c',
+                'import studio_cloud_render, studio_render_inputs; '
+                'from studio_data import new_project, ProjectStore; '
+                'p=new_project("Isolated container import"); '
+                's=ProjectStore("scratch"); '
+                'studio_render_inputs.render_submission_signature(p,s)'],
+                cwd=folder,env=environment,capture_output=True,text=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stderr)
+
     def fixture(self, folder):
         p=new_project('Cloud render');obj=Objects();job_id='a'*32
         manifest={'version':1,'project':p,'files':{},'savedAt':0}

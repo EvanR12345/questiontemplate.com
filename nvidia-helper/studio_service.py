@@ -564,9 +564,29 @@ class StudioService:
               'Cloud-only projects require their configured cloud image provider.')
         images_needed=any(not c['scenes'] or any(not s.get('imagePath') or s.get('generationStale') or not self.store.has_asset(pid,s['imagePath'])
                           for scene in c['scenes'] for s in scene['shots']) for c in chapters)
+        saved_shots=[s for c in chapters for scene in c['scenes'] for s in scene['shots']]
         if p['intro']['enabled']:
             images_needed |= bool(not p['intro'].get('visualPath') and not p['intro'].get('shots'))
-            images_needed |= any(not s.get('imagePath') for s in p['intro'].get('shots',[]))
+            images_needed |= any(not s.get('imagePath') or not self.store.has_asset(pid,s['imagePath'])
+                                 for s in p['intro'].get('shots',[]))
+            saved_shots += p['intro'].get('shots',[])
+            if p['intro'].get('visualPath') and not p['intro'].get('shots'):
+                images_needed |= not self.store.has_asset(pid,p['intro']['visualPath'])
+        # The same preserved findings will stop full production before rendering.
+        # Report them before any unrelated new chapter/GPU/API work is bought.
+        # Pending checks can resume; stale/missing images can regenerate. Explicit
+        # acceptance, Off and permitted automatic repairs retain their semantics.
+        review_context={'files':{},'reviews':{},'chapters':{c['id']:c for c in p['chapters']},
+                        'intro':{s['id'] for s in p['intro'].get('shots',[])}}
+        review_flags=[s for s in saved_shots if s.get('imagePath') and not s.get('generationStale')
+                      and s.get('qc',{}).get('pass') is False
+                      and s.get('qc',{}).get('status')!='PENDING'
+                      and self.store.has_asset(pid,s['imagePath'])
+                      and qc_decision(p,s,self.store,review_context)['blocking']
+                      and not automatic_repairs(p['settings'],s.get('qc',{}))]
+        check('saved-visual-reviews',not review_flags,
+              f'{len(review_flags)} saved images need review before the full video can finish. Review or explicitly repair those shots first; completed images and findings stay saved.'
+              if review_flags else 'No saved visual findings currently block the full video.')
         from studio_runpod import configured
         managed=configured(self.config)
         if images_needed:
@@ -614,6 +634,9 @@ class StudioService:
         free=shutil.disk_usage(self.store.folder(pid)).free
         check('scratch',free>=512*2**20,
               f'Local temporary disk: {free/2**30:.2f} GiB free. Long-video space is checked again against actual rendered inputs.')
+        if free<2*2**30:
+            check('scratch-headroom',False,
+                  'Limited local scratch space: cloud archiving does not remove local working files. Free space before a long generation; this setup check is not a guarantee that the complete video will fit.',False)
         storage=self.storage.status(pid)
         check('archive',storage.get('enabled') and storage.get('provider')=='Google Cloud Storage',
               'Permanent project and media archive must be connected to Google storage.')
@@ -1785,7 +1808,10 @@ class StudioService:
         if (
             p["intro"]["enabled"]
             and (p['intro'].get('shots') or p['intro'].get('visualPrompt', '').strip())
-            and (any(not s.get('imagePath') for s in p['intro'].get('shots', [])) or not p['intro'].get('shots') and not p['intro'].get('visualPath'))
+            and (any(not s.get('imagePath') or not self.store.has_asset(pid,s['imagePath'])
+                     for s in p['intro'].get('shots', []))
+                 or not p['intro'].get('shots') and (not p['intro'].get('visualPath')
+                     or not self.store.has_asset(pid,p['intro']['visualPath'])))
         ):
             self.production_progress(
                 pid, "Generating intro visual", chapterId=None, shotId=None
@@ -2059,39 +2085,8 @@ class StudioService:
         return self.store.mutate(pid,saved)
 
     def render_submission_signature(self, project, chapter_id=None):
-        """Publication guard; progress/review receipts cannot invalidate a render."""
-        def asset(name):
-            if not name:return None
-            path=self.store.asset(project['id'],name)
-            if not path.is_file():return {'path':name,'missing':True}
-            if callable(getattr(self.renderer,'asset_identity',None)):
-                return self.renderer.asset_identity(project['id'],name)
-            return hashlib.sha256(path.read_bytes()).hexdigest()
-        chapters=[get_chapter(project,chapter_id)] if chapter_id else project['chapters']
-        inputs=[]
-        for ch in chapters:
-            inputs.append({'id':ch['id'],'number':ch['number'],'source':ch.get('sourceText',''),
-                'narration':ch.get('cleanNarrationText',''),
-                'audio':{'path':ch.get('audio',{}).get('path'),
-                         'duration':ch.get('audio',{}).get('duration'),
-                         'bytes':asset(ch.get('audio',{}).get('path'))},
-                'shots':[{'id':s['id'],'image':asset(s.get('imagePath')),
-                    'spec':self.visual_spec_signature(project,s),
-                    **{k:s.get(k) for k in ('start','end','motion','motionSettings','transition')}}
-                    for sc in ch.get('scenes',[]) for s in sc['shots']]})
-        intro=project['intro']
-        intro_input=None
-        if intro['enabled'] and (chapter_id is None or intro['placement']=='every_chapter'):
-            intro_input={k:intro.get(k) for k in ('enabled','duration','placement','title','subtitle',
-                         'showTitle','voiceText','visualPath','audioPath','motion','endOnNarration')}
-            intro_input.update(visualBytes=asset(intro.get('visualPath')),audioBytes=asset(intro.get('audioPath')),
-                shots=[{'image':asset(s.get('imagePath')),**{k:s.get(k) for k in ('start','end','motion')}}
-                       for s in intro.get('shots',[])])
-        from studio_branding import identity as watermark_identity
-        return digest({'chapters':inputs,'video':project['settings']['video'],'intro':intro_input,
-            'watermark':watermark_identity(project,self.store),
-            'engagement':{k:v for k,v in project['settings'].get('engagement',{}).items() if k not in ('outroAudioPath','outroAudioSignature')},
-            'voiceSettings':{k:project['settings'].get(k) for k in ('voice','speed','narrationDelivery','soundEffects','emphasisPhrases')}})
+        from studio_render_inputs import render_submission_signature
+        return render_submission_signature(project, self.store, self.renderer, chapter_id)
 
     def narration(self, p, ch):
         def narration_input(project,chapter):
@@ -4362,34 +4357,8 @@ class StudioService:
             and (shot.get("status") in ("COMPLETE","PASSED") or shot.get("qc",{}).get("pass") is False))
 
     def visual_spec_signature(self, project, shot):
-        fields = ('prompt','negativePrompt','imageProvider','imageModel','workflow','characters',
-                  'camera','location','action','pose','expression','lighting','narrationSegment',
-                  'continuity','intentionalAppearanceChanges')
-        settings = {k:v for k,v in shot.get('generationSettings',{}).items() if k != 'seed'}
-        ids = {person['id'] for person in shot.get('characters',[])}
-        chapter = get_chapter(project,shot['chapterId'])
-        people = [person for person in project['characters']+chapter.get('people',[]) if person['id'] in ids]
-        references = [ref for person in people for ref in person.get('references',[])]
-        references += [ref for location in project.get('locations',[]) if location['id']==shot.get('locationId')
-                       for ref in location.get('references',[])]
-        references += project.get('styleReferences',[])
-        if shot.get('manual',{}).get('referenceImages'):
-            references += shot.get('referenceImages',[])
-        fingerprints=[]
-        for ref in references:
-            name=ref.get('path')
-            if not name:continue
-            path=self.store.asset(project['id'],name)
-            if not path.is_file():fingerprint={'missing':True}
-            elif callable(getattr(self.renderer,'asset_identity',None)):
-                fingerprint=self.renderer.asset_identity(project['id'],name)
-            else:fingerprint=hashlib.sha256(path.read_bytes()).hexdigest()
-            fingerprints.append({'reference':ref,'bytes':fingerprint})
-        return digest({'shot':{k:shot.get(k) for k in fields},'settings':settings,
-            'source':chapter.get('sourceText',''),'style':project['settings']['style'],
-            'constraints':project['settings'].get('imageVisualConstraints',project['settings'].get('visualConstraints','')),
-            'people':[{k:person.get(k) for k in ('id','description','permanentIdentity','references')}
-                      for person in people],'referenceAssets':fingerprints})
+        from studio_render_inputs import visual_spec_signature
+        return visual_spec_signature(project, shot, self.store, self.renderer)
 
     @staticmethod
     def retain_stale_qc(shot, qc, image_path):
