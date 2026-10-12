@@ -6,4 +6,6 @@ The helper now verifies narration cache signatures without restoring a cloud WAV
 
 An exact-byte 32 MiB reference-preparation cache reduced 100 preparations of a 1 MiB synthetic fixture from 0.719 to 0.060 seconds in eight alternated paired trials. It changes no image pixels. This is a preparation-stage result, not an end-to-end image or video benchmark.
 
-Validation:690 broad backend tests,309 frontend tests and29 private publisher tests passed; additional focused tests cover the final review-only dispatch/forecast guards. No paid API calls, rentals, production run or image generation was performed for this review. Existing projects, media, manual edits and the working helper environment are preserved. Earlier visual findings remain unresolved until an explicitly budgeted production run checks or repairs them.
+Validation:694 broad backend tests,309 frontend tests and29 private publisher tests passed; additional focused tests cover the final review-only dispatch/forecast guards. No paid API calls, rentals, production run or image generation was performed for this review. Existing projects, media, manual edits and the working helper environment are preserved. Earlier visual findings remain unresolved until an explicitly budgeted production run checks or repairs them.
+
+Nested whole-review measurements and Luna API-call measurements now remain separate, preventing incompatible QC timing samples from being mixed. Twenty repeated synthetic director-drain tests passed after correcting a reusable mock barrier; real unresolved reservations remain protected.

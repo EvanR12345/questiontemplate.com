@@ -1386,6 +1386,7 @@ class StudioService:
         pause_epoch=root.pause_epoch
         was_paused=root.paused
         old_audio=None
+        if stage=='Visual QC':details['reviewTimingScope']='whole-review'
         if stage=='Narration' and len(args)>1 and isinstance(args[1],dict):
             old_audio=copy.deepcopy(args[1].get('audio',{}))
             old_audio_available=bool(old_audio.get('path') and self.store.has_asset(pid,old_audio['path']))

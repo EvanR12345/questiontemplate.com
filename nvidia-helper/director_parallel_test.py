@@ -73,7 +73,9 @@ class DirectorParallelTest(unittest.TestCase):
         seen=[];lock=threading.Lock();failed=threading.Event()
         def response(*args,**kwargs):
             with lock:index=len(seen);seen.append(index)
-            barrier.wait(timeout=3)
+            # Only the first admission window must rendezvous. A later admitted
+            # paid mock reply must drain, not wait for a nonexistent second trio.
+            if index<3:barrier.wait(timeout=3)
             if index==0:
                 failed.set();return self.stream(index,{'wrongField':True})
             self.assertTrue(failed.wait(3))

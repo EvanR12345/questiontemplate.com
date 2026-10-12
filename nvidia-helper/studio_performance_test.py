@@ -78,6 +78,15 @@ class PerformanceTest(unittest.TestCase):
         self.store.record('qc','run',actual,{'kind':'images','value':1},6,{'estimatedUSD':.0003})
         self.assertEqual(self.store.estimate(expected,{'kind':'images','value':1})['seconds'],6)
 
+    def test_nested_whole_review_does_not_mix_with_api_latency_samples(self):
+        api=profile_for('Visual QC',self.project,{})
+        whole=profile_for('Visual QC',self.project,{}, {'reviewTimingScope':'whole-review'})
+        self.assertNotEqual(api,whole)
+        self.store.record('api','same-run',api,{'kind':'images','value':1},6,{'estimatedUSD':.0003})
+        self.store.record('parent','same-run',whole,{'kind':'images','value':1},60,{})
+        self.assertEqual(self.store.estimate(api,{'kind':'images','value':1})['seconds'],6)
+        self.assertEqual(self.store.estimate(whole,{'kind':'images','value':1})['seconds'],60)
+
     def test_private_keys_story_ids_and_endpoints_are_absent_from_profiles(self):
         config={'openaiApiKey':'SECRET','comfyEndpoint':'https://private-host.example','comfySshHost':'private-ip'}
         for stage in ('AI directing','Image generation','Narration','Render chapter'):
