@@ -6,10 +6,12 @@ Secrets never enter project exports, health responses or signed URL reports.
 import copy
 import hashlib
 import json
+import math
 import mimetypes
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
 
@@ -233,7 +235,9 @@ class R2Archive:
             self.objects.put_json(f'studio/history/{pid}/{project["revision"]}-{history}.json',manifest)
             self.objects.put_json(f'studio/manifests/{pid}.json',manifest,etag,create=old is None)
         self.manifests.pop(pid,None)
-        self.catalogue_at = 0
+        # Invalidate after any concurrent catalogue refresh finishes; otherwise
+        # that refresh could overwrite this invalidation with its new timestamp.
+        with self.catalogue_lock:self.catalogue_at = 0
         with self.store.lock:
             changed = (folder/'project.json').read_bytes() != snapshot
             with self.cv:
@@ -352,13 +356,29 @@ class R2Archive:
             return copy.deepcopy(self.catalogue)
 
     def _list_projects(self):
-        result=[]
-        for key in self.objects.keys('studio/manifests/'):
+        keys=[key for key in self.objects.keys('studio/manifests/')
+              if re.fullmatch(r'studio/manifests/pr-[a-f0-9]{16}\.json',key)]
+        def summary(key):
             pid=key.rsplit('/',1)[-1].removesuffix('.json')
-            manifest,_=self.manifest(pid,True)
-            if manifest:
-                p=manifest['project']; result.append({k:p[k] for k in ('id','name','revision','updated')} | {'chapters':len(p['chapters'])})
-        return result
+            try:
+                # Listing needs metadata only. Do not retain every novel's full
+                # manifest in the asset cache or restore its media to the laptop.
+                raw,_=self.objects.read(key)
+                if raw is None:return None # Removed after the listing snapshot.
+                p=json.loads(raw)['project']
+                if (p['id']!=pid or not isinstance(p['name'],str)
+                    or type(p['revision']) is not int or p['revision']<0
+                    or type(p['updated']) not in (int,float) or not math.isfinite(p['updated'])
+                    or not isinstance(p['chapters'],list)):
+                    raise ValueError('Invalid cloud project summary')
+                return {k:p[k] for k in ('id','name','revision','updated')} | {'chapters':len(p['chapters'])}
+            except Exception:
+                # Preserve visibility and never expose raw SDK/credential text.
+                return {'id':pid,'name':'Cloud project needs recovery','revision':0,
+                    'updated':0,'chapters':0,
+                    'loadError':'Cloud project metadata could not be read. Its saved files are retained; retry or recover a saved snapshot.'}
+        with ThreadPoolExecutor(max_workers=4,thread_name_prefix='studio-project-list') as pool:
+            return [row for row in pool.map(summary,keys) if row is not None]
 
     def worker(self):
         while True:

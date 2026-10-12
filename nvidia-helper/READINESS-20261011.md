@@ -17,13 +17,20 @@ projects, manual edits, media, existing review findings and the audio environmen
   render-input guards. An isolated bundle import test checks these dependencies.
 - Readiness warns about limited local scratch space. Cloud archiving does not make
   local audio generation and rendering independent of the laptop's free disk.
+- Cold cloud-project listing uses up to four concurrent manifest reads, returns
+  compact summaries and avoids retaining every story in the asset cache. A broken
+  manifest remains visible for recovery without hiding other projects. Cloud saves
+  cannot lose cache invalidation to a simultaneous old catalogue refresh.
 
 ## Validation
 
-The release backend suite passed 614 tests, including bounded real FFmpeg exports,
+The final release backend suite passed 617 tests, including bounded real FFmpeg exports,
 cloud restore/checkpoint tests, chapter-aligned parts and concurrent-edit recovery.
 The frontend suite passed 303 tests; the publisher suite passed 29 tests. The
 downloadable helper archive is checked against its public source files.
+The library fix also passed 43 focused cloud/Google-storage/export tests (two
+optional real-render cases skipped in that focused command; both run in the
+complete suite with FFmpeg enabled).
 
 No new GPU rental, image generation or paid API request was needed for this review.
 The weapon fix has regression evidence, not a new image-quality measurement.

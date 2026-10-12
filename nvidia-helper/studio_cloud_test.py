@@ -210,6 +210,66 @@ class CloudSaveTests(unittest.TestCase):
         self.store.mutate(self.p['id'],lambda p:p.update(name='Changed'));self.a.sync(self.p['id'])
         self.assertEqual(self.a.list_projects()[0]['name'],'Changed');self.assertEqual(len(calls),2)
 
+    def test_cold_catalogue_reads_overlap_with_four_bounded_slots_and_no_media_restore(self):
+        projects=[new_project('Remote story') for _ in range(8)]
+        for p in projects:self.obj.put_json(f'studio/manifests/{p["id"]}.json',{'project':p})
+        original=self.obj.read;lock=threading.Lock();entered=threading.Event();release=threading.Event()
+        active=peak=0
+        def read(key):
+            nonlocal active,peak
+            with lock:
+                active+=1;peak=max(peak,active)
+                if active==4:entered.set()
+            try:
+                if not release.wait(5):raise AssertionError('Catalogue did not overlap reads')
+                return original(key)
+            finally:
+                with lock:active-=1
+        self.obj.read=read
+        with ThreadPoolExecutor(1) as pool:
+            request=pool.submit(self.a.list_projects)
+            try:self.assertTrue(entered.wait(3))
+            finally:release.set()
+            rows=request.result(timeout=5)
+        self.assertEqual(peak,4);self.assertEqual({r['id'] for r in rows},{p['id'] for p in projects})
+        self.assertEqual(self.a.manifests,{})
+        self.assertFalse(any((self.store.root/p['id']).exists() for p in projects))
+
+    def test_one_bad_cloud_manifest_does_not_hide_other_projects_or_expose_sdk_details(self):
+        self.a.sync(self.p['id'])
+        bad=new_project('Damaged');key=f'studio/manifests/{bad["id"]}.json'
+        self.obj.data[key]=(b'not JSON','1')
+        self.obj.data['studio/manifests/invalid-id.json']=(b'not JSON','1')
+        rows=self.a.list_projects()
+        self.assertEqual(len(rows),2)
+        self.assertEqual(next(r for r in rows if r['id']==self.p['id'])['name'],'Cloud story')
+        self.assertIn('loadError',next(r for r in rows if r['id']==bad['id']))
+        self.assertEqual(self.obj.data[key][0],b'not JSON')
+
+    def test_sync_cannot_lose_catalogue_invalidation_to_an_inflight_old_listing(self):
+        self.a.sync(self.p['id']);old=self.a.list_projects();self.a.catalogue_at=0
+        entered=threading.Event();release=threading.Event();published=threading.Event()
+        def held():
+            entered.set()
+            if not release.wait(5):raise AssertionError('Listing was not released')
+            return old
+        original=self.obj.put_json
+        def put(key,*args,**kwargs):
+            original(key,*args,**kwargs)
+            if key==f'studio/manifests/{self.p["id"]}.json':published.set()
+        self.obj.put_json=put
+        with patch.object(self.a,'_list_projects',side_effect=held),ThreadPoolExecutor(2) as pool:
+            listing=pool.submit(self.a.list_projects)
+            try:
+                self.assertTrue(entered.wait(3))
+                self.store.mutate(self.p['id'],lambda p:p.update(name='Latest cloud name'))
+                sync=pool.submit(self.a.sync,self.p['id'])
+                self.assertTrue(published.wait(3))
+            finally:release.set()
+            listing.result(timeout=5);self.assertTrue(sync.result(timeout=5))
+        self.assertEqual(self.a.catalogue_at,0)
+        self.assertEqual(self.a.list_projects()[0]['name'],'Latest cloud name')
+
 class EngagementTests(unittest.TestCase):
     def test_reminders_stable_across_outro_asset_and_thumbnail_changes(self):
         p=new_project();p['settings']['engagement']['popupEnabled']=True
