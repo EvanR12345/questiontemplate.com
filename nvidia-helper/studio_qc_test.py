@@ -24,6 +24,33 @@ class PracticalQCTest(unittest.TestCase):
         current=self.store.load(self.pid);shot=get_shot(current,self.chid,self.sid)
         return accept_image(self.store,self.pid,self.chid,self.sid,{'imagePath':'image.png',
             'reviewSpecSignature':review_signature(current,shot,self.store),**extra})
+    def test_changed_review_policy_preserves_evidence_and_requests_new_review(self):
+        from studio_qc import retain_review_settings,review_settings_signature
+        self.shot['qc']['pass']=True
+        previous=copy.deepcopy(self.p['settings'])
+        previous['qcCheckLevel']='practical';self.p['settings']['qcCheckLevel']='strict'
+        original=copy.deepcopy(self.shot['qc'])
+        retain_review_settings(self.p,previous)
+        self.assertEqual(self.shot['qc']['reviewSettingsSignature'],review_settings_signature(previous))
+        self.assertEqual(self.shot['imagePath'],'image.png')
+        self.assertEqual(decision(self.p,self.shot,self.store)['disposition'],'pending')
+        self.assertEqual(self.shot['qc']['pass'],original['pass'])
+        self.p['settings']['qcCheckLevel']='off'
+        self.assertFalse(decision(self.p,self.shot,self.store)['blocking'])
+
+    def test_retry_and_sample_frequency_do_not_invalidate_review_inputs(self):
+        from studio_qc import review_settings_signature
+        before=review_settings_signature(self.p['settings'])
+        self.p['settings'].update(maxImageRetries=3,qcSampleEvery=8,automaticRepair=False)
+        self.assertEqual(before,review_settings_signature(self.p['settings']))
+
+    def test_explicit_user_acceptance_survives_review_policy_change(self):
+        from studio_qc import retain_review_settings
+        accepted=self.accept();shot=get_shot(accepted,self.chid,self.sid)
+        old=copy.deepcopy(accepted['settings']);accepted['settings']['qcCheckLevel']='strict'
+        retain_review_settings(accepted,old)
+        self.assertEqual(decision(accepted,shot,self.store)['disposition'],'accepted')
+
     def test_practical_minor_failure_is_advisory_without_rewriting_evidence(self):
         raw=copy.deepcopy(self.shot['qc']);result=decision(self.p,self.shot,self.store)
         self.assertEqual(result['disposition'],'advisory');self.assertFalse(result['blocking'])

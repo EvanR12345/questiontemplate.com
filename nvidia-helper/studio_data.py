@@ -720,6 +720,13 @@ def get_chapter(p, id):
     return next(c for c in p["chapters"] if c["id"] == id)
 
 
+def shot_chapter(project, shot):
+    """Intro ownership is project-level, even after its original chapter is removed."""
+    if any(s.get('id')==shot.get('id') for s in project.get('intro',{}).get('shots',[])):
+        return None
+    return get_chapter(project,shot['chapterId'])
+
+
 def get_shot(p, chid, shotid):
     return next(
         s

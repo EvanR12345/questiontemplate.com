@@ -30,6 +30,15 @@ export function plannerSettings(config, profile, evidence) {
   next.directorActualSlots=d.parallelism||1;next.apiSlots=next.directorActualSlots;
   if(profile.imageExecution?.backend==='comfyui-api' && profile.imageExecution.gpuLanes===1){
     next.policy='current';next.executionMode='resident';next.imageWorkers=1;next.measurementAttempt='latest';
+    const required=profile.imageExecution.requiredGPU;
+    if(required){
+      const normalize=name=>String(name).replace(/\b(?:NVIDIA|GeForce)\b/gi,'').replace(/\s+/g,'').toLowerCase();
+      const choices=[...(evidence.gpus||[]),...(evidence.concurrency?.gpus||[])];
+      const matches=choices.filter(g=>normalize(g.name)===normalize(required));
+      const ids=[...new Set(matches.map(g=>g.id))];
+      if(ids.length===1)next.gpu=ids[0];
+      else warnings.push('The required production GPU has no unique matched benchmark. This selected GPU remains a comparison reference; production does not switch GPUs.');
+    }
     warnings.push('Following production uses installed scheduling and one model-worker benchmark. It does not activate the proposed render overlap or multi-copy GPU experiment.');
   }
   if(profile.imageTasks>3)

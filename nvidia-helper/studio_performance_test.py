@@ -70,6 +70,14 @@ class PerformanceTest(unittest.TestCase):
         row=self.store.estimate(self.profile,{'kind':'characters','value':100},10001)
         self.assertEqual(row['seconds'],10);self.assertEqual(row['runs'],3)
         self.assertEqual(row['rangeSeconds'],[10,100])
+    def test_qc_lookup_matches_actual_director_callback_instead_of_image_model(self):
+        p=self.project;p['settings']['director'].update(provider='openai-luna',qcReasoning='Fast')
+        expected=profile_for('Visual QC',p,{'openaiModel':'gpt-6-luna'})
+        actual=profile_for('Visual QC',p,{'openaiModel':'gpt-6-luna'},{'provider':'openai-luna','model':'gpt-6-luna','reasoning':'low'})
+        self.assertEqual(actual,expected);self.assertEqual(actual['model'],'gpt-6-luna')
+        self.store.record('qc','run',actual,{'kind':'images','value':1},6,{'estimatedUSD':.0003})
+        self.assertEqual(self.store.estimate(expected,{'kind':'images','value':1})['seconds'],6)
+
     def test_private_keys_story_ids_and_endpoints_are_absent_from_profiles(self):
         config={'openaiApiKey':'SECRET','comfyEndpoint':'https://private-host.example','comfySshHost':'private-ip'}
         for stage in ('AI directing','Image generation','Narration','Render chapter'):

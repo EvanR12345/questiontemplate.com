@@ -63,6 +63,7 @@ class IntroPreparationTest(unittest.TestCase):
             service.intro_audio(saved,True)
             self.assertEqual(service.create_audio.call_count,1)
             saved['settings']['voice']='bm_george'
+            saved=service.store.save(saved) # Production dispatch uses committed settings.
             service.intro_audio(saved,True)
             self.assertEqual(service.create_audio.call_count,2)
             service.intro_audio(service.store.load(project['id']))

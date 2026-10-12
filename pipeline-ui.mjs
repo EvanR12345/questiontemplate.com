@@ -11,7 +11,7 @@ import {matchedHTML} from './pipeline-matched.mjs';
 import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=luna-standard-optimization-20261010';
 import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=luna-standard-optimization-20261010';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=pipeline-admission-pilot-20261011';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=whole-process-20261012';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';

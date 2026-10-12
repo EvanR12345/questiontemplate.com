@@ -3,6 +3,9 @@ from prompt_quality import execution_evidence
 
 import base64, copy, hashlib, io, json, math, re, secrets, subprocess, time, urllib.error, urllib.request
 from pathlib import Path
+from studio_data import shot_chapter
+from collections import OrderedDict
+import threading
 from PIL import Image, ImageStat
 from director_provider import local_url, request_json
 
@@ -74,8 +77,31 @@ def gpu_memory_gb():
     return _GPU_MEMORY[1]
 
 
+class ImageEncodingCache:
+    """Bounded exact-byte preparation, invalidated by each local file revision."""
+    def __init__(self,max_bytes=32*2**20):
+        self.max_bytes=max_bytes;self.bytes=0;self.items=OrderedDict();self.lock=threading.RLock()
+    @staticmethod
+    def stamp(path):
+        stat=path.stat();return (stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns)
+    def encode(self,path):
+        path=Path(path).resolve();key=str(path)
+        with self.lock:
+            before=self.stamp(path);old=self.items.get(key)
+            if old and old[0]==before:
+                self.items.move_to_end(key);return old[1]
+            value='data:image/png;base64,'+base64.b64encode(path.read_bytes()).decode()
+            if old:self.bytes-=len(self.items.pop(key)[1])
+            if len(value)<=self.max_bytes and self.stamp(path)==before:
+                self.items[key]=(before,value);self.bytes+=len(value)
+                while self.bytes>self.max_bytes:
+                    _,(_,evicted)=self.items.popitem(last=False);self.bytes-=len(evicted)
+            return value
+
+
+_image_encoding_cache=ImageEncodingCache()
 def data_url(path):
-    return "data:image/png;base64," + base64.b64encode(Path(path).read_bytes()).decode()
+    return _image_encoding_cache.encode(path)
 
 
 def visible_image(raw):
@@ -556,6 +582,11 @@ class ComfyImageProvider(ImageProvider):
         self._node_catalog = (0, None)
         self._uploads = {}
 
+    def invalidate_backend_cache(self):
+        """Remote filenames and probes belong to one verified worker lifetime."""
+        self._uploads.clear()
+        self._health=(0,None);self._server_memory=(0,None);self._node_catalog=(0,None)
+
     def available_vram_gb(self):
         # A localhost SSH tunnel can lead to a different computer's GPU.
         # Always inspect ComfyUI's device rather than the helper's laptop.
@@ -802,19 +833,19 @@ class ComfyImageProvider(ImageProvider):
             fingerprint = hashlib.sha256(raw).hexdigest()
             uploaded_name = self._uploads.get(fingerprint)
             upload_hits += int(bool(uploaded_name))
-            boundary = "qt-" + secrets.token_hex(8)
-            name = "qt-" + secrets.token_hex(8) + ".png"
-            body = (
-                f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\nContent-Type: image/png\r\n\r\n'.encode()
-                + raw
-                + f"\r\n--{boundary}--\r\n".encode()
-            )
-            req = urllib.request.Request(
-                self.url + "/upload/image",
-                data=body,
-                headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
-            )
             if not uploaded_name:
+                boundary = "qt-" + secrets.token_hex(8)
+                name = "qt-" + secrets.token_hex(8) + ".png"
+                body = (
+                    f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\nContent-Type: image/png\r\n\r\n'.encode()
+                    + raw
+                    + f"\r\n--{boundary}--\r\n".encode()
+                )
+                req = urllib.request.Request(
+                    self.url + "/upload/image",
+                    data=body,
+                    headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
+                )
                 with urllib.request.urlopen(req, timeout=30) as response:
                     uploaded = json.load(response)
                 uploaded_name = uploaded["name"]
@@ -983,7 +1014,7 @@ def format_prompt(project, shot, provider):
     if shot.get("manual",{}).get("prompt"):
         return shot.get("prompt",""),shot.get("negativePrompt","")
     people = {c["id"]: c for c in project["characters"]}
-    ch = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
+    ch = shot_chapter(project,shot) or {"people":[]}
     people.update({c["id"]: c for c in ch["people"]})
     descriptions = []
     for selected in shot["characters"]:
@@ -1053,7 +1084,7 @@ def format_prompt(project, shot, provider):
 
 def reference_prompt(project, shot, metadata, operation="generate"):
     """Name reference roles without locking a character to old reference clothing."""
-    chapter = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
+    chapter = shot_chapter(project,shot) or {"people":[]}
     people = {c["id"]: c for c in project["characters"] + chapter["people"]}
     appearances = {c['id']: visible_appearance(shot, c) for c in shot['characters']}
     from prompt_quality import focused
@@ -1104,7 +1135,7 @@ def select_references(project, shot, store, provider, reserved_slots=0):
         return [
             data_url(store.asset(project["id"], r["path"])) for r in selected
         ], copy.deepcopy(selected)
-    chapter = next(c for c in project["chapters"] if c["id"] == shot["chapterId"])
+    chapter = shot_chapter(project,shot) or {"people":[]}
     people = project["characters"] + chapter["people"]
     required_main = sum(
         selected.get('type') == 'main'

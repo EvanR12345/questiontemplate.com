@@ -23,6 +23,7 @@ class VisionReferencesTest(unittest.TestCase):
         service.gate = lambda *args: None
         service.record_timing = Mock()
         service.store = Mock()
+        service.config = {}
         return project, shot, service
 
     def test_three_required_identities_fail_before_paid_request(self):
@@ -32,6 +33,24 @@ class VisionReferencesTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'no identity references were silently dropped'):
                 service.visual_check(project, shot, Path('not-read.png'))
         service.director.inspectGeneratedImage.assert_not_called()
+
+    def test_extra_view_cannot_displace_another_main_identity_or_force_an_unnecessary_failure(self):
+        p,shot,service=self.fixture(2)
+        first,second=[c['id'] for c in p['characters']]
+        metadata=[{'characterId':first,'kind':'face'},{'characterId':first,'kind':'side'},{'characterId':second,'kind':'face'}]
+        with patch('studio_service.select_references',return_value=(['face1','side1','face2'],metadata)),patch('studio_service.data_url',return_value='generated'):
+            service.visual_check(p,shot,Path('not-read.png'))
+        context=service.director.inspectGeneratedImage.call_args.args[0]
+        self.assertEqual(context['_images'],['generated','face1','face2'])
+    def test_actual_model_role_callback_is_normalized_to_the_learned_qc_stage(self):
+        p,shot,service=self.fixture(0);shot['id']='shot'
+        def review(context,gate):
+            service.director.timing_callback('Visual quality reviewer',2,{'provider':'openai-luna','model':'gpt-6-luna'})
+            return {'pass':True,'issues':[],'action':'pass'}
+        service.director.inspectGeneratedImage=review
+        with patch('studio_service.select_references',return_value=([],[])),patch('studio_service.data_url',return_value='generated'):
+            service.visual_check(p,shot,Path('not-read.png'))
+        self.assertEqual(service.record_timing.call_args.args[1],'Visual QC')
 
     def test_optional_location_cannot_displace_two_main_identity_references(self):
         project, shot, service = self.fixture(2)
@@ -71,13 +90,15 @@ class VisionReferencesTest(unittest.TestCase):
              patch('studio_service.data_url', return_value='generated-image'):
             service.visual_check(project, shot, Path('not-read.png'))
         previous_callback.assert_not_called()
-        service.record_timing.assert_called_once_with(project['id'], 'Visual QC', 1.5,
-            {'estimatedUSD': .001, 'shot': 'current-shot', 'detail': True, 'chapter': 1})
+        self.assertEqual(service.record_timing.call_args.args,(project['id'], 'Visual QC', 1.5,
+            {'estimatedUSD': .001, 'shot': 'current-shot', 'detail': True, 'chapter': 1}))
+        self.assertEqual(service.record_timing.call_args.kwargs['profile_override']['stage'],'Visual QC')
 
     def test_intro_check_records_intro_without_previous_chapter_metadata(self):
         project, shot, service = self.fixture(0)
         shot.pop('chapterId')
         shot['id'] = 'intro-shot'
+        project['intro']['shots']=[shot]
         def review(context, gate):
             service.director.timing_callback('Visual QC', 2, {'chapter': 99})
             return {'pass': True, 'issues': [], 'action': 'pass'}

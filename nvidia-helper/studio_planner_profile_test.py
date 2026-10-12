@@ -27,6 +27,11 @@ class PlannerProfileTest(unittest.TestCase):
         p['settings']['generationMode']='MAX QUALITY'
         self.assertEqual(planner_profile(p)['settings']['qcCheckLevel'],'practical')
 
+    def test_required_gpu_name_is_exposed_without_worker_or_key_details(self):
+        p=new_project();r=planner_profile(p,config={'runpodRequiredGPUType':'NVIDIA GeForce RTX 5090','runpodApiKey':'SECRET','runpodManagedPodId':'private-pod'})
+        self.assertEqual(r['imageExecution']['requiredGPU'],'NVIDIA GeForce RTX 5090')
+        self.assertNotIn('SECRET',str(r));self.assertNotIn('private-pod',str(r))
+
     def test_partial_narration_is_not_claimed_complete(self):
         p=new_project();c=p['chapters'][0];c['sourceText']='Hello';c['audio']={'duration':20}
         self.assertTrue(planner_profile(p)['narrationComplete'])

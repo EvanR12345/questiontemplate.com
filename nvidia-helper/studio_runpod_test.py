@@ -37,6 +37,19 @@ class RentalTest(unittest.TestCase):
             self.assertEqual(json.loads(self.path.read_text())['status'],'STOPPED')
             with self.assertRaisesRegex(ManagedGPUError,'already closed'):r.ensure()
         finally:r.stop()
+    def test_new_worker_lifetime_clears_remote_reference_upload_names_once(self):
+        from image_provider import ComfyImageProvider
+        provider=ComfyImageProvider({});provider._uploads={'old-sha':'missing-after-restart.png'}
+        observations=[]
+        def health():
+            observations.append(dict(provider._uploads));return {'installed':True}
+        provider.healthCheck=health;self.provider=provider;r=self.rental()
+        try:
+            r.ensure();self.assertEqual(observations,[{}])
+            provider._uploads['new-sha']='current-worker.png';r.ensure()
+            self.assertEqual(provider._uploads,{'new-sha':'current-worker.png'})
+        finally:r.stop()
+
     def test_externally_running_pod_is_neither_adopted_nor_stopped(self):
         self.client.status='RUNNING';r=self.rental()
         with self.assertRaisesRegex(ManagedGPUError,'separately running'):r.ensure()

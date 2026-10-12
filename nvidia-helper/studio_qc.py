@@ -44,6 +44,33 @@ def policy(settings):
     level = settings.get('qcCheckLevel')
     return level if level in ('practical', 'strict') else settings.get('qcPolicy', 'practical')
 
+def review_settings_signature(settings):
+    """Only inputs that change the review, not cadence/retry scheduling."""
+    director=settings.get('director',{})
+    return digest({'version':1,'policy':policy(settings),
+        'continuity':settings.get('continuityStrictness'),
+        'style':settings.get('style'),
+        'constraints':settings.get('imageVisualConstraints',settings.get('visualConstraints','')),
+        'provider':director.get('provider'),'model':director.get('model'),
+        'reasoning':director.get('qcReasoning') or ('High' if settings.get('generationMode')=='MAX QUALITY' else 'Fast')})
+
+
+def review_settings_stale(project, shot):
+    signature=shot.get('qc',{}).get('reviewSettingsSignature')
+    return bool(signature and signature!=review_settings_signature(project['settings']))
+
+
+def retain_review_settings(project, previous_settings):
+    """Legacy evidence keeps its old policy when settings change; assets stay put."""
+    previous=review_settings_signature(previous_settings)
+    if previous==review_settings_signature(project['settings']):return
+    shots=[s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots']]
+    shots+=project.get('intro',{}).get('shots',[])
+    for shot in shots:
+        qc=shot.get('qc',{})
+        if type(qc.get('pass')) is bool:qc.setdefault('reviewSettingsSignature',previous)
+
+
 def asset_hash(store, pid, name, context=None):
     """Memoize only inside one view request; later requests recheck changed bytes."""
     key = (pid, name)
@@ -116,6 +143,8 @@ def decision(project, shot, store, context=None):
         return {'disposition':'checks_off','blocking':False,'policy':mode}
     if qc.get('status')=='PENDING': return {'disposition':'pending','blocking':True,'policy':mode}
     if valid_acceptance(project, shot, store,context): return {'disposition':'accepted','blocking':False,'policy':mode}
+    if review_settings_stale(project,shot) and should_check(project,shot):
+        return {'disposition':'pending','blocking':True,'policy':mode,'reason':'Visual review settings changed; recheck the saved image.'}
     if qc.get('pass') is True: return {'disposition':'passed','blocking':False,'policy':mode}
     if qc.get('pass') is not False:
         # Preserve prior semantics for deliberately disabled/unavailable vision.

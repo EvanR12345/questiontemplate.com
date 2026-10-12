@@ -347,7 +347,8 @@ class CloudStoryOverlap:
                         if not automatic_repairs(self.settings,qc):
                             raise RuntimeError('Saved image needs your review. No repair was purchased; accept it to continue.')
                         current=clone.store.load(self.project)
-                        operation='edit' if clone.provider('comfyui').getCapabilities().get('supportsImageEditing') else 'generate'
+                        from studio_automation import repair_operation
+                        operation=repair_operation(current,get_shot(current,chapter,shot['id']),clone.provider('comfyui'))
                         result=clone.generate(current,chapter,shot['id'],shot['generationSettings']['seed'],
                             {'operation':operation,'budgetedQCRepair':True,'_repairPrompt':qc.get('repairPrompt') or shot['prompt']})
                 else:

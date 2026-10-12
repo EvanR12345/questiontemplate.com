@@ -433,11 +433,14 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     if not changed:
                         from studio_data import UNCHANGED
                         return UNCHANGED
+                    previous_settings=copy.deepcopy(p['settings'])
                     previous_intro=copy.deepcopy(p['intro'])
                     previous_prompt=target.get('prompt','');previous_handoff=copy.deepcopy(target.get('handoff',{}));previous_video=copy.deepcopy(p['settings'].get('video',{}));previous_watermark=copy.deepcopy(p['settings'].get('watermark',{}));previous_engagement=copy.deepcopy(p['settings'].get('engagement',{}))
                     target.update(patch)
                     if changed and scope in ('shot','scene','chapter'):get_chapter(p,id if scope=='chapter' else body['chapter'])['renderStale']=True;p['renderStale']=True
                     if scope=='project' and 'settings' in changed:
+                        from studio_qc import retain_review_settings
+                        retain_review_settings(p,previous_settings)
                         from studio_branding import identity as watermark_identity
                         watermark_identity(p,studio.store)
                         if p['settings'].get('video')!=previous_video or p['settings'].get('watermark',{})!=previous_watermark or p['settings'].get('engagement',{})!=previous_engagement:

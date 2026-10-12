@@ -30,7 +30,7 @@ class DispatchSettingsTest(unittest.TestCase):
         p=self.service.store.save(p);self.service.providers['native-flux']=Mock()
         provider=self.service.providers['existing']
         provider.getCapabilities=lambda:{'maxReferenceImages':0,'supportsImageEditing':False}
-        self.service.visual_check=Mock(return_value=qc);self.service.record_timing=lambda *a:None
+        self.service.visual_check=Mock(return_value=qc);self.service.record_timing=lambda *a,**kwargs:None
         provider.generateImage=Mock(return_value={'pil':Image.new('RGB',(128,128),'green')})
         return p,ch,shot,provider
 
@@ -56,6 +56,58 @@ class DispatchSettingsTest(unittest.TestCase):
         self.assertEqual(get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])['imagePath'],'current.png')
 
     # Reuse the actual orchestration harness, not its image-generation override.
+    def test_changed_check_settings_do_not_boot_gpu_or_recheck_explicitly_accepted_image(self):
+        from studio_qc import review_settings_signature
+        p,ch,shot,provider=self.repair_fixture()
+        shot=get_shot(p,ch['id'],shot['id'])
+        original=review_settings_signature(p['settings'])
+        shot['qc']['reviewSettingsSignature']=original
+        p=self.service.store.save(p)
+        accepted=accept_image(self.service.store,p['id'],ch['id'],shot['id'],{'imagePath':'current.png',
+            'reviewSpecSignature':review_signature(p,shot,self.service.store)})
+        self.service.store.mutate(p['id'],lambda latest:latest['settings'].update(qcCheckLevel='strict'))
+        self.service.ensure_production_gpu=Mock(side_effect=AssertionError('No rental required'))
+        self.service.inspect_shot=Mock(side_effect=AssertionError('Explicit acceptance must remain effective'))
+        self.service.generate_production_chapter_images(p['id'],ch['id'],0,[ch['id']])
+        self.service.ensure_production_gpu.assert_not_called();self.service.inspect_shot.assert_not_called()
+
+    def test_stale_strict_review_uses_saved_image_without_gpu_boot(self):
+        from studio_qc import review_settings_signature
+        p,ch,shot,provider=self.repair_fixture()
+        shot=get_shot(p,ch['id'],shot['id'])
+        shot['qc'].update(status='PASSED',reviewSettingsSignature=review_settings_signature(p['settings']))
+        shot['qc']['pass']=True;p['settings']['qcCheckLevel']='strict';self.service.store.save(p)
+        self.service.ensure_production_gpu=Mock(side_effect=AssertionError('Only review work is pending'))
+        self.service.inspect_shot=Mock(return_value={'selected':True})
+        self.service.generate_production_chapter_images(p['id'],ch['id'],0,[ch['id']])
+        self.service.ensure_production_gpu.assert_not_called();self.service.inspect_shot.assert_called_once()
+
+    def test_intro_image_publication_does_not_depend_on_an_unfinished_qc_result(self):
+        p,ch,shot,provider=self.repair_fixture()
+        intro=copy.deepcopy(shot);intro.update(id='intro-publish-fixture',imagePath='')
+        intro.pop('chapterId');intro.pop('sceneId')
+        p['intro'].update(enabled=True,shots=[intro]);p['settings']['qcCheckLevel']='off'
+        p=self.service.store.save(p)
+        self.service.prepare_image_device=Mock()
+        self.service.check_cloud_budget=Mock()
+        StudioService.intro_image(self.service,p)
+        saved=self.service.store.load(p['id'])['intro']['shots'][0]
+        self.assertTrue(saved['imagePath']);self.assertEqual(saved['qc']['status'],'UNCHECKED')
+        self.assertTrue(self.service.store.has_asset(p['id'],saved['imagePath']))
+
+    def test_changed_qc_policy_during_review_retains_result_without_certifying_new_settings(self):
+        from studio_qc import review_settings_signature
+        p,ch,shot,provider=self.repair_fixture()
+        expected=review_settings_signature(p['settings'])
+        def reviewed(*args):
+            self.service.store.mutate(p['id'],lambda latest:latest['settings'].update(continuityStrictness='High'))
+            return {'pass':True,'issues':[],'action':'pass','reviewSettingsSignature':expected}
+        self.service.visual_check=reviewed
+        result=StudioService.inspect_shot(self.service,p,ch['id'],shot['id'])
+        saved=get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])
+        self.assertFalse(result['selected']);self.assertEqual(saved['imagePath'],'current.png')
+        self.assertEqual(saved['qcHistory'][-1]['qc']['reviewSettingsSignature'],expected)
+
     def test_explicit_off_overrides_max_and_deferred_generation_without_paid_qc(self):
         self.service.prepare_story(self.project['id'], {})
         p=self.service.store.load(self.project['id']);ch=p['chapters'][0];shot=ch['scenes'][0]['shots'][0]
@@ -66,7 +118,7 @@ class DispatchSettingsTest(unittest.TestCase):
         provider.generateImage=Mock(return_value={'pil':Image.new('RGB',(128,128),'navy')})
         provider.getCapabilities=lambda:{'maxReferenceImages':0,'supportsImageEditing':False}
         self.service.visual_check=Mock(side_effect=AssertionError('No paid QC allowed'))
-        self.service.record_timing=lambda *a:None
+        self.service.record_timing=lambda *a,**kwargs:None
         StudioService.generate(self.service,p,ch['id'],shot['id'],123,{'deferQC':True})
         actual=get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])
         self.assertEqual(actual['qc']['status'],'UNCHECKED');self.assertIsNone(actual['qc']['pass'])
@@ -91,7 +143,7 @@ class DispatchSettingsTest(unittest.TestCase):
         provider.generateImage=Mock(side_effect=lambda *a:{'pil':Image.new('RGB',(128,128),'navy')})
         provider.getCapabilities=lambda:{'maxReferenceImages':0,'supportsImageEditing':False}
         self.service.visual_check=Mock(return_value={'pass':True,'issues':[],'action':'accept'})
-        self.service.record_timing=lambda *a:None
+        self.service.record_timing=lambda *a,**kwargs:None
         StudioService.generate(self.service,p,ch['id'],first['id'],123,{})
         StudioService.generate(self.service,self.service.store.load(p['id']),ch['id'],other['id'],124,{})
         self.assertEqual(self.service.visual_check.call_count,1)

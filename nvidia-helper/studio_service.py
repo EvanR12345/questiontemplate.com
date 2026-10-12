@@ -18,7 +18,7 @@ from image_provider import (
 )
 from studio_render import VideoRenderer
 from studio_gpu_render import create_renderer
-from studio_qc import decision as qc_decision, production_status, automatic_repairs, repair_budget_reason, check_level, should_check, policy as qc_policy
+from studio_qc import decision as qc_decision, production_status, automatic_repairs, repair_budget_reason, check_level, should_check, policy as qc_policy, review_settings_signature, review_settings_stale
 from prompt_quality import generation_measurements
 from story_grounding import apply_environment_event, set_environment_location, visual_environment, require_owners
 from production_trace import ProductionTrace
@@ -1309,7 +1309,7 @@ class StudioService:
         self.store.mutate(pid, update)
         self.gate(stage)
 
-    def record_timing(self, pid, stage, seconds, details=None, trace_record=True):
+    def record_timing(self, pid, stage, seconds, details=None, trace_record=True, profile_override=None):
         learned={};observed_at=time.time()
         context=getattr(self,'execution_context',None)
         if context:
@@ -1328,7 +1328,7 @@ class StudioService:
                 costs = production.setdefault('costs',{})
                 costs['apiEstimatedUSD'] = costs.get('apiEstimatedUSD',0) + details['estimatedUSD']
             timings = production.setdefault("timings", [])
-            profile=profile_for(stage,p,self.config,details)
+            profile=profile_override or profile_for(stage,p,self.config,details)
             units=observation_units(stage,p,details or {})
             learned.update(profile=profile,units=units)
             overlap=getattr(self,'_overlap',None)
@@ -1443,9 +1443,9 @@ class StudioService:
         for chapter in project['chapters']:
             if not chapter['sourceText'].strip():continue
             if chapter['id'] not in accepted:
-                units={'kind':'characters','value':len(chapter.get('cleanNarrationText') or chapter['sourceText'])}
+                units={'kind':'characters','value':len(self.narration_text(project,chapter))}
                 audio=chapter.get('audio',{})
-                if not audio.get('path') or not self.store.has_asset(project['id'],audio['path']):
+                if not self.saved_narration_ready(project,chapter):
                     seconds=measure('Narration',units,{'chapter':chapter['number']})
                     if seconds is not None:planning+=seconds
                 if not self.analysis_is_current(project,chapter,audio.get('signature')):
@@ -1459,14 +1459,16 @@ class StudioService:
                 for scene in chapter['scenes']:
                     for shot in scene['shots']:
                         if self.saved_image_ready(project,shot):continue
-                        seconds=measure('Image pipeline',{'kind':'images','value':1},
+                        review_only=bool(review_settings_stale(project,shot) and shot.get('imagePath')
+                            and not shot.get('generationStale') and self.store.has_asset(project['id'],shot['imagePath']))
+                        seconds=measure('Visual QC' if review_only else 'Image pipeline',{'kind':'images','value':1},
                             {'chapter':chapter['number'],'shot':shot['id'],
                                 '_shotSpec':shot,
                                 'imageTasks':getattr(getattr(self,'_overlap',None),'image_tasks',3)})
                         if seconds is not None:images+=seconds
         unique={performance_signature(row.get('profile') or {'stage':row['stage'],'status':row['status']}):row for row in observations}
         return {'planningSeconds':None if any(x in ('Narration','AI directing') for x in unknown) else planning,
-            'readyImageSeconds':None if any(x in ('Image pipeline','Character reference') for x in unknown) else images,
+            'readyImageSeconds':None if any(x in ('Image pipeline','Visual QC','Character reference') for x in unknown) else images,
             'unknownStages':sorted(set(unknown)),'profiles':list(unique.values()),
             'scope':'Remaining narration/directing and accepted ready images only; rendering, intro, setup, transfers outside the measured parent, repairs and manual rental stop are not a complete ETA.'}
 
@@ -1482,7 +1484,8 @@ class StudioService:
                 self.learn_performance(row['performanceId'],row.get('performanceRun','legacy'),
                     row.get('performanceProfile'),row.get('performanceUnits'),row['seconds'],row,row.get('finished'),source='project-history')
         if all(row['performanceId'] in known for row in rows):self.performance_warning=None
-        accepted={c['id'] for c in p['chapters'] if c['scenes'] and self.analysis_is_current(p,c,c.get('audio',{}).get('signature'))}
+        accepted={c['id'] for c in p['chapters'] if c['scenes'] and self.saved_narration_ready(p,c)
+                  and self.analysis_is_current(p,c,c.get('audio',{}).get('signature'))}
         return {'history':self.performance.summary(),'forecast':self.performance_forecast(p,accepted),
             'warning':getattr(self,'performance_warning',None),
             'scheduling':p.get('production',{}).get('scheduling'),
@@ -1825,7 +1828,7 @@ class StudioService:
         if (
             p["intro"]["enabled"]
             and p["intro"].get("voiceText", "").strip()
-            and (not p["intro"].get("audioPath") or p['intro'].get('audioTextDigest') not in (None,digest(p['intro'].get('voiceText','').strip())))
+            and not self.saved_intro_audio_ready(p)
         ):
             self.production_progress(
                 pid, "Preparing separate intro audio", chapterId=None, shotId=None
@@ -1941,7 +1944,8 @@ class StudioService:
                     self.production_progress(pid,'Repairing confirmed visual errors automatically',shotId=item['id'])
                     self.ensure_production_gpu()
                     provider=self.provider(item['imageProvider'])
-                    operation='edit' if provider.getCapabilities().get('supportsImageEditing') else 'generate'
+                    from studio_automation import repair_operation
+                    operation=repair_operation(current,item,provider)
                     self.measured_stage(pid,'Automatic image repair',self.generate,current,chapter['id'],item['id'],
                         item['generationSettings']['seed'],{'operation':operation,'budgetedQCRepair':True,
                             '_repairPrompt':qc.get('repairPrompt') or item['prompt'],'_collectReview':True},
@@ -1983,6 +1987,10 @@ class StudioService:
         from studio_qc import policy
         return bool((getattr(self,'_overlap',None) or project['settings'].get('unattendedProduction')) and policy(project['settings'])=='practical')
 
+    def reviewable_saved_image(self, project, shot):
+        return bool(review_settings_stale(project,shot) and shot.get('imagePath')
+                    and not shot.get('generationStale') and self.store.has_asset(project['id'],shot['imagePath']))
+
     def retained_production_image(self, project, shot):
         return bool(self.collect_production_reviews(project) and shot.get('imagePath')
             and not shot.get('generationStale')
@@ -2003,7 +2011,7 @@ class StudioService:
     def generate_production_chapter_images(self,pid,chid,index,chapters):
         p=self.store.load(pid)
         ch=get_chapter(p,chid)
-        if any(not (self.saved_image_ready(p,s) or self.retained_production_image(p,s)) for sc in ch['scenes'] for s in sc['shots']):
+        if any(not (self.saved_image_ready(p,s) or self.retained_production_image(p,s) or self.reviewable_saved_image(p,s)) for sc in ch['scenes'] for s in sc['shots']):
             self.ensure_production_gpu()
         active_characters = {
             c["id"]
@@ -2066,13 +2074,15 @@ class StudioService:
         for shot_index, shot in enumerate(shots):
             # Cached shots need no per-shot progress writes to the entire
             # durable project. One chapter update below records completion.
-            if self.saved_image_ready(p, shot) or self.retained_production_image(p,shot):
-                if (getattr(self,'_overlap',None) or p['settings'].get('unattendedProduction')) and should_check(p,shot):
+            if (self.saved_image_ready(p, shot) or self.retained_production_image(p,shot)
+                    or self.reviewable_saved_image(p,shot)):
+                if ((getattr(self,'_overlap',None) or p['settings'].get('unattendedProduction') or review_settings_stale(p,shot))
+                        and should_check(p,shot) and qc_decision(p,shot,self.store)['disposition']!='accepted'):
                     qc=shot.get('qc',{})
                     asset_hash=hashlib.sha256(self.store.asset(pid,shot['imagePath']).read_bytes()).hexdigest()
                     if (qc.get('checkedImagePath')!=shot['imagePath'] or qc.get('checkedImageSHA256')!=asset_hash
                             or qc.get('shotSpecSignature')!=self.visual_spec_signature(p,shot)
-                            or qc.get('status') in (None,'PENDING','UNREVIEWED')):
+                            or review_settings_stale(p,shot) or qc.get('status') in (None,'PENDING','UNREVIEWED')):
                         if getattr(self,'_overlap',None):
                             self._overlap.submit_shot(self.store.load(pid),chid,shot,review_only=True)
                         else:
@@ -2203,6 +2213,24 @@ class StudioService:
         from studio_render_inputs import render_submission_signature
         return render_submission_signature(project, self.store, self.renderer, chapter_id)
 
+    @staticmethod
+    def narration_text(project, chapter):
+        return (chapter['cleanNarrationText'] if chapter.get('narrationMode')=='manual'
+                else clean_narration(chapter['sourceText'],chapter['name'],chapter.get('includeChapterLabel',False)))
+
+    @staticmethod
+    def narration_signature(project, chapter):
+        text=StudioService.narration_text(project,chapter)
+        return digest({'text':text,'voice':project['settings']['voice'],'speed':project['settings']['speed'],
+            'deliveryVersion':AUDIO_DELIVERY_VERSION,'soundEffects':project['settings'].get('soundEffects','subtle'),
+            'narrationDelivery':project['settings'].get('narrationDelivery','standard'),
+            'emphasisPhrases':project['settings'].get('emphasisPhrases',[]),'flowVersion':FLOW_VERSION})
+
+    def saved_narration_ready(self, project, chapter):
+        audio=chapter.get('audio',{})
+        return bool(audio.get('signature')==self.narration_signature(project,chapter)
+                    and audio.get('path') and self.store.has_asset(project['id'],audio['path']))
+
     def narration(self, p, ch):
         def narration_input(project,chapter):
             fields=('sourceText','name','narrationMode','includeChapterLabel')
@@ -2211,32 +2239,10 @@ class StudioService:
             return digest({'chapter':values,'voice':{key:project['settings'].get(key) for key in
                 ('voice','speed','soundEffects','narrationDelivery','emphasisPhrases')}})
         expected_input=narration_input(p,ch)
-        text = (
-            ch["cleanNarrationText"]
-            if ch.get("narrationMode") == "manual"
-            else clean_narration(
-                ch["sourceText"], ch["name"], ch.get("includeChapterLabel", False)
-            )
-        )
-        if not text.strip():
-            raise ValueError("Paste chapter narration first.")
-        signature = digest(
-            {
-                "text": text,
-                "voice": p["settings"]["voice"],
-                "speed": p["settings"]["speed"],
-                "deliveryVersion": AUDIO_DELIVERY_VERSION,
-                "soundEffects": p['settings'].get('soundEffects', 'subtle'),
-                "narrationDelivery": p['settings'].get('narrationDelivery', 'standard'),
-                "emphasisPhrases": p['settings'].get('emphasisPhrases', []),
-                "flowVersion": FLOW_VERSION,
-            }
-        )
-        if (
-            ch.get("audio", {}).get("signature") == signature
-            and self.store.asset(p["id"], ch["audio"]["path"]).exists()
-        ):
-            return
+        text=self.narration_text(p,ch)
+        if not text.strip():raise ValueError('Paste chapter narration first.')
+        signature=self.narration_signature(p,ch)
+        if self.saved_narration_ready(p,ch):return
         self.status(p["id"], ch["id"], "AUDIO_GENERATING")
         folder = self.store.folder(p["id"]) / ch["id"]
         folder.mkdir(exist_ok=True)
@@ -2448,29 +2454,45 @@ class StudioService:
             "soundEffects": effects,
         }
 
+    @staticmethod
+    def intro_audio_signature(project):
+        return digest({'text':project['intro'].get('voiceText','').strip(),
+            'voice':{k:project['settings'].get(k) for k in ('voice','speed','soundEffects','narrationDelivery','emphasisPhrases')},
+            'deliveryVersion':AUDIO_DELIVERY_VERSION,'flowVersion':FLOW_VERSION})
+
+    def saved_intro_audio_ready(self, project):
+        intro=project['intro']
+        return bool(intro.get('audioSignature')==self.intro_audio_signature(project)
+                    and intro.get('audioPath') and self.store.has_asset(project['id'],intro['audioPath']))
+
     def intro_audio(self, p, reuse=False):
-        text = p["intro"].get("voiceText", "").strip()
-        if not text:
-            raise ValueError(
-                "Enter explicit intro voice text first. Chapter labels are never inserted."
-            )
-        signature=digest({'text':text,'voice':{k:p['settings'].get(k) for k in ('voice','speed','soundEffects','narrationDelivery','emphasisPhrases')},'deliveryVersion':AUDIO_DELIVERY_VERSION})
-        if reuse and p['intro'].get('audioSignature')==signature and p['intro'].get('audioPath') and self.store.asset(p['id'],p['intro']['audioPath']).is_file():
-            return
-        result = self.create_audio(
-            text,
-            p["settings"]["voice"],
-            p["settings"]["speed"],
-            self.store.folder(p["id"]) / "intro.wav",
-            p['settings'].get('soundEffects', 'subtle'),
-            p['settings'].get('narrationDelivery', 'standard'),
-            p['settings'].get('emphasisPhrases', []),
-        )
-        def save_audio(q):
-            q['intro'].update(audioPath='intro.wav',audioDuration=result['duration'],audioSentences=result['sentences'],
-                audioTextDigest=digest(text),audioSignature=signature,renderStale=True)
-            q['renderStale']=True
-        self.store.mutate(p['id'],save_audio)
+        text=p['intro'].get('voiceText','').strip()
+        if not text:raise ValueError('Enter explicit intro voice text first. Chapter labels are never inserted.')
+        signature=self.intro_audio_signature(p)
+        old=p['intro'];expected_path=old.get('audioPath','')
+        expected_hash=self.store.asset_digest(p['id'],expected_path) if expected_path else None
+        if reuse and self.saved_intro_audio_ready(p):return
+        # A regenerate action always creates a separate version; never overwrite
+        # a master referenced by an earlier render or a newer manual selection.
+        name='intro-'+signature[:12]+'-'+uid()+'.wav'
+        result=self.create_audio(text,p['settings']['voice'],p['settings']['speed'],self.store.folder(p['id'])/name,
+            p['settings'].get('soundEffects','subtle'),p['settings'].get('narrationDelivery','standard'),
+            p['settings'].get('emphasisPhrases',[]))
+        saved={'audioPath':name,'audioDuration':result['duration'],'audioSentences':result['sentences'],
+               'audioTextDigest':digest(text),'audioSignature':signature}
+        def publish(q):
+            intro=q['intro'];selected=intro.get('audioPath','')
+            selected_hash=self.store.asset_digest(p['id'],selected) if selected else None
+            if (self.intro_audio_signature(q)!=signature or selected!=expected_path or selected_hash!=expected_hash):
+                intro.setdefault('audioHistory',[]).append(saved|{'selected':False,
+                    'reason':'Intro inputs or selected audio changed during generation; current edits retained.'})
+                return False
+            if selected:
+                intro.setdefault('audioHistory',[]).append({k:copy.deepcopy(intro.get(k)) for k in saved}|{'selected':False,'reason':'Earlier intro audio version'})
+            intro.update(saved,renderStale=True);q['renderStale']=True
+            return True
+        if not self.store.mutate(p['id'],publish):
+            raise ValueError('Intro changed during narration; current text/audio and completed earlier result retained.')
 
     def plan_intro(self, p):
         """The director visualizes a separately authored, verified recap script."""
@@ -2539,6 +2561,7 @@ class StudioService:
             if (existing.get('checkedImagePath')==checked_path
                     and existing.get('checkedImageSHA256')==checked_digest
                     and existing.get('shotSpecSignature')==checked_spec
+                    and not review_settings_stale(p,shot)
                     and (existing.get('status')=='PASSED' or sampled_only
                          and existing.get('status') not in (None,'PENDING','UNREVIEWED'))):continue
             qc = self.visual_check(p, shot | {'intentionalAppearanceChanges': shot.get('intentionalAppearanceChanges', [])}, self.store.asset(p['id'], shot['imagePath']))
@@ -2548,7 +2571,8 @@ class StudioService:
                 item = next(s for s in latest['intro']['shots'] if s['id'] == shot['id'])
                 if (item.get('imagePath')!=checked_path
                         or self.store.asset_digest(p['id'],checked_path)!=checked_digest
-                        or self.visual_spec_signature(latest,item)!=checked_spec):
+                        or self.visual_spec_signature(latest,item)!=checked_spec
+                        or qc.get("reviewSettingsSignature",review_settings_signature(latest["settings"]))!=review_settings_signature(latest["settings"])):
                     self.retain_stale_qc(item,qc,checked_path)
                     return False
                 item.update(qc=qc)
@@ -2586,7 +2610,8 @@ class StudioService:
                 expected_spec=self.visual_spec_signature(p,shot)
                 expected_path=shot.get('imagePath','')
                 expected_hash=self.store.asset_digest(p['id'],expected_path) if expected_path else None
-                operation='edit' if repair and provider.getCapabilities().get('supportsImageEditing') else 'generate'
+                from studio_automation import repair_operation, repair_prompt
+                operation=repair_operation(p,shot,provider) if repair else 'generate'
                 if repair:
                     reason=repair_budget_reason(p['settings'])
                     if reason:raise ValueError(reason)
@@ -2594,7 +2619,7 @@ class StudioService:
                 self.check_cloud_budget(p, provider)
                 references, metadata = select_references(p, shot, self.store, provider,reserved_slots=1 if operation=='edit' else 0)
                 settings = provider.validateSettings(shot['generationSettings'])
-                base_prompt=(shot.get('qc',{}).get('repairPrompt') or shot['prompt']) if repair else shot['prompt']
+                base_prompt=repair_prompt(shot,shot.get('qc',{}).get('repairPrompt'),operation) if repair else shot['prompt']
                 prompt = reference_prompt(p, shot, metadata,operation) + ' ' + base_prompt if references else base_prompt
                 result = provider.generateImage({'prompt': prompt, 'negativePrompt': '', 'referenceImages': references,
                     'settings': settings, 'workflow': shot['workflow'], 'operation': operation,
@@ -2631,7 +2656,8 @@ class StudioService:
                         item = next(s for s in latest['intro']['shots'] if s['id'] == shot['id'])
                         if (item.get('imagePath')!=name
                                 or self.store.asset_digest(p['id'],name)!=qc['checkedImageSHA256']
-                                or self.visual_spec_signature(latest,item)!=expected_spec):
+                                or self.visual_spec_signature(latest,item)!=expected_spec
+                                or qc.get("reviewSettingsSignature",review_settings_signature(latest["settings"]))!=review_settings_signature(latest["settings"])):
                             self.retain_stale_qc(item,qc,name)
                             return False
                         item['qc'] = qc
@@ -4281,7 +4307,9 @@ class StudioService:
             "operation": options.get("operation", "generate"),
             "workflow": shot["workflow"],
         }
-        if options.get('_repairPrompt'):request['prompt']=options['_repairPrompt']
+        if options.get('_repairPrompt'):
+            from studio_automation import repair_prompt
+            request['prompt']=repair_prompt(shot,options['_repairPrompt'],operation)
         if provider.id in ("native-flux", "comfyui") and (
             references or request["operation"] == "edit"
         ):
@@ -4482,7 +4510,8 @@ class StudioService:
                 current_shot = get_shot(current,chid,sid)
                 if (current_shot.get('imagePath','') != expected_path
                         or selected_digest(current)!=expected_image_digest
-                        or self.visual_spec_signature(current,current_shot) != expected_spec):
+                        or self.visual_spec_signature(current,current_shot) != expected_spec
+                        or qc.get("reviewSettingsSignature",review_settings_signature(current["settings"]))!=review_settings_signature(current["settings"])):
                     self.store.mutate(p['id'],lambda latest:self.retain_stale_qc(
                         get_shot(latest,chid,sid),qc,relative))
                     return {'status':'SUPERSEDED','imagePath':relative,'selected':False}
@@ -4493,7 +4522,8 @@ class StudioService:
                 and attempt < retries
             ):
                 self.status(p["id"], chid, "REPAIRING")
-                request["prompt"] = qc.get("repairPrompt") or shot["prompt"]
+                from studio_automation import repair_prompt
+                request["prompt"] = repair_prompt(shot,qc.get('repairPrompt'),request['operation'])
                 if (
                     provider.getCapabilities()["supportsImageEditing"]
                     and provider.id != "existing"
@@ -4511,7 +4541,8 @@ class StudioService:
             s = get_shot(latest, chid, sid)
             if (s.get('imagePath','') != expected_path
                     or selected_digest(latest)!=expected_image_digest
-                    or self.visual_spec_signature(latest,s) != expected_spec):
+                    or self.visual_spec_signature(latest,s) != expected_spec
+                    or qc.get("reviewSettingsSignature",review_settings_signature(latest["settings"]))!=review_settings_signature(latest["settings"])):
                 self.retain_stale_qc(s,qc,relative)
                 return
             s.update(
@@ -4561,7 +4592,8 @@ class StudioService:
             and current_qc.get('checkedImageSHA256')
             and (current_qc.get('checkedImagePath') != image_path
                  or current_qc.get('checkedImageSHA256') != qc.get('checkedImageSHA256')
-                 or current_qc.get('shotSpecSignature') != qc.get('shotSpecSignature')))
+                 or current_qc.get('shotSpecSignature') != qc.get('shotSpecSignature')
+                 or current_qc.get('reviewSettingsSignature') != qc.get('reviewSettingsSignature')))
         if not shot.get('manual',{}).get('qc') and not newer_check:
             shot['qc']={'status':'PENDING','pass':None,
                         'issues':['Shot changed during review. Check the current image before rendering.']}
@@ -4574,14 +4606,16 @@ class StudioService:
         # Provider selection may replace the adapter. Bind this check's telemetry
         # afterward so a fresh director cannot lose it or inherit another shot.
         timing_details = {'detail': True, 'shot': shot.get('id')}
-        if shot.get('chapterId'):
-            timing_details['chapter'] = get_chapter(p, shot['chapterId'])['number']
+        review_chapter=shot_chapter(p,shot)
+        if review_chapter is not None:
+            timing_details['chapter'] = review_chapter['number']
         else:
             timing_details['intro'] = True
         def record_review_timing(stage, seconds, details):
             owned_details = {key: value for key, value in details.items()
                              if key not in ('chapter', 'intro', 'shot')}
-            self.record_timing(p['id'], stage, seconds, owned_details | timing_details)
+            self.record_timing(p['id'], 'Visual QC', seconds, owned_details | timing_details,
+                               profile_override=profile_for('Visual QC',p,self.config,{'_shotSpec':shot}))
         self.director.timing_callback = record_review_timing
         self.director.reasoning = p["settings"]["director"].get("qcReasoning") or (
             "High" if p["settings"]["generationMode"] == "MAX QUALITY" else "Fast"
@@ -4592,14 +4626,19 @@ class StudioService:
         vision_limit = getattr(self.director, 'max_vision_images', 3)
         main_ids = {person['id'] for person in shot['characters'] if person.get('type') == 'main'}
         reference_pairs = list(zip(references, reference_metadata))
-        required_pairs = [(image, meta) for image, meta in reference_pairs if meta.get('characterId') in main_ids]
+        required_pairs=[];extra_identity_pairs=[];seen_main=set()
+        for pair in reference_pairs:
+            identity=pair[1].get('characterId')
+            if identity not in main_ids:continue
+            if identity in seen_main:extra_identity_pairs.append(pair)
+            else:required_pairs.append(pair);seen_main.add(identity)
         required_references = [image for image, _ in required_pairs]
         if len(required_references) + 1 > vision_limit:
             raise ValueError(f'Visual review needs the generated image and {len(required_references)} main-character '
                              f'references, but this director accepts {vision_limit} images per check. '
                              'Use a compatible review workflow; no identity references were silently dropped.')
         optional_pairs = [(image, meta) for image, meta in reference_pairs if meta.get('characterId') not in main_ids]
-        review_pairs = required_pairs + optional_pairs[:vision_limit - 1 - len(required_pairs)]
+        review_pairs = required_pairs + (extra_identity_pairs+optional_pairs)[:vision_limit - 1 - len(required_pairs)]
         review_references = [image for image, _ in review_pairs]
         character_names = {person['id']: person['name'] for person in p.get('characters', [])}
         location_names = {place['id']: place.get('name', '') for place in p.get('locations', [])}
@@ -4630,7 +4669,7 @@ class StudioService:
         expected['characters'] = [copy.deepcopy(c) | {'appearanceState': visible_appearance(shot, c)}
                                   for c in shot['characters']]
         expected['continuity'] = visual_environment(shot)
-        chapter = get_chapter(p,shot['chapterId']) if shot.get('chapterId') else None
+        chapter = review_chapter
         scene = next((scene for scene in chapter.get('scenes',[]) if scene['id']==shot.get('sceneId')),None) if chapter else None
         scene_ids = {c['id'] for c in (scene.get('characters',[]) if scene else shot['characters'])}
         expected['scenePeople'] = [{'id':c['id'],'name':c['name'],'type':c['type'],'description':c.get('description','')}
@@ -4660,6 +4699,8 @@ class StudioService:
         result["seconds"] = round(time.monotonic() - qc_started, 3)
         result["provider"] = p["settings"]["director"].get("provider", "local-qwen")
         result["reasoning"] = self.director.reasoning
+        result["referenceRoles"] = reference_roles
+        result["reviewSettingsSignature"] = review_settings_signature(p["settings"])
         self.director.stop()
         return result
 
@@ -4690,7 +4731,8 @@ class StudioService:
             current_path = self.store.asset(p['id'],current.get('imagePath','')) if current.get('imagePath') else None
             current_digest = hashlib.sha256(current_path.read_bytes()).hexdigest() if current_path and current_path.is_file() else None
             if (current.get('imagePath') != checked_path or current_digest != checked_digest
-                    or self.visual_spec_signature(q,current) != checked_spec):
+                    or self.visual_spec_signature(q,current) != checked_spec
+                    or qc.get("reviewSettingsSignature",review_settings_signature(q["settings"]))!=review_settings_signature(q["settings"])):
                 self.retain_stale_qc(current,qc,checked_path)
                 # The caller may have already chosen a new image and its review.
                 # Preserve that current state; never certify it with this result.

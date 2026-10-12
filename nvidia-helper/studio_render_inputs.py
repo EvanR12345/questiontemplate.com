@@ -1,6 +1,6 @@
 """Shared immutable-input guards for local and cloud render publication."""
 import hashlib
-from studio_data import digest, get_chapter
+from studio_data import digest, get_chapter, shot_chapter
 
 
 def visual_spec_signature(project, shot, store, renderer=None):
@@ -9,7 +9,7 @@ def visual_spec_signature(project, shot, store, renderer=None):
               'continuity','intentionalAppearanceChanges')
     settings = {k:v for k,v in shot.get('generationSettings',{}).items() if k != 'seed'}
     ids = {person['id'] for person in shot.get('characters',[])}
-    chapter = get_chapter(project,shot['chapterId'])
+    chapter = shot_chapter(project,shot) or {}
     intro = project.get('intro', {})
     source = ({k:intro.get(k) for k in ('voiceText','sourceBrief','duration')}
               if any(s.get('id')==shot.get('id') for s in intro.get('shots',[]))

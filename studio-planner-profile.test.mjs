@@ -84,3 +84,11 @@ test('following a single ComfyUI production queue cannot retain proposed schedul
   assert.ok(plan.tasks.find(t=>t.id==='stop').deps.some(id=>id.endsWith('-vision')));
  }
 });
+
+test('following saved production maps the required 5090 instead of retaining another GPU scenario',()=>{
+ const p=profile();p.imageExecution={backend:'comfyui-api',gpuLanes:1,requiredGPU:'NVIDIA GeForce RTX 5090'};
+ const r=plannerSettings({...DEFAULTS,gpu:'a6000'},p,evidence);
+ assert.equal(r.config.gpu,'5090');assert.equal(r.config.imageWorkers,1);
+ p.imageExecution.requiredGPU='Unmeasured GPU';
+ assert.match(plannerSettings(DEFAULTS,p,evidence).warnings.join(' '),/no unique matched benchmark/);
+});

@@ -32,6 +32,31 @@ def project_cap_reason(settings):
     return None
 
 
+def repair_operation(project, shot, provider):
+    """Editing is eligible only if its source leaves every required identity slot."""
+    caps=(provider.getModelCapabilities(shot['imageModel'])
+          if shot.get('imageModel') and hasattr(provider,'getModelCapabilities') else provider.getCapabilities())
+    if not caps.get('supportsImageEditing'):return 'generate'
+    if provider.id!='comfyui':return 'edit'
+    if shot.get('manual',{}).get('referenceImages'):
+        required=len(shot.get('referenceImages',[]))
+    else:
+        chapter=next((c for c in project['chapters'] if c['id']==shot.get('chapterId')), {})
+        people=project['characters']+chapter.get('people',[])
+        required=sum(c.get('type')=='main' and bool(next((p.get('references') for p in people if p['id']==c['id']),[]))
+                     for c in shot.get('characters',[]))
+    return 'edit' if required+1<=caps.get('maxReferenceImages',0) else 'generate'
+
+
+def repair_prompt(shot, instruction, operation):
+    """A fresh generation needs the complete grounded scene, not just an edit cue."""
+    original=shot['prompt'];instruction=(instruction or '').strip()
+    if operation=='edit':return instruction or original
+    if not instruction or instruction==original:return original
+    if instruction.startswith(original):return instruction
+    return original+'\nCorrection to enforce: '+instruction
+
+
 def source_conflicts(project, chapter):
     from story_grounding import owner_conflicts
     changes = [event for group in chapter.get('analysis', {}).get('groups', [])

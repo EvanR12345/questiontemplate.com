@@ -228,8 +228,11 @@ class ProductionGPU:
                         if self.tunnel and self.tunnel.poll() is not None:
                             raise ManagedGPUError('Private SSH connection failed. Check the dedicated key and localhost port; no public image port was opened.')
                         self.bootstrap(current)
-                        self.provider._health=(0,None);self.provider._server_memory=(0,None)
-                        self.provider._node_catalog=(0,None)
+                        invalidate=getattr(self.provider,'invalidate_backend_cache',None)
+                        if callable(invalidate):invalidate()
+                        else:
+                            self.provider._health=(0,None);self.provider._server_memory=(0,None)
+                            self.provider._node_catalog=(0,None)
                         health=(self.provider.healthCheck(**self.image_selection) if self.image_selection else self.provider.healthCheck())
                         if health.get('installed'):
                             self.check()

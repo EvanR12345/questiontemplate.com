@@ -98,6 +98,17 @@ def profile_for(stage, project, config, details=None):
             from director_staged import visual_group_limits
             sentences,characters,shots=visual_group_limits(director)
             profile['visualGroupLimit']={'sentences':sentences,'characters':characters,'targetShots':shots}
+    elif stage=='Visual QC':
+        from studio_qc import policy
+        selected=details.get('_shotSpec') or next((s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots'] if s['id']==details.get('shot')), {})
+        model=(config.get('openaiModel','gpt-6-luna') if director.get('provider')=='openai-luna' else director.get('model'))
+        profile.update(reviewVersion=2,provider=director.get('provider'),model=model,
+            reasoning=director.get('qcReasoning') or ('High' if settings.get('generationMode')=='MAX QUALITY' else 'Fast'),
+            policy=policy(settings),continuity=settings.get('continuityStrictness'),style=settings.get('style'),
+            constraints=signature(settings.get('imageVisualConstraints',settings.get('visualConstraints',''))),
+            imageModel=selected.get('imageModel',image.get('model')),imageProvider=selected.get('imageProvider',image.get('provider')),
+            imageWorkflow=selected.get('workflow',image.get('workflow')),width=selected.get('generationSettings',{}).get('width',image.get('width')),
+            height=selected.get('generationSettings',{}).get('height',image.get('height')),detail='low')
     elif stage in ('Image pipeline','Image + quality checks','Image generation','Visual QC','Character reference','Intro images','Automatic image repair'):
         profile['visualGroundingVersion']=1
         if details.get('shot'):
@@ -130,7 +141,8 @@ def profile_for(stage, project, config, details=None):
             machine=signature({'gpu':config.get('performanceGPU','local'),
                 'renderer':config.get('nativeRendererExecutable'), 'ffmpeg':config.get('ffmpeg')}))
     elif stage=='Narration':
-        profile.update(voice=settings.get('voice'),speed=settings.get('speakingSpeed',settings.get('speed',1)),
+        from narration_audio import VERSION as delivery_version, FLOW_VERSION
+        profile.update(voice=settings.get('voice'),speed=settings.get('speed',1),deliveryVersion=delivery_version,flowVersion=FLOW_VERSION,
             delivery=settings.get('narrationDelivery','standard'),effectMode=settings.get('soundEffects','subtle'),
             emphasis=signature(settings.get('emphasisPhrases',[])))
     else:return None
