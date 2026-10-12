@@ -28,6 +28,10 @@ export function plannerSettings(config, profile, evidence) {
   if(id&&profiles.some(p=>p.id===id))next.directorProfile=id;
   else warnings.push('This director workflow has no matching measured profile. Existing timing is a comparison reference.');
   next.directorActualSlots=d.parallelism||1;next.apiSlots=next.directorActualSlots;
+  if(profile.imageExecution?.backend==='comfyui-api' && profile.imageExecution.gpuLanes===1){
+    next.policy='current';next.executionMode='resident';next.imageWorkers=1;next.measurementAttempt='latest';
+    warnings.push('Following production uses installed scheduling and one model-worker benchmark. It does not activate the proposed render overlap or multi-copy GPU experiment.');
+  }
   if(profile.imageTasks>3)
     warnings.push(`Studio admits up to ${profile.imageTasks} image/check tasks while keeping one GPU image lane. Older three-task throughput does not measure this new pipeline; no speedup is assumed until matching production completes. A 28-call Luna QC-only pilot found no measured advantage for five tasks; complete image-generation throughput remains untested.`);
   if(profile.imageExecution?.backend==='comfyui-api' && !profile.imageExecution.multipleModelCopiesVerified)

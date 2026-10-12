@@ -71,3 +71,16 @@ test('automatic completion shows repairs without inventing a measured replacemen
  assert.match(result.warnings.join(' '),/bounded repairs within saved caps/);
  assert.match(profileSummary(p),/automatic completion and bounded repairs/);
 });
+
+test('following a single ComfyUI production queue cannot retain proposed scheduling or a two-copy benchmark',()=>{
+ const p=profile();p.imageExecution={backend:'comfyui-api',gpuLanes:1,multipleModelCopiesVerified:false};
+ const result=plannerSettings({...DEFAULTS,policy:'proposed',executionMode:'hybrid',imageWorkers:'best'},p,evidence);
+ assert.equal(result.config.policy,'current');assert.equal(result.config.executionMode,'resident');assert.equal(result.config.imageWorkers,1);
+ assert.equal(result.config.minutes,DEFAULTS.minutes);assert.equal(result.config.chapters,DEFAULTS.chapters);
+ assert.match(result.warnings.join(' '),/does not activate the proposed render overlap/);
+ for(const readyChapters of [1,2,result.config.chapters]){
+  const plan=buildPlan({...result.config,readyChapters},evidence),scheduled=schedule(plan);
+  assert.deepEqual(scheduled.diagnostics,[]);assert.equal(plan.measurement.workers,1);
+  assert.ok(plan.tasks.find(t=>t.id==='stop').deps.some(id=>id.endsWith('-vision')));
+ }
+});

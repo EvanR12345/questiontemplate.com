@@ -9,7 +9,11 @@ export function gpuChoices(evidence) {
 // Changing GPU must not inherit another GPU's execution method or rental attempt.
 // Resolution, conditioning, model cadence, checks and all cost assumptions stay explicit.
 export function selectGPUConfig(config,evidence,gpu) {
-  const base={...config,gpu,measurementAttempt:'latest',imageWorkers:'best'};
+  // Fastest-worker selection is a benchmark comparison. Leaving the installed
+  // one-queue constraint requires a proposed scenario, never an automatic
+  // production change. Follow saved setup bypasses this selector.
+  const base={...config,gpu,policy:config.policy==='current' && config.resolution!=='legacy'?'proposed':config.policy,
+    measurementAttempt:'latest',imageWorkers:'best'};
   if(base.resolution==='legacy') {
     base.executionMode='resident';
     describePlan(base,evidence);

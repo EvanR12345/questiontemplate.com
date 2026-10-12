@@ -1,6 +1,11 @@
 // Read-only forecasts. Selecting a profile never edits a Studio project or calls an API.
 export const DIRECTOR_PRICE_DATE='2026-10-10';
 export const DIRECTOR_PRICE_URL='https://developers.openai.com/api/docs/models/gpt-6-luna';
+export function directorTimingLabel(director){
+  if(director.timingMeasured)return 'Timing observation; long-project ETA is extrapolated.';
+  if(director.slotsMatch===false)return 'API-slot count differs from calibration; timing is an unmeasured reference.';
+  return 'Selected-tier timing is unmeasured; finish time is a scenario, not a measured ETA.';
+}
 export function directorProfileOptions(evidence){
   const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   return (evidence.directorCalibration?.profiles||[]).filter(p=>p.status==='COMPLETE'&&!p.unknownRequests&&p.completedChapters===p.sourceChapters)
@@ -40,7 +45,7 @@ export function directorForecast(config,evidence) {
     costPerTwoHours:manual?config.directorCost:(usable?observed.estimatedUSD:p.estimatedUSD*multiplier)/data.sourceNarrationSeconds*7200,
     sourceSeconds:data.sourceNarrationSeconds,sourceWords:data.sourceWords,sourceChapters:p.sourceChapters,
     measuredSeconds:usable?observed.seconds:p.seconds,measuredUSD:usable?observed.estimatedUSD:p.estimatedUSD,calls:usable?observed.calls:p.calls,shots:usable?observed.shots:p.shots,
-    timingMeasured:slotsMatch&&(tier==='default'||usable),tierMeasured:slotsMatch&&usable,priceMultiplier:multiplier,stages:usable?observed.stages||[]:p.stages||[],
+    timingMeasured:slotsMatch&&(tier==='default'||usable),slotsMatch,tierMeasured:slotsMatch&&usable,priceMultiplier:multiplier,stages:usable?observed.stages||[]:p.stages||[],
     scope:p.scope+' Linear duration scaling from two chapters; different chapter sizes, cadence, repairs and rate limits can change it.'+
       (slotsMatch?'':` Saved production uses ${slots} API slots; calibration used ${p.slots}. The schedule reserves the actual slots, but its director time remains an unmeasured reference; no concurrency speed multiplier is invented.`)+
       (usable?` ${observed.samples} compatible selected-tier timing sample(s). ${observed.scope}`:tier==='flex'?` Flex latency is unmeasured: ${flexFactor}× Standard is your assumption; temporary unavailability can add more delay.`:

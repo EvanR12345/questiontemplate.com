@@ -97,7 +97,8 @@ export function validateConfig(input, evidence) {
   if(![24,30,60].includes(c.videoFps))throw Error('Choose a calibrated video frame rate: 24, 30 or 60.');
   if(!['best','1','2','3','4','6'].includes(String(c.imageWorkers)))throw Error('Unknown worker count.');
   c.imageWorkers=String(c.imageWorkers);
-  if(c.resolution!=='legacy'&&c.policy==='current')throw Error('Measured worker groups are an experiment. Use Proposed or Sequential scheduling.');
+  if(c.resolution!=='legacy'&&c.policy==='current'&&(c.executionMode!=='resident'||c.imageWorkers!=='1'))
+    throw Error('Multi-worker measured groups are an experiment. Installed scheduling requires a single resident-worker comparison.');
   if(!['serial','current','proposed'].includes(c.policy)) throw Error('Unknown schedule mode.');
   if(!['off','sampled','practical','strict'].includes(c.qc)) throw Error('Unknown check level.');
   for(const key of ['intro','warmCache','cpuOverlap','exhaustive','earlyGpu']) if(typeof c[key]!=='boolean') throw Error(`${key} must be true or false.`);
@@ -230,12 +231,14 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   if(c.policy!=='proposed') {
     for(const r of renders){const task=tasks.find(t=>t.id===r);task.deps.push(...saves,...reviews);}
   }
-  add('stop','stop',0,8,saves,{cloud:1});
+  add('stop','stop',0,8,c.policy==='current'?[...saves,...reviews]:saves,{cloud:1});
   tasks.find(t=>t.id==='stop').priority=-1; // Stop compute before purely local rendering, including in the serial baseline.
   if(c.policy==='current') {
     for(let i=2;i<=c.chapters;i++) {
       tasks.find(t=>t.id===`c${i}-voice`).deps.push(handoffs[i-1]);
-      if(i>2)tasks.find(t=>t.id===`c${i}-voice`).deps.push(...tasks.filter(t=>t.chapter===i-2&&['save','vision'].includes(t.kind)).map(t=>t.id));
+      // Before GPU admission there are no earlier image futures to drain.
+      // Waiting for them while boot waits for all plans creates a false cycle.
+      if(i>2 && i>c.readyChapters)tasks.find(t=>t.id===`c${i}-voice`).deps.push(...tasks.filter(t=>t.chapter===i-2&&['save','delivered','vision'].includes(t.kind)).map(t=>t.id));
     }
   }
   // Keep long-video delivery allowances proportional rather than treating a

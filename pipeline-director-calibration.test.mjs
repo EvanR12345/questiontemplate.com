@@ -1,13 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {directorForecast,migrateDirectorForecast,directorProfileOptions} from './pipeline-director-calibration.mjs';
+import {directorForecast,migrateDirectorForecast,directorProfileOptions,directorTimingLabel} from './pipeline-director-calibration.mjs';
 import {DEFAULTS,buildPlan,schedule,importSnapshot} from './pipeline-engine.mjs';
 import {compareGPUPlans} from './pipeline-gpu-comparison.mjs';
 import {startupSearch} from './pipeline-detail-ui.mjs';
 const evidence=JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url)));
 evidence.directorCalibration=JSON.parse(fs.readFileSync(new URL('./pipeline-director-calibration.json',import.meta.url)));
 const c={...DEFAULTS,intro:false,directorProfile:'small-groups-hybrid',directorCostMode:'measured'};
+
+test('Standard with different API slots is described as a slot mismatch rather than a tier mismatch',()=>{
+ const result=directorForecast({...c,directorProfile:'lean-current-standard',directorActualSlots:4,directorTier:'default'},evidence);
+ assert.equal(result.timingMeasured,false);assert.equal(result.slotsMatch,false);
+ assert.match(directorTimingLabel(result),/API-slot count differs/);
+ assert.doesNotMatch(directorTimingLabel(result),/Selected-tier/);
+ assert.match(directorTimingLabel({timingMeasured:false,slotsMatch:true}),/Selected-tier/);
+});
 test('every settled available calibration appears in the selector without missing new profiles',()=>{
   const options=directorProfileOptions(evidence);
   for(const p of evidence.directorCalibration.profiles)assert.ok(options.includes(`value="${p.id}"`));
