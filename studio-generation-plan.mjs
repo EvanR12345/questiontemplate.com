@@ -11,13 +11,13 @@ export function strategyOptions(value, eligible, legacyOverlap = false) {
   if (value !== 'legacy' && !eligible) throw Error('Timed generation requires cloud ComfyUI images, Luna and an API spending cap. Choose the existing workflow to use another configuration.');
   return {generationStrategy: value, overlap: value !== 'legacy' || legacyOverlap};
 }
-export function strategyDescription(value,managed=false) {
+export function strategyDescription(value,managed=false,modelCopies=1) {
   const detail = value === 'align'
     ? 'Keeps chapter planning moving, then starts accepted images when matching timing history predicts the planning tail is covered, with a 15-second allowance. Without matching history it plans the chapters first. The allowance is a target, not a guaranteed finish.'
     : value === 'fastest'
-      ? 'Starts accepted chapter images immediately while Luna plans the next chapter. Chapters needing new character portraits wait for planning to finish, protecting Luna’s canonical inputs. Story facts and handoffs stay ordered; one cloud image lane and the selected API concurrency limit remain in force.'
+      ? `Starts accepted chapter images immediately while Luna plans the next chapter. Chapters needing new character portraits wait for planning to finish, protecting Luna’s canonical inputs. Story facts and handoffs stay ordered; ${modelCopies===2?'two verified independent model copies on one GPU':'one cloud image lane'} and the selected API concurrency limit remain in force.`
       : 'Uses the existing workflow and your overlap checkbox. Image admission can wait before directing the next chapter.';
-  return detail + (managed ? ' Studio starts the configured stopped GPU when images are admitted and confirms shutdown before rendering. Keep the helper and laptop awake for its spending-window watchdog. Rental timing and costs are estimates until verified.' :
+  return detail + (managed ? ' Studio starts the configured stopped GPU when images are admitted and confirms shutdown before final story assembly. Ready chapters can render earlier while cloud work continues. Keep the helper and laptop awake for its spending-window watchdog. Rental timing and costs are estimates until verified.' :
     ' GPU rental start and stop remain external. Choosing a timed image-dispatch strategy does not schedule a pod or guarantee lower rental cost.');
 }
 export function strategySummary(value,managed=false) {

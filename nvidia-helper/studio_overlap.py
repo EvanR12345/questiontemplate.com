@@ -290,10 +290,12 @@ class CloudStoryOverlap:
         self.accepted_chapters=getattr(self,'accepted_chapters',set()) | {chapter}
         forecast=self.main.performance_forecast(project,accepted=self.accepted_chapters)
         self.scheduler.publish(project,chapter,index,chapters,forecast)
-        self.coordinator.call(self.root.store.mutate,self.project,lambda p:p.setdefault('production',{}).update(
-            scheduling={'strategy':self.strategy,'planningReady':len(self.accepted_chapters),
+        def saved(p):
+            run=p.setdefault('production',{})
+            run.setdefault('scheduling',{}).update({'strategy':self.strategy,'planningReady':len(self.accepted_chapters),
                 'planningChapters':len(chapters),'imageDispatchStarted':self.scheduler.started,
-                'bufferSeconds':15,'forecast':forecast,'rentalControl':'external'}))
+                'bufferSeconds':15 if self.strategy=='align' else 0,'forecast':forecast,'rentalControl':run.get('rentalControl','external')})
+        self.coordinator.call(self.root.store.mutate,self.project,saved)
 
     def director_calls(self, project, chapter, calls, expected=None):
         """Only independent finishing/prompt passes, with separate durable owners."""

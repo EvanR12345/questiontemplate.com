@@ -7,6 +7,39 @@ import studio_overlap_test as fixtures
 
 
 class SchedulingDecisions(unittest.TestCase):
+    def test_sleep_or_pause_invalidates_the_alignment_countdown_until_a_new_forecast(self):
+        from types import SimpleNamespace
+        from studio_schedule import ChapterImageScheduler
+        from studio_data import new_project
+        clock={'now':100,'gaps':0};root=SimpleNamespace(pause_epoch=0)
+        overlap=SimpleNamespace(root=root,main=None)
+        scheduler=ChapterImageScheduler(overlap,'align',clock=lambda:clock['now'],host_gaps=lambda:clock['gaps'])
+        p=new_project();chapter=p['chapters'][0]['id']
+        try:
+            scheduler.publish(p,chapter,0,[chapter],{'planningSeconds':60,'readyImageSeconds':0})
+            self.assertEqual(scheduler.planning_remaining(),60)
+            clock.update(now=220,gaps=118)
+            self.assertIsNone(scheduler.planning_remaining())
+            self.assertFalse(start_decision('align',scheduler.planning_remaining(),0)['start'])
+            scheduler.publish(p,chapter,0,[chapter],{'planningSeconds':60,'readyImageSeconds':0})
+            self.assertEqual(scheduler.planning_remaining(),60)
+            root.pause_epoch=1
+            self.assertIsNone(scheduler.planning_remaining())
+            self.assertTrue(start_decision('align',None,None,finished=True)['start'])
+        finally:scheduler.close()
+
+    def test_invalid_countdown_values_cannot_turn_into_zero_and_start_images(self):
+        from types import SimpleNamespace
+        from studio_schedule import ChapterImageScheduler
+        scheduler=ChapterImageScheduler(SimpleNamespace(root=SimpleNamespace(pause_epoch=0)),
+            'align',clock=lambda:100,host_gaps=lambda:0)
+        try:
+            for value in (float('nan'),float('inf'),-1,True,'60'):
+                scheduler.forecast={'planningSeconds':value}
+                self.assertIsNone(scheduler.planning_remaining())
+                self.assertFalse(start_decision('align',scheduler.planning_remaining(),0)['start'])
+        finally:scheduler.close()
+
     def test_alignment_requires_matching_history_or_finished_plans(self):
         self.assertFalse(start_decision('align',None,50)['start'])
         self.assertFalse(start_decision('align',100,84)['start'])
@@ -28,6 +61,32 @@ class ScheduledStoryTest(unittest.TestCase):
     tearDown=fixtures.CloudOverlapTest.tearDown
     response=fixtures.CloudOverlapTest.response
     run_story=fixtures.CloudOverlapTest.run_story
+
+    def test_later_chapter_progress_preserves_dispatch_reason_and_managed_rental_control(self):
+        from studio_overlap import CloudStoryOverlap
+        p=self.service.store.load(self.project['id'])
+        self.service.store.mutate(p['id'],lambda q:q.update(production={
+            'rentalControl':'managed','scheduling':{'dispatchReason':'Accepted backlog covers planning tail'}}))
+        overlap=CloudStoryOverlap(self.service,p,{'overlap':True,'generationStrategy':'align'})
+        try:
+            overlap.scheduler.started=True
+            with patch.object(overlap.scheduler,'publish'),patch.object(overlap.main,'performance_forecast',return_value={}):
+                overlap.publish_chapter(p,p['chapters'][1]['id'],1,[c['id'] for c in p['chapters']])
+            saved=self.service.store.load(p['id'])['production']['scheduling']
+            self.assertEqual(saved['dispatchReason'],'Accepted backlog covers planning tail')
+            self.assertEqual(saved['rentalControl'],'managed')
+            self.assertTrue(saved['imageDispatchStarted'])
+        finally:overlap.close('CANCELLED','Metadata fixture complete')
+
+    def test_retry_archives_previous_dispatch_metadata_instead_of_showing_it_as_this_run(self):
+        self.service.wait_for_overlap=False;self.signals['firstQC'].set()
+        self.service.store.mutate(self.project['id'],lambda q:q.setdefault('production',{}).update(
+            scheduling={'dispatchReason':'OLD RUN','imageDispatchStarted':True,'planningReady':99}))
+        self.run_story(generationStrategy='align')
+        run=self.service.store.load(self.project['id'])['production']
+        self.assertEqual(run['schedulingHistory'][-1]['dispatchReason'],'OLD RUN')
+        self.assertNotEqual(run['scheduling']['dispatchReason'],'OLD RUN')
+        self.assertEqual(run['scheduling']['planningReady'],2)
 
     def test_fastest_admission_allows_next_direction_with_more_than_a_window_of_images(self):
         from studio_data import character

@@ -1710,9 +1710,16 @@ class StudioService:
         p = self.store.load(pid)
         from studio_schedule import strategy,LABELS
         mode=strategy(options)
-        self.store.mutate(pid,lambda q:q.setdefault('production',{}).update(
-            generationStrategy=mode,generationStrategyLabel=LABELS[mode],
-            rentalControl='managed' if getattr(self,'_production_gpu',None) else 'external'))
+        def begin(q):
+            run=q.setdefault('production',{})
+            control='managed' if getattr(self,'_production_gpu',None) else 'external'
+            run.update(generationStrategy=mode,generationStrategyLabel=LABELS[mode],rentalControl=control)
+            if not getattr(self,'_overlap',None):
+                previous=run.get('scheduling')
+                if previous:run.setdefault('schedulingHistory',[]).append(copy.deepcopy(previous))
+                run['scheduling']={'strategy':mode,'imageDispatchStarted':False,'planningReady':0,
+                                   'bufferSeconds':15 if mode=='align' else 0,'rentalControl':control}
+        self.store.mutate(pid,begin)
         if not getattr(self,'_overlap',None):self._performance_run_id=uid('run-')
         if options.get('overlap') and not getattr(self,'_overlap',None):
             from studio_overlap import CloudStoryOverlap

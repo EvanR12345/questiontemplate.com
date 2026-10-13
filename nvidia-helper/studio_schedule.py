@@ -9,6 +9,7 @@ import threading
 import time
 from collections import deque
 from studio_data import digest,get_chapter
+from studio_performance import host_execution_gaps
 
 LABELS={'align':'Timed · align Luna + images · 15s buffer',
     'fastest':'Timed · keep fastest video','legacy':'Existing chapter-by-chapter workflow'}
@@ -48,12 +49,14 @@ def chapter_signature(service,p,chid):
 
 
 class ChapterImageScheduler:
-    def __init__(self,overlap,mode):
+    def __init__(self,overlap,mode,clock=None,host_gaps=None):
         self.overlap=overlap;self.mode=mode
+        self.clock=clock or time.monotonic;self.host_gaps=host_gaps or host_execution_gaps
         self.cv=threading.Condition();self.ready=deque()
         self.finished=False;self.closed=False;self.error=None
-        self.started=False;self.forecast=None;self.forecast_at=time.monotonic()
+        self.started=False;self.forecast=None;self.forecast_at=self.clock()
         self.forecast_pause_epoch=self.overlap.root.pause_epoch
+        self.forecast_host_epoch=self.host_gaps()
         self.thread=threading.Thread(target=self._run,name='studio-image-admission',daemon=True)
         self.thread.start()
 
@@ -68,10 +71,21 @@ class ChapterImageScheduler:
             if self.finished or self.closed:raise RuntimeError('Image admission has already closed.')
             self.ready.append(item);self.forecast=copy.deepcopy(forecast)
             self.forecast_pause_epoch=self.overlap.root.pause_epoch
-            self.forecast_at=time.monotonic();self.cv.notify_all()
+            self.forecast_host_epoch=self.host_gaps()
+            self.forecast_at=self.clock();self.cv.notify_all()
 
     def check(self):
         if self.error is not None:raise self.error
+
+    def planning_remaining(self):
+        remaining=(self.forecast or {}).get('planningSeconds')
+        if (type(remaining) not in (int,float) or not math.isfinite(remaining) or remaining<0
+                or self.overlap.root.pause_epoch!=self.forecast_pause_epoch
+                or self.host_gaps()>self.forecast_host_epoch):
+            return None
+        # Host sleep is not productive planning. An interrupted forecast needs
+        # a new chapter checkpoint, or the ordinary plan-first fallback.
+        return max(0,remaining-max(0,self.clock()-self.forecast_at))
 
     def _run(self):
         try:
@@ -87,9 +101,7 @@ class ChapterImageScheduler:
                     if self.ready[0][4] and not self.finished:
                         self.cv.wait(.1);continue
                     report=self.forecast or {}
-                    remaining=report.get('planningSeconds')
-                    if self.overlap.root.pause_epoch!=self.forecast_pause_epoch:remaining=None
-                    if remaining is not None:remaining=max(0,remaining-(time.monotonic()-self.forecast_at))
+                    remaining=self.planning_remaining()
                     decision=start_decision(self.mode,remaining,report.get('readyImageSeconds'),self.finished)
                     if not self.started and not decision['start']:
                         self.cv.wait(.1);continue
