@@ -245,7 +245,8 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         from studio_planner_profile import planner_profile
                         try:rental=json.loads((studio.store.root/'.managed-rental.json').read_text())
                         except (OSError,ValueError):rental=None
-                        self.reply(200,planner_profile(studio.store.load(query['project'][0]),studio.performance,studio.config,rental))
+                        backend='cpu' if studio.renderer.allow_legacy_render_reuse else 'native'
+                        self.reply(200,planner_profile(studio.store.load(query['project'][0]),studio.performance,studio.config,rental,backend))
                     elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
                     elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0]))
                     elif path=='/studio/publisher':self.reply(200,studio.publisher.status())

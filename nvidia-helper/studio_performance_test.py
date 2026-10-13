@@ -93,6 +93,26 @@ class PerformanceTest(unittest.TestCase):
             raw=json.dumps(profile_for(stage,self.project,config))
             for value in ('SECRET','private-host','private-ip',self.project['id'],'A tale.'):
                 self.assertNotIn(value,raw)
+
+    def test_cpu_and_native_rendering_cannot_teach_each_others_speed(self):
+        units={'kind':'videoSeconds','value':120}
+        cpu=profile_for('Render chapter',self.project,{'renderBackend':'cpu'})
+        native=profile_for('Render chapter',self.project,{'renderBackend':'native'})
+        self.store.record('cpu','cpu-run',cpu,units,150,{})
+        self.store.record('native','native-run',native,units,14,{})
+        self.assertEqual(self.store.estimate(cpu,units)['seconds'],150)
+        self.assertEqual(self.store.estimate(native,units)['seconds'],14)
+        fallback=profile_for('Render chapter',self.project,{'renderBackend':'native'},{'renderBackend':'cpu'})
+        self.assertEqual(fallback,cpu)
+        old=dict(cpu);old.pop('renderTimingVersion');old['renderer']='auto'
+        self.store.record('legacy','legacy-run',old,units,1,{})
+        self.assertEqual(self.store.estimate(cpu,units)['samples'],1)
+
+    def test_changed_render_effects_and_capacity_require_matching_history(self):
+        old=profile_for('Render chapter',self.project,{'renderBackend':'cpu','renderWorkers':1})
+        self.assertNotEqual(old,profile_for('Render chapter',self.project,{'renderBackend':'cpu','renderWorkers':3}))
+        self.project['settings']['watermark']={'enabled':True,'text':'Studio'}
+        self.assertNotEqual(old,profile_for('Render chapter',self.project,{'renderBackend':'cpu','renderWorkers':1}))
     def test_deferred_repairs_have_separate_compatible_timing_history(self):
         old=profile_for('Image pipeline',self.project,{})
         self.project['settings'].update(unattendedProduction=True,qcRepairBudgetMode='project-cap')

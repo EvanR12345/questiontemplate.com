@@ -5,6 +5,23 @@ from studio_data import ProjectStore, new_project, character, get_shot
 from studio_qc import decision, production_status, accept_image, project_view, automatic_repairs, repair_budget_reason, review_signature
 from studio_render import VideoRenderer
 
+class SamplingTest(unittest.TestCase):
+    def test_long_project_sampling_keeps_exact_selection_without_scanning_shot_lists(self):
+        from studio_qc import should_check
+        class Shots(list):
+            def __iter__(self):raise AssertionError('Sampling must not flatten all shots')
+        p={'id':'project','settings':{'qcCheckLevel':'sampled','qcSampleEvery':5},
+           'intro':{'shots':[{'id':'intro-first'},{'id':'intro-next'}]},
+           'chapters':[{'scenes':[{'shots':[]},{'shots':Shots([{'id':f'chapter-{c}-first'}]+[{'id':f'{c}-{i}'} for i in range(99)])}]} for c in range(80)]}
+        for identity in ['intro-first']+[f'chapter-{c}-first' for c in range(80)]:
+            self.assertTrue(should_check(p,{'id':identity}))
+        for c in range(80):
+            for i in range(99):
+                identity=f'{c}-{i}'
+                expected=int(hashlib.sha256(('project:'+identity).encode()).hexdigest()[:16],16)%5==0
+                self.assertEqual(should_check(p,{'id':identity}),expected)
+
+
 class PracticalQCTest(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.store=ProjectStore(self.temp.name)

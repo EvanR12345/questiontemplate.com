@@ -9,7 +9,12 @@ export function createMediaLoader({resolve,limit=4,Observer=globalThis.Intersect
     if(!['VIDEO','AUDIO'].includes(node.tagName)||!node.addEventListener)return;
     let issued=now(),recovering=false,applying=false,playing=false,restore;
     const valid=()=>item.generation===generation&&node.isConnected;
-    const onPlaying=()=>{playing=true;},onPause=()=>{if(!recovering)playing=false;};
+    const onPlaying=()=>{playing=true;if(restore&&!applying)restore.playing=true;};
+    const onPause=()=>{
+      // A user pause while the capability request is pending wins. Ignore only
+      // the pause caused by replacing src, whose saved state we must restore.
+      if(!applying){playing=false;if(restore)restore.playing=false;}
+    };
     const onMetadata=()=>{
       if(!restore||!applying||!valid())return;
       const saved=restore;restore=undefined;recovering=false;applying=false;
@@ -40,7 +45,13 @@ export function createMediaLoader({resolve,limit=4,Observer=globalThis.Intersect
       Promise.resolve().then(()=>resolve(item.path,item.projectId,{refresh:Boolean(item.refresh)})).then(url=>{
         if(item.generation===generation&&item.node.isConnected){
           if(item.renewed)item.renewed(url);
-          else {bindPlayback(item);item.node.src=url;}
+          else {
+            if(['VIDEO','AUDIO'].includes(item.node.tagName)){
+              if(!item.node.hasAttribute?.('preload'))item.node.preload='metadata';
+              if(item.node.tagName==='VIDEO')item.node.playsInline=true;
+            }
+            bindPlayback(item);item.node.src=url;
+          }
         }
       }).catch(error=>{
         if(item.generation===generation&&item.node.isConnected){

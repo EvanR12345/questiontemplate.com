@@ -38,6 +38,15 @@ test('renewal errors remain visible and do not restart or redownload the video',
   loader.load(root([video]),'project');await tick();clock=3600000;video.emit('error');await tick();
   assert.match(video.title,/helper offline/);assert.equal(video.src,'initial');assert.equal(video.loads,0);assert.equal(calls,2);
 });
+test('pausing while an expired link is renewed does not restart playback',async()=>{
+  let clock=0,release;const video=player();
+  const loader=createMediaLoader({Observer:null,now:()=>clock,resolve:async(path,pid,options)=>options.refresh?await new Promise(r=>{release=r;}):'initial'});
+  loader.load(root([video]),'project');await tick();
+  assert.equal(video.preload,'metadata');assert.equal(video.playsInline,true);
+  video.emit('playing');video.currentTime=7421;clock=3600000;video.emit('error');await tick();
+  video.emit('pause');release('renewed');await tick();video.currentTime=0;video.emit('loadedmetadata');await tick();
+  assert.equal(video.currentTime,7421);assert.equal(video.plays,0);assert.equal(video.loads,1);
+});
 test('offscreen images request no links while audio remains available',async()=>{
   let observed;
   class Observer {constructor(callback){this.callback=callback;observed=this;}observe(){}unobserve(){}disconnect(){}}

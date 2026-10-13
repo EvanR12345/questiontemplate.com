@@ -12,7 +12,7 @@ GROUPS = {
                  'factGroupSentences','visualPacking','compactCuts','factBeatsMode','sourceVisualOverlap','cadencePerMinute'),
 }
 
-def planner_profile(project, performance=None, config=None, rental=None):
+def planner_profile(project, performance=None, config=None, rental=None, renderer_backend=None):
     from studio_overlap import shot_task_limit
     from studio_image_workers import model_copies
     copies=model_copies(config or {}) if project['settings']['image'].get('provider')=='comfyui' else 1
@@ -20,6 +20,8 @@ def planner_profile(project, performance=None, config=None, rental=None):
         from studio_automation import run_settings
         project = {**project, 'settings':run_settings(project['settings'])}
     source = project['settings']
+    config=config or {}
+    render_backend=renderer_backend if renderer_backend in ('cpu','native') else config.get('renderBackend','cpu')
     settings = {k: copy.deepcopy(source[k]) for k in FIELDS if k in source}
     for group, fields in GROUPS.items():
         settings[group] = {k: copy.deepcopy(source.get(group, {})[k]) for k in fields if k in source.get(group, {})}
@@ -28,7 +30,14 @@ def planner_profile(project, performance=None, config=None, rental=None):
     intro = project.get('intro', {})
     chapters = [c for c in project['chapters'] if c.get('sourceText', '').strip()]
     shots = [s for c in chapters for sc in c.get('scenes', []) for s in sc.get('shots', [])]
-    audio_seconds = sum(c.get('audio', {}).get('duration', 0) for c in chapters)
+    from studio_service import StudioService
+    def current_audio(chapter):
+        audio=chapter.get('audio',{})
+        duration=audio.get('duration')
+        return bool(audio.get('path') and audio.get('signature')==StudioService.narration_signature(project,chapter)
+                    and type(duration) in (int,float) and math.isfinite(duration) and duration>0)
+    audio_seconds=sum(c['audio']['duration'] for c in chapters if current_audio(c))
+    fresh_audio=bool(chapters) and all(current_audio(c) for c in chapters)
     estimates = {}
     director_observation=None
     gpu_quote=None
@@ -49,9 +58,6 @@ def planner_profile(project, performance=None, config=None, rental=None):
         for stage, key, unit in (('AI directing','director','characters'),('Narration','narration','characters'),('Image pipeline','images','images')):
             result=performance.estimate(profile_for(stage,project,config or {}),{'kind':unit,'value':1})
             estimates[key]={k:result.get(k) for k in ('status','seconds','costUSD','samples','runs')}
-        from studio_service import StudioService
-        fresh_audio=bool(chapters) and audio_seconds>0 and all(
-            c.get('audio',{}).get('signature')==StudioService.narration_signature(project,c) for c in chapters)
         chars=sum(len(StudioService.narration_text(project,c)) for c in chapters)
         row=estimates.get('director',{})
         if fresh_audio and chars>0 and row.get('seconds') is not None and row.get('costUSD') is not None:
@@ -70,11 +76,13 @@ def planner_profile(project, performance=None, config=None, rental=None):
                           'requiredGPU':(config or {}).get('runpodRequiredGPUType','')},
         'phaseOverlap':{'audioLookahead':(config or {}).get('studioAudioLookahead',True) is not False,
                         'chapterRender':(config or {}).get('studioRenderOverlap',True) is not False},
+        'renderExecution':{'backend':render_backend,'location':'local-helper',
+                           'scope':'Currently selected helper renderer; project auto mode does not select another backend.'},
         'directorCalibrationProfile':profile_for('AI directing',project,config or {}),
         'directorObservation':director_observation,
         'intro':{k:copy.deepcopy(intro[k]) for k in ('enabled','duration','placement') if k in intro},
         'introImages':len(intro.get('shots', [])), 'chapters':len(chapters),
         'plannedShots':len(shots), 'narrationSeconds':audio_seconds,
-        'narrationComplete':bool(chapters) and all(c.get('audio', {}).get('duration', 0)>0 for c in chapters),
+        'narrationComplete':fresh_audio,
         'estimates':estimates, 'timedHistoryReady':all(estimates.get(k,{}).get('seconds') is not None for k in ('director','narration','images')),
         'scope':'Saved production settings with the selected full-video automation policy, not unsaved editor choices. Read-only; no generation, paid calls or project changes.'}

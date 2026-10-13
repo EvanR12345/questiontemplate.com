@@ -23,9 +23,15 @@ def should_check(project, shot):
     if level != 'sampled': return True
     interval = project['settings'].get('qcSampleEvery', 5)
     intro = project.get('intro', {}).get('shots', [])
-    groups = [intro] + [[s for sc in ch.get('scenes', []) for s in sc['shots']]
-                       for ch in project['chapters']]
-    if any(group and group[0].get('id') == shot.get('id') for group in groups): return True
+    identity=shot.get('id')
+    if intro and intro[0].get('id')==identity:return True
+    # Sampling needs only each chapter's first shot. Flattening every chapter
+    # for every decision makes long-project progress scans quadratic in shots.
+    for chapter in project['chapters']:
+        for scene in chapter.get('scenes',[]):
+            if scene['shots']:
+                if scene['shots'][0].get('id')==identity:return True
+                break
     key = project['id'] + ':' + shot['id']
     return int(hashlib.sha256(key.encode()).hexdigest()[:16], 16) % interval == 0
 

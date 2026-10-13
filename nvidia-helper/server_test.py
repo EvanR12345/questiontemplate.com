@@ -67,6 +67,17 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_planner_profile_reports_the_actual_cpu_fallback_without_starting_work(self):
+        service=self.server.RequestHandlerClass.studio_service
+        project=service.store.save(new_project('Read-only renderer profile'))
+        service.config['renderBackend']='native'
+        with patch.object(service.renderer,'allow_legacy_render_reuse',True):
+            code,_,raw=self.request('/studio/planner-profile?project='+project['id'])
+        self.assertEqual(code,200,raw)
+        self.assertEqual(json.loads(raw)['renderExecution']['backend'],'cpu')
+        self.assertEqual(service.store.load(project['id']),project)
+        self.assertIsNone(service.current)
+
     def test_recommended_preset_preserves_original_story_outputs_and_spending_grants(self):
         service=self.server.RequestHandlerClass.studio_service
         p=new_project('Saved story');p['settings']['budget']={'openaiUSD':1}

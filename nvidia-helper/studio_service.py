@@ -1405,6 +1405,10 @@ class StudioService:
         pause_epoch=root.pause_epoch
         was_paused=root.paused
         old_audio=None
+        if stage in ('Render chapter','Assemble full video'):
+            # A configured native renderer can explicitly fall back to CPU.
+            # Record the backend that actually ran, never the project UI hint.
+            details['renderBackend']='cpu' if getattr(self.renderer,'allow_legacy_render_reuse',True) else 'native'
         if stage=='Visual QC':details['reviewTimingScope']='whole-review'
         if stage=='Narration' and len(args)>1 and isinstance(args[1],dict):
             old_audio=copy.deepcopy(args[1].get('audio',{}))

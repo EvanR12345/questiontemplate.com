@@ -11,6 +11,10 @@ export function plannerSettings(config, profile, evidence) {
   next.resolution=resolution(i.width,i.height);
   if(!next.videoResolution||!next.resolution||![24,30,60].includes(v.fps))throw Error('This project format has no matched planner timing. Its settings were not replaced with another format.');
   next.videoFps=v.fps;next.videoRenderer=v.renderer||'auto';
+  if(['cpu','native'].includes(profile.renderExecution?.backend)){
+    next.videoRenderer=profile.renderExecution.backend;
+    warnings.push(`Following the actual local helper renderer: ${next.videoRenderer==='native'?'NVIDIA GPU photo motion':'CPU compatibility'}. Auto does not choose a different renderer for this production run; short export timings remain projections for long videos.`);
+  }
   next.intro=profile.intro?.enabled===true;
   if(next.intro){
     if(profile.intro.placement==='every_chapter')throw Error('Per-chapter intros are not calibrated in this planner. Use a manual scenario; no full-story-only intro is silently substituted.');

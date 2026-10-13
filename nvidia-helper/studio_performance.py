@@ -142,11 +142,17 @@ def profile_for(stage, project, config, details=None):
             profile.update(imageTasks=details.get('imageTasks',shot_task_limit(project,{})),director=director.get('provider'),
                 directorParallelism=director.get('parallelism',1),reasoning=director.get('reasoning','Balanced'))
     elif stage in ('Render chapter','Assemble full video'):
+        backend=details.get('renderBackend',config.get('performanceRenderBackend',config.get('renderBackend','cpu')))
         profile.update(width=video.get('width'),height=video.get('height'),fps=video.get('fps'),
-            renderer=video.get('renderer','auto'),crf=video.get('crf'),fit=video.get('imageFit'),
-            motion=video.get('motionMode'),engagement=signature(settings.get('engagement',{})),
+            renderTimingVersion=2,renderer=backend,renderWorkers=1 if backend=='native' else config.get('renderWorkers',2),
+            crf=video.get('crf'),fit=video.get('imageFit'),
+            motion=video.get('motionMode'),zoomAmount=video.get('zoomAmount',.06),motionEasing=video.get('motionEasing','smooth'),
+            watermark=signature(settings.get('watermark',{})),engagement=signature(settings.get('engagement',{})),
             machine=signature({'gpu':config.get('performanceGPU','local'),
                 'renderer':config.get('nativeRendererExecutable'), 'ffmpeg':config.get('ffmpeg')}))
+        if backend=='native':
+            from studio_gpu_render import ENGINE
+            profile['renderEngine']=dict(ENGINE)
     elif stage=='Narration':
         from narration_audio import VERSION as delivery_version, FLOW_VERSION
         profile.update(voice=settings.get('voice'),speed=settings.get('speed',1),deliveryVersion=delivery_version,flowVersion=FLOW_VERSION,

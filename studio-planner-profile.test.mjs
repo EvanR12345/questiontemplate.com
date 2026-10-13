@@ -11,6 +11,12 @@ const profile=()=>({version:1,project:'p',name:'Test',revision:3,generationStrat
  settings:{qcCheckLevel:'practical',qcSampleEvery:5,automaticRepair:false,voice:'am_michael',
  video:{width:1280,height:720,fps:30,motionMode:'gentle'},image:{model:'flux2-klein-4b',width:1280,height:720,steps:4,guidance:1},
  director:{executionMode:'staged-lean',parallelism:4,processingTier:'default',reasoning:'Balanced',visualPacking:'small'}},intro:{enabled:false},estimates:{}});
+test('production renderer uses the helper choice instead of auto picking a faster calibration',()=>{
+ const p=profile();p.renderExecution={backend:'cpu',location:'local-helper'};
+ const r=plannerSettings({...DEFAULTS,videoRenderer:'native'},p,evidence);
+ assert.equal(r.config.videoRenderer,'cpu');assert.match(r.warnings.join(' '),/actual local helper renderer/);
+ p.renderExecution.backend='native';assert.equal(plannerSettings(DEFAULTS,p,evidence).config.videoRenderer,'native');
+});
 test('following the configured verified 5090 uses its observed compute quote without renting',()=>{
  const p=profile();p.imageExecution={backend:'comfyui-api',gpuLanes:2,modelCopies:2,requestSlots:4,
   requiredGPU:'NVIDIA GeForce RTX 5090',computeQuote:{hourlyUSD:.69,observedAt:1791874064}};

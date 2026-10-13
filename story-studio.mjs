@@ -7,7 +7,7 @@ import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-st
 import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
 import {resolveConnectedProject,canAdoptConnection,connectionLoading} from './studio-connection.mjs?v=grounding-20261011b';
 import {checkpointProject,backupSnapshot,canApplyBackgroundProject} from './studio-project-safety.mjs?v=safety-20261009';
-import {createMediaLoader} from './studio-media-loader.mjs?v=media-20261009b';
+import {createMediaLoader} from './studio-media-loader.mjs?v=media-20261013';
 import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=connection-20261009";
 import { nativeRequest } from "./native-client.mjs?v=connection-20261009";

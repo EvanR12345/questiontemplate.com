@@ -42,10 +42,29 @@ class PlannerProfileTest(unittest.TestCase):
         self.assertNotIn('SECRET',str(r));self.assertNotIn('private-pod',str(r))
 
     def test_partial_narration_is_not_claimed_complete(self):
-        p=new_project();c=p['chapters'][0];c['sourceText']='Hello';c['audio']={'duration':20}
+        from studio_service import StudioService
+        p=new_project();c=p['chapters'][0];c['sourceText']='Hello'
+        c['audio']={'duration':20,'path':'chapter.wav','signature':StudioService.narration_signature(p,c)}
         self.assertTrue(planner_profile(p)['narrationComplete'])
         c2=copy.deepcopy(c);c2['audio']={};p['chapters'].append(c2)
         self.assertFalse(planner_profile(p)['narrationComplete'])
+
+    def test_old_audio_duration_is_not_used_after_editing_the_story_or_voice(self):
+        from studio_service import StudioService
+        p=new_project();c=p['chapters'][0];c['sourceText']='Hello'
+        c['audio']={'duration':20,'path':'chapter.wav','signature':StudioService.narration_signature(p,c)}
+        self.assertEqual(planner_profile(p)['narrationSeconds'],20)
+        c['sourceText']='A much longer changed story.'
+        r=planner_profile(p)
+        self.assertFalse(r['narrationComplete']);self.assertEqual(r['narrationSeconds'],0)
+        c['sourceText']='Hello';p['settings']['voice']='different-voice'
+        self.assertFalse(planner_profile(p)['narrationComplete'])
+        self.assertEqual(planner_profile(p)['narrationSeconds'],0)
+
+    def test_renderer_follows_actual_helper_backend_including_cpu_fallback(self):
+        p=new_project();p['settings']['video']['renderer']='auto'
+        self.assertEqual(planner_profile(p,config={'renderBackend':'native'})['renderExecution']['backend'],'native')
+        self.assertEqual(planner_profile(p,config={'renderBackend':'native'},renderer_backend='cpu')['renderExecution']['backend'],'cpu')
 
     def test_new_pipeline_admission_does_not_inherit_old_three_task_throughput(self):
         with tempfile.TemporaryDirectory() as folder:
