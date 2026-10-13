@@ -1,17 +1,17 @@
-import {migrateDirectorForecast,directorProfileOptions,directorTimingLabel} from './pipeline-director-calibration.mjs?v=pipeline-admission-pilot-20261011';
+import {migrateDirectorForecast,directorProfileOptions,directorTimingLabel} from './pipeline-director-calibration.mjs?v=production-parallel-20261012';
 import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pipeline-admission-pilot-20261011';
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
 import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
 import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=luna-standard-optimization-20261010';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=pipeline-admission-pilot-20261011';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=production-parallel-20261012';
 import {mountConcurrencyLab} from './pipeline-lab.mjs';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs';
 import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs?v=luna-standard-optimization-20261010';
 import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=luna-standard-optimization-20261010';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=whole-process-20261012';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=production-parallel-20261012';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -35,8 +35,8 @@ async function loadStudioSettings({refresh=false,initial=false}={}){
     const mapped=plannerSettings(config,profile,evidence);
     $('studioProfileWarnings').textContent=mapped.warnings.join(' ');
     if(studioFollowing&&(refresh||profile.revision!==studioRevision)){
-      const singleQueue=profile.imageExecution?.backend==='comfyui-api' && profile.imageExecution.gpuLanes===1;
-      let next=singleQueue ? {...mapped.config,gpuStartSeconds:0} : selectGPUConfig({...mapped.config,gpuStartSeconds:0},evidence,config.gpu);
+      const installedQueue=profile.imageExecution?.backend==='comfyui-api' && [1,2].includes(profile.imageExecution.gpuLanes);
+      let next=installedQueue ? {...mapped.config,gpuStartSeconds:0} : selectGPUConfig({...mapped.config,gpuStartSeconds:0},evidence,config.gpu);
       buildPlan(next,evidence);
       if(profile.generationStrategy==='align'&&profile.timedHistoryReady){
         const search=await studioScheduleRequest.run({type:'startup',config:next,evidence});
@@ -71,9 +71,9 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pipeline-admission-pilot-20261011',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pipeline-admission-pilot-20261011',import.meta.url),{type:'module'}));
-const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pipeline-admission-pilot-20261011',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-parallel-20261012',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-parallel-20261012',import.meta.url),{type:'module'}));
+const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-parallel-20261012',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,renderedGeneration=-1,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -119,7 +119,7 @@ async function rebuild(){
     $('modeNote').textContent=config.policy==='proposed'?'Planning experiment: separates GPU work from retrieval and overlaps chapter rendering. This is not deployed production behavior.':config.policy==='current'?'Installed cloud overlap: Luna lookahead and QC share API slots. The image lane includes preparation through retrieval. Rendering begins after image work.':'Every task runs sequentially. This is the comparison baseline, not a speed recommendation.';
     $('scheduleDescription').textContent=`${config.policy==='proposed'?'Proposed':config.policy==='current'?'Installed overlap model':'Sequential baseline'} · ${plan.director.label} · ${config.directorTier} · ${plan.imageCount} images · ${result.tasks.length} operations · ${Object.keys(preferences).length} manual moves`;
     $('metricTime').textContent=formatTime(result.end);
-    $('metricRange').textContent=(plan.director.timingMeasured?'':plan.director.slotsMatch===false?'Unmeasured API-slot timing · ':'Unmeasured tier timing · ')+`${formatTime(result.end*(1-uncertainty/100))}–${formatTime(result.end*(1+uncertainty/100))} assumed sensitivity`;
+    $('metricRange').textContent=(plan.director.timingMeasured?'':plan.director.conditionsMatch===false?'Unmeasured saved configuration · ':plan.director.slotsMatch===false?'Unmeasured API-slot timing · ':'Unmeasured tier timing · ')+`${formatTime(result.end*(1-uncertainty/100))}–${formatTime(result.end*(1+uncertainty/100))} assumed sensitivity`;
     const saving=1-result.end/serial.end;$('metricSaved').textContent=(saving*100).toFixed(0)+'% '+(saving>=0?'less time':'more time');
     $('metricSerial').textContent=`${formatTime(serial.end)} fully sequential`;
     $('metricCost').textContent=money(result.totalUSD);$('metricCostParts').textContent=`${money(result.gpuUSD)} GPU + ${money(result.directorUSD)} Luna + ${money(result.qcUSD)} QC + ${money(result.storageUSD)} storage`;

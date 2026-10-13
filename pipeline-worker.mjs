@@ -1,5 +1,5 @@
 import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=luna-flex-results-20261010';
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=planner-settings-20261011';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=production-parallel-20261012';
 import {startupSearch} from './pipeline-detail-ui.mjs?v=luna-flex-results-20261010';
 self.onmessage=({data})=>{
  try{

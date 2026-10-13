@@ -11,6 +11,14 @@ const profile=()=>({version:1,project:'p',name:'Test',revision:3,generationStrat
  settings:{qcCheckLevel:'practical',qcSampleEvery:5,automaticRepair:false,voice:'am_michael',
  video:{width:1280,height:720,fps:30,motionMode:'gentle'},image:{model:'flux2-klein-4b',width:1280,height:720,steps:4,guidance:1},
  director:{executionMode:'staged-lean',parallelism:4,processingTier:'default',reasoning:'Balanced',visualPacking:'small'}},intro:{enabled:false},estimates:{}});
+test('following the configured verified 5090 uses its observed compute quote without renting',()=>{
+ const p=profile();p.imageExecution={backend:'comfyui-api',gpuLanes:2,modelCopies:2,requestSlots:4,
+  requiredGPU:'NVIDIA GeForce RTX 5090',computeQuote:{hourlyUSD:.69,observedAt:1791874064}};
+ const r=plannerSettings(DEFAULTS,p,evidence);
+ assert.equal(r.config.pricingBasis,'quote');assert.equal(r.config.quotedGPUHourly,.69);
+ assert.match(r.warnings.join(' '),/last observed compute quote/);
+ assert.match(r.warnings.join(' '),/not a new availability or price guarantee/);
+});
 test('default forecast includes every-image visual checks and their cost/time',()=>{
  assert.equal(DEFAULTS.qc,'practical');
  const checked=schedule(buildPlan(DEFAULTS,evidence)),off=schedule(buildPlan({...DEFAULTS,qc:'off'},evidence));
@@ -91,4 +99,32 @@ test('following saved production maps the required 5090 instead of retaining ano
  assert.equal(r.config.gpu,'5090');assert.equal(r.config.imageWorkers,1);
  p.imageExecution.requiredGPU='Unmeasured GPU';
  assert.match(plannerSettings(DEFAULTS,p,evidence).warnings.join(' '),/no unique matched benchmark/);
+});
+
+test('two-copy production keeps installed scheduling with actual phase overlap',()=>{
+ const p=profile();p.imageExecution={backend:'comfyui-api',gpuLanes:2,modelCopies:2,requestSlots:4,requiredGPU:'NVIDIA GeForce RTX 5090'};
+ p.phaseOverlap={audioLookahead:true,chapterRender:true};
+ const r=plannerSettings({...DEFAULTS,gpu:'a6000'},p,evidence);
+ assert.equal(r.config.gpu,'5090');assert.equal(r.config.policy,'current');assert.equal(r.config.executionMode,'hybrid');assert.equal(r.config.imageWorkers,4);
+ assert.equal(r.config.productionAudioLookahead,true);assert.equal(r.config.productionRenderOverlap,true);
+ const plan=buildPlan(r.config,evidence),run=schedule(plan);
+ assert.deepEqual(run.diagnostics,[]);assert.equal(plan.measurement.workers,2);
+ assert.ok(!plan.tasks.find(t=>t.id==='c2-voice').deps.includes('c1-handoff'));
+ assert.ok(plan.tasks.find(t=>t.id==='c2-chapter').deps.includes('c1-handoff'));
+ assert.ok(!plan.tasks.find(t=>t.id==='c1-render').deps.includes('c2-b1-vision'));
+});
+
+test('saved large or compact director settings cannot be certified by another schema calibration',()=>{
+ const p=profile();p.settings.director.visualPacking='large';
+ p.directorCalibrationProfile={factsVersion:4,planVersion:13,reviewHintsVersion:2};
+ const c=plannerSettings(DEFAULTS,p,evidence).config;
+ assert.equal(c.directorConditionsMatch,false);assert.equal(directorForecast(c,evidence).timingMeasured,false);
+ assert.match(plannerSettings(DEFAULTS,p,evidence).warnings.join(' '),/Exact saved director/);
+});
+
+test('matching current history replaces reference director time and cost without another tier multiplier',()=>{
+ const p=profile();p.directorObservation={secondsPerStorySecond:.12,costPerTwoHours:.08,samples:2,runs:1};
+ const c=plannerSettings(DEFAULTS,p,evidence).config,d=directorForecast(c,evidence);
+ assert.equal(d.secondsPerStorySecond,.12);assert.equal(d.costPerTwoHours,.08);assert.equal(d.slots,4);assert.equal(d.timingMeasured,true);
+ assert.match(d.scope,/matching successful/);
 });

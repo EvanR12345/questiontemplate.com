@@ -51,6 +51,7 @@ class StartupTest(unittest.TestCase):
 
 class FakeEngine:
     def __init__(self):
+        self.gpu='Test GPU'
         self.lock = threading.Lock()
         self.calls = []
 
@@ -66,6 +67,22 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_recommended_preset_preserves_original_story_outputs_and_spending_grants(self):
+        service=self.server.RequestHandlerClass.studio_service
+        p=new_project('Saved story');p['settings']['budget']={'openaiUSD':1}
+        p['settings']['image'].update(provider='comfyui',model='flux2-klein-4b',workflow='klein')
+        p['settings']['director'].update(provider='openai-luna',executionMode='staged-lean',visualPacking='large',compactCuts=True,sourceVisualOverlap=True)
+        p['chapters'][0]['sourceText']='Keep this story.';p['render']={'path':'saved.mp4'}
+        p=service.store.save(p)
+        code,_,raw=self.request('/studio/production-preset',{'project':p['id']})
+        self.assertEqual(code,200,raw)
+        result=json.loads(raw)['project']
+        self.assertEqual(result['chapters'],p['chapters']);self.assertEqual(result['render'],p['render'])
+        self.assertEqual(result['settings']['budget'],p['settings']['budget'])
+        self.assertEqual(result['settings']['director']['visualPacking'],'small')
+        self.assertFalse(result['settings']['director']['compactCuts'])
+        self.assertEqual(result['settingsHistory'][-1]['settings'],p['settings'])
+
     def test_production_readiness_reports_blocks_without_paid_requests(self):
         from unittest.mock import Mock
         service=self.server.RequestHandlerClass.studio_service

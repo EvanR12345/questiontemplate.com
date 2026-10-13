@@ -1,7 +1,7 @@
 // A local scheduling model. This module never calls a paid provider or changes Studio projects.
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {directorForecast} from './pipeline-director-calibration.mjs?v=planner-settings-20261011';
+import {directorForecast} from './pipeline-director-calibration.mjs?v=production-parallel-20261012';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'practical', sample:20,
@@ -10,7 +10,9 @@ export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intr
   directorProfile:'historical',directorTier:'default',directorCostMode:'manual',flexLatencyFactor:1,
   directorActualSlots:0,qcSeconds:0,
   pricingBasis:'published',containerGB:20,storageDays:1,quotedGPUHourly:0,quotedGPU:'',
-  resolution:'legacy', videoResolution:'720p', videoFps:30, videoRenderer:'auto', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0 };
+  resolution:'legacy', videoResolution:'720p', videoFps:30, videoRenderer:'auto', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0,
+  productionModelCopies:1,productionRequestSlots:1,productionAudioLookahead:false,productionRenderOverlap:false,directorConditionsMatch:true,
+  directorObservedSecondsPerStorySecond:0,directorObservedCostPerTwoHours:0,directorObservedSamples:0,directorObservedRuns:0 };
 
 export const LANES = [
   ['setup','Cloud startup','Boot · models · shutdown'],
@@ -97,7 +99,9 @@ export function validateConfig(input, evidence) {
   if(![24,30,60].includes(c.videoFps))throw Error('Choose a calibrated video frame rate: 24, 30 or 60.');
   if(!['best','1','2','3','4','6'].includes(String(c.imageWorkers)))throw Error('Unknown worker count.');
   c.imageWorkers=String(c.imageWorkers);
-  if(c.resolution!=='legacy'&&c.policy==='current'&&(c.executionMode!=='resident'||c.imageWorkers!=='1'))
+  const supportedSingle=c.executionMode==='resident'&&c.imageWorkers==='1';
+  const supportedDual=c.productionModelCopies===2&&c.productionRequestSlots===4&&c.executionMode==='hybrid'&&c.imageWorkers==='4';
+  if(c.resolution!=='legacy'&&c.policy==='current'&&!supportedSingle&&!supportedDual)
     throw Error('Multi-worker measured groups are an experiment. Installed scheduling requires a single resident-worker comparison.');
   if(!['serial','current','proposed'].includes(c.policy)) throw Error('Unknown schedule mode.');
   if(!['off','sampled','practical','strict'].includes(c.qc)) throw Error('Unknown check level.');
@@ -228,14 +232,14 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       timingRange:{min:stageProfile.minWallSeconds/stageProfile.videoSeconds*videoSeconds,max:stageProfile.maxWallSeconds/stageProfile.videoSeconds*videoSeconds},
       basis:`${i===0&&renderProfile.backend==='native'?'Intro remains on the CPU compatibility path; its fades are not separately calibrated. ':''}${c.videoResolution}/${c.videoFps}fps, ${stageProfile.clips} fresh clips in ${stageProfile.rounds} rounds, one clip worker; reference ${stageProfile.wallSeconds.toFixed(2)}s per ${stageProfile.videoSeconds}s of ${stageProfile.mode==='chapter-export'?'motion and chapter assembly':'motion'}. ${stageProfile.scope} ${stageProfile.hardwareCondition||''} Two-worker speedup is not assumed.`}));
   }
-  if(c.policy!=='proposed') {
+  if(c.policy!=='proposed' && !(c.policy==='current'&&c.productionRenderOverlap)) {
     for(const r of renders){const task=tasks.find(t=>t.id===r);task.deps.push(...saves,...reviews);}
   }
   add('stop','stop',0,8,c.policy==='current'?[...saves,...reviews]:saves,{cloud:1});
   tasks.find(t=>t.id==='stop').priority=-1; // Stop compute before purely local rendering, including in the serial baseline.
   if(c.policy==='current') {
     for(let i=2;i<=c.chapters;i++) {
-      tasks.find(t=>t.id===`c${i}-voice`).deps.push(handoffs[i-1]);
+      if(!c.productionAudioLookahead)tasks.find(t=>t.id===`c${i}-voice`).deps.push(handoffs[i-1]);
       // Before GPU admission there are no earlier image futures to drain.
       // Waiting for them while boot waits for all plans creates a false cycle.
       if(i>2 && i>c.readyChapters)tasks.find(t=>t.id===`c${i}-voice`).deps.push(...tasks.filter(t=>t.chapter===i-2&&['save','delivered','vision'].includes(t.kind)).map(t=>t.id));

@@ -28,8 +28,14 @@ export function plannerSettings(config, profile, evidence) {
   if(id&&profiles.some(p=>p.id===id))next.directorProfile=id;
   else warnings.push('This director workflow has no matching measured profile. Existing timing is a comparison reference.');
   next.directorActualSlots=d.parallelism||1;next.apiSlots=next.directorActualSlots;
-  if(profile.imageExecution?.backend==='comfyui-api' && profile.imageExecution.gpuLanes===1){
-    next.policy='current';next.executionMode='resident';next.imageWorkers=1;next.measurementAttempt='latest';
+  const topology=profile.imageExecution;
+  if(topology?.backend==='comfyui-api' && [1,2].includes(topology.gpuLanes)){
+    next.productionModelCopies=topology.modelCopies||topology.gpuLanes;
+    next.encodingProfile='fresh';
+    next.productionRequestSlots=topology.requestSlots||(topology.gpuLanes===2?4:1);
+    next.productionAudioLookahead=profile.phaseOverlap?.audioLookahead===true;
+    next.productionRenderOverlap=profile.phaseOverlap?.chapterRender===true;
+    next.policy='current';next.executionMode=topology.gpuLanes===2?'hybrid':'resident';next.imageWorkers=topology.gpuLanes===2?next.productionRequestSlots:1;next.measurementAttempt='latest';
     const required=profile.imageExecution.requiredGPU;
     if(required){
       const normalize=name=>String(name).replace(/\b(?:NVIDIA|GeForce)\b/gi,'').replace(/\s+/g,'').toLowerCase();
@@ -39,11 +45,16 @@ export function plannerSettings(config, profile, evidence) {
       if(ids.length===1)next.gpu=ids[0];
       else warnings.push('The required production GPU has no unique matched benchmark. This selected GPU remains a comparison reference; production does not switch GPUs.');
     }
-    warnings.push('Following production uses installed scheduling and one model-worker benchmark. It does not activate the proposed render overlap or multi-copy GPU experiment.');
+    const quote=topology.computeQuote;
+    if(Number.isFinite(quote?.hourlyUSD)&&quote.hourlyUSD>0&&Number.isFinite(quote.observedAt)){
+      next.pricingBasis='quote';next.quotedGPUHourly=quote.hourlyUSD;
+      warnings.push(`Using the configured 5090's last observed compute quote: $${quote.hourlyUSD.toFixed(2)}/hour, recorded ${new Date(quote.observedAt*1000).toLocaleString()}. Container/shared storage remain separate; this is not a new availability or price guarantee.`);
+    }
+    warnings.push(topology.gpuLanes===1?'Following production uses installed scheduling and one model-worker benchmark. It does not activate the proposed render overlap or multi-copy GPU experiment.':'Following production requests two independent model copies and four bounded request slots on one GPU. Startup must verify both private processes before any image is submitted; end-to-end speed remains a projection until a matching production run.');
   }
-  if(profile.imageTasks>3)
+  if(profile.imageTasks>3 && topology?.gpuLanes!==2)
     warnings.push(`Studio admits up to ${profile.imageTasks} image/check tasks while keeping one GPU image lane. Older three-task throughput does not measure this new pipeline; no speedup is assumed until matching production completes. A 28-call Luna QC-only pilot found no measured advantage for five tasks; complete image-generation throughput remains untested.`);
-  if(profile.imageExecution?.backend==='comfyui-api' && !profile.imageExecution.multipleModelCopiesVerified)
+  if(topology?.backend==='comfyui-api' && topology.gpuLanes===1 && !topology.multipleModelCopiesVerified)
     warnings.push('The current production connection uses one ComfyUI queue. Faster multi-copy or hybrid GPU benchmarks are comparison targets, not verified throughput for this running production backend.');
   next.directorCostMode='measured';
   next.earlyGpu=false;next.gpuStartSeconds=0;
@@ -53,6 +64,22 @@ export function plannerSettings(config, profile, evidence) {
   }else if(profile.generationStrategy==='fastest')next.readyChapters=1;
   if(d.visualPacking&&d.visualPacking!=='small'||d.sourceVisualOverlap||d.reasoning!=='Balanced')
     warnings.push('Director grouping, overlap or reasoning differs from the public calibration; its time and token cost are reference projections, not matching measurements.');
+  const measured=profiles.find(p=>p.id===next.directorProfile);
+  const actual=profile.directorCalibrationProfile;
+  next.directorConditionsMatch=!(d.visualPacking&&d.visualPacking!=='small'||d.sourceVisualOverlap||d.reasoning!=='Balanced');
+  if(actual&&measured?.profileVersions){
+    for(const field of ['factsVersion','planVersion','reviewHintsVersion','sourceTimingUnitsVersion'])
+      if(actual[field]!==measured.profileVersions[field])next.directorConditionsMatch=false;
+  }
+  if(!next.directorConditionsMatch)warnings.push('Exact saved director settings/schema versions do not match this calibration. Its displayed time and token cost are comparison references; no measured speedup is assumed.');
+  const observed=profile.directorObservation;
+  next.directorObservedSecondsPerStorySecond=0;next.directorObservedCostPerTwoHours=0;next.directorObservedSamples=0;next.directorObservedRuns=0;
+  if(observed&&Number.isFinite(observed.secondsPerStorySecond)&&observed.secondsPerStorySecond>0&&Number.isFinite(observed.costPerTwoHours)&&observed.costPerTwoHours>=0&&observed.samples>0){
+    next.directorObservedSecondsPerStorySecond=observed.secondsPerStorySecond;
+    next.directorObservedCostPerTwoHours=observed.costPerTwoHours;
+    next.directorObservedSamples=observed.samples;next.directorObservedRuns=observed.runs;
+    warnings.push('Director time and cost use matching current production history, scaled with measured narration. Small samples and different story structure remain uncertain.');
+  }
   if(i.model!=='flux2-klein-4b'||i.steps!==4||i.guidance!==1)
     warnings.push('Image model/settings differ from the measured FLUX.2 Klein 4B / 4-step / guidance-1 benchmark. Its speed and rental cost are not calibrated for this setup.');
   const qc=profile.estimates?.visualQC;
@@ -66,5 +93,6 @@ export function plannerSettings(config, profile, evidence) {
 
 export function profileSummary(p) {
   const s=p.settings,v=s.video,i=s.image,d=s.director;
-  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · ${s.unattendedProduction?'automatic completion and bounded repairs':'manual review policy'} · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${p.imageTasks||3} image/check tasks, one GPU lane · ${d.processingTier||'default'} processing`;
+  const copies=p.imageExecution?.modelCopies||p.imageExecution?.gpuLanes||1;
+  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · ${s.unattendedProduction?'automatic completion and bounded repairs':'manual review policy'} · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${p.imageTasks||3} image/check tasks, ${copies===1?'one GPU lane':copies+' independent model copies on one GPU'} · ${d.processingTier||'default'} processing`;
 }

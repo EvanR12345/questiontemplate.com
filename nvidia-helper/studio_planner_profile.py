@@ -1,5 +1,5 @@
 """Read-only production setup for forecasts; never expose scripts or credentials."""
-import copy
+import copy,math
 from studio_qc import check_level
 from studio_performance import profile_for
 
@@ -12,8 +12,10 @@ GROUPS = {
                  'factGroupSentences','visualPacking','compactCuts','factBeatsMode','sourceVisualOverlap','cadencePerMinute'),
 }
 
-def planner_profile(project, performance=None, config=None):
+def planner_profile(project, performance=None, config=None, rental=None):
     from studio_overlap import shot_task_limit
+    from studio_image_workers import model_copies
+    copies=model_copies(config or {}) if project['settings']['image'].get('provider')=='comfyui' else 1
     if project['settings'].get('unattendedProduction') is not False:
         from studio_automation import run_settings
         project = {**project, 'settings':run_settings(project['settings'])}
@@ -28,6 +30,15 @@ def planner_profile(project, performance=None, config=None):
     shots = [s for c in chapters for sc in c.get('scenes', []) for s in sc.get('shots', [])]
     audio_seconds = sum(c.get('audio', {}).get('duration', 0) for c in chapters)
     estimates = {}
+    director_observation=None
+    gpu_quote=None
+    if (isinstance(rental,dict) and config and rental.get('podId')==config.get('runpodManagedPodId')
+            and config.get('runpodRequiredGPUType')=='NVIDIA GeForce RTX 5090'
+            and rental.get('workersVerified') is True and rental.get('workerCopies')==2
+            and type(rental.get('hourlyUSD')) in (int,float) and math.isfinite(rental['hourlyUSD']) and rental['hourlyUSD']>0
+            and type(rental.get('started')) in (int,float) and math.isfinite(rental['started'])):
+        gpu_quote={'hourlyUSD':rental['hourlyUSD'],'observedAt':rental['started'],
+                   'scope':'Last observed compute quote for the configured, verified two-copy 5090; not a fresh availability/price guarantee.'}
     if performance:
         # Exact profiles retain all failures and only teach from fresh successful
         # matching observations. No short-render cache is used to change throughput.
@@ -38,13 +49,29 @@ def planner_profile(project, performance=None, config=None):
         for stage, key, unit in (('AI directing','director','characters'),('Narration','narration','characters'),('Image pipeline','images','images')):
             result=performance.estimate(profile_for(stage,project,config or {}),{'kind':unit,'value':1})
             estimates[key]={k:result.get(k) for k in ('status','seconds','costUSD','samples','runs')}
+        from studio_service import StudioService
+        fresh_audio=bool(chapters) and audio_seconds>0 and all(
+            c.get('audio',{}).get('signature')==StudioService.narration_signature(project,c) for c in chapters)
+        chars=sum(len(StudioService.narration_text(project,c)) for c in chapters)
+        row=estimates.get('director',{})
+        if fresh_audio and chars>0 and row.get('seconds') is not None and row.get('costUSD') is not None:
+            ratio=chars/audio_seconds
+            director_observation={'secondsPerStorySecond':row['seconds']*ratio,
+                'costPerTwoHours':row['costUSD']*ratio*7200,'samples':row['samples'],'runs':row['runs'],
+                'status':row['status'],'scope':'Matching fresh production profile; character-normalized rate scaled by this project’s measured narration. Small-sample extrapolation, not a guarantee.'}
     return {'version':1, 'project':project['id'], 'name':project['name'],
         'revision':project.get('revision', 0), 'settings':settings,
         'generationStrategy':project.get('generationStrategy', 'align'),
         'imageTasks':shot_task_limit(project,{}),
         'imageExecution':{'backend':'comfyui-api' if source.get('image',{}).get('provider')=='comfyui' else source.get('image',{}).get('provider'),
-                          'gpuLanes':1,'multipleModelCopiesVerified':False,
+                          'gpuLanes':copies,'modelCopies':copies,'requestSlots':copies*2 if copies>1 else 1,
+                          'multipleModelCopiesVerified':False,
+                          'computeQuote':gpu_quote,
                           'requiredGPU':(config or {}).get('runpodRequiredGPUType','')},
+        'phaseOverlap':{'audioLookahead':(config or {}).get('studioAudioLookahead',True) is not False,
+                        'chapterRender':(config or {}).get('studioRenderOverlap',True) is not False},
+        'directorCalibrationProfile':profile_for('AI directing',project,config or {}),
+        'directorObservation':director_observation,
         'intro':{k:copy.deepcopy(intro[k]) for k in ('enabled','duration','placement') if k in intro},
         'introImages':len(intro.get('shots', [])), 'chapters':len(chapters),
         'plannedShots':len(shots), 'narrationSeconds':audio_seconds,

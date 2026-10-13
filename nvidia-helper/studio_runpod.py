@@ -4,13 +4,24 @@ REST v2 contract verified against Runpod's live OpenAPI schema. Never creates
 or deletes pods, adopts externally running rentals, or exposes a Comfy port.
 The helper must stay running for the independent deadline watchdog.
 """
-import ipaddress,json,math,os,re,subprocess,threading,time,urllib.request,urllib.error
+import copy,datetime,ipaddress,json,math,os,re,subprocess,threading,time,urllib.request,urllib.error
 from pathlib import Path
 from urllib.parse import urlparse
 from cost_control import atomic_replace
 
 
 class ManagedGPUError(RuntimeError):pass
+
+
+class ManagedGPUUnavailable(ManagedGPUError):
+    """Provider explicitly rejected startup for capacity; outcome is known."""
+
+
+def bootstrap_diagnostic(text):
+    """Keep useful remote exceptions without logging credentials or URLs."""
+    text=re.sub(r'https?://\S+','[provider URL]',text or '')
+    text=re.sub(r'\b(?:rpa_|hf_|sk-)[A-Za-z0-9_-]+','[private credential]',text)
+    return text[-24000:]
 
 
 def configured(config):return bool(config.get('runpodManagedPodId') or config.get('runpodPreparedPodIds'))
@@ -99,7 +110,8 @@ class RunpodClient:
                 detail=detail.replace(key,'[redacted]')
                 detail=re.sub(r'rpa_[A-Za-z0-9_-]+','[redacted]',detail)
                 detail=re.sub(r'https?://\S+','[provider URL]',detail)[:300]
-                raise ManagedGPUError('Existing Runpod worker control failed. '+detail+' Saved ownership and results are retained.')
+                error=ManagedGPUUnavailable if action=='start' and 'not enough free gpus' in detail.casefold() else ManagedGPUError
+                raise error('Existing Runpod worker control failed. '+detail+' Saved ownership and results are retained.')
             return self.request(pod)
         try:key=json.loads(Path(self.config['runpodKeyFile']).read_text(encoding='utf-8'))['runpodApiKey']
         except (OSError,KeyError,ValueError):raise ManagedGPUError('Save a Runpod management credential in Cloud setup.') from None
@@ -114,7 +126,7 @@ class RunpodClient:
 
 
 class ProductionGPU:
-    def __init__(self,config,path,project,budget,provider,gate,report=lambda *_:None,client=None,connector=None,clock=time.time,image_selection=None):
+    def __init__(self,config,path,project,budget,provider,gate,report=lambda *_:None,client=None,connector=None,clock=time.time,image_selection=None,owned_startup=None):
         self.config=config;self.path=Path(path);self.project=project;self.budget=budget
         self.provider=provider;self.gate=gate;self.report=report;self.clock=clock
         self.client=client or RunpodClient(config);self.connector=connector or self.connect
@@ -124,8 +136,36 @@ class ProductionGPU:
             raise ManagedGPUError('An earlier managed rental needs reconciliation. Check its saved pod state before another run; no second worker started.')
         self.owned=False;self.pod=config.get('runpodManagedPodId');self.rented=False
         self.image_selection=image_selection
+        # Explicit creator-to-controller handoff, not discovery/adoption of an
+        # unrelated running pod. The authenticated caller keeps its emergency
+        # shutdown duty until this controller's durable ownership receipt exists.
+        self.owned_startup=copy.deepcopy(owned_startup)
 
-    def select_prepared_worker(self):
+    def startup_pod(self):
+        receipt=self.owned_startup
+        if not isinstance(receipt,dict) or set(receipt)!={'project','podId','name','started','capUSD'}:
+            raise ManagedGPUError('Owned startup receipt has an invalid format.')
+        if (receipt['project']!=self.project or receipt['podId']!=self.pod
+                or not isinstance(receipt['name'],str)
+                or not re.fullmatch(r'studio-two-copy-5090-[a-f0-9]{12}',receipt['name'])
+                or type(receipt['started']) not in (int,float) or not math.isfinite(receipt['started'])
+                or not 0<=self.clock()-receipt['started']<=120
+                or type(receipt['capUSD']) not in (int,float)
+                or receipt['capUSD']!=self.budget.get('gpuBudgetUSD')):
+            raise ManagedGPUError('Owned startup receipt is expired or differs from this project, pod or saved cap.')
+        pod=self.client.request(self.pod)
+        try:created=datetime.datetime.fromisoformat(pod['createdAt'].replace('Z','+00:00')).timestamp()
+        except (KeyError,ValueError,TypeError):raise ManagedGPUError('Owned pod creation time is unavailable.') from None
+        maximum=self.config.get('runpodMaxHourlyUSD',1.19);rate=pod.get('cost')
+        if (pod.get('id')!=self.pod or pod.get('name')!=receipt['name'] or pod.get('status')!='RUNNING'
+                or (pod.get('gpu') or {}).get('id')!='NVIDIA GeForce RTX 5090'
+                or (pod.get('gpu') or {}).get('count')!=1 or abs(created-receipt['started'])>30
+                or type(maximum) not in (int,float) or not math.isfinite(maximum) or maximum<=0
+                or type(rate) not in (int,float) or not math.isfinite(rate) or not 0<rate<=maximum):
+            raise ManagedGPUError('Fresh owned startup could not be verified; no external pod adopted.')
+        return pod
+
+    def select_prepared_worker(self,availability_until=None):
         """Bounded, cancellable free reads before purchasing one rental.
 
         A start action is eligibility, not a capacity guarantee. A failed/uncertain
@@ -140,21 +180,24 @@ class ProductionGPU:
         # Preserve the established single-worker behavior unless opted in.
         if not required and not self.config.get('runpodPreparedPodIds'):
             return self.client.request(self.pod)
-        until=self.clock()+wait
+        until=min(self.clock()+wait,availability_until) if availability_until is not None else self.clock()+wait
         while True:
             self.gate('Waiting for a prepared '+(required or 'image GPU')+' worker; no rental started')
             stock=None
             if self.config.get('runpodCheckRegionalStock'):
                 stock={(g.get('gpuId'),d.get('dataCenterId')) for g in self.client.gpu_catalog()
                     if isinstance(g,dict) for d in g.get('dataCenterAvailability',[])
-                    if isinstance(d,dict) and d.get('stockStatus') in ('Low','Medium','High')}
+                    if isinstance(d,dict) and str(d.get('stockStatus','')).casefold() in ('low','medium','high')}
             eligible=[]
             for pid in ids:
                 self.gate('Checking prepared image worker availability; no rental started')
                 pod=self.client.request(pid)
                 gpu=pod.get('gpu') or {}
                 if pod.get('id')!=pid or required and gpu.get('id')!=required:continue
-                if stock is not None and (gpu.get('id'),pod.get('dataCenterId')) not in stock:continue
+                # CLI regional stock describes Secure data centers. Community
+                # hosts have no entry there; actual start acceptance validates
+                # their capacity, with bounded known-rejection recovery below.
+                if stock is not None and pod.get('cloud')!='COMMUNITY' and (gpu.get('id'),pod.get('dataCenterId')) not in stock:continue
                 if pod.get('status') not in ('EXITED','ERROR') or 'start' not in pod.get('actions',[]):continue
                 rate=pod.get('cost')
                 if type(rate) not in (int,float) or not math.isfinite(rate) or rate<=0:continue
@@ -187,61 +230,84 @@ class ProductionGPU:
 
     def ensure(self):
         with self.start_lock:
-            if self.error:raise ManagedGPUError(self.error)
-            if self.owned:return
-            if self.rented:raise ManagedGPUError('This rental was already closed; start another saved production job for additional images.')
-            self.gate('Checking the configured image GPU')
-            pod=self.select_prepared_worker()
-            if pod.get('id')!=self.pod or pod.get('status') not in ('EXITED','ERROR') or 'start' not in pod.get('actions',[]):
-                raise ManagedGPUError('Managed generation requires its configured stopped pod. Studio will not adopt or stop a separately running GPU.')
-            rate=pod.get('cost');cap=self.budget.get('gpuBudgetUSD');previous=self.budget.get('gpuPreviouslySpentUSD',0)
-            carried=self.state.get('spentByProject',{}).get(self.project,0)
-            if any(type(n) not in (int,float) or not math.isfinite(n) or n<0 for n in (rate,cap,previous,carried)) or rate<=0:
-                raise ManagedGPUError('Set a finite GPU spending cap before automatic worker startup.')
-            previous=max(previous,carried)
-            seconds=(cap-previous)/rate*3600-90
-            if seconds<60:raise ManagedGPUError('GPU cap cannot cover startup and the 90-second shutdown allowance; no rental started.')
-            self.started=self.clock();self.rate=rate;self.previous=previous
-            self.deadline=self.started+seconds
-            # A stopped rental's elapsed cost, readiness and stopped timestamp
-            # belong to its saved project history, not this new rental window.
-            self.state={'spentByProject':dict(self.state.get('spentByProject',{}))}
-            # Save ownership BEFORE dispatch: a lost start response is uncertain,
-            # not permission to buy a second rental or discard the shutdown duty.
-            self.owned=True;self.rented=True
-            self.save(podId=self.pod,project=self.project,status='STARTING',started=self.started,
-                      hourlyUSD=rate,capUSD=cap,deadline=self.deadline)
-            threading.Thread(target=self.watch,name='studio-rental-deadline',daemon=True).start()
-            try:
-                self.client.request(self.pod,'start')
-                until=min(self.deadline,self.started+300)
-                while self.clock()<until:
-                    self.check();self.gate('Starting the image GPU and private connection')
-                    current=self.client.request(self.pod)
-                    if current.get('status')=='RUNNING':
-                        required=self.config.get('runpodRequiredGPUType')
-                        if required and (current.get('gpu') or {}).get('id')!=required:
-                            raise ManagedGPUError('Started worker GPU differs from the required GPU; shutting down without generating images.')
-                        if not (current.get('ssh',{}).get('direct') or {}).get('host'):
-                            self.finished.wait(1);continue
-                        self.connector(current)
-                        if self.tunnel and self.tunnel.poll() is not None:
-                            raise ManagedGPUError('Private SSH connection failed. Check the dedicated key and localhost port; no public image port was opened.')
-                        self.bootstrap(current)
-                        invalidate=getattr(self.provider,'invalidate_backend_cache',None)
-                        if callable(invalidate):invalidate()
-                        else:
-                            self.provider._health=(0,None);self.provider._server_memory=(0,None)
-                            self.provider._node_catalog=(0,None)
-                        health=(self.provider.healthCheck(**self.image_selection) if self.image_selection else self.provider.healthCheck())
-                        if health.get('installed'):
-                            self.check()
-                            if not self.owned:raise ManagedGPUError('Rental closed during worker startup.')
-                            self.save(status='RUNNING',ready=self.clock());return
-                    self.finished.wait(1)
-                raise ManagedGPUError('Image GPU did not become ready within its startup window.')
-            except BaseException:
-                self.stop('startup failed');raise
+            wait=self.config.get('runpodAvailabilityWaitSeconds',0)
+            if type(wait) not in (int,float) or not math.isfinite(wait) or not 0<=wait<=86400:
+                raise ManagedGPUError('Invalid GPU availability policy.')
+            availability_until=self.clock()+wait
+            while True:
+                try:return self._ensure_once(availability_until)
+                except ManagedGPUUnavailable:
+                    # A regional listing does not reserve this particular host.
+                    # Retry ONLY an explicit capacity rejection after confirmed
+                    # shutdown. Lost responses and other errors are never replayed.
+                    if self.owned or self.state.get('status')!='STOPPED' or self.clock()>=availability_until:raise
+                    self.rented=False;self.error=None;self.finished=threading.Event()
+                    for _ in range(min(30,max(1,math.ceil(availability_until-self.clock())))):
+                        self.gate('Prepared host lost GPU capacity; waiting for availability, no active rental')
+                        self.finished.wait(1)
+                        if self.clock()>=availability_until:raise
+
+    def _ensure_once(self,availability_until):
+        if self.error:raise ManagedGPUError(self.error)
+        if self.owned:return
+        if self.rented:raise ManagedGPUError('This rental was already closed; start another saved production job for additional images.')
+        self.gate('Checking the configured image GPU')
+        prestarted=self.owned_startup is not None
+        pod=self.startup_pod() if prestarted else self.select_prepared_worker(availability_until)
+        if not prestarted and (pod.get('id')!=self.pod or pod.get('status') not in ('EXITED','ERROR') or 'start' not in pod.get('actions',[])):
+            raise ManagedGPUError('Managed generation requires its configured stopped pod. Studio will not adopt or stop a separately running GPU.')
+        rate=pod.get('cost');cap=self.budget.get('gpuBudgetUSD');previous=self.budget.get('gpuPreviouslySpentUSD',0)
+        carried=self.state.get('spentByProject',{}).get(self.project,0)
+        if any(type(n) not in (int,float) or not math.isfinite(n) or n<0 for n in (rate,cap,previous,carried)) or rate<=0:
+            raise ManagedGPUError('Set a finite GPU spending cap before automatic worker startup.')
+        previous=max(previous,carried)
+        seconds=(cap-previous)/rate*3600-90
+        if seconds<60:raise ManagedGPUError('GPU cap cannot cover startup and the 90-second shutdown allowance; no rental started.')
+        self.started=self.owned_startup['started'] if prestarted else self.clock();self.rate=rate;self.previous=previous
+        self.deadline=self.started+seconds
+        # A stopped rental's elapsed cost, readiness and stopped timestamp
+        # belong to its saved project history, not this new rental window.
+        self.state={'spentByProject':dict(self.state.get('spentByProject',{}))}
+        # Save ownership BEFORE dispatch: a lost start response is uncertain,
+        # not permission to buy a second rental or discard the shutdown duty.
+        self.owned=True;self.rented=True
+        self.save(podId=self.pod,project=self.project,status='STARTING',started=self.started,
+                  **({'startupHandoff':True} if prestarted else {}),
+                  hourlyUSD=rate,capUSD=cap,deadline=self.deadline)
+        self.owned_startup=None
+        threading.Thread(target=self.watch,name='studio-rental-deadline',daemon=True).start()
+        try:
+            if not prestarted:self.client.request(self.pod,'start')
+            until=min(self.deadline,self.started+300)
+            while self.clock()<until:
+                self.check();self.gate('Starting the image GPU and private connection')
+                current=self.client.request(self.pod)
+                if current.get('status')=='RUNNING':
+                    required=self.config.get('runpodRequiredGPUType')
+                    if required and (current.get('gpu') or {}).get('id')!=required:
+                        raise ManagedGPUError('Started worker GPU differs from the required GPU; shutting down without generating images.')
+                    if not (current.get('ssh',{}).get('direct') or {}).get('host'):
+                        self.finished.wait(1);continue
+                    self.connector(current)
+                    if self.tunnel and self.tunnel.poll() is not None:
+                        raise ManagedGPUError('Private SSH connection failed. Check the dedicated key and localhost port; no public image port was opened.')
+                    reset=getattr(self.provider,'begin_worker_lifetime',None)
+                    if callable(reset):reset()
+                    self.bootstrap(current)
+                    invalidate=getattr(self.provider,'invalidate_backend_cache',None)
+                    if callable(invalidate):invalidate()
+                    else:
+                        self.provider._health=(0,None);self.provider._server_memory=(0,None)
+                        self.provider._node_catalog=(0,None)
+                    health=(self.provider.healthCheck(**self.image_selection) if self.image_selection else self.provider.healthCheck())
+                    if health.get('installed'):
+                        self.check()
+                        if not self.owned:raise ManagedGPUError('Rental closed during worker startup.')
+                        self.save(status='RUNNING',ready=self.clock());return
+                self.finished.wait(1)
+            raise ManagedGPUError('Image GPU did not become ready within its startup window.')
+        except BaseException:
+            self.stop('startup failed');raise
 
     def connect(self,pod):
         if self.tunnel and self.tunnel.poll() is None:return
@@ -256,10 +322,13 @@ class ProductionGPU:
         endpoint=urlparse(self.config.get('comfyEndpoint','http://127.0.0.1:8188'))
         if endpoint.scheme!='http' or endpoint.hostname!='127.0.0.1' or not endpoint.port:
             raise ManagedGPUError('Managed ComfyUI must use the private localhost SSH tunnel.')
+        from studio_image_workers import worker_endpoints
+        forwards=[]
+        for index,url in enumerate(worker_endpoints(self.config)):
+            forwards.extend(['-L',f'127.0.0.1:{urlparse(url).port}:127.0.0.1:{8188+index}'])
         args=['ssh','-i',str(key),'-p',str(port),'-o','BatchMode=yes','-o','StrictHostKeyChecking=accept-new',
               '-o','UserKnownHostsFile='+str(self.path.with_suffix('.known-hosts')),
-              '-o','ExitOnForwardFailure=yes','-o','ServerAliveInterval=15','-N','-L',
-              f'127.0.0.1:{endpoint.port}:127.0.0.1:8188','root@'+address]
+              '-o','ExitOnForwardFailure=yes','-o','ServerAliveInterval=15','-N',*forwards,'root@'+address]
         self.tunnel=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
 
@@ -281,6 +350,8 @@ class ProductionGPU:
         if type(port) is not int or not 1<=port<=65535 or direct.get('username')!='root':
             raise ManagedGPUError('Invalid bootstrap SSH connection.')
         from studio_worker_bootstrap import remote_script
+        from studio_image_workers import model_copies
+        copies=model_copies(self.config)
         args=['ssh','-i',self.config['runpodSSHKeyFile'],'-p',str(port),'-o','BatchMode=yes',
             '-o','ConnectTimeout=5','-o','StrictHostKeyChecking=accept-new',
             '-o','UserKnownHostsFile='+str(self.path.with_suffix('.known-hosts')),
@@ -297,7 +368,7 @@ class ProductionGPU:
                 timeout=8,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             if probe.returncode==0:break
             self.finished.wait(2)
-        process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+        process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
             text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         first=True
         try:
@@ -306,11 +377,20 @@ class ProductionGPU:
                 if not self.owned or self.clock()>=until:
                     raise ManagedGPUError('Model preparation exceeded the bounded startup window.')
                 try:
-                    output,_=process.communicate(input=remote_script() if first else None,timeout=1)
+                    output,diagnostic=process.communicate(input=remote_script(copies) if first else None,timeout=1)
                     break
                 except subprocess.TimeoutExpired:first=False
             if process.returncode or 'MODELS_VERIFIED' not in output:
-                raise ManagedGPUError('Cloud model preparation failed; no image request submitted.')
+                safe=bootstrap_diagnostic(diagnostic)
+                self.path.with_suffix('.bootstrap-diagnostic.txt').write_text(safe,encoding='utf-8')
+                last=next((line.strip() for line in reversed(safe.splitlines()) if line.strip()),'Remote bootstrap returned no diagnostic.')
+                self.save(bootstrapError=last[:500])
+                raise ManagedGPUError('Cloud model preparation failed; no image request submitted. '+last[:500])
+            if copies==2:
+                report=next((line.removeprefix('WORKERS_VERIFIED ') for line in output.splitlines() if line.startswith('WORKERS_VERIFIED ')),None)
+                if report is None:raise ManagedGPUError('Two independent workers were not verified; no image request submitted.')
+                self.provider.confirm_workers(json.loads(report))
+                self.save(workerCopies=2,requestSlots=4,workersVerified=True,workerProcesses=json.loads(report)['workers'])
             self.bootstrapped=True
         finally:
             if process.poll() is None:process.kill();process.communicate()
@@ -322,8 +402,10 @@ class ProductionGPU:
             self.stop('budget window reached');raise ManagedGPUError(self.error)
 
     def watch(self):
-        while not self.finished.wait(1):
-            if self.clock()>=self.deadline:
+        finished=self.finished;deadline=self.deadline
+        while not finished.wait(1):
+            if finished is not self.finished:return
+            if self.clock()>=deadline:
                 self.error='GPU spending window reached; saved images and request IDs are retained.'
                 self.stop('budget window reached');return
 

@@ -72,6 +72,12 @@ def profile_for(stage, project, config, details=None):
     details=details or {};settings=project['settings']
     image=settings['image'];director=settings['director'];video=settings['video']
     profile={'version':VERSION,'stage':stage}
+    from studio_image_workers import model_copies
+    if stage in ('AI directing','Image pipeline','Image generation','Image + quality checks','Automatic image repair'):
+        copies=model_copies(config) if image.get('provider')=='comfyui' else 1
+        profile['productionTopology']={'modelCopies':copies,'requestSlots':copies*2 if copies>1 else 1,
+            'audioLookahead':bool(config.get('studioAudioLookahead',True)),
+            'chapterRenderOverlap':bool(config.get('studioRenderOverlap',True))}
     if stage=='AI directing' or stage in DIRECTOR_PASSES:
         profile.update(provider=director.get('provider'),model=details.get('model') or
             (config.get('openaiModel','gpt-6-luna') if director.get('provider')=='openai-luna' else director.get('model')),
@@ -93,6 +99,7 @@ def profile_for(stage, project, config, details=None):
             from director_pipeline import fact_beats_mode
             profile['factsVersion']=5 if lean and fact_beats_mode(director)=='storyboard' else 4 if lean else 3
             if lean:profile['reviewHintsVersion']=2
+            if lean:profile['sourceTimingUnitsVersion']=1
             if lean:profile['sourceVisualOverlap']=director.get('sourceVisualOverlap',False)
             if lean:profile['factReasoning']='high' if director.get('reasoning')=='High' else 'medium'
             from director_staged import visual_group_limits
@@ -102,7 +109,7 @@ def profile_for(stage, project, config, details=None):
         from studio_qc import policy
         selected=details.get('_shotSpec') or next((s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots'] if s['id']==details.get('shot')), {})
         model=(config.get('openaiModel','gpt-6-luna') if director.get('provider')=='openai-luna' else director.get('model'))
-        profile.update(reviewVersion=3,timingScope=details.get('reviewTimingScope','api-call'),provider=director.get('provider'),model=model,
+        profile.update(reviewVersion=4,timingScope=details.get('reviewTimingScope','api-call'),provider=director.get('provider'),model=model,
             reasoning=director.get('qcReasoning') or ('High' if settings.get('generationMode')=='MAX QUALITY' else 'Fast'),
             policy=policy(settings),continuity=settings.get('continuityStrictness'),style=settings.get('style'),
             constraints=signature(settings.get('imageVisualConstraints',settings.get('visualConstraints',''))),

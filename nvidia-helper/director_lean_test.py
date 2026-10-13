@@ -13,6 +13,35 @@ from director_wire import CompactDirectorWire
 
 
 class LeanDirectorTest(unittest.TestCase):
+    def test_visual_refinement_keeps_facts_complete_and_state_changes_owned(self):
+        p=self.fixture();p['settings']['director']['cadencePerMinute']=3
+        ch=p['chapters'][0];cid=p['characters'][0]['id'];facts=[];reviews=[];visuals=[]
+        sentences=[{'index':0,'start':0,'end':40,'text':'Mira walks quietly down the long hallway, while the teacher waits beside the door.'},
+                   {'index':1,'start':40,'end':80,'text':'Mira takes the silver key from the table, and holds it in her right hand.'}]
+        class Director:
+            def analyzeFacts(self,ctx,gate):
+                facts.append(copy.deepcopy(ctx))
+                return {'summary':'Mira carries key','people':[],'locations':[],'beats':[],
+                    'changes':[{'characterId':cid,'field':'key','value':'right hand','reason':sentences[1]['text'],'sentence':1}],
+                    'environmentChanges':[],'objects':['key'],'goals':[],'unresolved':[]}
+            def checkSourceFacts(self,ctx,gate):
+                reviews.append(copy.deepcopy(ctx));return {'issues':[],'intentionalChanges':[],'objectChanges':[]}
+        class Service:
+            director=Director()
+            def gate(self,*_):pass
+            def director_calls(self,project,chid,calls,expected):
+                visuals.extend(copy.deepcopy(ctx) for method,ctx in calls if method=='planStoryboard')
+                return [compile_storyboard(storyboard(ctx),ctx) if method=='planStoryboard' else {'majorIssues':[],'advisories':[]} for method,ctx in calls]
+        result=prepare_staged(Service(),p,ch,[sentences],[{'id':cid,'name':'Mira'}],{'characters':{cid:{}}},{},'hash')[0]
+        self.assertEqual([s['text'] for s in facts[0]['sentences']],[s['text'] for s in sentences])
+        self.assertEqual(reviews[0]['sentences'],facts[0]['sentences'])
+        units=result['visualTimings'];self.assertGreater(len(units),2)
+        self.assertEqual(' '.join(s['text'] for s in units),' '.join(s['text'] for s in sentences))
+        first=next(i for i,s in enumerate(units) if s['originalSentenceIndex']==1)
+        self.assertEqual(result['analysis']['changes'][0]['sentence'],first)
+        self.assertEqual(result['analysis']['changes'][0]['reason'],sentences[1]['text'])
+        self.assertIn(first,visuals[0]['requiredVisualChangeBoundaries'])
+        self.assertEqual(len(result['analysis']['changes']),1)
     def test_storyboard_owned_beats_preserve_source_fact_requirements_and_ai_mood(self):
         from director_provider import DirectorProvider
         class Captured(DirectorProvider):

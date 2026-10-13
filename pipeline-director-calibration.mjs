@@ -3,6 +3,7 @@ export const DIRECTOR_PRICE_DATE='2026-10-10';
 export const DIRECTOR_PRICE_URL='https://developers.openai.com/api/docs/models/gpt-6-luna';
 export function directorTimingLabel(director){
   if(director.timingMeasured)return 'Timing observation; long-project ETA is extrapolated.';
+  if(director.conditionsMatch===false)return 'Saved director configuration differs from calibration; timing is a comparison reference.';
   if(director.slotsMatch===false)return 'API-slot count differs from calibration; timing is an unmeasured reference.';
   return 'Selected-tier timing is unmeasured; finish time is a scenario, not a measured ETA.';
 }
@@ -20,6 +21,13 @@ export function directorForecast(config,evidence) {
   if(!Number.isFinite(flexFactor)||flexFactor<1)throw Error('Flex timing factor must be a finite number of at least one.');
   const manual=(config.directorCostMode||'manual')==='manual';
   if(!['manual','measured'].includes(config.directorCostMode||'manual'))throw Error('Choose measured or manual director cost.');
+  if(Number.isFinite(config.directorObservedSecondsPerStorySecond)&&config.directorObservedSecondsPerStorySecond>0&&config.directorObservedSamples>0&&Number.isFinite(config.directorObservedCostPerTwoHours)&&config.directorObservedCostPerTwoHours>=0){
+    return {id,label:'Matched current production history',slots:Number(config.directorActualSlots)||config.apiSlots,
+      secondsPerStorySecond:config.directorObservedSecondsPerStorySecond,
+      costPerTwoHours:manual?config.directorCost:config.directorObservedCostPerTwoHours,
+      aggregated:true,tier,installed:true,timingMeasured:true,conditionsMatch:true,slotsMatch:true,tierMeasured:true,
+      scope:`${config.directorObservedSamples} matching successful chapter observations across ${config.directorObservedRuns} run(s). Paused, reused, failed and unknown work excluded; fresh narration supplies the scale. This is an extrapolation, not a guarantee.`,stages:[],priceMultiplier:1};
+  }
   if(id==='historical')return {id,label:'Earlier classic calibration',slots:config.apiSlots,
     secondsPerStorySecond:evidence.calibration.directorSeconds/evidence.calibration.narrationSeconds*(tier==='flex'?flexFactor:1),
     costPerTwoHours:manual?config.directorCost:.38798*multiplier,aggregated:false,
@@ -36,6 +44,7 @@ export function directorForecast(config,evidence) {
   const observed=p.tiers?.[tier];
   const slots=Number(config.directorActualSlots)||p.slots;
   const slotsMatch=slots===p.slots;
+  const conditionsMatch=config.directorConditionsMatch!==false;
   const usable=observed?.status==='COMPLETE'&&observed.timingEligible&&observed.completedChapters===observed.sourceChapters&&!observed.unknownRequests;
   if(usable&&(!Number.isFinite(observed.seconds)||observed.seconds<=0||!Number.isFinite(observed.estimatedUSD)||observed.estimatedUSD<0))throw Error('Incomplete selected-tier measurement.');
   // The measurement already contains its tested concurrency. Reserving that
@@ -45,9 +54,10 @@ export function directorForecast(config,evidence) {
     costPerTwoHours:manual?config.directorCost:(usable?observed.estimatedUSD:p.estimatedUSD*multiplier)/data.sourceNarrationSeconds*7200,
     sourceSeconds:data.sourceNarrationSeconds,sourceWords:data.sourceWords,sourceChapters:p.sourceChapters,
     measuredSeconds:usable?observed.seconds:p.seconds,measuredUSD:usable?observed.estimatedUSD:p.estimatedUSD,calls:usable?observed.calls:p.calls,shots:usable?observed.shots:p.shots,
-    timingMeasured:slotsMatch&&(tier==='default'||usable),slotsMatch,tierMeasured:slotsMatch&&usable,priceMultiplier:multiplier,stages:usable?observed.stages||[]:p.stages||[],
+    timingMeasured:conditionsMatch&&slotsMatch&&(tier==='default'||usable),conditionsMatch,slotsMatch,tierMeasured:conditionsMatch&&slotsMatch&&usable,priceMultiplier:multiplier,stages:usable?observed.stages||[]:p.stages||[],
     scope:p.scope+' Linear duration scaling from two chapters; different chapter sizes, cadence, repairs and rate limits can change it.'+
       (slotsMatch?'':` Saved production uses ${slots} API slots; calibration used ${p.slots}. The schedule reserves the actual slots, but its director time remains an unmeasured reference; no concurrency speed multiplier is invented.`)+
+      (conditionsMatch?'':' Saved grouping/overlap/schema settings differ from this measurement; time and token cost are comparison references.')+
       (usable?` ${observed.samples} compatible selected-tier timing sample(s). ${observed.scope}`:tier==='flex'?` Flex latency is unmeasured: ${flexFactor}× Standard is your assumption; temporary unavailability can add more delay.`:
        tier==='fast'?' Fast latency is unmeasured for this profile; Standard time is retained as a comparison reference, not a Fast measurement.':'')};
 }

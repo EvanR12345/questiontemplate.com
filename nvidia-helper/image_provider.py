@@ -88,14 +88,18 @@ class ImageEncodingCache:
         path=Path(path).resolve();key=str(path)
         with self.lock:
             before=self.stamp(path);old=self.items.get(key)
-            if old and old[0]==before:
+            # Windows can report identical timestamps for two same-size writes
+            # inside one filesystem clock tick. Verify bytes on every hit;
+            # cache expensive encoding, never infer identity from stat alone.
+            raw=path.read_bytes();fingerprint=hashlib.sha256(raw).digest()
+            if old and old[0]==before and old[2]==fingerprint:
                 self.items.move_to_end(key);return old[1]
-            value='data:image/png;base64,'+base64.b64encode(path.read_bytes()).decode()
+            value='data:image/png;base64,'+base64.b64encode(raw).decode()
             if old:self.bytes-=len(self.items.pop(key)[1])
             if len(value)<=self.max_bytes and self.stamp(path)==before:
-                self.items[key]=(before,value);self.bytes+=len(value)
-                while self.bytes>self.max_bytes:
-                    _,(_,evicted)=self.items.popitem(last=False);self.bytes-=len(evicted)
+                self.items[key]=(before,value,fingerprint);self.bytes+=len(value)
+                while self.bytes>self.max_bytes or len(self.items)>128:
+                    _,entry=self.items.popitem(last=False);self.bytes-=len(entry[1])
             return value
 
 

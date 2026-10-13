@@ -170,6 +170,7 @@ class ExecutionJournal:
                 if key in operations:
                     raise RuntimeError('Duplicate remote admission.')
                 operations[key]={'state':'SUBMITTED','provider':details.get('provider')}
+                if 'workerIndex' in details:operations[key]['workerIndex']=details['workerIndex']
             elif key not in operations:
                 raise RuntimeError('Remote result has no submitted execution owner.')
             elif event=='accepted':

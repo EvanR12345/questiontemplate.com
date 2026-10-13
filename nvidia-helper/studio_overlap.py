@@ -3,6 +3,8 @@ import copy
 import hashlib
 import threading
 import time
+import contextvars
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from openai_director import OpenAIDirector
 from studio_data import digest, get_chapter, get_shot, uid
@@ -97,8 +99,9 @@ class CloudStoryOverlap:
             raise UnresolvedExecution('This run has unresolved remote executions; reconcile saved IDs before retrying.')
         self.contexts=[]
         self.progress_keys={}
-        self.image_lane=ImageLane()
-        self.api_lane=ImageLane(max(3,self.settings['director'].get('parallelism',1)),'director')
+        self.image_lane=ImageLane(getattr(service.providers['comfyui'],'client_capacity',1))
+        self.local_lane=ImageLane(1,'local narration/render')
+        self.api_lane=ImageLane(self.settings['director'].get('parallelism',1),'director')
         self.main_context=self.admit(project,None,None,'story',digest({'sources':[c['sourceText'] for c in project['chapters']],
             'settings':self.settings}))
         self.main=self.clone(self.main_context,main=True)
@@ -109,6 +112,10 @@ class CloudStoryOverlap:
         self.image_tasks=self.pool.limit
         self.pipeline_observations=[]
         self.pipeline_recorded=False
+        self.audio_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='studio-audio-lookahead')
+        self.render_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='studio-chapter-render')
+        self.audio_futures={}
+        self.render_futures={}
         if self.strategy!='legacy':
             from studio_schedule import ChapterImageScheduler
             self.scheduler=ChapterImageScheduler(self,self.strategy)
@@ -150,12 +157,74 @@ class CloudStoryOverlap:
                     self.root.db.commit()
 
     def validate_settings(self):
+        for future in [*getattr(self,'audio_futures',{}).values(),*getattr(self,'render_futures',{}).values()]:
+            if future.done() and not future.cancelled() and future.exception() is not None:
+                raise future.exception()
         current=self.root.store.load(self.project)
         if current['settings']!=self.settings:
             raise ValueError('Project settings changed during this run; saved work is retained. Start again with the current settings.')
         if self.source_inputs(current)!=self.sources:
             raise ValueError('Chapter source changed during this run; current text and saved assets retained.')
         return current
+
+    def prefetch_audio(self, chapter):
+        if self.root.config.get('studioAudioLookahead',True) is False or chapter in self.audio_futures:return
+        snapshot=self.validate_settings()
+        context=self.admit(snapshot,chapter,None,'narration-lookahead',
+            self.main.narration_signature(snapshot,get_chapter(snapshot,chapter)),[self.main_context.identity])
+        clone=self.clone(context)
+        def execute():
+            status,message='COMPLETE','Next chapter narration saved'
+            try:
+                with self.local_lane.acquire(clone.gate,repair=True):
+                    current=self.validate_settings();ch=get_chapter(current,chapter)
+                    clone.unload_models();clone.before_audio()
+                    # The lane is already owned; avoid reacquiring its only slot.
+                    return clone.measured_execution_stage(self.project,'Narration',clone.narration,current,ch,chapter=ch['number'])
+            except BaseException as error:
+                status='CANCELLED' if type(error).__name__=='JobCancelled' else 'FAILED';message=str(error)[:1800];raise
+            finally:
+                self.coordinator.call(self.journal.finish,context.identity,status,message)
+                with self.root.cv:self.root.active_executions.pop(context.identity,None)
+        self.audio_futures[chapter]=self.audio_pool.submit(contextvars.copy_context().run,execute)
+
+    def await_audio(self, chapter):
+        future=self.audio_futures.get(chapter)
+        if future:
+            while not future.done():self.main.gate('Waiting for prefetched chapter narration');time.sleep(.05)
+            future.result()
+
+    def schedule_render(self, chapter, index, chapters):
+        if self.root.config.get('studioRenderOverlap',True) is False or chapter in self.render_futures:return
+        current=self.validate_settings()
+        if current['intro'].get('enabled') and current['intro'].get('placement')=='every_chapter':return
+        context=self.admit(current,chapter,None,'early-chapter-render',
+            digest({'chapter':chapter,'revision':current['revision']}),[self.main_context.identity])
+        clone=self.clone(context)
+        futures=tuple(self.chapter_futures.get(chapter,[]))
+        def execute():
+            status,message='COMPLETE','Chapter render completed or deferred for repairs'
+            try:
+                for future in futures:
+                    while not future.done():clone.gate('Waiting for chapter images and checks');time.sleep(.05)
+                    future.result()
+                p=self.validate_settings();ch=get_chapter(p,chapter)
+                if any(qc_decision(p,shot,clone.store)['blocking'] for scene in ch['scenes'] for shot in scene['shots']):
+                    return {'deferred':True,'reason':'Chapter needs bounded repairs before rendering.'}
+                # Rendering owns the same lane as local voice; cloud image/API
+                # work remains independent. Final assembly revalidates outputs.
+                return clone.render_production_chapter(self.project,chapter,index,chapters)
+            except BaseException as error:
+                status='CANCELLED' if type(error).__name__=='JobCancelled' else 'FAILED';message=str(error)[:1800];raise
+            finally:
+                self.coordinator.call(self.journal.finish,context.identity,status,message)
+                with self.root.cv:self.root.active_executions.pop(context.identity,None)
+        self.render_futures[chapter]=self.render_pool.submit(contextvars.copy_context().run,execute)
+
+    def finish_local_work(self):
+        for future in [*self.audio_futures.values(),*self.render_futures.values()]:
+            while not future.done():self.main.gate('Waiting for local narration/render work');time.sleep(.05)
+            future.result()
 
     def receive_gate(self, context, message=''):
         """Collect receipts already bought, even when a sibling stops admission.
@@ -407,6 +476,8 @@ class CloudStoryOverlap:
             with self.root.cv:self.root.cv.notify_all()
         if self.scheduler:self.scheduler.close()
         self.pool.close()
+        self.audio_pool.shutdown(wait=True,cancel_futures=True)
+        self.render_pool.shutdown(wait=True,cancel_futures=True)
         self.coordinator.call(self.journal.finish,self.main_context.identity,status,message)
         with self.root.cv:
             for context in self.contexts:self.root.active_executions.pop(context.identity,None)

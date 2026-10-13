@@ -243,7 +243,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/performance':self.reply(200,studio.performance_report(query['project'][0]))
                     elif path=='/studio/planner-profile':
                         from studio_planner_profile import planner_profile
-                        self.reply(200,planner_profile(studio.store.load(query['project'][0]),studio.performance,studio.config))
+                        try:rental=json.loads((studio.store.root/'.managed-rental.json').read_text())
+                        except (OSError,ValueError):rental=None
+                        self.reply(200,planner_profile(studio.store.load(query['project'][0]),studio.performance,studio.config,rental))
                     elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
                     elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0]))
                     elif path=='/studio/publisher':self.reply(200,studio.publisher.status())
@@ -356,6 +358,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 if legacy:
                     p['legacyComic']=legacy;p['chapters'][0]['sourceText']=legacy.get('story','');p['chapters'][0]['cleanNarrationText']=clean_narration(legacy.get('story',''))
                     for c in legacy.get('characters',[]):p['characters'].append(character(c.get('name','Character'),c.get('description','')))
+                if not legacy and p['settings']['director'].get('provider')=='openai-luna' and not body.get('preserveDirectorSettings'):
+                    from studio_production_preset import recommended_settings
+                    p['settings']=recommended_settings(p['settings'])
                 return studio.store.save(p)
             if path=='/studio/import':return studio.store.save(body['project'])
             if path=='/studio/storage-sync':
@@ -414,6 +419,21 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             if path=='/studio/control':return studio.control(body['action'],body.get('job'),body.get('project'))
             if path=='/studio/jobs':return studio.enqueue(body['project'],body.get('chapter'),body['kind'],body.get('shots'),body.get('options'))
             pid=body['project']
+            if path=='/studio/production-preset':
+                if studio.current:raise ValueError('Wait for an idle generation queue before applying the production preset.')
+                if studio.config.get('runpodRequiredGPUType')=='NVIDIA GeForce RTX 5090':
+                    studio.configure({'comfyModelCopies':2,'studioAudioLookahead':True,'studioRenderOverlap':True})
+                from studio_production_preset import recommended_settings
+                def apply_preset(p):
+                    settings=recommended_settings(p['settings'])
+                    if settings==p['settings']:
+                        from studio_data import UNCHANGED
+                        return UNCHANGED
+                    p.setdefault('settingsHistory',[]).append({'settings':copy.deepcopy(p['settings']),'reason':'Before recommended production preset','time':time.time()})
+                    p['settings']=settings
+                    p.setdefault('generationStrategy','align')
+                studio.store.mutate(pid,apply_preset)
+                return {'project':studio.store.load(pid),'health':studio.health()}
             if path=='/studio/upload':
                 from PIL import Image
                 raw=base64.b64decode(body['data'].split(',',1)[-1]);img=Image.open(io.BytesIO(raw));img.thumbnail((1536,1536));name='references/'+uid()+'.png';target=studio.store.asset(pid,name);target.parent.mkdir(exist_ok=True);img.convert('RGBA' if body.get('purpose')=='watermark' else 'RGB').save(target,'PNG');return {'path':name}

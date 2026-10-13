@@ -177,6 +177,19 @@ def _prepare_staged(service, project, chapter, groups, cast, state, memory, expe
             if event['field']=='accessories':raise ValueError('Object facts cannot replace clothing accessories.')
         duration=group[-1]['end']-group[0]['start']
         cadence=project_cadence(project,chapter)
+        visual_units=None
+        if lean:
+            # Facts/owner checks above use complete original source sentences.
+            # Only visual cut opportunities are refined; original text remains
+            # available for application-side evidence and chronology checks.
+            from studio_timing_units import visual_timing_units,rebase_source_indices
+            visual_units=visual_timing_units(text,cadence)
+            if len(visual_units)!=len(text):
+                analysis=rebase_source_indices(analysis,visual_units)
+                continuity=rebase_source_indices(continuity,visual_units)
+                events=rebase_source_indices(events,visual_units)
+                context={**context,'sentences':[{k:v for k,v in row.items() if not k.startswith('_')} for row in visual_units]}
+                text=context['sentences']
         visual = {**context,'analysis':analysis,'people':cast,'acceptedChanges':events,
                   'requiredVisualChangeBoundaries':sorted({e['sentence'] for e in events}),
                   'style':project['settings']['style'],'promptFormat':'natural_language'}
@@ -197,7 +210,7 @@ def _prepare_staged(service, project, chapter, groups, cast, state, memory, expe
         if type(cadence) in (int,float) and cadence>0:
             visual['cadenceTarget']={'imagesPerMinute':cadence,'approximateShots':max(1,round(duration*cadence/60)),
                 'instruction':'Keep this approximate selected cadence. Do not cut on every sentence. Split for genuinely distinct visible moments and required state changes; explain exceptions in pacingReason.'}
-        prepared.append({'analysis':analysis,'continuity':continuity,'context':context})
+        prepared.append({'analysis':analysis,'continuity':continuity,'context':context,'visualTimings':visual_units})
         review_inputs.append(visual)
         # Required state changes are application-owned cut points. Independent
         # visual jobs cannot accidentally hide one inside an earlier-action shot.

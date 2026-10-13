@@ -6,6 +6,15 @@ from studio_performance import PerformanceStore,profile_for
 from studio_qc import check_level
 
 class PlannerProfileTest(unittest.TestCase):
+    def test_configured_verified_quote_is_public_but_resource_identifiers_are_not(self):
+        p=new_project();p['settings']['image']['provider']='comfyui'
+        cfg={'runpodRequiredGPUType':'NVIDIA GeForce RTX 5090','runpodManagedPodId':'private-pod'}
+        lease={'podId':'private-pod','workerCopies':2,'workersVerified':True,'hourlyUSD':.69,'started':100,'privateDetail':'secret'}
+        result=planner_profile(p,config=cfg,rental=lease)
+        self.assertEqual(result['imageExecution']['computeQuote']['hourlyUSD'],.69)
+        self.assertNotIn('private-pod',json.dumps(result));self.assertNotIn('secret',json.dumps(result))
+        for patch in ({'podId':'different-pod'},{'workersVerified':False},{'hourlyUSD':float('nan')}):
+            self.assertIsNone(planner_profile(p,config=cfg,rental=lease|patch)['imageExecution']['computeQuote'])
     def test_new_projects_check_all_images_but_do_not_auto_repair(self):
         p=new_project();self.assertTrue(p['settings']['visionQC'])
         self.assertEqual(check_level(p['settings']),'practical');self.assertFalse(p['settings']['automaticRepair'])

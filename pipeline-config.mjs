@@ -1,4 +1,4 @@
-import {describePlan} from './pipeline-engine.mjs?v=planner-settings-20261011';
+import {describePlan} from './pipeline-engine.mjs?v=production-parallel-20261012';
 
 export function gpuChoices(evidence) {
   const measured=(evidence.concurrency?.gpus||[]).filter(g=>

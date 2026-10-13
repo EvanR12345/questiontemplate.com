@@ -3,6 +3,7 @@
 import base64, copy, hashlib, io, json, math, os, re, secrets, sqlite3, threading, time, traceback, wave
 from pathlib import Path
 from studio_data import *
+from studio_image_workers import make_comfy_provider
 from director_provider import LocalQwenDirector
 from openai_director import OpenAIDirector
 from image_provider import (
@@ -70,7 +71,7 @@ class StudioService:
         self.providers = {
             "existing": ExistingImageProvider(image_factory),
             "native-flux": NativeFluxProvider(self.config, self.store.root),
-            "comfyui": ComfyImageProvider(self.config),
+            "comfyui": make_comfy_provider(self.config),
         }
         self.renderer = create_renderer(self.store, self.config)
         self.renderer.prepare_outro = self.prepare_outro
@@ -301,6 +302,10 @@ class StudioService:
             "leanFactBeatsAvailable":True,
             "maxDirectorTasks":8,
             "managedGPU":{'configured':bool(self.config.get('runpodManagedPodId') or self.config.get('runpodPreparedPodIds')),
+                          'modelCopies':getattr(self.providers['comfyui'],'model_copies',1),
+                          'requestSlots':getattr(self.providers['comfyui'],'client_capacity',1),
+                          'audioLookahead':self.config.get('studioAudioLookahead',True) is not False,
+                          'chapterRenderOverlap':self.config.get('studioRenderOverlap',True) is not False,
                           'podId':self.config.get('runpodManagedPodId',''),'watchdogLocation':'local-helper',
                           'requiredGPU':self.config.get('runpodRequiredGPUType',''),
                           'preparedWorkers':len(self.config.get('runpodPreparedPodIds') or []),
@@ -346,6 +351,9 @@ class StudioService:
             "comfyWorkflow",
             "comfyPollInterval",
             "comfyGenerationTimeoutSeconds",
+            "comfyModelCopies",
+            "studioAudioLookahead",
+            "studioRenderOverlap",
             "ffmpeg",
             "renderWorkers",
             "renderBackend",
@@ -408,6 +416,11 @@ class StudioService:
             if field in data and (isinstance(data[field], bool) or not isinstance(data[field], (int, float))
                     or not math.isfinite(data[field]) or not minimum <= data[field] <= maximum):
                 raise ValueError(f'{field} must be between {minimum} and {maximum}.')
+        if 'comfyModelCopies' in data:
+            from studio_image_workers import model_copies
+            model_copies({**self.config,**data})
+        for field in ('studioAudioLookahead','studioRenderOverlap'):
+            if field in data and type(data[field]) is not bool:raise ValueError(field+' must be enabled or disabled.')
         with self.cv:
             if self.current:
                 raise ValueError(
@@ -449,7 +462,7 @@ class StudioService:
             )
             self.director.config = self.config
             self.providers["native-flux"].config = self.config
-            self.providers["comfyui"] = ComfyImageProvider(self.config)
+            self.providers["comfyui"] = make_comfy_provider(self.config)
             if 'renderBackend' in data:
                 previous_renderer=self.renderer
                 self.renderer=create_renderer(self.store,self.config)
@@ -1324,7 +1337,7 @@ class StudioService:
             self.trace.record(pid, stage, seconds, details)
         def save(p):
             production = p.setdefault("production", {})
-            if (details or {}).get('provider') == 'openai-luna' and (details or {}).get('estimatedUSD'):
+            if (details or {}).get('provider') == 'openai-luna' and (details or {}).get('estimatedUSD') and not (details or {}).get('costRollup'):
                 costs = production.setdefault('costs',{})
                 costs['apiEstimatedUSD'] = costs.get('apiEstimatedUSD',0) + details['estimatedUSD']
             timings = production.setdefault("timings", [])
@@ -1371,6 +1384,12 @@ class StudioService:
 
     def measured_stage(self, pid, stage, callback, *args, **details):
         overlap=getattr(self,'_overlap',None)
+        if overlap and stage in ('Narration','Render chapter'):
+            with overlap.local_lane.acquire(self.gate,repair=stage=='Narration'):
+                if self is overlap.main:
+                    with overlap.stage(stage,args,details):
+                        return self.measured_execution_stage(pid,stage,callback,*args,**details)
+                return self.measured_execution_stage(pid,stage,callback,*args,**details)
         if overlap and self is overlap.main:
             with overlap.stage(stage,args,details):
                 return self.measured_execution_stage(pid,stage,callback,*args,**details)
@@ -1411,7 +1430,12 @@ class StudioService:
             recent=self.store.load(pid).get('production',{}).get('timings',[])
             details['reused']=any(t.get('reused') and t.get('detail') and
                 t.get('stage')!='Workflow planner' and t.get('chapter')==details.get('chapter') and t.get('finished',0)>=began_at for t in recent)
+            receipts=[t for t in recent if t.get('detail') and t.get('provider')=='openai-luna'
+                      and t.get('chapter')==details.get('chapter') and t.get('finished',0)>=began_at]
+            if receipts and all(type(t.get('estimatedUSD')) in (int,float) and not t.get('usagePending') for t in receipts):
+                details.update(estimatedUSD=sum(t['estimatedUSD'] for t in receipts),costRollup=True)
         status=result.get('status') if isinstance(result,dict) else None
+        if isinstance(result,dict) and result.get('reused') is True:details['reused']=True
         self.record_timing(
             pid, stage, time.monotonic() - began, details | host_interruption_details(host_epoch) | {"status":status if status in ('SUPERSEDED','CANCELLED','FAILED') else "COMPLETE","paused":was_paused or root.pause_epoch!=pause_epoch}, trace_record=False
         )
@@ -1654,7 +1678,7 @@ class StudioService:
             raise ValueError('Managed rental requires the configured cloud ComfyUI workflow.')
         rental=ProductionGPU(self.config,self.store.root/'.managed-rental.json',pid,
             p['settings'].get('cloudWindow',{}),self.providers['comfyui'],self.gate,
-            lambda state:self.record_gpu_state(pid,state),image_selection={
+            lambda state:self.record_gpu_state(pid,state),owned_startup=options.get('ownedWorkerReceipt'),image_selection={
                 'model':p['settings']['image']['model'],'workflow':p['settings']['image']['workflow']})
         self._production_gpu=rental
         try:return self._produce_story(pid,options)
@@ -1750,19 +1774,14 @@ class StudioService:
                 shotId=None,
             )
             previous_audio = ch.get("audio", {}).get("signature")
-            self.unload_models()
-            self.before_audio()
-            self.measured_stage(
-                pid,
-                "Narration",
-                self.narration,
-                p,
-                ch,
-                chapter=ch["number"],
-                reused=bool(previous_audio),
-            )
+            if getattr(self,'_overlap',None):
+                self._overlap.await_audio(chid)
+                p=self.store.load(pid);ch=get_chapter(p,chid)
+            self.production_narration(p,ch,previous_audio)
             p = self.store.load(pid)
             ch = get_chapter(p, chid)
+            if getattr(self,'_overlap',None) and index+1<len(chapters):
+                self._overlap.prefetch_audio(chapters[index+1])
             needs_analysis = not self.analysis_is_current(p, ch, previous_audio)
             if needs_analysis:
                 self.production_progress(
@@ -1825,6 +1844,7 @@ class StudioService:
 
         if getattr(self,'_overlap',None):
             self._overlap.drain()
+            self._overlap.finish_local_work()
         p = self.store.load(pid)
         if (
             p["intro"]["enabled"]
@@ -2139,6 +2159,8 @@ class StudioService:
                 f"Chapter {index+1} / {len(chapters)} · saved image {shot_index+1} / {len(shots)}",
                 completedImages=shot_index + 1,
             )
+        if getattr(self,'_overlap',None):
+            self._overlap.schedule_render(chid,index,chapters)
 
     def render_production_chapter(self, pid, chid, index, chapters):
         p = self.store.load(pid)
@@ -2182,6 +2204,17 @@ class StudioService:
 
         if not self.store.mutate(pid, chapter_saved):
             raise ValueError('Chapter changed during rendering. The completed earlier version is saved in render history. Review the current chapter before continuing.')
+
+    def production_narration(self, project, chapter, previous_audio):
+        overlap=getattr(self,'_overlap',None)
+        details={'chapter':chapter['number'],'reused':bool(previous_audio)}
+        if overlap:
+            with overlap.local_lane.acquire(self.gate,repair=True):
+                self.unload_models();self.before_audio()
+                with overlap.stage('Narration',(project,chapter),details):
+                    return self.measured_execution_stage(project['id'],'Narration',self.narration,project,chapter,**details)
+        self.unload_models();self.before_audio()
+        return self.measured_stage(project['id'],'Narration',self.narration,project,chapter,**details)
 
 
     def intro_submission_signature(self, project):
@@ -3347,8 +3380,13 @@ class StudioService:
         if staged:
             from director_staged import prepare_staged
             prepared = prepare_staged(self,p,ch,groups,chapter_cast,state,memory,expected_analysis)
+        visual_base=0
         for group_index, group in enumerate(groups):
-            base = group[0]["index"]
+            if prepared and prepared[group_index].get('visualTimings'):
+                group=prepared[group_index]['visualTimings']
+                base=visual_base
+                visual_base+=len(group)
+            else:base=group[0]['index']
             text = [
                 {"index": i, "text": t["text"], "start": t["start"], "end": t["end"]}
                 for i, t in enumerate(group)
@@ -3387,7 +3425,7 @@ class StudioService:
                 e
                 for e in analysis["changes"]
                 if not 0 <= e["sentence"] < len(group)
-                or e["reason"].casefold() not in group[e["sentence"]]["text"].casefold()
+                or e["reason"].casefold() not in group[e["sentence"]].get("_sourceText",group[e["sentence"]]["text"]).casefold()
             ]
             if invalid:
                 from director_provider import obj, arr, CHANGE
@@ -3406,7 +3444,7 @@ class StudioService:
                 if any(
                     not 0 <= e["sentence"] < len(group)
                     or e["reason"].casefold()
-                    not in group[e["sentence"]]["text"].casefold()
+                    not in group[e["sentence"]].get("_sourceText",group[e["sentence"]]["text"]).casefold()
                     for e in analysis["changes"]
                 ):
                     raise ValueError(
@@ -3748,7 +3786,7 @@ class StudioService:
             if any(
                 not 0 <= e["sentence"] < len(group)
                 or not e["reason"]
-                or e["reason"].casefold() not in group[e["sentence"]]["text"].casefold()
+                or e["reason"].casefold() not in group[e["sentence"]].get("_sourceText",group[e["sentence"]]["text"]).casefold()
                 or e["field"] == "accessories"
                 for e in object_changes
             ):
@@ -3769,7 +3807,7 @@ class StudioService:
                     not 0 <= e["sentence"] < len(group)
                     or not e["reason"]
                     or e["reason"].casefold()
-                    not in group[e["sentence"]]["text"].casefold()
+                    not in group[e["sentence"]].get("_sourceText",group[e["sentence"]]["text"]).casefold()
                     or e["field"] == "accessories"
                     for e in object_changes
                 ):
@@ -3823,7 +3861,7 @@ class StudioService:
                         if (
                             sa <= e["sentence"] <= sb
                             and e["reason"].casefold()
-                            in group[e["sentence"]]["text"].casefold()
+                            in group[e["sentence"]].get("_sourceText",group[e["sentence"]]["text"]).casefold()
                         ):
                             apply_environment_event(state,e,ch['number'],id)
                     for e in analysis["changes"]:
@@ -3835,7 +3873,7 @@ class StudioService:
                                 and e["reason"]
                                 and e["reason"].casefold()
                                 in " ".join(
-                                    x["text"] for x in group[sa : sb + 1]
+                                    x.get("_sourceText",x["text"]) for x in group[sa : sb + 1]
                                 ).casefold()
                             ):
                                 changes.append(
@@ -4677,6 +4715,10 @@ class StudioService:
                                   for c in (chapter.get('people',[]) if chapter else []) if c['id'] in scene_ids]
         expected['framingPolicy'] = ('Shot characters are the intended visible focal cast. Source-grounded scene people may appear in the background when consistent with narration; do not flag them as invented solely because they are not focal characters. Do not require every scene person in a close-up. Wrong identity, reversed actions and severe duplicated bodies remain major errors.')
         expected['narrationSegment'] = shot.get('narrationSegment', '')
+        expected['storyFactAuthority']={
+            'narration':shot.get('narrationSegment',''),
+            'rule':'Narration, canonical identity and planned appearance/possessions are story facts. Camera, pose, placement and a director-created illustrative action are creative choices. A major action/role finding must contradict a specific narrated fact, not merely a creative staging request. If narration only lists crimes or lore, a plausible illustrative staging variation is advisory in Practical mode; preserve its finding. Explicit narrated actions, wrong main identities and essential objects still require major review.'}
+        expected['directorDecisions']={k:shot.get(k) for k in ('camera','action','pose','expression','lighting')}
         expected['inventoryContext'] = {c['id']: {k:v for k,v in c.get('appearanceState', {}).items()
             if k in ('gun','hammer','knife','sword','bomb')} for c in shot['characters']}
         expected['propVisibilityPolicy'] = ('Inventory context preserves possessions, not visible framing requirements. '
@@ -4738,6 +4780,9 @@ class StudioService:
                 # The caller may have already chosen a new image and its review.
                 # Preserve that current state; never certify it with this result.
                 return False
+            if current.get('qc') and current['qc']!=qc:
+                current.setdefault('qcHistory',[]).append({'qc':copy.deepcopy(current['qc']),
+                    'imagePath':checked_path,'selected':False,'reason':'Superseded by a new explicit visual review.'})
             current.update(
                 qc=qc,
             )

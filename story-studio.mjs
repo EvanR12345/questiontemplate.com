@@ -710,7 +710,7 @@ function settings() {
       ["60", "60 · smoother motion"],
     ],
     String(s.video.fps),
-  )}</select></label></div><div class="toolbar"><label>Local video renderer<select id="localRenderBackend" ${connected ? '' : 'disabled'}>${options([["native","NVIDIA GPU · photo motion"],["cpu","CPU · compatibility"]],health?.renderer?.backend || "cpu")}</select></label><button id="applyRenderBackend" ${connected ? '' : 'disabled'}>Apply renderer</button></div><p class="muted">${escape(health?.renderer?.note || 'Connect the shared helper to choose the local renderer.')} Image generation, narration, projects and previous videos stay saved. GPU mode needs the optional NVIDIA codec library. If it cannot initialize, choose CPU compatibility; completed assets stay saved.</p></details>  <details><summary>Advanced AI settings</summary><div class="two-col"><label>Director provider<select id="settingDirectorProvider">${options(
+  )}</select></label></div><div class="toolbar"><label>Local video renderer<select id="localRenderBackend" ${connected ? '' : 'disabled'}>${options([["native","NVIDIA GPU · photo motion"],["cpu","CPU · compatibility"]],health?.renderer?.backend || "cpu")}</select></label><button id="applyRenderBackend" ${connected ? '' : 'disabled'}>Apply renderer</button></div><p class="muted">${escape(health?.renderer?.note || 'Connect the shared helper to choose the local renderer.')} Image generation, narration, projects and previous videos stay saved. GPU mode needs the optional NVIDIA codec library. If it cannot initialize, choose CPU compatibility; completed assets stay saved.</p></details>  <details><summary>Advanced AI settings</summary><div class="toolbar"><button data-production-preset ${connected?'':'disabled'}>Use recommended production setup</button></div><p class="muted">Balanced Standard Luna, four API tasks, small visual groups and full reviews. Existing shots, references, voice, image cadence and spending limits stay saved. The prepared RTX 5090 starts two private model copies; narration lookahead and ready-chapter rendering overlap cloud work while sharing one local GPU slot.</p><div class="two-col"><label>Director provider<select id="settingDirectorProvider">${options(
     [
       ["local-qwen", "Local Qwen3.5-4B Q4_K_M"],
       ["openai-luna", "GPT-6 Luna · OpenAI API"],
@@ -1812,6 +1812,11 @@ function wireSettings() {
   });
   $("#productionSaveSettings").onclick = () => action(saveSettings);
   root.querySelectorAll("[data-save-settings]").forEach(b => b.onclick = () => action(saveSettings));
+  root.querySelectorAll('[data-production-preset]').forEach(button=>button.onclick=()=>action(async()=>{
+    const result=await api('production-preset',{project:project.id});
+    project=result.project;health=result.health;render();
+  }));
+
   $('#prepareStory').onclick = () => action(async () => { await saveSettings(); await submit('prepare-story'); });
   $('#prepareRestyle').onclick = () => action(async () => { await saveSettings(); await submit('restyle-story'); });
   $('#editIntroShots').onclick = () => jsonDialog('Intro shots, timing and references', project.intro.shots || [], v => patch('project', project.id, {intro: {...project.intro, shots:v}}, true));

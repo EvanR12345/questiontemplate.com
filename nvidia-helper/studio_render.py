@@ -379,7 +379,7 @@ class VideoRenderer:
             and (old.get('renderIdentity') in (signature, previous_signature) or
                  self.allow_legacy_render_reuse and old.get('signature') == legacy_signature and all(s['motion'] == 'static' for s in visual_shots) and self.legacy_is_current(old_path, assets))
         ):
-            return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4"}
+            return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4",'reused':True}
         clip_jobs = []
         unique_jobs = {}
         durations = []

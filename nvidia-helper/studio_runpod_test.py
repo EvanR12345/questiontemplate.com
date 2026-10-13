@@ -1,8 +1,8 @@
-import json,tempfile,threading,time,unittest
+import datetime,json,tempfile,threading,time,unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock,patch
-from studio_runpod import ProductionGPU,ManagedGPUError,RunpodClient,reconcile
+from studio_runpod import ProductionGPU,ManagedGPUError,ManagedGPUUnavailable,RunpodClient,reconcile
 
 class Client:
     def __init__(self,status='EXITED',fail_start=False,fail_stop=False):
@@ -37,6 +37,33 @@ class RentalTest(unittest.TestCase):
             self.assertEqual(json.loads(self.path.read_text())['status'],'STOPPED')
             with self.assertRaisesRegex(ManagedGPUError,'already closed'):r.ensure()
         finally:r.stop()
+    def test_fresh_owned_startup_handoff_keeps_one_allocation_and_counts_preparation(self):
+        name='studio-two-copy-5090-0123456789ab'
+        receipt={'project':'project','podId':'pod-test-123','name':name,'started':95,'capUSD':1}
+        self.client.status='RUNNING';original=self.client.request
+        def request(pid,action=None):
+            row=original(pid,action)
+            row.update(name=name,createdAt=datetime.datetime.fromtimestamp(95,datetime.timezone.utc).isoformat(),
+                       gpu={'id':'NVIDIA GeForce RTX 5090','count':1})
+            return row
+        self.client.request=request;r=self.rental(owned_startup=receipt)
+        try:
+            r.ensure();self.assertNotIn('start',self.client.calls);self.assertTrue(r.state['startupHandoff'])
+            self.assertEqual(r.started,95);self.clock[0]=136;r.stop()
+            self.assertAlmostEqual(r.state['estimatedUSD'],41/3600)
+            self.assertEqual(self.client.calls.count('stop'),1)
+        finally:r.stop()
+    def test_owned_startup_cannot_adopt_old_or_unrelated_running_resource(self):
+        name='studio-two-copy-5090-0123456789ab'
+        base={'project':'project','podId':'pod-test-123','name':name,'started':95,'capUSD':1}
+        for patch in ({'project':'different'},{'podId':'different-pod'},{'started':-100},{'capUSD':2},{'name':'unrelated'}):
+            with self.subTest(patch=patch):
+                r=self.rental(owned_startup=base|patch)
+                with self.assertRaisesRegex(ManagedGPUError,'receipt'):r.ensure()
+                self.assertFalse(r.owned);self.assertNotIn('start',self.client.calls)
+        self.client.status='RUNNING';r=self.rental(owned_startup=base)
+        with self.assertRaisesRegex(ManagedGPUError,'creation time'):r.ensure()
+        self.assertFalse(r.owned)
     def test_new_worker_lifetime_clears_remote_reference_upload_names_once(self):
         from image_provider import ComfyImageProvider
         provider=ComfyImageProvider({});provider._uploads={'old-sha':'missing-after-restart.png'}
@@ -74,6 +101,34 @@ class RentalTest(unittest.TestCase):
         with self.assertRaisesRegex(ManagedGPUError,'Lost start'):r.ensure()
         self.assertEqual(r.state['status'],'STOPPED');self.assertEqual(self.client.calls.count('start'),1)
         self.assertEqual(self.client.calls.count('stop'),1)
+    def test_known_host_capacity_rejection_retries_only_after_confirmed_stop(self):
+        self.config['runpodAvailabilityWaitSeconds']=60
+        original=self.client.request;rejected=[]
+        def request(pid,action=None):
+            if action=='start' and not rejected:
+                rejected.append(pid);self.client.calls.append(action)
+                raise ManagedGPUUnavailable('not enough free GPUs on the host')
+            return original(pid,action)
+        self.client.request=request;r=self.rental()
+        def gate(message):
+            if 'lost GPU capacity' in message:self.clock[0]+=1
+        r.gate=gate
+        event=Mock();event.wait.return_value=False
+        with patch('studio_runpod.threading.Thread'),patch('studio_runpod.threading.Event',return_value=event):
+            try:
+                r.ensure();self.assertEqual(self.client.calls.count('start'),2)
+                self.assertTrue(r.owned);self.assertEqual(r.state['status'],'RUNNING')
+                self.assertEqual(rejected,['pod-test-123'])
+                self.assertEqual(r.state['spentByProject'],{'project':0})
+            finally:r.stop()
+    def test_capacity_rejection_with_no_wait_does_not_retry(self):
+        self.client.request=Mock(side_effect=lambda pid,action=None:
+            (_ for _ in ()).throw(ManagedGPUUnavailable('no capacity')) if action=='start'
+            else {'id':pid,'status':'EXITED','actions':['start'],'cost':1})
+        r=self.rental()
+        with self.assertRaises(ManagedGPUUnavailable):r.ensure()
+        self.assertEqual(sum(call.args[-1]=='start' for call in self.client.request.call_args_list),1)
+        self.assertFalse(r.owned);self.assertEqual(r.state['status'],'STOPPED')
     def test_unknown_shutdown_blocks_another_purchase_until_reconciliation(self):
         r=self.rental();r.ensure();self.client.fail_stop=True
         with self.assertRaisesRegex(ManagedGPUError,'shutdown could not'):r.stop()
@@ -147,6 +202,30 @@ class RentalTest(unittest.TestCase):
             'dataCenterAvailability':[{'dataCenterId':'EU-RO-1','stockStatus':'High'}]}]
         with self.assertRaisesRegex(ManagedGPUError,'No eligible'):r.ensure()
         self.assertTrue(all(len(call.args)==1 for call in r.client.request.call_args_list))
+
+    def test_cli_stock_case_is_normalized_but_none_never_starts(self):
+        self.config.update(runpodRequiredGPUType='NVIDIA GeForce RTX 5090',runpodCheckRegionalStock=True)
+        for stock in ('High','high','medium','low','none',None):
+            with self.subTest(stock=stock):
+                r=self.rental();r.client=Mock()
+                pod={'id':'pod-test-123','status':'EXITED','actions':['start'],'cost':.9,
+                    'gpu':{'id':'NVIDIA GeForce RTX 5090'},'dataCenterId':'EUR-NO-1'}
+                r.client.request.return_value=pod
+                r.client.gpu_catalog.return_value=[{'gpuId':'NVIDIA GeForce RTX 5090',
+                    'dataCenterAvailability':[{'dataCenterId':'EUR-NO-1','stockStatus':stock}]}]
+                if stock in ('none',None):
+                    with self.assertRaisesRegex(ManagedGPUError,'No eligible'):r.select_prepared_worker()
+                    r.client.request.assert_called_once_with('pod-test-123')
+                else:self.assertEqual(r.select_prepared_worker(),pod)
+
+    def test_community_host_is_not_rejected_by_secure_only_region_catalog(self):
+        self.config.update(runpodRequiredGPUType='NVIDIA GeForce RTX 5090',runpodCheckRegionalStock=True)
+        r=self.rental();r.client=Mock()
+        pod={'id':'pod-test-123','status':'EXITED','actions':['start'],'cost':.69,'cloud':'COMMUNITY',
+             'gpu':{'id':'NVIDIA GeForce RTX 5090'},'dataCenterId':None}
+        r.client.request.return_value=pod;r.client.gpu_catalog.return_value=[]
+        self.assertEqual(r.select_prepared_worker(),pod)
+        r.client.request.assert_called_once_with('pod-test-123')
 
     def test_changed_gpu_after_start_is_stopped_before_provider_connection(self):
         self.config.update(runpodRequiredGPUType='NVIDIA GeForce RTX 5090')
