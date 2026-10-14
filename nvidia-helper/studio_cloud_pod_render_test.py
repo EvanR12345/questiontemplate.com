@@ -3,11 +3,31 @@ import subprocess,sys
 from pathlib import Path
 from types import SimpleNamespace
 from studio_cloud_pod_render import CloudPodRenderer,render_assets,SOURCES,control_packet,cloud_result
-from studio_remote_render_worker import safe_url,receive
+from studio_remote_render_worker import safe_url,receive,validate_video
 from unittest.mock import patch
 from studio_data import new_project
 
 class RenderOnlyTest(unittest.TestCase):
+    def test_real_chapter_trim_is_not_mistaken_for_a_different_output_format(self):
+        video={'width':1280,'height':720,'avg_frame_rate':str(30.003045376103948),'nb_frames':'2463'}
+        self.assertAlmostEqual(validate_video(video,82.0916666667,82.05,2),30.003045376103948)
+        for wrong in (video|{'avg_frame_rate':'60/1'},video|{'nb_frames':'2500'},video|{'width':1920}):
+            with self.assertRaises(ValueError):validate_video(wrong,82.0916666667,82.05,2)
+        with self.assertRaises(ValueError):validate_video(video,83,82.05,2)
+    def test_native_encoder_logging_cannot_corrupt_the_json_control_stream(self):
+        result=subprocess.run([sys.executable,'-c',
+            'import os;import studio_remote_render_worker as w;w.isolate_telemetry();os.write(1,b"[INFO] native encoder log\\n");w.emit({"event":"progress","stage":"Rendering"})'],
+            capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(json.loads(result.stdout),{'event':'progress','stage':'Rendering'})
+        self.assertIn('[INFO] native encoder log',result.stderr)
+    def test_new_owned_allocations_get_distinct_pins_but_reconnect_keeps_same_pin(self):
+        renderer=CloudPodRenderer(None,None,{'runpodSSHKeyFile':'dedicated-key'},lambda *_:None,Path('rental.json'))
+        pod={'id':'owned-1','ssh':{'direct':{'host':'192.0.2.1','port':22,'username':'root'}}}
+        first=renderer.ssh_args(pod);self.assertEqual(first,renderer.ssh_args(pod))
+        self.assertNotEqual(first,renderer.ssh_args(pod|{'id':'owned-2'}))
+        self.assertIn('StrictHostKeyChecking=accept-new',first)
+
     def test_bundle_identity_is_stable_for_unchanged_source(self):
         renderer=CloudPodRenderer(None,None,{},lambda *_:None,Path('unused'))
         self.assertEqual(renderer.bundle(),renderer.bundle())

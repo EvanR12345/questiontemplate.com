@@ -11,6 +11,7 @@ from pathlib import Path
 class GPUProviderError(ValueError):pass
 class GPUCapacityUnavailable(GPUProviderError):pass
 class GPURequestUncertain(GPUProviderError):pass
+class GPUConnectNotReady(GPUProviderError):pass
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):

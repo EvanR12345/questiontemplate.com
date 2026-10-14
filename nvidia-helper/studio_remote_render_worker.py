@@ -7,6 +7,21 @@ from this worker to Google, not through the laptop.
 import base64,gzip,hashlib,io,json,math,mimetypes,os,re,shutil,subprocess,sys,time,urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
+from fractions import Fraction
+
+def validate_video(video,file_duration,expected_duration,chapter_count):
+    """Account for subframe chapter trims, while rejecting wrong output modes."""
+    try:
+        average=float(Fraction(video['avg_frame_rate']));frames=int(video['nb_frames'])
+    except (ValueError,KeyError,ZeroDivisionError,TypeError):raise ValueError('Cloud video timing metadata is invalid.') from None
+    tolerance=max(2,chapter_count+2)
+    if (video.get('width'),video.get('height'))!=(1280,720) or not math.isfinite(average):
+        raise ValueError('Unexpected cloud video dimensions or frame rate.')
+    if abs(average-30)>min(.1,tolerance/max(expected_duration,1)) or abs(frames-expected_duration*30)>tolerance:
+        raise ValueError('Cloud video frame cadence differs from the saved 30 fps plan.')
+    if not math.isfinite(file_duration) or abs(file_duration-expected_duration)>.1:
+        raise ValueError('Unexpected narration/video duration mismatch.')
+    return average
 
 
 def safe_url(value):
@@ -18,8 +33,16 @@ def safe_url(value):
     return value
 
 
+_telemetry=None
+
+def isolate_telemetry():
+    """Keep native encoder stdout separate from the JSON control protocol."""
+    global _telemetry
+    _telemetry=os.fdopen(os.dup(sys.stdout.fileno()),'w',buffering=1,encoding='utf-8')
+    os.dup2(sys.stderr.fileno(),sys.stdout.fileno())
+
 def emit(value):
-    print(json.dumps(value,separators=(',',':')),flush=True)
+    print(json.dumps(value,separators=(',',':')),file=_telemetry or sys.stdout,flush=True)
 
 
 def receive():
@@ -123,8 +146,8 @@ def run(spec):
     metadata=json.loads(subprocess.check_output(['/usr/bin/ffprobe','-v','error','-show_streams','-show_format','-of','json',str(final)],text=True))
     subprocess.run(['/usr/bin/ffmpeg','-v','error','-i',str(final),'-f','null','-'],check=True,capture_output=True,timeout=120)
     video=next(s for s in metadata['streams'] if s['codec_type']=='video')
-    if (video['width'],video['height'],video['avg_frame_rate'])!=(1280,720,'30/1'):raise ValueError('Unexpected cloud video format.')
-    if abs(float(metadata['format']['duration'])-result['duration'])>.1:raise ValueError('Unexpected narration/video duration mismatch.')
+    average=validate_video(video,float(metadata['format']['duration']),result['duration'],
+        sum(bool(c['sourceText'].strip()) for c in project['chapters']))
     checksum=hashlib.sha256()
     with final.open('rb') as source:
         for part in iter(lambda:source.read(1024*1024),b''):checksum.update(part)
@@ -133,7 +156,7 @@ def run(spec):
     emit({'event':'complete','result':result,'sha256':final_checksum,'bytes':final.stat().st_size,
         'sourceTransferSeconds':restored,'renderAndUploadsSeconds':render_seconds,'uploadSeconds':upload_seconds,
         'decodeVerificationSeconds':time.monotonic()-check_started,'operations':operations,'uploadedAssetsCount':len(uploads),
-        'width':video['width'],'height':video['height'],'fps':video['avg_frame_rate'],'frames':video.get('nb_frames'),
+        'width':video['width'],'height':video['height'],'fps':30,'measuredAverageFPS':average,'frames':video.get('nb_frames'),
         'fileDuration':float(metadata['format']['duration']),'gpu':torch.cuda.get_device_name(0),
         'totalWorkerSeconds':time.monotonic()-started,
         'peakRetainedScratchBytes':sum(p.stat().st_size for p in root.rglob('*') if p.is_file()),
@@ -141,6 +164,7 @@ def run(spec):
 
 
 if __name__=='__main__':
+    isolate_telemetry()
     try:run(receive())
     except BaseException as error:
         # Capabilities and private URLs must never leak via urllib tracebacks.

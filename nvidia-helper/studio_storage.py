@@ -318,7 +318,7 @@ class R2Archive:
             raise ValueError('Invalid cloud asset identity.')
         return self.objects.url(record['key'],download_name=download_name) if download_name is not None else self.objects.url(record['key'])
 
-    def files(self, pid):
+    def files(self, pid, refresh=False):
         """Credential-free dashboard data; URLs are created only on request."""
         if not self.enabled:
             folder=self.store.folder(pid); rows=[]
@@ -330,7 +330,7 @@ class R2Archive:
                 rows.append({'path':name,'bytes':path.stat().st_size,'cloud':False,
                     'category':{'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(path.suffix[1:].lower(),'Images')})
             return {'files':rows, 'cloud':False}
-        manifest,_=self.manifest(pid)
+        manifest,_=self.manifest(pid,refresh)
         rows={}
         for name,r in (manifest or {}).get('files',{}).items():
             self.store.asset_local(pid,name)

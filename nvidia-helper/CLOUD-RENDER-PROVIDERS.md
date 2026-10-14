@@ -4,9 +4,10 @@ Studio's existing Files panel now has a marketplace-render adapter and the older
 Google Cloud Run adapter. Storage is separate from compute: Google holds the saved
 videos; an explicitly capped GPU worker can encode them. Voice remains local.
 
-**Current rollout:** marketplace rendering stays disabled until a real video has
-been rendered, saved and verified on that provider. The prepared website adapter
-is limited to 120-second 720p30 previews. A 12-hour cloud export is not verified.
+**Current rollout:** Lium completed a real 82.05-second 720p30 render, direct Google
+save, full decoding/checksum verification and confirmed worker release. Its website
+adapter is limited to 120-second previews. Vast remains unverified. A 12-hour cloud
+export is not verified; no image-generation provider switch has been enabled.
 Adding an API key or reading available offers does not enable production or rent
 anything. The existing image-generation route is unchanged; alternate-provider
 image generation has not been integrated or tested.
@@ -48,9 +49,11 @@ continue after compute stops. No always-available GPU guarantee is made.
 
 ## Remaining verification
 
-Complete the specifically authorized render/media-transfer pilot, verify the
-cloud video in Chrome, and record measured stage times and cost. Configure the
-tested template and verification record before enabling the preview control.
+The completed short cloud pilot used 22.3 seconds for startup (including 6.45 seconds
+of setup), 24.74 seconds for sources, and 24.47 seconds for rendering and uploads.
+Uploads account for 9.61 seconds inside that last figure; do not add them twice.
+Complete controller time was 94.16 seconds. These are one cold short-run sample,
+not a 12-hour forecast. The tested template and verification record must be retained.
 Vast account access and its private key still need confirmation in the actual
 signed-in session. Long exports need duration-scaled deadlines, scratch sizing,
 checkpoint/pruning and full-length transfer/render validation before activation.

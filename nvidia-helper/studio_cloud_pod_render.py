@@ -84,15 +84,27 @@ class CloudPodRenderer:
         except (ValueError,TypeError):raise ManagedGPUError('No verified direct worker SSH address.') from None
         if type(port) is not int or not 1<=port<=65535 or not re.fullmatch(r'[a-z_][a-z0-9_-]*',user or ''):
             raise ManagedGPUError('Invalid owned worker SSH connection.')
-        known=self.state_path.with_suffix('.known-hosts')
+        # Pin the host key for this exact owned allocation. A freshly rented
+        # container may reuse a former container's public IP/port but has its
+        # own SSH identity. Never waive a changed key within one allocation.
+        allocation=hashlib.sha256(str(pod['id']).encode()).hexdigest()[:20]
+        known=self.state_path.with_name('.render-hosts-'+allocation)
         return ['ssh','-i',self.config['runpodSSHKeyFile'],'-o','BatchMode=yes','-o','ConnectTimeout=12',
                 '-o','StrictHostKeyChecking=accept-new','-o','UserKnownHostsFile='+str(known),'-p',str(port),user+'@'+address]
 
     def connect(self,pod):
         self.ssh=self.ssh_args(pod)
-        result=subprocess.run([*self.ssh,'true'],capture_output=True,timeout=20,
-            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-        if result.returncode:raise ManagedGPUError('Owned renderer SSH is not ready; no media was transferred.')
+        from studio_gpu_providers import GPUConnectNotReady
+        try:
+            result=subprocess.run([*self.ssh,'true'],capture_output=True,timeout=20,
+                creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        except subprocess.TimeoutExpired:
+            raise GPUConnectNotReady('Owned renderer SSH is still starting; no media was transferred.') from None
+        if result.returncode:
+            detail=result.stderr.decode(errors='replace').lower()
+            if any(x in detail for x in ('connection refused','connection timed out','connection reset','connection closed','no route to host')):
+                raise GPUConnectNotReady('Owned renderer SSH is still starting; no media was transferred.')
+            raise ManagedGPUError('Owned renderer SSH authentication or host verification failed; no media was transferred.')
 
     def bundle(self):
         output=io.BytesIO();folder=Path(__file__).resolve().parent

@@ -121,6 +121,17 @@ class LeaseTests(unittest.TestCase):
         lease=self.lease({'vast':self.client()},cap=.01)
         with self.assertRaisesRegex(GPUProviderError,'Remaining cap'):lease.ensure()
         self.assertEqual(self.events,[])
+
+    def test_startup_waits_for_ssh_without_renting_another_worker(self):
+        lease=self.lease({'vast':self.client()});attempts=[]
+        def connect(_):
+            attempts.append(1)
+            if len(attempts)==1:raise GPUConnectNotReady('Starting')
+            self.events.append('connect')
+        lease.connector=connect
+        try:
+            lease.ensure();self.assertEqual(len(attempts),2);self.assertEqual(self.events.count('create'),1)
+        finally:lease.stop()
     def test_uncertain_creation_blocks_fallback_and_preserves_ownership(self):
         lease=self.lease({'vast':self.client(GPURequestUncertain('lost')),
                          'lium':self.client()},order=['vast','lium'])

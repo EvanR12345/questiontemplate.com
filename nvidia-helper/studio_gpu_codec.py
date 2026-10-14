@@ -6,6 +6,30 @@ from studio_gpu_motion import NativeMotion,motion_coordinates
 
 _dll_handles=[]
 
+class EncoderFrame:
+    """Bridge legacy positional DLPack consumers to keyword-only Torch APIs.
+
+    The tensor remains the memory owner. Only the protocol call is adapted;
+    no pixels are copied, resampled or moved off the GPU.
+    """
+    def __init__(self,tensor):self.tensor=tensor
+    def __dlpack__(self,stream=None):return self.tensor.__dlpack__(stream=stream)
+    def __dlpack_device__(self):return self.tensor.__dlpack_device__()
+    def cuda(self):
+        # PyNvVideoCodec's documented GPU input path expects one CUDA array
+        # interface per NV12 plane. This also avoids its Torch type special case.
+        height3,width=self.tensor.shape
+        if height3%3 or width%2 or not self.tensor.is_cuda or not self.tensor.is_contiguous() or self.tensor.element_size()!=1:
+            raise ValueError('Encoder requires contiguous GPU NV12 bytes.')
+        height=height3*2//3;pointer=self.tensor.data_ptr()
+        return [EncoderPlane(pointer,(height,width,1),(width,1,1)),
+                EncoderPlane(pointer+height*width,(height//2,width//2,2),(width,2,1))]
+
+class EncoderPlane:
+    def __init__(self,pointer,shape,strides):
+        self.__cuda_array_interface__={'version':3,'shape':shape,'strides':strides,
+            'typestr':'|u1','data':(pointer,False)}
+
 def mp4_timescale(fps):
     """Match FFmpeg's default MP4 track clock for mixed CPU/GPU clips."""
     result=fps
@@ -27,6 +51,7 @@ def render_frames(source,output_path,motion,frames=150,fps=30,amount=.06,easing=
     kernel=kernel or NativeMotion()
     stream=torch.cuda.current_stream()
     output=torch.empty((height*3//2,width),device=source.device,dtype=torch.uint8)
+    encoder_frame=EncoderFrame(output)
     began=time.perf_counter();enc=nvc.CreateEncoder(width,height,'NV12',False,codec='h264',preset=preset,
         fps=fps,rc='constqp',constqp=qp,bf=2,gop=250,profile='high',tuning_info='high_quality',
         cudacontext=kernel.context.value,cudastream=stream.cuda_stream)
@@ -44,7 +69,7 @@ def render_frames(source,output_path,motion,frames=150,fps=30,amount=.06,easing=
             stream.synchronize()
             warp_seconds+=time.perf_counter()-started
             started=time.perf_counter();pic=nvc.NV_ENC_PIC_PARAMS();pic.inputTimeStamp=index
-            packets=enc.Encode(output,pic)
+            packets=enc.Encode(encoder_frame,pic)
             for packet in packets:
                 mux.MuxVideoPacket(bytes(packet['data']),packet['picture_type'],packet['timestamp']);chunks+=1
             encode_seconds+=time.perf_counter()-started
@@ -58,5 +83,5 @@ def render_frames(source,output_path,motion,frames=150,fps=30,amount=.06,easing=
             'encoder':'native_nvenc','preset':preset,'qp':qp,'frameReadback':False,'colourFormat':'NV12_BT601_limited',
             'outputBytes':Path(output_path).stat().st_size,'torchPeakBytes':torch.cuda.max_memory_allocated()}
     finally:
-        del enc,mux,output
+        del enc,mux,encoder_frame,output
         if owned_kernel:kernel.close()

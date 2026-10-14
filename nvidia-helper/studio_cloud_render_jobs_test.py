@@ -20,7 +20,7 @@ class CloudJobTest(unittest.TestCase):
             current=None,cancel=False,paused=False,yield_requested=False,gate=lambda *args,**kw:None)
         self.options={'id':'a'*32,'revision':3,'destination':'youtube','capUSD':.50}
         self.jobs=CloudRenderJobs(self.studio)
-        self.jobs.capabilities=lambda :{'ready':True,'reason':'Ready'}
+        self.jobs.capabilities=lambda :{'ready':True,'reason':'Ready','providers':['lium']}
         self.jobs.validate=lambda *_:None
     def tearDown(self):self.database.close();self.temp.cleanup()
 
@@ -49,7 +49,9 @@ class CloudJobTest(unittest.TestCase):
     def fake_renderer(self,failure=False):
         test=self
         class Renderer:
-            def __init__(self,*args,**kw):self.report={};self.gate=args[3]
+            def __init__(self,*args,**kw):
+                self.report={};self.gate=args[3]
+                test.assertEqual(args[2]['gpuProviderOrder'],['lium'])
             def capabilities(self,_):return [],'etag'
             def run(self,project,identity,cap,**kw):
                 test.calls.append((identity,cap));self.gate('Rendering')

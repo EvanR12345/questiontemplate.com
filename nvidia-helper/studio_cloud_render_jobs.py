@@ -157,7 +157,10 @@ class CloudRenderJobs:
             self.save(record)
         from studio_cloud_pod_render import CloudPodRenderer
         from studio_cloud_gpu import CloudGPULease
-        renderer=(self.renderer_factory or CloudPodRenderer)(self.studio.store,self.studio.storage,self.studio.config,gate,
+        verified=self.capabilities().get('providers',[])
+        config=copy.deepcopy(self.studio.config)
+        config['gpuProviderOrder']=[p for p in config.get('gpuProviderOrder',['vast','lium']) if p in verified]
+        renderer=(self.renderer_factory or CloudPodRenderer)(self.studio.store,self.studio.storage,config,gate,
             self.studio.store.root/'.managed-rental.json',progress,lease_factory=CloudGPULease)
         try:
             gate('Checking saved cloud inputs');prepared=renderer.capabilities(project)

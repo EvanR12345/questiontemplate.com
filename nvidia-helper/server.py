@@ -248,7 +248,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         backend='cpu' if studio.renderer.allow_legacy_render_reuse else 'native'
                         self.reply(200,planner_profile(studio.store.load(query['project'][0]),studio.performance,studio.config,rental,backend))
                     elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
-                    elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0]))
+                    elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0],refresh=query.get('refresh',['false'])[0]=='true'))
                     elif path=='/studio/publisher':self.reply(200,studio.publisher.status())
                     elif path=='/studio/cloud-render-capabilities':self.reply(200,studio.cloud_renders.capabilities())
                     elif path=='/studio/gpu-providers':

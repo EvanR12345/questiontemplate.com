@@ -90,7 +90,7 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
     const version=++refreshVersion;
     let status,files,publisher,renderer;
     try{
-      [status,files,publisher,renderer]=await Promise.all([api('storage?project='+p.id),api('files?project='+p.id),api('publisher').catch(()=>({configured:false,connected:false})),api('cloud-render-capabilities').catch(()=>({ready:false}))]);
+      [status,files,publisher,renderer]=await Promise.all([api('storage?project='+p.id),api('files?project='+p.id+'&refresh=true'),api('publisher').catch(()=>({configured:false,connected:false})),api('cloud-render-capabilities').catch(()=>({ready:false}))]);
     }catch{
       if(!active()||version!==refreshVersion)return;
       $('cloudStatus').textContent='Files could not be loaded. Connect the shared helper using Project actions, then Refresh files. Existing cloud saves are unchanged.';
@@ -104,7 +104,8 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
     $('cloudSync').disabled=!status.enabled;$('cloudSyncAll').disabled=!status.enabled;
     $('cloudSplit').disabled=!p.render?.path;
     $('makeThumbnail').disabled=!p.chapters.some(c=>c.scenes.some(s=>s.shots.some(shot=>shot.imagePath)));
-    $('cloudStatus').textContent=status.enabled?`${status.provider||'Cloud storage'} · ${state.status??'Not yet synced'} · ${state.files??0} cloud files · ${bytes(state.bytes??0)}${state.error?' · '+state.error:''}${status.error?' · '+status.error:''}`:status.error||'Cloud storage is not connected yet. Existing helper files remain safe.';
+    const savedFiles=files.files.filter(file=>file.cloud);
+    $('cloudStatus').textContent=status.enabled?`${status.provider||'Cloud storage'} · ${state.status??'Not yet synced'} · ${savedFiles.length} cloud files · ${bytes(savedFiles.reduce((sum,file)=>sum+file.bytes,0))}${state.error?' · '+state.error:''}${status.error?' · '+status.error:''}`:status.error||'Cloud storage is not connected yet. Existing helper files remain safe.';
     rows=files.files;paint();
     const legacyRender=publisher.cloudRendering===true&&publisherMatches&&status.provider==='Google Cloud Storage';
     await wireCloudRender({p,api,action,active,open,enabled:renderer.ready===true||legacyRender,capabilities:renderer.ready===true||!legacyRender?renderer:{}});

@@ -15,7 +15,7 @@ import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
 import {rendererPlacement,chapterDisplayStatus} from './studio-render-status.mjs?v=grounding-20261011';
 import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=scheduling-20261013';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=cloud-preview-20261013';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=cloud-verified-20261013';
 import {
   loadProjectState,
   saveStudioProject,

@@ -2,7 +2,7 @@
 import copy,json,math,threading,time,uuid
 from pathlib import Path
 from cost_control import atomic_replace
-from studio_gpu_providers import GPUProviderError,GPUCapacityUnavailable,GPURequestUncertain,label,number
+from studio_gpu_providers import GPUProviderError,GPUCapacityUnavailable,GPURequestUncertain,GPUConnectNotReady,label,number
 
 
 class CloudGPULease:
@@ -109,7 +109,10 @@ class CloudGPULease:
                             except GPUProviderError:
                                 self.finished.wait(1);continue
                             pod={'id':self.pod,'ssh':{'direct':connection},'provider':provider_name}
-                            self.connector(pod);self.runner.prepare(pod);self.check()
+                            try:self.connector(pod)
+                            except GPUConnectNotReady:
+                                self.finished.wait(1);continue
+                            self.runner.prepare(pod);self.check()
                             self.save(status='RUNNING',ready=self.clock())
                             return
                         self.finished.wait(1)
