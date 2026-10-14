@@ -31,13 +31,13 @@ MODELS = {
     'qwen3-tts-1.7b': {'name':'Qwen3-TTS 1.7B · CustomVoice',
         'repo':'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice', 'location':'kaggle',
         'license':'Apache-2.0', 'commercial':True, 'instructions':True,
-        'note':'Built-in Ryan narrator with delivery instructions. T4 compatibility needs a real audition.'},
+        'note':'Built-in Ryan narrator with delivery instructions and bounded T4 batches.'},
     'dia-1.6b': {'name':'Dia 1.6B', 'repo':'nari-labs/Dia-1.6B-0626', 'location':'kaggle',
         'license':'Apache-2.0', 'commercial':True, 'instructions':False,
         'note':'English dialogue model. Short passages and a generated voice anchor; long-form drift remains unverified.'},
     'fish-s2-pro': {'name':'Fish Audio S2 Pro', 'repo':'fishaudio/s2-pro', 'location':'kaggle',
         'license':'Fish Audio Research License', 'commercial':False, 'instructions':False,
-        'note':'Research auditions allowed; monetized narration requires a separate Fish commercial license. T4 fit is unverified.'},
+        'note':'Research auditions allowed; monetized narration requires a separate Fish commercial license. Tested workflow uses two T4 GPUs.'},
 }
 
 def selected(settings):
@@ -207,7 +207,7 @@ class KaggleVoice:
             if self.clock()>=deadline:raise ValueError('Kaggle narration exceeded the four-hour wait. No duplicate was submitted.')
             self.sleep(8)
         gate('Downloading completed Kaggle narration')
-        self._run(['kernels','output',slug,'-p',str(folder),'--file-pattern',r'^(narration\.wav|voice-anchor\.wav|result\.json)$','-q','-o'])
+        self._run(['kernels','output',slug,'-p',str(folder),'--file-pattern',r'^(narration\.wav|voice-anchor\.wav|result\.json)$','-q','-o'],timeout=900)
         result=json.loads((folder/'result.json').read_text(encoding='utf-8'))
         if result.get('signature')!=signature or result.get('model')!=engine:
             raise ValueError('Kaggle result does not match the selected narration inputs.')

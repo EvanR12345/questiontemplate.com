@@ -1,4 +1,4 @@
-import {VOICE_MODELS,NARRATOR,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voices-final-20261014';
+import {VOICE_MODELS,NARRATOR,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voices-ready-20261014';
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
 import {imagePresetChanges} from './studio-image-presets.mjs?v=short-video-20261011';
 import {videoRecipePatch,videoSettingsHTML} from './studio-video-settings.mjs?v=short-video-20261011';
@@ -1710,7 +1710,7 @@ async function saveSettingsIfVisible() {
   if (tab === "settings" && settingsDrafts.has(project.id)) await saveSettings();
 }
 function voicePreviewResults() {
-  return (project.voicePreviews || []).slice().reverse().map(p => `<p>${escape(p.model || p.voice)} · ${p.speed}× · ${time(p.duration)} · ${escape(p.narrationDelivery || 'standard')} · ${escape(p.soundEffects || 'subtle')}${p.exportPath ? ' · AAC 128 kbps' : ' · lossless WAV'}</p><audio controls data-asset="${escape(p.exportPath || p.path)}"></audio>`).join('');
+  return (project.voicePreviews || []).slice().reverse().map(p => `<p>${escape(p.model || p.voice)} · ${p.speed}× · ${time(p.duration)} · ${escape(p.narrationDelivery || 'standard')} · ${escape(p.soundEffects || 'subtle')}${p.exportPath ? ' · AAC 128 kbps' : ' · lossless WAV'}</p><audio controls data-asset="${escape(p.exportPath || p.path)}"></audio><details><summary>Audition text</summary><p>${escape(p.text || "")}</p></details>`).join('');
 }
 function wireSettings() {
   $('#videoRecipeSource').innerHTML=projects.map(p=>`<option value="${escape(p.id)}" ${p.id===project.id?'selected':''}>${escape(p.name)}</option>`).join('');
