@@ -250,7 +250,11 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
                     elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0]))
                     elif path=='/studio/publisher':self.reply(200,studio.publisher.status())
-                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey','runpodActionKeyFile')})
+                    elif path=='/studio/cloud-render-capabilities':self.reply(200,studio.cloud_renders.capabilities())
+                    elif path=='/studio/gpu-providers':
+                        from studio_gpu_providers import provider_status
+                        self.reply(200,provider_status(studio.config,refresh=query.get('refresh',['false'])[0]=='true'))
+                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey','runpodActionKeyFile','vastApiKey','liumApiKey','gpuProviderKeyFile')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
                 except FileNotFoundError as error:
@@ -378,6 +382,13 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 return make(studio.store,body['project'],body.get('options',{}))
             if path=='/studio/cloud-render':
                 studio.store.load(body['project'])
+                if body.get('backend')=='marketplace':
+                    operation=body['operation'];options=body.get('options') or {};pid=body['project']
+                    if operation=='start':return studio.cloud_renders.start(pid,options)
+                    if operation=='status':return studio.cloud_renders.status(pid,options.get('id'))
+                    if operation=='cancel':return studio.cloud_renders.cancel(pid,options.get('id'))
+                    raise ValueError('Unknown cloud-render operation.')
+                if body.get('backend') not in (None,'google-run'):raise ValueError('Unknown cloud-render backend.')
                 studio.publisher.validate_storage(studio.storage)
                 result=studio.publisher.render(body['operation'],body['project'],body.get('options'))
                 if result.get('status')=='COMPLETE':

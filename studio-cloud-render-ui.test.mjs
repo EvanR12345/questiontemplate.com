@@ -23,6 +23,18 @@ test('refresh after browser restart discovers the saved project job before cance
   assert.deepEqual(calls[0],{project:project.id,operation:'status'});
   assert.equal(calls[1].options.id,'b'.repeat(32));assert.equal(client.state.cancelRequested,true);
 });
+test('marketplace requests require an explicit cap and retain it after a lost reply',async()=>{
+  const calls=[];let lost=true;
+  const client=new CloudRenderClient(project,async(_,body)=>{
+    calls.push(body);if(lost){lost=false;throw Error('Lost reply');}
+    return {id:body.options.id,status:'QUEUED'};
+  },()=> 'a'.repeat(32),{backend:'marketplace'});
+  await assert.rejects(client.start('youtube'),/explicit total/);assert.equal(calls.length,0);
+  await assert.rejects(client.start('youtube',.50));
+  await assert.rejects(client.start('youtube',1),/changing its cap/);
+  await client.start('youtube',.50);
+  assert.deepEqual(calls[0],calls[1]);assert.equal(calls[0].backend,'marketplace');assert.equal(calls[0].options.capUSD,.50);
+});
 test('render controls begin disabled and keep the destination choice explicit',()=>{
   const html=cloudRenderForm(project);
   assert.match(html,/id="cloudRenderStart" disabled/);assert.match(html,/value="patreon" selected/);

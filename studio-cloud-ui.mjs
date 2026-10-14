@@ -1,6 +1,6 @@
 import {thumbnailPicker,wireThumbnailPicker} from './studio-thumbnail-picker.mjs?v=picker-20261009';
 // Cloud storage and finishing controls share the existing Studio connection.
-import {cloudRenderForm,wireCloudRender} from './studio-cloud-render-ui.mjs?v=cloud-render-3';
+import {cloudRenderForm,wireCloudRender} from './studio-cloud-render-ui.mjs?v=cloud-render-4';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bytes=n=>n>=2**30?(n/2**30).toFixed(2)+' GiB':n>=2**20?(n/2**20).toFixed(1)+' MiB':(n/1024).toFixed(1)+' KiB';
 const transferring=new Set();
@@ -88,9 +88,9 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
   }
   async function refresh(){
     const version=++refreshVersion;
-    let status,files,publisher;
+    let status,files,publisher,renderer;
     try{
-      [status,files,publisher]=await Promise.all([api('storage?project='+p.id),api('files?project='+p.id),api('publisher').catch(()=>({configured:false,connected:false}))]);
+      [status,files,publisher,renderer]=await Promise.all([api('storage?project='+p.id),api('files?project='+p.id),api('publisher').catch(()=>({configured:false,connected:false})),api('cloud-render-capabilities').catch(()=>({ready:false}))]);
     }catch{
       if(!active()||version!==refreshVersion)return;
       $('cloudStatus').textContent='Files could not be loaded. Connect the shared helper using Project actions, then Refresh files. Existing cloud saves are unchanged.';
@@ -106,7 +106,8 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
     $('makeThumbnail').disabled=!p.chapters.some(c=>c.scenes.some(s=>s.shots.some(shot=>shot.imagePath)));
     $('cloudStatus').textContent=status.enabled?`${status.provider||'Cloud storage'} · ${state.status??'Not yet synced'} · ${state.files??0} cloud files · ${bytes(state.bytes??0)}${state.error?' · '+state.error:''}${status.error?' · '+status.error:''}`:status.error||'Cloud storage is not connected yet. Existing helper files remain safe.';
     rows=files.files;paint();
-    await wireCloudRender({p,api,action,active,open,enabled:publisher.cloudRendering===true&&publisherMatches&&status.provider==='Google Cloud Storage'});
+    const legacyRender=publisher.cloudRendering===true&&publisherMatches&&status.provider==='Google Cloud Storage';
+    await wireCloudRender({p,api,action,active,open,enabled:renderer.ready===true||legacyRender,capabilities:renderer.ready===true||!legacyRender?renderer:{}});
     if(!active()||version!==refreshVersion)return;
     const publishedJobs=await Promise.all((p.publishing??[]).map(async job=>{
       if(!publisher.configured||['COMPLETE','CANCELLED'].includes(job.status))return job;

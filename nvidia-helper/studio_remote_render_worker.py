@@ -1,0 +1,149 @@
+"""Render-only SSH worker. Object capabilities arrive on stdin, never argv/logs.
+
+No director, speech or diffusion modules are imported. The caller owns the GPU
+lease and signs only this job's immutable object uploads. Video bytes travel
+from this worker to Google, not through the laptop.
+"""
+import base64,gzip,hashlib,io,json,math,mimetypes,os,re,shutil,subprocess,sys,time,urllib.request
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+def safe_url(value):
+    parsed=urlparse(value)
+    if (parsed.scheme!='https' or parsed.username or parsed.password or parsed.fragment
+            or not (parsed.hostname=='storage.googleapis.com' or
+                    (parsed.hostname or '').endswith('.storage.googleapis.com'))):
+        raise ValueError('Only private Google object capabilities are accepted.')
+    return value
+
+
+def emit(value):
+    print(json.dumps(value,separators=(',',':')),flush=True)
+
+
+def receive():
+    line=sys.stdin.readline()
+    if not line or len(line)>16*1024*1024:raise RuntimeError('Render controller disconnected or returned invalid control data.')
+    value=json.loads(line)
+    if not isinstance(value,dict):raise ValueError('Render control must be structured.')
+    if value.get('encoding')=='gzip-json':
+        packed=base64.b64decode(value['payload'],validate=True)
+        with gzip.GzipFile(fileobj=io.BytesIO(packed)) as compressed:raw=compressed.read(64*1024*1024+1)
+        if len(raw)>64*1024*1024 or hashlib.sha256(raw).hexdigest()!=value.get('sha256'):
+            raise ValueError('Invalid compressed render control identity or size.')
+        value=json.loads(raw)
+        if not isinstance(value,dict):raise ValueError('Render control must be structured.')
+    return value
+
+
+def run(spec):
+    if not re.fullmatch(r'[a-f0-9]{32}',spec.get('id','')):raise ValueError('Invalid render job identity.')
+    if os.name=='nt' or not (os.environ.get('RUNPOD_POD_ID') or os.environ.get('STUDIO_GPU_CLOUD')=='1'):
+        raise RuntimeError('Render-only worker requires the owned cloud pod.')
+    deadline=spec.get('deadline')
+    if type(deadline) not in (int,float) or not math.isfinite(deadline) or deadline<=time.time():raise ValueError('Render deadline expired.')
+    root=Path('/workspace')/('studio-render-only-'+spec['id'])
+    if root.exists():raise ValueError('This render identity already has working files; do not replay it.')
+    root.mkdir();started=time.monotonic();last_progress=0.;upload_seconds=0.;uploads=[]
+    from studio_data import ProjectStore,validate_project
+    from studio_gpu_render import NativeVideoRenderer
+    store=ProjectStore(root)
+    project=validate_project(spec['project']);pid=project['id']
+    records=spec.get('assets',[])
+    if not isinstance(records,list) or not records:raise ValueError('Saved source assets required.')
+    total=sum(r['bytes'] for r in records)
+    if shutil.disk_usage(root).free<total*4+256*2**20:raise RuntimeError('Insufficient cloud scratch; sources remain in Google.')
+    def gate(message=''):
+        nonlocal last_progress
+        if time.time()>=deadline:raise RuntimeError('Render spending deadline reached.')
+        now=time.monotonic()
+        if now-last_progress>=4:
+            emit({'event':'progress','stage':message or 'Rendering saved footage','elapsed':now-started})
+            last_progress=now
+    restore_started=time.monotonic()
+    for record in records:
+        gate('Loading saved Google assets')
+        if (type(record.get('bytes')) is not int or not 0<record['bytes']<=2**30
+                or not re.fullmatch(r'[a-f0-9]{64}',record.get('sha256',''))):raise ValueError('Invalid source identity.')
+        target=store.asset_local(pid,record['path']);target.parent.mkdir(parents=True,exist_ok=True)
+        checksum=hashlib.sha256();count=0
+        with urllib.request.urlopen(safe_url(record['url']),timeout=60) as response,target.open('xb') as output:
+            for part in iter(lambda:response.read(1024*1024),b''):
+                gate('Loading saved Google assets');count+=len(part)
+                if count>record['bytes']:raise ValueError('Source exceeded saved size.')
+                checksum.update(part);output.write(part)
+        if count!=record['bytes'] or checksum.hexdigest()!=record['sha256']:raise ValueError('Cloud source checksum mismatch.')
+    restored=time.monotonic()-restore_started
+    project=store.save(project)
+    renderer=NativeVideoRenderer(store,{'ffmpeg':'/usr/bin/ffmpeg','renderWorkers':1})
+    operations=[]
+    ordinary_run=renderer.run
+    def measured(args,*rest,**kwargs):
+        began=time.monotonic()
+        kind='shot' if '-frames:v' in args else 'effects' if '-filter_complex_script' in args else 'mux'
+        try:return ordinary_run(args,*rest,**kwargs)
+        finally:operations.append({'kind':kind,'seconds':time.monotonic()-began})
+    renderer.run=measured
+    def completed(path):
+        nonlocal upload_seconds
+        if '.partial.' in path.name:return
+        relative=path.relative_to(store.folder(pid)).as_posix()
+        if path.suffix.lower()!='.mp4':return
+        # Original media stays archived. Unreferenced render caches do not need
+        # a paid transfer for every shot; completed chapter videos are reusable.
+        if path.name.startswith('clip-') or path.name.endswith('-visual.mp4'):return
+        digest=hashlib.sha256()
+        with path.open('rb') as source:
+            for part in iter(lambda:source.read(1024*1024),b''):digest.update(part)
+        checksum=digest.hexdigest();size=path.stat().st_size
+        emit({'event':'asset','path':relative,'bytes':size,'sha256':checksum})
+        capability=receive()
+        if capability.get('path')!=relative or capability.get('sha256')!=checksum:raise ValueError('Upload capability identity mismatch.')
+        began=time.monotonic()
+        if not capability.get('exists'):
+            headers=capability.get('headers',{})
+            if (set(headers)!={'Content-Type','x-goog-if-generation-match','x-goog-meta-sha256'}
+                    or headers['x-goog-if-generation-match']!='0' or headers['x-goog-meta-sha256']!=checksum):
+                raise ValueError('Upload must be immutable and checksum-bound.')
+            with path.open('rb') as body:
+                request=urllib.request.Request(safe_url(capability['url']),data=body,method='PUT',
+                    headers=headers|{'Content-Length':str(size)})
+                with urllib.request.urlopen(request,timeout=120) as response:
+                    if not 200<=response.status<300:raise RuntimeError('Google rejected render upload.')
+        upload_seconds+=time.monotonic()-began
+        emit({'event':'uploaded','path':relative,'bytes':size,'sha256':checksum})
+        uploads.append({'path':relative,'bytes':size,'sha256':checksum})
+    renderer.on_output=completed
+    render_started=time.monotonic()
+    result=renderer.full(project,gate)
+    render_seconds=time.monotonic()-render_started
+    final=store.asset(pid,result['path'])
+    check_started=time.monotonic()
+    metadata=json.loads(subprocess.check_output(['/usr/bin/ffprobe','-v','error','-show_streams','-show_format','-of','json',str(final)],text=True))
+    subprocess.run(['/usr/bin/ffmpeg','-v','error','-i',str(final),'-f','null','-'],check=True,capture_output=True,timeout=120)
+    video=next(s for s in metadata['streams'] if s['codec_type']=='video')
+    if (video['width'],video['height'],video['avg_frame_rate'])!=(1280,720,'30/1'):raise ValueError('Unexpected cloud video format.')
+    if abs(float(metadata['format']['duration'])-result['duration'])>.1:raise ValueError('Unexpected narration/video duration mismatch.')
+    checksum=hashlib.sha256()
+    with final.open('rb') as source:
+        for part in iter(lambda:source.read(1024*1024),b''):checksum.update(part)
+    final_checksum=checksum.hexdigest()
+    import torch
+    emit({'event':'complete','result':result,'sha256':final_checksum,'bytes':final.stat().st_size,
+        'sourceTransferSeconds':restored,'renderAndUploadsSeconds':render_seconds,'uploadSeconds':upload_seconds,
+        'decodeVerificationSeconds':time.monotonic()-check_started,'operations':operations,'uploadedAssetsCount':len(uploads),
+        'width':video['width'],'height':video['height'],'fps':video['avg_frame_rate'],'frames':video.get('nb_frames'),
+        'fileDuration':float(metadata['format']['duration']),'gpu':torch.cuda.get_device_name(0),
+        'totalWorkerSeconds':time.monotonic()-started,
+        'peakRetainedScratchBytes':sum(p.stat().st_size for p in root.rglob('*') if p.is_file()),
+        'modelGenerationCalls':0,'directorCalls':0,'voiceGenerationCalls':0})
+
+
+if __name__=='__main__':
+    try:run(receive())
+    except BaseException as error:
+        # Capabilities and private URLs must never leak via urllib tracebacks.
+        detail=re.sub(r'https?://\S+','[private object URL]',str(error))[-400:]
+        emit({'event':'failed','errorType':type(error).__name__,'detail':detail})
+        raise SystemExit(1)

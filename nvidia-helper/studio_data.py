@@ -379,7 +379,7 @@ def validate_project(p):
     if p['settings'].get('director',{}).get('executionMode','classic') not in ('classic','staged','staged-review','staged-lean'):
         raise ValueError('Choose classic or staged Luna directing.')
     if p['settings'].get('director',{}).get('executionMode','classic').startswith('staged'):
-        from studio_overlap import validate_overlap
+        from studio_director_limits import validate_overlap
         validate_overlap(p,{})
     if p['settings'].get('director',{}).get('reasoningProfile','selected') not in ('selected','adaptive'):
         raise ValueError('Choose selected or adaptive director reasoning.')
@@ -387,10 +387,10 @@ def validate_project(p):
         raise ValueError('Choose Standard, Flex or Fast Luna processing.')
     if p['settings'].get('director',{}).get('executionMode')=='staged-lean' and p['settings']['director'].get('processingTier','default')=='fast':
         raise ValueError('Lean Luna supports Standard or Flex processing; premium Fast is not enabled.')
-    from director_staged import fact_group_limits,visual_group_limits
+    from studio_director_limits import fact_group_limits,visual_group_limits
     fact_group_limits(p['settings'].get('director',{}))
     visual_group_limits(p['settings'].get('director',{}))
-    from director_pipeline import validate_source_visual_overlap,fact_beats_mode
+    from studio_director_limits import validate_source_visual_overlap,fact_beats_mode
     validate_source_visual_overlap(p['settings'].get('director',{}))
     fact_beats_mode(p['settings'].get('director',{}))
     cadence=p['settings'].get('director',{}).get('cadencePerMinute')

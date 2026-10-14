@@ -2,6 +2,7 @@ import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
 import {imagePresetChanges} from './studio-image-presets.mjs?v=short-video-20261011';
 import {videoRecipePatch,videoSettingsHTML} from './studio-video-settings.mjs?v=short-video-20261011';
 import {gpuSettingsForm,gpuSettingsValues} from './studio-gpu-settings.mjs?v=5090-wait-20261011';
+import {providerSetupForm,providerSetupValues} from './studio-provider-setup.mjs?v=providers-20261013';
 import {directorLimits,directorSummary,directorSettings,directorRequestControls} from './studio-director-settings.mjs?v=luna-standard-controls-20261010';
 import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-state.mjs?v=forms-20261009';
 import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
@@ -14,7 +15,7 @@ import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
 import {rendererPlacement,chapterDisplayStatus} from './studio-render-status.mjs?v=grounding-20261011';
 import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=scheduling-20261013';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=files-progress-20261010';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=cloud-preview-20261013';
 import {
   loadProjectState,
   saveStudioProject,
@@ -727,7 +728,7 @@ function settings() {
       ["1024x1024", "1024 × 1024 · cloud square"],
     ],
     i.width + "x" + i.height,
-  )}</select></label><label>Steps<input id="settingSteps" type="number" min="1" max="50" value="${i.steps}"></label><label>Guidance<input id="settingGuidance" type="number" min="1" max="14" step=".5" value="${i.guidance}"></label><label>Sampler<input id="settingSampler" value="${escape(i.sampler)}"></label><label>Scheduler<input id="settingScheduler" value="${escape(i.scheduler)}"></label></div><label class="inline"><input id="settingFallback" type="checkbox" ${i.fallbackEnabled ? "checked" : ""}>Enable explicit SD 1.5 fallback when the chosen provider fails</label><button id="editCustomLayout">Edit custom pacing targets</button> <button id="editImageSettings">Edit conditioning / LoRA / full generation settings</button> <button id="configureCloud">Cloud setup · Luna + Runpod</button> <button id="configureManagedGPU">Automatic GPU startup / shutdown</button> <button id="reconcileManagedGPU">Recover interrupted rental</button> <button id="configureRuntimes">Configure local runtime paths</button><p class="muted">Unsupported settings are rejected before jobs are queued. No silent model substitution.</p></details><button class="primary" id="productionSaveSettings">Save project settings</button><p id="settingsDraftStatus" class="muted" role="status"></p>`;
+  )}</select></label><label>Steps<input id="settingSteps" type="number" min="1" max="50" value="${i.steps}"></label><label>Guidance<input id="settingGuidance" type="number" min="1" max="14" step=".5" value="${i.guidance}"></label><label>Sampler<input id="settingSampler" value="${escape(i.sampler)}"></label><label>Scheduler<input id="settingScheduler" value="${escape(i.scheduler)}"></label></div><label class="inline"><input id="settingFallback" type="checkbox" ${i.fallbackEnabled ? "checked" : ""}>Enable explicit SD 1.5 fallback when the chosen provider fails</label><button id="editCustomLayout">Edit custom pacing targets</button> <button id="editImageSettings">Edit conditioning / LoRA / full generation settings</button> <button id="configureCloud">Cloud setup · Luna + Runpod</button> <button id="configureGPUProviders">GPU marketplaces · Vast + Lium</button> <button id="configureManagedGPU">Automatic GPU startup / shutdown</button> <button id="reconcileManagedGPU">Recover interrupted rental</button> <button id="configureRuntimes">Configure local runtime paths</button><p class="muted">Unsupported settings are rejected before jobs are queued. No silent model substitution.</p></details><button class="primary" id="productionSaveSettings">Save project settings</button><p id="settingsDraftStatus" class="muted" role="status"></p>`;
 }
 function shotMotionLabel(shot) {
   const mode = project.settings.video.motionMode || "director";
@@ -1877,6 +1878,13 @@ function wireSettings() {
     await patch("project", project.id, {settings: {...project.settings,
       image: {...project.settings.image, ...result.settings, fallbackEnabled: false}}}, true);
     note("Qwen cloud images connected. Existing shots and completed videos are preserved. New shots use character references automatically; change an existing shot in its editor to regenerate it with Qwen.");
+  });
+  $("#configureGPUProviders").onclick = () => action(async()=>{
+    const status=await api('gpu-providers?refresh=true');
+    formDialog('GPU marketplaces · Vast + Lium',providerSetupForm(status),async()=>{
+      health=await api('config',providerSetupValues(document));
+      note('Provider settings saved privately. No GPU rented. A real render test is required before automatic switching is enabled.');
+    });
   });
   $("#configureCloud").onclick = () => {
     const ready = health?.directorProviders?.["openai-luna"]?.installed;

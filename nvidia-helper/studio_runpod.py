@@ -147,7 +147,7 @@ class ProductionGPU:
             raise ManagedGPUError('Owned startup receipt has an invalid format.')
         if (receipt['project']!=self.project or receipt['podId']!=self.pod
                 or not isinstance(receipt['name'],str)
-                or not re.fullmatch(r'studio-two-copy-5090-[a-f0-9]{12}',receipt['name'])
+                or not re.fullmatch(getattr(self,'owned_startup_pattern',r'studio-two-copy-5090-[a-f0-9]{12}'),receipt['name'])
                 or type(receipt['started']) not in (int,float) or not math.isfinite(receipt['started'])
                 or not 0<=self.clock()-receipt['started']<=120
                 or type(receipt['capUSD']) not in (int,float)

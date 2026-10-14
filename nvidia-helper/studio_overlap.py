@@ -1,4 +1,5 @@
 """Opt-in cloud overlap inside one authoritative full-story queue job."""
+from studio_director_limits import shot_task_limit, validate_overlap
 import copy
 import hashlib
 import threading
@@ -35,43 +36,8 @@ class StaleExecution(ValueError):
     pass
 
 
-def shot_task_limit(project, options):
-    """Keep one image lane supplied while bounded API reviews are in flight.
-
-    This is admission concurrency, not additional model copies or GPUs. A
-    modest five-task ceiling bounds snapshots, API reservations and recovery.
-    Explicit settings retain the caller's smaller limit.
-    """
-    settings = project['settings']
-    parallelism = settings['director'].get('parallelism', 1)
-    default = min(5, max(3, parallelism + 1)) if check_level(settings) != 'off' else 3
-    limit = options.get('overlapShots', default)
-    if isinstance(limit, bool) or not isinstance(limit, int) or not 2 <= limit <= 5:
-        raise ValueError('Choose two to five in-flight cloud shot tasks.')
-    return limit
 
 
-def validate_overlap(project, options):
-    settings=project['settings']
-    if settings['image']['provider']!='comfyui' or settings['director'].get('provider')!='openai-luna':
-        raise ValueError('Cloud overlap requires ComfyUI images and the Luna director.')
-    if settings.get('economyPanels'):
-        raise ValueError('Panel generation does not support cloud overlap.')
-    cap=settings.get('budget',{}).get('openaiUSD')
-    if isinstance(cap,bool) or not isinstance(cap,(int,float)) or not 0<cap<float('inf'):
-        raise ValueError('Set an explicit API spending cap before using cloud overlap.')
-    fallback=settings['image'].get('fallback',{})
-    if settings['image'].get('fallbackEnabled') and fallback.get('provider')!='comfyui':
-        raise ValueError('Cloud overlap requires a cloud-only image fallback.')
-    director_limit=settings['director'].get('parallelism',1)
-    director_max=8 if settings['director'].get('executionMode','classic').startswith('staged') else 3
-    if isinstance(director_limit,bool) or not isinstance(director_limit,int) or not 1<=director_limit<=director_max:
-        raise ValueError('Choose bounded parallel director calls: up to three classic or eight staged.')
-    shot_task_limit(project, options)
-    for chapter in project['chapters']:
-        for scene in chapter['scenes']:
-            if any(shot['imageProvider']!='comfyui' for shot in scene['shots']):
-                raise ValueError('Every shot must use ComfyUI before enabling cloud overlap.')
 
 
 class CloudStoryOverlap:

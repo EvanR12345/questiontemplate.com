@@ -56,6 +56,20 @@ class CloudCredentialsTest(unittest.TestCase):
                 service.configure({"runpodApiKey": "rpa_" + "b" * 30})
             self.assertFalse(service.config_path.exists())
 
+    def test_marketplace_keys_preserve_working_audio_director_and_runpod_credentials(self):
+        with tempfile.TemporaryDirectory() as folder:
+            service=self.service(folder)
+            service.configure({'openaiApiKey':'sk-'+'a'*30,'runpodApiKey':'rpa_'+'b'*30})
+            service.configure({'vastApiKey':'v'*40,'gpuProviderOrder':['vast','lium']})
+            service.configure({'liumApiKey':'l'*40})
+            saved=json.loads((Path(folder)/'.studio-secrets.json').read_text())
+            self.assertEqual(set(saved),{'openaiApiKey','runpodApiKey','vastApiKey','liumApiKey'})
+            public=service.config_path.read_text()
+            for secret in saved.values():self.assertNotIn(secret,public)
+            self.assertEqual(service.config['gpuProviderOrder'],['vast','lium'])
+            with self.assertRaises(ValueError):service.configure({'gpuMaxHourlyUSD':float('nan')})
+            with self.assertRaises(ValueError):service.configure({'gpuWorkingDiskGB':2})
+
 
 if __name__ == "__main__":
     unittest.main()

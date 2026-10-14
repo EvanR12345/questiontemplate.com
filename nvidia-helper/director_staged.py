@@ -3,6 +3,7 @@
 No factual checkpoint is published before a complete chapter plan commits.
 Frozen snapshots are request-local; existing chapter/handoff/edit guards own commit.
 """
+from studio_director_limits import fact_group_limits, visual_group_limits, FACT_GROUP_LIMITS, VISUAL_PACKING_LIMITS
 import copy
 import math
 import re
@@ -11,27 +12,10 @@ from director_pipeline import fact_beats_mode
 from story_grounding import apply_environment_event, require_owners
 
 
-FACT_GROUP_LIMITS={48:9000,96:18000,128:24000,256:32000}
-VISUAL_PACKING_LIMITS={'small':(12,6000,8),'balanced':(24,12000,12),'large':(40,18000,20)}
 
 
-def fact_group_limits(director):
-    count=director.get('factGroupSentences',48)
-    if type(count) is not int or count not in FACT_GROUP_LIMITS:
-        raise ValueError('Choose a bounded source-fact group of 48, 96, 128 or 256 sentences.')
-    if count==256 and director.get('executionMode')!='staged-lean':
-        raise ValueError('Wider source-fact groups require Lean Luna.')
-    return count,FACT_GROUP_LIMITS[count]
 
 
-def visual_group_limits(director):
-    packing=director.get('visualPacking','small')
-    if packing not in VISUAL_PACKING_LIMITS:
-        raise ValueError('Choose small, balanced or large visual request groups.')
-    if director.get('executionMode')!='staged-lean':
-        if packing!='small':raise ValueError('Larger visual request groups require Lean Luna.')
-        return 24,6000,8
-    return VISUAL_PACKING_LIMITS[packing]
 
 
 def relevant_main_cast(known, chapter, passes, previous=None):

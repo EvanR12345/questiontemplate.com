@@ -99,6 +99,8 @@ class StudioService:
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)"
         )
+        # A lost cloud execution is never replayed as a fresh paid allocation.
+        self.db.execute("UPDATE jobs SET status='INTERRUPTED',message='Helper restarted during cloud rendering. Reconcile the saved rental and results; no automatic new rental.' WHERE kind='render-cloud' AND status='RUNNING'")
         recovered = self.db.execute(
             "UPDATE jobs SET status='QUEUED',message='Helper restarted. Resume restarts this item using saved assets and seed.' WHERE status='RUNNING'"
         ).rowcount
@@ -107,6 +109,8 @@ class StudioService:
         ).fetchone()
         self.paused = bool(recovered or row and row[0] == "1")
         self.db.commit()
+        from studio_cloud_render_jobs import CloudRenderJobs
+        self.cloud_renders=CloudRenderJobs(self)
         self.sync_queue_states()
         self.thread = threading.Thread(
             target=self.worker, daemon=True, name="story-production"
@@ -362,6 +366,11 @@ class StudioService:
             "openaiPromptCacheMode",
             "openaiServiceTier",
             "runpodApiKey",
+            "vastApiKey",
+            "liumApiKey",
+            "gpuProviderOrder",
+            "gpuMaxHourlyUSD",
+            "gpuWorkingDiskGB",
             "runpodManagedPodId",
             "runpodPreparedPodIds",
             "runpodRequiredGPUType",
@@ -375,6 +384,15 @@ class StudioService:
         }
         if not isinstance(data, dict) or any(k not in allowed for k in data):
             raise ValueError("Unknown helper configuration option.")
+        if 'gpuProviderOrder' in data:
+            values=data['gpuProviderOrder']
+            if not isinstance(values,list) or not values or any(type(v) is not str or v not in ('vast','lium') for v in values) or len(set(values))!=len(values):
+                raise ValueError('Choose Vast, Lium, or both in the preferred order.')
+        if 'gpuMaxHourlyUSD' in data and (type(data['gpuMaxHourlyUSD']) not in (int,float) or
+                not math.isfinite(data['gpuMaxHourlyUSD']) or not .01<=data['gpuMaxHourlyUSD']<=100):
+            raise ValueError('Set a finite GPU hourly ceiling.')
+        if 'gpuWorkingDiskGB' in data and (type(data['gpuWorkingDiskGB']) is not int or not 25<=data['gpuWorkingDiskGB']<=1000):
+            raise ValueError('Set cloud working storage between 25 and 1000 GB.')
         if 'runpodManagedPodId' in data and data['runpodManagedPodId'] and not re.fullmatch(r'[A-Za-z0-9_-]{8,64}',str(data['runpodManagedPodId'])):
             raise ValueError('Enter the existing reusable Runpod pod ID, or leave blank for external management.')
         if data.get('runpodSSHKeyFile') and not Path(data['runpodSSHKeyFile']).is_file():
@@ -429,12 +447,12 @@ class StudioService:
             self.unload_models()
             data = dict(data)
             secret_updates = {}
-            for field in ("openaiApiKey", "runpodApiKey"):
+            for field in ("openaiApiKey", "runpodApiKey", "vastApiKey", "liumApiKey"):
                 if field not in data:
                     continue
                 key = str(data.pop(field)).strip()
                 if key and (len(key) < 20 or field == "openaiApiKey" and not key.startswith("sk-")):
-                    raise ValueError("Enter a valid " + ("OpenAI" if field == "openaiApiKey" else "Runpod") + " API key.")
+                    raise ValueError("Enter a valid " + {"openaiApiKey":"OpenAI","runpodApiKey":"Runpod","vastApiKey":"Vast","liumApiKey":"Lium"}[field] + " API key.")
                 secret_updates[field] = key
             if secret_updates:
                 path = self.config_path.with_name(".studio-secrets.json")
@@ -456,6 +474,8 @@ class StudioService:
                     self.config["openaiKeyFile"] = str(path)
                 if "runpodApiKey" in saved:
                     self.config["runpodKeyFile"] = str(path)
+                if "vastApiKey" in saved or "liumApiKey" in saved:
+                    self.config["gpuProviderKeyFile"] = str(path)
             self.config.update(data)
             self.config_path.write_text(
                 json.dumps(self.config, indent=2), encoding="utf-8"
@@ -979,6 +999,10 @@ class StudioService:
                     (' AND project=?' if project else ''),(project,) if project else ()
                 )
             elif action == "retry":
+                if job:
+                    target=self.db.execute('SELECT kind FROM jobs WHERE id=?',(job,)).fetchone()
+                    if target and target['kind']=='render-cloud':
+                        raise ValueError('Cloud rentals are not replayed through Retry. Reconcile the saved result and start a new explicitly capped request.')
                 available = (
                     1000
                     - self.db.execute(
@@ -986,7 +1010,7 @@ class StudioService:
                     ).fetchone()[0]
                 )
                 self.db.execute(
-                    "UPDATE jobs SET status='QUEUED',message='Retrying with saved seed' WHERE id IN (SELECT id FROM jobs WHERE status IN ('FAILED','CANCELLED')"
+                    "UPDATE jobs SET status='QUEUED',message='Retrying with saved seed' WHERE id IN (SELECT id FROM jobs WHERE status IN ('FAILED','CANCELLED') AND kind!='render-cloud'"
                     + (" AND id=?" if job else "")
                     + " ORDER BY priority DESC,created LIMIT ?)",
                     (job, available) if job else (available,),
@@ -1072,7 +1096,7 @@ class StudioService:
                                          {'jobId': job['id']}, kind='job')
             trace_token=self.trace.parent.set(trace_job)
             from studio_power import ProductionPowerRequest
-            power=ProductionPowerRequest(enabled=job['kind'] in ('produce-story','prepare-story','render-full','render-chapter'))
+            power=ProductionPowerRequest(enabled=job['kind'] in ('produce-story','prepare-story','render-full','render-chapter','render-cloud'))
             try:
                 power.acquire()
                 self.legacy_queue.control("yield-audio")
@@ -1153,6 +1177,10 @@ class StudioService:
                         self.inspect_intro(p)
                     elif job["kind"] == "character-reference":
                         self.character_reference(p, options)
+                    elif job['kind']=='render-cloud':
+                        self.unload_models()
+                        self.providers['existing'].unload()
+                        self.cloud_renders.run(p,options)
                     else:
                         self.unload_models()
                         self.providers["existing"].unload()
@@ -1231,8 +1259,8 @@ class StudioService:
                 finally:
                     self.gpu_lock.release()
             except AudioYield:
-                state = "QUEUED"
-                message = "Paused to free models for Audio"
+                state = "CANCELLED" if job['kind']=='render-cloud' else "QUEUED"
+                message = "Cloud render stopped for Audio; no automatic rental retry" if job['kind']=='render-cloud' else "Paused to free models for Audio"
                 self.paused = True
             except CloudBudgetPaused as error:
                 state = "QUEUED"
@@ -1261,10 +1289,14 @@ class StudioService:
                             s["generationError"] = message
 
                 try:
-                    self.store.mutate(job["project"], fail)
+                    if job['kind']!='render-cloud':self.store.mutate(job["project"], fail)
                 except Exception:
                     pass
             finally:
+                if job['kind']=='render-cloud':
+                    try:self.cloud_renders.finish(job,state,message)
+                    except Exception:
+                        state='FAILED';message='Cloud render receipt could not be saved. Reconcile the owned rental before another attempt.'
                 try:self.finish_queued_image_rental(job,state)
                 except Exception as error:
                     state='FAILED';message=type(error).__name__+': '+str(error)[:1800]

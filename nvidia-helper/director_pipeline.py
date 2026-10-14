@@ -4,6 +4,7 @@ The existing director map still owns durable request IDs, API lanes, budget,
 stale-input checks and validated response caches. This queue adds one producer
 thread and at most two frozen factual-group batches, not more API slots.
 """
+from studio_director_limits import validate_source_visual_overlap, fact_beats_mode
 import contextvars
 import copy
 import threading
@@ -57,20 +58,8 @@ class AcceptedVisualQueue:
         if self.pool:self.pool.shutdown(wait=True,cancel_futures=True)
 
 
-def validate_source_visual_overlap(director):
-    value=director.get('sourceVisualOverlap',False)
-    if type(value) is not bool:raise ValueError('Accepted source/visual overlap must be enabled or disabled.')
-    if value and director.get('executionMode')!='staged-lean':
-        raise ValueError('Accepted source/visual overlap requires Lean Luna.')
-    return value
 
 
-def fact_beats_mode(director):
-    value=director.get('factBeatsMode','analyst')
-    if value not in ('analyst','storyboard'):raise ValueError('Choose analyst or storyboard emotional-beat ownership.')
-    if value=='storyboard' and director.get('executionMode')!='staged-lean':
-        raise ValueError('Storyboard-owned beats require Lean Luna.')
-    return value
 
 
 def source_visual_overlap_enabled(service,director):
