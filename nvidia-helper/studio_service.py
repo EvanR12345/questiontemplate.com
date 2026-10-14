@@ -511,7 +511,7 @@ class StudioService:
         self.before_audio()
         name=f'outro-narration-{expected[:20]}.wav'
         self.create_selected_audio(spoken_text(s),p['settings']['voice'],p['settings']['speed'],
-            self.store.folder(p['id'])/name,'off',p['settings'].get('narrationDelivery','standard'),settings=p['settings'])
+            self.store.folder(p['id'])/name,'off',p['settings'].get('narrationDelivery','standard'),settings=p['settings'],project=p)
         def saved(q):
             if audio_signature(q)!=expected: raise ValueError('Outro changed while its narration was prepared. Prior audio retained.')
             q['settings'].setdefault('engagement',{}).update(outroAudioPath=name,outroAudioSignature=expected)
@@ -2363,6 +2363,7 @@ class StudioService:
             p['settings'].get('narrationDelivery', 'standard'),
             p['settings'].get('emphasisPhrases', []),
             settings=p['settings'],
+            project=p,
         )
         result.update(
             signature=signature,
@@ -2412,9 +2413,9 @@ class StudioService:
             preview = dict(existing)
         else:
             result = self.create_selected_audio(text, voice, speed, self.store.folder(p['id']) / name, effects, delivery, emphasis,
-                settings=voice_settings,preview=True)
+                settings=voice_settings,preview=True,project=p)
             preview = {**result, 'path':name, 'text':text, 'voice':voice, 'speed':speed,
-                       'soundEffects':effects}
+                       'soundEffects':result.get('soundEffects',effects)}
         renderer = getattr(self, 'renderer', None)
         if renderer and renderer.config.get('ffmpeg'):
             preview.update(renderer.audio_preview(p['id'], name, self.gate))
@@ -2425,14 +2426,26 @@ class StudioService:
             previews[:] = previews[-12:]
         self.store.mutate(p['id'], saved)
 
-    def create_selected_audio(self,text,voice,speed,target,effects='subtle',delivery='standard',emphasis=(),settings=None,preview=False):
+    def create_selected_audio(self,text,voice,speed,target,effects='subtle',delivery='standard',emphasis=(),settings=None,preview=False,project=None):
         settings=dict(settings or {})
         if voice_location(settings)=='local':
             return self.create_audio(text,voice,speed,target,effects,delivery,emphasis)
         if type(speed) not in (int,float) or not math.isfinite(speed) or not .5<=speed<=2:
             raise ValueError('Voice speed must be 0.5–2.')
         settings.update(speed=speed,soundEffects=effects,voice=voice)
-        result=KaggleVoice(self.config).generate(text,target,settings,self.gate,preview=preview)
+        reference=None;engine=voice_engine(settings)
+        if project and engine in ('dia-1.6b','fish-s2-pro'):
+            anchor=project.get('voiceAnchors',{}).get(engine)
+            if anchor:
+                raw=self.store.asset(project['id'],anchor['path']).read_bytes()
+                if len(raw)>8*1024*1024:raise ValueError('Generated voice reference exceeds 8 MiB.')
+                reference={'audio':base64.b64encode(raw).decode(),'text':anchor['text']}
+        result=KaggleVoice(self.config).generate(text,target,settings,self.gate,preview=preview,reference=reference)
+        if project and result.get('voiceAnchor'):
+            anchor=dict(result['voiceAnchor']);anchor['path']=str(Path(anchor['path']).relative_to(self.store.folder(project['id']))).replace('\\','/')
+            self.store.mutate(project['id'],lambda p:p.setdefault('voiceAnchors',{}).setdefault(engine,anchor))
+            project.setdefault('voiceAnchors',{}).setdefault(engine,anchor)
+            result['voiceAnchor']=anchor
         if preview:
             verified=set(self.config.get('kaggleVerifiedModels',[]));verified.add(voice_engine(settings))
             self.config['kaggleVerifiedModels']=sorted(verified)
@@ -2599,7 +2612,7 @@ class StudioService:
         name='intro-'+signature[:12]+'-'+uid()+'.wav'
         result=self.create_selected_audio(text,p['settings']['voice'],p['settings']['speed'],self.store.folder(p['id'])/name,
             p['settings'].get('soundEffects','subtle'),p['settings'].get('narrationDelivery','standard'),
-            p['settings'].get('emphasisPhrases',[]),settings=p['settings'])
+            p['settings'].get('emphasisPhrases',[]),settings=p['settings'],project=p)
         saved={'audioPath':name,'audioDuration':result['duration'],'audioSentences':result['sentences'],
                'audioTextDigest':digest(text),'audioSignature':signature}
         def publish(q):

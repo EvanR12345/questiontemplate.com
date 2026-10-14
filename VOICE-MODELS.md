@@ -18,6 +18,26 @@ marked unverified until checked; configuring a token is not a GPU compatibility
 test. Qwen CustomVoice is selected deliberately: VoiceDesign and Base are different
 checkpoints and are not downloaded together.
 
+## Tested Kaggle compatibility fixes
+
+Kaggle's current Python 3.13/Torch 2.11 image differs from the laptop's working
+Python 3.11 environment. Remote packages use an isolated environment sharing the
+provided Torch/CUDA installation. No new Torch/CUDA stack is installed locally.
+
+- Qwen uses bounded batches of up to four passages with the Ryan preset.
+- Dia uses the official `Dia-1.6B-0626` checkpoint, float32, and grouped short
+  passages. Sentence times inside a group are explicitly estimated; the complete
+  audio duration is measured. Generated voice anchors persist per project.
+- Fish uses both Kaggle T4 GPUs: semantic model on GPU 0 and codec on GPU 1.
+  Two narrowly asserted patches to the pinned upstream loader/router keep token
+  and decoder devices correct. Generated voice anchors persist per project.
+- Optional cloud Kokoro reuses the existing helper's CPU phonemizer and runs only
+  the neural model on Kaggle. Its isolated package import excludes the unused
+  English G2P stack that fails to build on Python 3.13. The local model is unchanged.
+
+Short generated WAV tests establish technical compatibility, not a quality ranking
+or a guarantee of long-story consistency. Listen to the auditions before choosing.
+
 ## Private Kaggle connection
 
 1. Complete free Kaggle registration and any required phone verification.

@@ -8,7 +8,7 @@ test('all four voice models remain selectable without claiming availability',()=
 });
 test('voice settings persist without including credentials',()=>{
   const fields={'#settingVoiceEngine':{value:'qwen3-tts-1.7b'},'#settingVoiceInstruction':{value:NARRATOR},'#settingFishLicense':{checked:false}};
-  assert.deepEqual(voiceValues({querySelector:id=>fields[id]}),{voiceEngine:'qwen3-tts-1.7b',voiceInstruction:NARRATOR,voiceCompute:'local',fishCommercialLicense:false});
+  assert.deepEqual(voiceValues({querySelector:id=>fields[id]}),{voiceEngine:'qwen3-tts-1.7b',voiceInstruction:NARRATOR,voiceCompute:'kaggle',fishCommercialLicense:false});
 });
 test('unknown model and oversized instruction are rejected',()=>{
   assert.throws(()=>voiceValues({querySelector:id=>id==='#settingVoiceEngine'?{value:'bad'}:null}));

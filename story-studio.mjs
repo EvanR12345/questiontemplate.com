@@ -1,4 +1,4 @@
-import {VOICE_MODELS,NARRATOR,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voices-20261014';
+import {VOICE_MODELS,NARRATOR,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voices-final-20261014';
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
 import {imagePresetChanges} from './studio-image-presets.mjs?v=short-video-20261011';
 import {videoRecipePatch,videoSettingsHTML} from './studio-video-settings.mjs?v=short-video-20261011';

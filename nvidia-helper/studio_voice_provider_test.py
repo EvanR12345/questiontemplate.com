@@ -41,7 +41,12 @@ class VoiceProviderTest(unittest.TestCase):
             self.assertEqual(len(calls),1)
             metadata=json.loads(next(Path(directory).glob('.kaggle-*/kernel-metadata.json')).read_text())
             self.assertIs(metadata['is_private'],True)
+            self.assertEqual(metadata['title'].lower().replace(' ','-'),metadata['id'].split('/')[1])
             self.assertFalse(target.exists())
+
+    def test_kokoro_cloud_is_separate_from_the_working_local_cache(self):
+        self.assertEqual(identity({'voiceEngine':'kokoro-82m','voiceCompute':'local'}),{})
+        self.assertEqual(identity({'voiceEngine':'kokoro-82m','voiceCompute':'kaggle'})['voiceCompute'],'kaggle')
 
     def test_result_mismatch_cannot_overwrite_saved_audio(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -49,11 +54,26 @@ class VoiceProviderTest(unittest.TestCase):
             provider=KaggleVoice({'kaggleUsername':'manhwastory2'})
             def run(args,**kw):
                 if args[1]=='status':return 'complete'
+                if args[1]=='pull':
+                    folder=Path(args[args.index('-p')+1]);(folder/'kernel-metadata.json').write_text(json.dumps({'is_private':True}))
                 if args[1]=='output':
                     folder=Path(args[args.index('-p')+1]);(folder/'result.json').write_text(json.dumps({'signature':'wrong','model':'dia-1.6b'}))
                 return 'Kernel version successfully pushed.'
             with patch.object(KaggleVoice,'health',return_value={'reason':''}),patch.object(provider,'_run',side_effect=run):
                 with self.assertRaisesRegex(ValueError,'does not match'):provider.generate('A quiet gate.',target,{'voiceEngine':'dia-1.6b'},lambda m:None,preview=True)
             self.assertEqual(target.read_bytes(),b'original')
+
+    def test_unconfirmed_privacy_stops_before_audio_download(self):
+        with tempfile.TemporaryDirectory() as directory:
+            provider=KaggleVoice({'kaggleUsername':'manhwastory2'});calls=[]
+            def run(args,**kw):
+                calls.append(args)
+                if args[1]=='pull':
+                    folder=Path(args[args.index('-p')+1]);(folder/'kernel-metadata.json').write_text(json.dumps({'is_private':False}))
+                return 'Kernel version successfully pushed.'
+            with patch.object(KaggleVoice,'health',return_value={'reason':''}),patch.object(provider,'_run',side_effect=run):
+                with self.assertRaisesRegex(ValueError,'private notebook visibility'):
+                    provider.generate('A quiet gate.',Path(directory)/'audio.wav',{'voiceEngine':'dia-1.6b'},lambda m:None,preview=True)
+            self.assertFalse(any(args[1]=='output' for args in calls))
 
 if __name__=='__main__':unittest.main()
