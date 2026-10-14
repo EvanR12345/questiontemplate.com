@@ -66,6 +66,20 @@ class ProviderTests(unittest.TestCase):
             with self.assertRaises(GPURequestUncertain) as error:
                 client.create({'id':12345,'diskGB':25},'studio-cloud-'+'a'*32,'official-image')
             self.assertNotIn('SECRET',str(error.exception));self.assertEqual(len(calls),1)
+    def test_rate_limit_retries_reads_but_never_repeats_rental_creation(self):
+        calls=[]
+        def limited(request,**_):
+            calls.append(request)
+            if len(calls)==1:raise urllib.error.HTTPError(request.full_url,429,'Limited',{'Retry-After':'0'},None)
+            return io.BytesIO(b'{}')
+        client=VastProvider(transport=limited)
+        with patch('studio_gpu_providers.time.sleep') as sleep:
+            client.call('/v0/bundles',{},authenticated=False)
+            self.assertEqual(len(calls),2);sleep.assert_called_once_with(2)
+        calls.clear();client.key=lambda:'V'*40
+        with self.assertRaises(GPUProviderError):
+            client.create({'id':12345,'diskGB':25},'studio-cloud-'+'a'*32,'official-image')
+        self.assertEqual(len(calls),1)
 
     def test_stale_feed_is_not_treated_as_available(self):
         old=datetime.datetime.fromtimestamp(time.time()-1000,datetime.timezone.utc).isoformat()
@@ -87,6 +101,12 @@ class ProviderTests(unittest.TestCase):
         client.call=lambda *args,**kwargs:calls.append(args)
         self.assertEqual(client.stop(identity,name)['status'],'RELEASED')
         self.assertEqual(calls,[])
+    def test_vast_stopped_contract_does_not_require_docker_pull_to_finish(self):
+        client=VastProvider();calls=[]
+        client.owned=lambda *_:{'cur_state':'stopped','intended_status':'stopped','actual_status':'loading'}
+        client.call=lambda *args,**kw:calls.append(args)
+        self.assertEqual(client.stop('12345','studio-cloud-'+'a'*32)['cur_state'],'stopped')
+        self.assertEqual(calls,[])
 
 
 class LeaseTests(unittest.TestCase):
@@ -96,7 +116,7 @@ class LeaseTests(unittest.TestCase):
         self.runner=SimpleNamespace(prepare=lambda _:self.events.append('prepare'))
     def tearDown(self):self.temp.cleanup()
     def client(self,failure=None):
-        client=SimpleNamespace(key=lambda:'private',offers=lambda *_:[{'id':'12345','hourlyUSD':.7,'diskGB':25}],
+        client=SimpleNamespace(key=lambda:'private',offers=lambda *_:[{'id':'12345','hourlyUSD':.7,'diskGB':25,'downloadUSDPerGB':0,'uploadUSDPerGB':0}],
             owned=lambda *_:{'actual_status':'running','dph_total':.7},connection=lambda _:{'host':'192.0.2.1','port':22,'username':'root'},
             stop=lambda *_:self.events.append('stop'),resources=lambda _:[])
         def create(*_):
@@ -143,11 +163,11 @@ class LeaseTests(unittest.TestCase):
     def test_confirmed_capacity_rejection_allows_another_offer(self):
         first=self.client(GPUCapacityUnavailable('gone'));second=self.client()
         # Both fake clients use the Vast contract; provider order remains explicit.
-        first.offers=lambda *_:[{'id':'1','hourlyUSD':.7,'diskGB':25}]
+        first.offers=lambda *_:[{'id':'1','hourlyUSD':.7,'diskGB':25,'downloadUSDPerGB':0,'uploadUSDPerGB':0}]
         calls=[first,second]
         first.create=lambda *_:(_ for _ in ()).throw(GPUCapacityUnavailable('gone'))
         lease=self.lease({'vast':first})
-        first.offers=lambda *_:[{'id':'1','hourlyUSD':.7,'diskGB':25},{'id':'2','hourlyUSD':.7,'diskGB':25}]
+        first.offers=lambda *_:[{'id':i,'hourlyUSD':.7,'diskGB':25,'downloadUSDPerGB':0,'uploadUSDPerGB':0} for i in ('1','2')]
         attempt=[0]
         def create(*_):
             attempt[0]+=1

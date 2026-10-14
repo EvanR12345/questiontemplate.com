@@ -386,8 +386,8 @@ class StudioService:
             raise ValueError("Unknown helper configuration option.")
         if 'gpuProviderOrder' in data:
             values=data['gpuProviderOrder']
-            if not isinstance(values,list) or not values or any(type(v) is not str or v not in ('vast','lium') for v in values) or len(set(values))!=len(values):
-                raise ValueError('Choose Vast, Lium, or both in the preferred order.')
+            from studio_gpu_broker import provider_order
+            provider_order({'gpuProviderOrder':values})
         if 'gpuMaxHourlyUSD' in data and (type(data['gpuMaxHourlyUSD']) not in (int,float) or
                 not math.isfinite(data['gpuMaxHourlyUSD']) or not .01<=data['gpuMaxHourlyUSD']<=100):
             raise ValueError('Set a finite GPU hourly ceiling.')
@@ -631,8 +631,8 @@ class StudioService:
               'Saved major findings will be repaired automatically within the saved caps; warnings remain visible.' if unattended and blocking_reviews else
               f'{len(review_flags)} saved images need review before the full video can finish. Review or explicitly repair those shots first; completed images and findings stay saved.'
               if review_flags else 'No saved visual findings currently block the full video.')
-        from studio_runpod import configured
-        managed=configured(self.config)
+        from studio_gpu_broker import gpu_configured
+        managed=gpu_configured(self.config)
         if images_needed:
             if (selected_strategy=='align' or managed) and provider_name=='comfyui':
                 try:
@@ -646,9 +646,8 @@ class StudioService:
                     window=p['settings'].get('cloudWindow',{});cap=window.get('gpuBudgetUSD')
                     check('gpu-cap',type(cap) in (int,float) and math.isfinite(cap) and cap>0,
                           'Automatic GPU startup needs a positive project GPU cap; its live rate is checked before startup.')
-                    check('gpu-connection',Path(self.config.get('runpodSSHKeyFile','')).is_file()
-                          and Path(self.config.get('runpodKeyFile','')).is_file(),
-                          'Managed image generation needs the existing dedicated SSH key and private Runpod management credential.')
+                    check('gpu-connection',Path(self.config.get('runpodSSHKeyFile','')).is_file(),
+                          'Managed image generation needs the existing dedicated SSH key and a verified provider credential.')
                     lease=self.store.root/'.managed-rental.json'
                     try:lease_state=json.loads(lease.read_text()) if lease.exists() else {}
                     except (OSError,ValueError):lease_state={'status':'UNKNOWN'}
@@ -1670,9 +1669,9 @@ class StudioService:
 
     def begin_queued_image_rental(self,project,job,options):
         """Reuse an owned rental only through a contiguous same-project burst."""
-        from studio_runpod import configured,ProductionGPU
+        from studio_gpu_broker import gpu_configured,GPUReservation
         shot=options.get('shotSnapshot') or get_shot(project,job['chapter'],job['shot'])
-        if not configured(self.config) or shot['imageProvider']!='comfyui':return
+        if not gpu_configured(self.config) or shot['imageProvider']!='comfyui':return
         # Do not rent merely to discover that an unbudgeted repair is blocked.
         if options.get('budgetedQCRepair') or (shot.get('imagePath') and not shot.get('generationStale')
                 and shot.get('qc',{}).get('pass') is False):
@@ -1682,7 +1681,7 @@ class StudioService:
         require_shot(project,shot,new_image=True)
         rental=getattr(self,'_queued_image_rental',None)
         if rental is None:
-            rental=ProductionGPU(self.config,self.store.root/'.managed-rental.json',project['id'],
+            rental=GPUReservation(self.config,self.store.root/'.managed-rental.json',project['id'],
                 project['settings'].get('cloudWindow',{}),self.providers['comfyui'],self.gate,
                 lambda state:self.record_gpu_state(project['id'],state),
                 image_selection={'model':shot['imageModel'],'workflow':shot['workflow']})
@@ -1706,13 +1705,13 @@ class StudioService:
             reason=project_cap_reason(run_settings(self.store.load(pid)['settings']))
             if reason:raise ValueError(reason)
             self.store.mutate(pid,lambda p:p.update(settings=run_settings(p['settings'])),skip_unchanged=True)
-        from studio_runpod import configured,ProductionGPU
-        if getattr(self,'_overlap',None) or not configured(self.config):
+        from studio_gpu_broker import gpu_configured,GPUReservation
+        if getattr(self,'_overlap',None) or not gpu_configured(self.config):
             return self._produce_story(pid,options)
         p=self.store.load(pid)
         if p['settings']['image']['provider']!='comfyui':
             raise ValueError('Managed rental requires the configured cloud ComfyUI workflow.')
-        rental=ProductionGPU(self.config,self.store.root/'.managed-rental.json',pid,
+        rental=GPUReservation(self.config,self.store.root/'.managed-rental.json',pid,
             p['settings'].get('cloudWindow',{}),self.providers['comfyui'],self.gate,
             lambda state:self.record_gpu_state(pid,state),owned_startup=options.get('ownedWorkerReceipt'),image_selection={
                 'model':p['settings']['image']['model'],'workflow':p['settings']['image']['workflow']})

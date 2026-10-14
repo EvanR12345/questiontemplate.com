@@ -273,7 +273,7 @@ class RentalTest(unittest.TestCase):
             service.providers={'comfyui':self.provider};service.gate=Mock()
             lease=Mock()
             service._produce_story=Mock(side_effect=error,return_value='finished')
-            with patch('studio_runpod.ProductionGPU',return_value=lease):
+            with patch('studio_gpu_broker.GPUReservation',return_value=lease):
                 if error:
                     with self.assertRaises(type(error)):service.produce_story('project',{})
                 else:self.assertEqual(service.produce_story('project',{}),'finished')

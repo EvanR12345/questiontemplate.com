@@ -52,7 +52,9 @@ export function plannerSettings(config, profile, evidence) {
     const quote=topology.computeQuote;
     if(Number.isFinite(quote?.hourlyUSD)&&quote.hourlyUSD>0&&Number.isFinite(quote.observedAt)){
       next.pricingBasis='quote';next.quotedGPUHourly=quote.hourlyUSD;
-      warnings.push(`Using the configured 5090's last observed compute quote: $${quote.hourlyUSD.toFixed(2)}/hour, recorded ${new Date(quote.observedAt*1000).toLocaleString()}. Container/shared storage remain separate; this is not a new availability or price guarantee.`);
+      if(quote.workingDiskIncluded)next.containerGB=0;
+      warnings.push(`Using ${quote.provider??'the configured 5090'}'s last observed compute quote: $${quote.hourlyUSD.toFixed(2)}/hour, recorded ${new Date(quote.observedAt*1000).toLocaleString()}. ${quote.workingDiskIncluded?'Working disk is already included; it is not added twice. Shared storage remains separate.':'Container/shared storage remain separate.'} This is not a new availability or price guarantee.`);
+      if(quote.provider&&quote.provider!=='runpod')warnings.push('The fallback marketplace can have different runtime and delivery speed. Until compatible production history is learned, Runpod benchmark timing remains a comparison reference, not measured fallback throughput.');
     }
     warnings.push(topology.gpuLanes===1?'Following production uses installed scheduling and one model-worker benchmark. It does not activate the proposed render overlap or multi-copy GPU experiment.':'Following production requests two independent model copies and four bounded request slots on one GPU. Startup must verify both private processes before any image is submitted; end-to-end speed remains a projection until a matching production run.');
   }

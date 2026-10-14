@@ -211,7 +211,7 @@ class ProductionGPU:
                 _,self.pod,pod=min(eligible,key=lambda item:(item[0],item[1]))
                 return pod
             if self.clock()>=until:
-                raise ManagedGPUError('No eligible prepared GPU became available within the wait limit. No rental started and no different GPU substituted.')
+                raise ManagedGPUUnavailable('No eligible prepared GPU became available within the wait limit. No rental started and no different GPU substituted.')
             # Cancellation is checked at least once a second, even while waiting.
             for _ in range(min(30,max(1,math.ceil(until-self.clock())))):
                 self.gate('Waiting for GPU availability; no rental started')

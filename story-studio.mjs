@@ -2,7 +2,7 @@ import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
 import {imagePresetChanges} from './studio-image-presets.mjs?v=short-video-20261011';
 import {videoRecipePatch,videoSettingsHTML} from './studio-video-settings.mjs?v=short-video-20261011';
 import {gpuSettingsForm,gpuSettingsValues} from './studio-gpu-settings.mjs?v=5090-wait-20261011';
-import {providerSetupForm,providerSetupValues} from './studio-provider-setup.mjs?v=providers-20261013';
+import {providerSetupForm,providerSetupValues} from './studio-provider-setup.mjs?v=providers-20261014';
 import {directorLimits,directorSummary,directorSettings,directorRequestControls} from './studio-director-settings.mjs?v=luna-standard-controls-20261010';
 import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-state.mjs?v=forms-20261009';
 import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
@@ -537,7 +537,7 @@ function render() {
         `<button role="tab" id="studio-tab-${v}" aria-controls="productionContent" aria-selected="${tab === v}" tabindex="${tab === v ? 0 : -1}" data-tab="${v}"><strong>${index < 5 ? index + 1 + ' · ' : ''}${label}</strong><small>${hint}</small></button>`,
     )
     .join("")}</nav>
-  <section id="productionContent" role="tabpanel" aria-labelledby="studio-tab-${tab}">${content()}</section><div class="queue-panel" id="productionQueue"></div><p class="save-state" id="productionSaveState">Saved assets stay in the helper output folder. Refresh restores this project.</p></div></div>`;
+  <section id="productionContent" role="tabpanel" aria-labelledby="studio-tab-${tab}">${content()}</section><div class="queue-panel" id="productionQueue"></div><p class="save-state" id="productionSaveState">Cloud-backed projects reopen after refresh. Local voice/render work can create temporary helper files. Check Files for each asset location.</p></div></div>`;
   root.dataset.focusContext=focusContext;
   if(tab==="settings")settingsDrafts.restore(project.id,root);
   wire();

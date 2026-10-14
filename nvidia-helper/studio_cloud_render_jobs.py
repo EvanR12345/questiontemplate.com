@@ -156,12 +156,12 @@ class CloudRenderJobs:
             elif kind=='rental':record.update(stage=value.get('status','Starting worker'),rentalStatus=value.get('status'))
             self.save(record)
         from studio_cloud_pod_render import CloudPodRenderer
-        from studio_cloud_gpu import CloudGPULease
+        from studio_gpu_broker import RenderGPUReservation
         verified=self.capabilities().get('providers',[])
         config=copy.deepcopy(self.studio.config)
-        config['gpuProviderOrder']=[p for p in config.get('gpuProviderOrder',['vast','lium']) if p in verified]
+        config['gpuProviderOrder']=[p for p in config.get('gpuProviderOrder',['runpod','vast','lium']) if p in verified]
         renderer=(self.renderer_factory or CloudPodRenderer)(self.studio.store,self.studio.storage,config,gate,
-            self.studio.store.root/'.managed-rental.json',progress,lease_factory=CloudGPULease)
+            self.studio.store.root/'.managed-rental.json',progress,lease_factory=RenderGPUReservation)
         try:
             gate('Checking saved cloud inputs');prepared=renderer.capabilities(project)
             report=renderer.run(render_project,identity,compute_cap,prepared_sources=prepared)

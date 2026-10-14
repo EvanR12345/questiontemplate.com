@@ -31,7 +31,7 @@ class ImageRentalTest(unittest.TestCase):
             paused=False,cancel=False,closed=False)
         self.rental=Mock(project='test')
     def test_contiguous_images_share_rental_then_stop_before_other_project(self):
-        with patch('studio_runpod.ProductionGPU',return_value=self.rental) as factory:
+        with patch('studio_gpu_broker.GPUReservation',return_value=self.rental) as factory:
             StudioService.begin_queued_image_rental(self.service,self.project,self.job,{'shotSnapshot':self.shot})
             self.service.db.execute.return_value.fetchone.return_value={'project':'test','kind':'image'}
             StudioService.finish_queued_image_rental(self.service,self.job,'COMPLETE')
@@ -50,13 +50,13 @@ class ImageRentalTest(unittest.TestCase):
         self.assertEqual(self.rental.stop.call_count,3)
     def test_unbudgeted_repair_never_rents_gpu(self):
         self.shot.update(imagePath='saved.png',qc={'pass':False})
-        with patch('studio_runpod.ProductionGPU') as factory:
+        with patch('studio_gpu_broker.GPUReservation') as factory:
             with self.assertRaisesRegex(ValueError,'unverified'):
                 StudioService.begin_queued_image_rental(self.service,self.project,self.job,{'shotSnapshot':self.shot})
             factory.assert_not_called()
     def test_invalid_prompt_never_buys_cold_startup(self):
         self.shot['prompt']=''
-        with patch('studio_runpod.ProductionGPU') as factory:
+        with patch('studio_gpu_broker.GPUReservation') as factory:
             with self.assertRaisesRegex(ValueError,'preflight'):
                 StudioService.begin_queued_image_rental(self.service,self.project,self.job,{'shotSnapshot':self.shot})
             factory.assert_not_called()

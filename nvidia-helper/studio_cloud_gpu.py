@@ -21,7 +21,7 @@ class CloudGPULease:
 
     def save(self,**values):
         with self.lock:
-            self.state.update(values);self.state['renderOnly']=True
+            self.state.update(values);self.state['renderOnly']=self.config.get('gpuWorkload','render')=='render'
             pending=self.path.with_suffix('.writing')
             with pending.open('w',encoding='utf-8') as f:
                 json.dump(self.state,f);f.flush()
@@ -61,12 +61,22 @@ class CloudGPULease:
                 offers=client.offers(disk,max_rate)
                 offers=[o for o in offers if o.get('downloadMbps',0)>=self.config.get('gpuMinDownloadMbps',0)
                         and o.get('reliability',0)>=self.config.get('gpuMinReliability',0)]
+                if provider_name=='vast':
+                    # A low hourly quote can hide expensive cold model/data
+                    # transfer. Prefer near-free networking for Studio workloads.
+                    offers=[o for o in offers if o['downloadUSDPerGB']<=self.config.get('gpuMaxDownloadUSDPerGB',.001)
+                            and o['uploadUSDPerGB']<=self.config.get('gpuMaxUploadUSDPerGB',.001)]
+                    if self.config.get('gpuWorkload')=='images':offers=[o for o in offers if o.get('cpuRAMMiB',0)>=32000]
             except GPUProviderError as error:
                 errors.append(str(error));continue  # Read-only failure is safe.
             for offer in offers[:3]:
                 self.gate('Checking '+provider_name+' capacity')
                 rate=number(offer['hourlyUSD'],.001)
-                seconds=(cap-previous)/rate*3600-90
+                transfer_reserve=0
+                if provider_name=='vast':
+                    cold_gb=16 if self.config.get('gpuWorkload')=='images' else 1
+                    transfer_reserve=cold_gb*offer['downloadUSDPerGB']+offer['uploadUSDPerGB']
+                seconds=(cap-previous-transfer_reserve)/rate*3600-90
                 if seconds<60:raise GPUProviderError('Remaining cap cannot cover startup and safe shutdown.')
                 identity=uuid.uuid4().hex;owned_label=label('studio-cloud-'+identity)
                 self.deadline=self.clock()+seconds;self.client=client;self.started=self.clock()
@@ -74,7 +84,8 @@ class CloudGPULease:
                 self.owned=True
                 self.save(status='SUBMISSION_UNKNOWN',provider=provider_name,project=self.project,
                     name=owned_label,podId=None,started=self.started,deadline=self.deadline,
-                    hourlyUSD=rate,capUSD=cap,offerId=offer['id'],diskGB=disk)
+                    hourlyUSD=rate,capUSD=cap,offerId=offer['id'],diskGB=disk,
+                    transferReserveUSD=transfer_reserve,offerSnapshot=offer)
                 threading.Thread(target=self.watch,args=(self.finished,),name='studio-cloud-gpu-watch',daemon=True).start()
                 try:
                     if provider_name=='vast':
@@ -91,6 +102,8 @@ class CloudGPULease:
                         self.pod=client.create(offer,owned_label,template,public_key,identity)
                     self.save(podId=self.pod,status='STARTING')
                     if provider_name=='lium':client.schedule_stop(self.pod,owned_label,self.deadline)
+                    if provider_name=='vast' and self.config.get('runpodSSHKeyFile'):
+                        client.attach_ssh(self.pod,owned_label,Path(self.config['runpodSSHKeyFile']+'.pub').read_text().strip())
                     # Cold container pulls are distinct from unavailable GPUs.
                     # They remain bounded by the actual spending deadline.
                     startup_until=min(self.deadline-20,self.started+600)
@@ -101,10 +114,10 @@ class CloudGPULease:
                         if live_rate>max_rate:
                             raise GPUProviderError('Allocated worker exceeds the approved hourly ceiling; stopping it.')
                         if live_rate!=self.state['hourlyUSD']:
-                            self.deadline=self.started+(cap-previous)/live_rate*3600-90
+                            self.deadline=self.started+(cap-previous-transfer_reserve)/live_rate*3600-90
                             self.save(hourlyUSD=live_rate,deadline=self.deadline)
                             if provider_name=='lium':client.schedule_stop(self.pod,owned_label,self.deadline)
-                        if row.get('actual_status',row.get('status','')).lower()=='running':
+                        if (row.get('actual_status') or row.get('status') or '').lower()=='running':
                             try:connection=client.connection(row)
                             except GPUProviderError:
                                 self.finished.wait(1);continue
@@ -113,9 +126,15 @@ class CloudGPULease:
                             except GPUConnectNotReady:
                                 self.finished.wait(1);continue
                             self.runner.prepare(pod);self.check()
+                            if self.config.get('gpuWorkload')=='images':
+                                import hashlib
+                                proof=self.runner.report
+                                self.save(workerCopies=2,workersVerified=True,workerGPU=proof['workers']['gpu'],
+                                    requestSlots=4,workingDiskIncludedInQuote=True,
+                                    imageBackendFingerprint=hashlib.sha256(json.dumps(proof['source'],sort_keys=True).encode()).hexdigest())
                             self.save(status='RUNNING',ready=self.clock())
                             return
-                        self.finished.wait(1)
+                        self.finished.wait(3 if provider_name=='vast' else 1)
                     raise GPUProviderError('Cloud worker startup exceeded its bounded window; this is not proof of no GPU capacity.')
                 except GPUCapacityUnavailable:
                     self.owned=False;self.finished.set();self.save(status='STOPPED',reason='Offer explicitly unavailable')

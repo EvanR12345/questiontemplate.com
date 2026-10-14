@@ -95,7 +95,15 @@ class ProviderHTTP:
         request=urllib.request.Request(self.base+path,data=json.dumps(body).encode() if body is not None else None,headers=h,method=verb)
         mutating=verb not in ('GET','HEAD') and not (self.provider=='vast' and path=='/v0/bundles')
         try:
-            with self.transport(request,timeout=30) as response:raw=response.read(8*1024*1024+1)
+            for attempt in range(3):
+                try:
+                    with self.transport(request,timeout=30) as response:raw=response.read(8*1024*1024+1)
+                    break
+                except urllib.error.HTTPError as error:
+                    if error.code!=429 or mutating or attempt==2:raise
+                    try:delay=float(error.headers.get('Retry-After','5'))
+                    except (TypeError,ValueError):delay=5
+                    time.sleep(max(2,min(30,delay)))
             if len(raw)>8*1024*1024:raise GPUProviderError('Provider response exceeded its safe size.')
             result=json.loads(raw)
             if isinstance(result,dict) and result.get('success') is False:
@@ -126,7 +134,8 @@ def vast_offer(row,disk_gb,max_hourly):
         'hourlyUSD':rate,'location':row.get('geolocation','Unknown'),'reliability':row['reliability'],
         'uploadMbps':number(row.get('inet_up',0)),'downloadMbps':number(row.get('inet_down',0)),
         'uploadUSDPerGB':number(row.get('inet_up_cost')),'downloadUSDPerGB':number(row.get('inet_down_cost')),
-        'diskGB':disk_gb,'diskIncludedInQuote':True,'availability':'PROVIDER_REPORTED','checked':time.time()}
+        'diskGB':disk_gb,'diskIncludedInQuote':True,'availability':'PROVIDER_REPORTED','checked':time.time(),
+        'cpuRAMMiB':number(row.get('cpu_ram',0))}
 
 
 def lium_offer(row,disk_gb,max_hourly):
@@ -162,7 +171,7 @@ class VastProvider(ProviderHTTP):
         expected=label(owned_label);rows=[];token=None
         for _ in range(100):
             from urllib.parse import urlencode
-            result=self.call('/v1/instances?'+urlencode({'limit':25,**({'next_token':token} if token else {})}))
+            result=self.call('/v1/instances/?'+urlencode({'limit':25,**({'next_token':token} if token else {})}))
             rows.extend(r for r in result.get('instances',[]) if r.get('label')==expected)
             token=result.get('next_token')
             if not token:return rows
@@ -182,11 +191,34 @@ class VastProvider(ProviderHTTP):
             'target_state':'running','env':{'NVIDIA_DRIVER_CAPABILITIES':'all'}},method='PUT')
         return resource_id('vast',result['new_contract'])
     def stop(self,id,owned_label):
-        self.owned(id,owned_label)
-        self.call('/v0/instances/'+resource_id('vast',id),{'state':'stopped'},method='PUT')
         row=self.owned(id,owned_label)
-        if row.get('actual_status')!='stopped':raise GPURequestUncertain('Vast has not confirmed the worker stopped.')
-        return row
+        # cur_state is the rental contract state. Docker's actual_status can
+        # continue to report "loading" after compute is stopped; the console
+        # then shows Inactive and disk-only pricing. Require both contract and
+        # intended state, rather than treating a requested stop alone as proof.
+        def stopped(r):return r.get('actual_status')=='stopped' or (r.get('cur_state')=='stopped' and r.get('intended_status')=='stopped')
+        if stopped(row):return row
+        self.call('/v0/instances/'+resource_id('vast',id),{'state':'stopped'},method='PUT')
+        for _ in range(10):
+            row=self.owned(id,owned_label)
+            if stopped(row):return row
+            time.sleep(1)
+        raise GPURequestUncertain('Vast has not confirmed the worker stopped.')
+    def start(self,id,owned_label):
+        self.owned(id,owned_label)
+        self.call('/v0/instances/'+resource_id('vast',id),{'state':'running'},method='PUT')
+    def destroy(self,id,owned_label):
+        self.owned(id,owned_label)
+        self.call('/v0/instances/'+resource_id('vast',id),method='DELETE')
+        if any(str(r.get('id'))==str(id) for r in self.resources(owned_label)):
+            raise GPURequestUncertain('Vast deletion has not been confirmed; do not repeat blindly.')
+        return {'id':str(id),'status':'REMOVED'}
+    def attach_ssh(self,id,owned_label,public_key):
+        self.owned(id,owned_label)
+        if not re.fullmatch(r'ssh-ed25519 [A-Za-z0-9+/=]+(?: [^\r\n]+)?',public_key):
+            raise GPUProviderError('Use the dedicated public SSH key; no private key leaves the laptop.')
+        result=self.call('/v0/instances/'+resource_id('vast',id)+'/ssh',{'ssh_key':public_key})
+        if result.get('success') is not True:raise GPUProviderError('Vast did not confirm the owned worker SSH grant.')
     def connection(self,row):
         ports=row.get('ports',{}).get('22/tcp',[])
         if not ports:raise GPUProviderError('Direct SSH is not ready yet.')
@@ -249,7 +281,7 @@ _inventory_cache={}
 
 def provider_status(config,refresh=False):
     """Private helper UI only. This is inventory, not startup verification."""
-    order=config.get('gpuProviderOrder',['vast','lium'])
+    order=config.get('gpuProviderOrder',['runpod','vast','lium'])
     secret=config.get('gpuProviderKeyFile')
     disk=config.get('gpuWorkingDiskGB',25);maximum=config.get('gpuMaxHourlyUSD',1.19)
     rows=[]
@@ -257,18 +289,42 @@ def provider_status(config,refresh=False):
         client=kind(secret)
         try:client.key();configured=True
         except GPUProviderError:configured=False
-        row={'provider':name,'credentialSaved':configured,'renderVerified':name in config.get('gpuRenderVerifiedProviders',[])}
-        cache_key=(name,disk,maximum)
+        row={'provider':name,'credentialSaved':configured,'renderVerified':name in config.get('gpuRenderVerifiedProviders',[]),
+             'imageVerified':name in config.get('gpuImageVerifiedProviders',[])}
+        proof=config.get('gpuImageVerification',{}).get(name,{})
+        if proof:row['imageBenchmark']={k:proof[k] for k in ('images','model','resolution','warmServerMedianSeconds','warmClientMedianSeconds','completeCloudSavedImagesPerMinute','scope') if k in proof}
+        cache_key=(name,disk,maximum,config.get('gpuMinDownloadMbps',0),config.get('gpuMinReliability',0))
         cached=_inventory_cache.get(cache_key)
         if refresh and (not cached or time.time()-cached['checked']>=60):
-            try:cached={'checked':time.time(),'offers':client.offers(disk,maximum),'error':''}
+            try:
+                offers=client.offers(disk,maximum)
+                offers=[o for o in offers if o.get('downloadMbps',0)>=config.get('gpuMinDownloadMbps',0)
+                        and o.get('reliability',0)>=config.get('gpuMinReliability',0)]
+                if name=='vast':offers=[o for o in offers if o['downloadUSDPerGB']<=config.get('gpuMaxDownloadUSDPerGB',.001)
+                    and o['uploadUSDPerGB']<=config.get('gpuMaxUploadUSDPerGB',.001)]
+                cached={'checked':time.time(),'offers':offers,'error':''}
             except GPUProviderError as error:cached={'checked':time.time(),'offers':[],'error':str(error)}
             _inventory_cache[cache_key]=cached
         if cached:row.update(copy_inventory(cached))
         rows.append(row)
+    from studio_runpod import configured as runpod_configured,RunpodClient
+    runpod_ready=runpod_configured(config)
+    row={'provider':'runpod','credentialSaved':runpod_ready,'imageVerified':runpod_ready,
+         'renderVerified':'runpod' in config.get('gpuRenderVerifiedProviders',[])}
+    cached=_inventory_cache.get(('runpod',))
+    if refresh and (not cached or time.time()-cached['checked']>=60):
+        try:
+            gpu=next(g for g in RunpodClient(config).gpu_catalog() if g.get('gpuId')=='NVIDIA GeForce RTX 5090')
+            cached={'checked':time.time(),'availability':gpu.get('available'),'regionalStock':gpu.get('dataCenterAvailability',[]),
+                    'hourlyUSD':gpu.get('securePricePerHr'),'error':''}
+        except Exception:cached={'checked':time.time(),'error':'Runpod inventory could not be confirmed. No rental started.'}
+        _inventory_cache[('runpod',)]=cached
+    if cached:row.update(copy_inventory(cached))
+    rows.insert(0,row)
     return {'providerOrder':order,'maxHourlyUSD':maximum,'workingDiskGB':disk,'providers':rows,
             'automaticRenderingReady':any(r['credentialSaved'] and r['renderVerified'] for r in rows),
-            'automaticImagesReady':False,'availabilityGuarantee':False}
+            'automaticImagesReady':any(r['credentialSaved'] and r['imageVerified'] and r['provider'] in order for r in rows),
+            'availabilityGuarantee':False}
 
 
 def copy_inventory(value):

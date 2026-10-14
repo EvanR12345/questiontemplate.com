@@ -312,7 +312,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             nonlocal next_media_cleanup
             if path=='/studio/gpu-reconcile':
                 if studio.current:raise ValueError('Wait for the active production job before reconciling an interrupted rental.')
-                from studio_runpod import reconcile
+                from studio_gpu_broker import reconcile
                 result=reconcile(studio.config,studio.store.root/'.managed-rental.json')
                 if result.get('project'):
                     studio.store.mutate(result['project'],lambda p:p.setdefault('production',{}).update(gpuRental=result))

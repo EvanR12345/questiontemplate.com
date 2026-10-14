@@ -75,6 +75,13 @@ class PromptQualityTest(unittest.TestCase):
         result['providerTimings']['totalClientSeconds']=float('nan');self.assertIsNone(generation_measurements(p,'x',result)['estimatedImageIntervalRentalUSD'])
         result['provider']='existing';self.assertIsNone(generation_measurements(p,'x',result)['recordedRentalHourlyUSD'])
 
+    def test_cached_sampler_selection_does_not_mean_cached_generated_image(self):
+        graph={'7':{'class_type':'KSamplerSelect'},'11':{'class_type':'SamplerCustomAdvanced'},'12':{'class_type':'VAEDecode'}}
+        entry={'status':{'messages':[['execution_cached',{'nodes':['7']}]]}}
+        evidence=execution_evidence(entry,graph)
+        self.assertFalse(evidence['actualSamplerOrDecodeCacheHit'])
+        self.assertEqual(evidence['samplingDecodeNodes'],['11','12'])
+
     def test_short_visual_supplements_can_be_selected_without_changing_scene_fact_guidance(self):
         director=DirectorProvider();director.call=Mock(return_value={'shots':[]})
         director.planScenes({'people':[]},lambda *a:None);original_scene_role=director.call.call_args.args[0]

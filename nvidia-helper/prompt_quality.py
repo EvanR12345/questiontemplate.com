@@ -42,12 +42,16 @@ def execution_evidence(entry, graph):
     start,end = stamps.get('execution_start'),stamps.get('execution_success')
     seconds = (end-start)/1000 if finite_positive(start) and finite_positive(end) and end>=start else None
     text = {str(n) for n,v in graph.items() if v.get('class_type') == 'CLIPTextEncode'}
-    sample = {str(n) for n,v in graph.items() if 'Sampler' in v.get('class_type','') or v.get('class_type') == 'VAEDecode'}
+    # KSamplerSelect caches a sampler function, not a generated latent/image.
+    # Classify known execution nodes only; unknown custom nodes stay unknown.
+    image_nodes={'KSampler','KSamplerAdvanced','SamplerCustom','SamplerCustomAdvanced','VAEDecode','VAEDecodeTiled'}
+    sample = {str(n) for n,v in graph.items() if v.get('class_type') in image_nodes}
     return {'serverExecutionSeconds':seconds,
             'actualTextEncoderCacheHit':bool(text & cached) if observed_cache and text else None,
             'actualSamplerOrDecodeCacheHit':bool(sample & cached) if observed_cache and sample else None,
             'cacheEvidencePresent':observed_cache, 'cachedNodes':sorted(cached),
-            'textEncoderNodes':sorted(text), 'cacheMeaning':'Any named CLIPTextEncode node hit; unknown if no cache event or matching nodes.',
+            'textEncoderNodes':sorted(text), 'samplingDecodeNodes':sorted(sample),
+            'cacheMeaning':'Known text-encoder or sampling/decode node hits only; sampler-function selection is excluded. Unknown without cache events or matching nodes.',
             'timingSource':'ComfyUI history execution_start to execution_success; milliseconds converted to seconds'}
 
 def generation_measurements(project, prompt, result):

@@ -15,6 +15,15 @@ class PlannerProfileTest(unittest.TestCase):
         self.assertNotIn('private-pod',json.dumps(result));self.assertNotIn('secret',json.dumps(result))
         for patch in ({'podId':'different-pod'},{'workersVerified':False},{'hourlyUSD':float('nan')}):
             self.assertIsNone(planner_profile(p,config=cfg,rental=lease|patch)['imageExecution']['computeQuote'])
+    def test_verified_marketplace_quote_keeps_disk_inclusion_and_hides_worker_identity(self):
+        p=new_project();cfg={'gpuImageVerifiedProviders':['vast']}
+        lease={'project':p['id'],'provider':'vast','podId':'PRIVATE-ID','workerGPU':'NVIDIA GeForce RTX 5090',
+            'workersVerified':True,'workerCopies':2,'hourlyUSD':.69,'started':100,'workingDiskIncludedInQuote':True}
+        quote=planner_profile(p,config=cfg,rental=lease)['imageExecution']['computeQuote']
+        self.assertTrue(quote['workingDiskIncluded']);self.assertEqual(quote['provider'],'vast')
+        self.assertNotIn('PRIVATE-ID',str(quote))
+        self.assertIsNone(planner_profile(p,config=cfg,rental=lease | {'project':'other'})['imageExecution']['computeQuote'])
+
     def test_new_projects_check_all_images_but_do_not_auto_repair(self):
         p=new_project();self.assertTrue(p['settings']['visionQC'])
         self.assertEqual(check_level(p['settings']),'practical');self.assertFalse(p['settings']['automaticRepair'])

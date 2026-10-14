@@ -135,6 +135,10 @@ def profile_for(stage, project, config, details=None):
             sampleEvery=settings.get('qcSampleEvery',5),backend=backend,execution='single-image-lane',
             automaticRepair=settings.get('automaticRepair',False),maxRetries=settings.get('maxImageRetries',0),
             style=settings.get('style'))
+        if stage in ('Image pipeline','Image generation','Character reference','Intro images','Automatic image repair'):
+            rental=project.get('production',{}).get('gpuRental',{})
+            if rental.get('provider') in ('vast','lium') and rental.get('project')==project['id']:
+                profile.update(cloudMarketplace=rental['provider'],cloudBackend=rental.get('imageBackendFingerprint','unverified'))
         if settings.get('unattendedProduction'):
             profile.update(unattended=True,repairBudgetMode=settings.get('qcRepairBudgetMode','overhead'),repairTiming='deferred')
         if stage=='Image pipeline':

@@ -41,13 +41,18 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
     estimates = {}
     director_observation=None
     gpu_quote=None
-    if (isinstance(rental,dict) and config and rental.get('podId')==config.get('runpodManagedPodId')
-            and config.get('runpodRequiredGPUType')=='NVIDIA GeForce RTX 5090'
+    verified_market=(isinstance(rental,dict) and config and rental.get('provider') in ('vast','lium')
+        and rental['provider'] in config.get('gpuImageVerifiedProviders',[]) and rental.get('project')==project['id']
+        and rental.get('workerGPU')=='NVIDIA GeForce RTX 5090')
+    verified_runpod=(isinstance(rental,dict) and config and rental.get('podId')==config.get('runpodManagedPodId')
+            and config.get('runpodRequiredGPUType')=='NVIDIA GeForce RTX 5090')
+    if ((verified_market or verified_runpod)
             and rental.get('workersVerified') is True and rental.get('workerCopies')==2
             and type(rental.get('hourlyUSD')) in (int,float) and math.isfinite(rental['hourlyUSD']) and rental['hourlyUSD']>0
             and type(rental.get('started')) in (int,float) and math.isfinite(rental['started'])):
         gpu_quote={'hourlyUSD':rental['hourlyUSD'],'observedAt':rental['started'],
-                   'scope':'Last observed compute quote for the configured, verified two-copy 5090; not a fresh availability/price guarantee.'}
+                   'provider':rental.get('provider','runpod'),'workingDiskIncluded':rental.get('workingDiskIncludedInQuote',False),
+                   'scope':'Last observed quote for the configured, verified two-copy 5090; not a fresh availability/price guarantee.'}
     if performance:
         # Exact profiles retain all failures and only teach from fresh successful
         # matching observations. No short-render cache is used to change throughput.
