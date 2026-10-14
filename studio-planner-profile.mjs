@@ -3,6 +3,8 @@ export function plannerSettings(config, profile, evidence) {
   if(profile?.version!==1)throw Error('Update the helper to load saved production settings.');
   const s=profile.settings, v=s.video, d=s.director, i=s.image;
   const warnings=[], next={...config};
+  if(s.voiceCompute==='kaggle' || s.voiceEngine && s.voiceEngine!=='kokoro-82m')
+    throw Error('Kaggle narration has no matching full-production calibration yet. Local Kokoro timings cannot estimate this voice. Use an audition and retain the existing planner scenario.');
   if(!['off','sampled','practical','strict'].includes(s.qcCheckLevel))throw Error('Unsupported saved visual check level.');
   next.qc=s.qcCheckLevel;
   next.sample=100/(s.qcSampleEvery||5);

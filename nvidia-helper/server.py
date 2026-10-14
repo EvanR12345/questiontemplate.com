@@ -254,7 +254,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/gpu-providers':
                         from studio_gpu_providers import provider_status
                         self.reply(200,provider_status(studio.config,refresh=query.get('refresh',['false'])[0]=='true'))
-                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey','runpodActionKeyFile','vastApiKey','liumApiKey','gpuProviderKeyFile')})
+                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey','runpodActionKeyFile','vastApiKey','liumApiKey','gpuProviderKeyFile','kaggleApiToken','kaggleKeyFile')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
                 except FileNotFoundError as error:

@@ -220,6 +220,7 @@ def new_project(name="My story"):
             "generationMode": "BALANCED",
             "autoContinue": False,
             "voice": "am_michael",
+            "voiceEngine": "kokoro-82m",
             "speed": 1.0,
             "narrationDelivery": "standard",
             "emphasisPhrases": ["already gone", "only twelve days"],
@@ -354,6 +355,8 @@ def validate_project(p):
         raise ValueError("Use up to 1000 chapters.")
     if not isinstance(p.get("settings"), dict) or not isinstance(p.get("intro"), dict):
         raise ValueError("Project settings and intro configuration are required.")
+    from studio_voice_provider import validate as validate_voice
+    validate_voice(p['settings'])
     if (
         not isinstance(p["intro"].get("duration"), (int, float))
         or not math.isfinite(p["intro"]["duration"])

@@ -68,7 +68,8 @@ def render_submission_signature(project, store, renderer=None, chapter_id=None):
             shots=[{'image':asset(s.get('imagePath')),**{k:s.get(k) for k in ('start','end','motion')}}
                    for s in intro.get('shots',[])])
     from studio_branding import identity as watermark_identity
+    from studio_voice_provider import identity as voice_identity
     return digest({'chapters':inputs,'video':project['settings']['video'],'intro':intro_input,
         'watermark':watermark_identity(project,store),
         'engagement':{k:v for k,v in project['settings'].get('engagement',{}).items() if k not in ('outroAudioPath','outroAudioSignature')},
-        'voiceSettings':{k:project['settings'].get(k) for k in ('voice','speed','narrationDelivery','soundEffects','emphasisPhrases')}})
+        'voiceSettings':{**voice_identity(project['settings']),**{k:project['settings'].get(k) for k in ('voice','speed','narrationDelivery','soundEffects','emphasisPhrases')}}})

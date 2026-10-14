@@ -158,6 +158,8 @@ def profile_for(stage, project, config, details=None):
             from studio_gpu_render import ENGINE
             profile['renderEngine']=dict(ENGINE)
     elif stage=='Narration':
+        from studio_voice_provider import identity
+        profile.update(identity(settings))
         from narration_audio import VERSION as delivery_version, FLOW_VERSION
         profile.update(voice=settings.get('voice'),speed=settings.get('speed',1),deliveryVersion=delivery_version,flowVersion=FLOW_VERSION,
             delivery=settings.get('narrationDelivery','standard'),effectMode=settings.get('soundEffects','subtle'),

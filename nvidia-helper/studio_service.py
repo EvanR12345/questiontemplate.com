@@ -27,6 +27,7 @@ from prompt_preflight import require_shot
 from queue_estimates import remaining_time, timing_profile
 from studio_performance import PerformanceStore,profile_for,observation_units,signature as performance_signature,host_execution_gaps,host_interruption_details
 from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, FLOW_VERSION, audio_segments, effect_pcm, create_connected_audio, speech_pcm
+from studio_voice_provider import identity as voice_identity, selected as voice_engine, location as voice_location, catalogue as voice_catalogue, KaggleVoice
 
 
 class JobCancelled(Exception):
@@ -317,6 +318,8 @@ class StudioService:
                           'maxHourlyUSD':self.config.get('runpodMaxHourlyUSD'),
                           'checkRegionalStock':bool(self.config.get('runpodCheckRegionalStock'))},
             "storage": self.storage.status(),
+            "voiceProviders": voice_catalogue(self.config),
+            "kaggleVoice": KaggleVoice(self.config).health(),
             "hardware": hardware,
             "director": self.director.healthCheck(),
             "directorProviders": {
@@ -363,6 +366,8 @@ class StudioService:
             "renderBackend",
             "font",
             "openaiApiKey",
+            "kaggleApiToken",
+            "kaggleUsername",
             "openaiPromptCacheMode",
             "openaiServiceTier",
             "runpodApiKey",
@@ -384,6 +389,8 @@ class StudioService:
         }
         if not isinstance(data, dict) or any(k not in allowed for k in data):
             raise ValueError("Unknown helper configuration option.")
+        if 'kaggleUsername' in data and not re.fullmatch(r'[A-Za-z0-9_]{3,40}',str(data['kaggleUsername'])):
+            raise ValueError('Enter your Kaggle profile username.')
         if 'gpuProviderOrder' in data:
             values=data['gpuProviderOrder']
             from studio_gpu_broker import provider_order
@@ -447,12 +454,12 @@ class StudioService:
             self.unload_models()
             data = dict(data)
             secret_updates = {}
-            for field in ("openaiApiKey", "runpodApiKey", "vastApiKey", "liumApiKey"):
+            for field in ("openaiApiKey", "runpodApiKey", "vastApiKey", "liumApiKey", "kaggleApiToken"):
                 if field not in data:
                     continue
                 key = str(data.pop(field)).strip()
                 if key and (len(key) < 20 or field == "openaiApiKey" and not key.startswith("sk-")):
-                    raise ValueError("Enter a valid " + {"openaiApiKey":"OpenAI","runpodApiKey":"Runpod","vastApiKey":"Vast","liumApiKey":"Lium"}[field] + " API key.")
+                    raise ValueError("Enter a valid " + {"openaiApiKey":"OpenAI","runpodApiKey":"Runpod","vastApiKey":"Vast","liumApiKey":"Lium","kaggleApiToken":"Kaggle"}[field] + " API key.")
                 secret_updates[field] = key
             if secret_updates:
                 path = self.config_path.with_name(".studio-secrets.json")
@@ -472,6 +479,8 @@ class StudioService:
                 temporary.replace(path)
                 if "openaiApiKey" in saved:
                     self.config["openaiKeyFile"] = str(path)
+                if "kaggleApiToken" in saved:
+                    self.config["kaggleKeyFile"] = str(path)
                 if "runpodApiKey" in saved:
                     self.config["runpodKeyFile"] = str(path)
                 if "vastApiKey" in saved or "liumApiKey" in saved:
@@ -501,8 +510,8 @@ class StudioService:
         if s['outroAudioSignature']==expected and s['outroAudioPath'] and self.store.asset(p['id'],s['outroAudioPath']).is_file(): return p
         self.before_audio()
         name=f'outro-narration-{expected[:20]}.wav'
-        self.create_audio(spoken_text(s),p['settings']['voice'],p['settings']['speed'],
-            self.store.folder(p['id'])/name,'off',p['settings'].get('narrationDelivery','standard'))
+        self.create_selected_audio(spoken_text(s),p['settings']['voice'],p['settings']['speed'],
+            self.store.folder(p['id'])/name,'off',p['settings'].get('narrationDelivery','standard'),settings=p['settings'])
         def saved(q):
             if audio_signature(q)!=expected: raise ValueError('Outro changed while its narration was prepared. Prior audio retained.')
             q['settings'].setdefault('engagement',{}).update(outroAudioPath=name,outroAudioSignature=expected)
@@ -596,9 +605,14 @@ class StudioService:
         unresolved=self.execution_journal.unresolved_project(pid)
         check('recovery',not unresolved,'Saved remote work is resolved.' if not unresolved else
               'Reconcile the saved remote request IDs before starting; no automatic duplicate purchases.')
-        try:voice=bool(self.audio.health().get('backend'))
-        except Exception:voice=False
-        check('voice',voice,'Voice generation stays on this laptop.' if voice else 'The local voice helper is unavailable.')
+        if voice_location(p['settings'])=='local':
+            try:voice=bool(self.audio.health().get('backend'))
+            except Exception:voice=False
+            check('voice',voice,'Voice generation stays on this laptop.' if voice else 'The local voice helper is unavailable.')
+        else:
+            from studio_voice_provider import readiness
+            reason=readiness(p['settings'],self.config)
+            check('voice',not reason,reason or 'Selected voice runs in a private Kaggle notebook; account quota and stock apply.')
         check('renderer',Path(self.config.get('ffmpeg','')).is_file(),
               'Local video renderer must be installed; cloud rendering is an optional separate export.')
         provider_name=p['settings']['image']['provider']
@@ -695,7 +709,8 @@ class StudioService:
                   reason or ('Automatic repairs are enabled for confirmed major errors.' if qc_policy(p['settings'])=='practical' else 'Bounded automatic repairs are enabled.'),False)
         return {'project':pid,'revision':p['revision'],'ready':all(x['ready'] for x in checks if x['blocking']),
                 'generationStrategy':selected_strategy,'rentalControl':'managed' if managed else 'external',
-                'voiceLocation':'local','renderLocation':'local','checks':checks,'paidRequestsSubmitted':0}
+                'voiceLocation':voice_location(p['settings']),
+                'renderLocation':'local','checks':checks,'paidRequestsSubmitted':0}
 
     def enqueue(self, pid, chapter, kind, shots=None, options=None):
         p = self.store.load(pid)
@@ -718,6 +733,11 @@ class StudioService:
         if kind == 'voice-preview':
             chapter = None
             ch = None
+        if kind in ('voice-preview','narration','intro-audio','produce-story','analyze','prepare-story'):
+            from studio_voice_provider import readiness
+            voice_settings=p['settings']|{key:options[key] for key in ('voiceEngine','voiceCompute') if key in options}
+            reason=readiness(voice_settings,self.config,preview=kind=='voice-preview')
+            if reason:raise ValueError(reason)
         if kind not in (
             "produce-story",
             "prepare-story",
@@ -2250,6 +2270,11 @@ class StudioService:
     def production_narration(self, project, chapter, previous_audio):
         overlap=getattr(self,'_overlap',None)
         details={'chapter':chapter['number'],'reused':bool(previous_audio)}
+        if voice_location(project['settings'])=='kaggle':
+            if overlap:
+                with overlap.stage('Narration',(project,chapter),details):
+                    return self.measured_execution_stage(project['id'],'Narration',self.narration,project,chapter,**details)
+            return self.measured_stage(project['id'],'Narration',self.narration,project,chapter,**details)
         if overlap:
             with overlap.local_lane.acquire(self.gate,repair=True):
                 self.unload_models();self.before_audio()
@@ -2298,6 +2323,7 @@ class StudioService:
     def narration_signature(project, chapter):
         text=StudioService.narration_text(project,chapter)
         return digest({'text':text,'voice':project['settings']['voice'],'speed':project['settings']['speed'],
+            **voice_identity(project['settings']),
             'deliveryVersion':AUDIO_DELIVERY_VERSION,'soundEffects':project['settings'].get('soundEffects','subtle'),
             'narrationDelivery':project['settings'].get('narrationDelivery','standard'),
             'emphasisPhrases':project['settings'].get('emphasisPhrases',[]),'flowVersion':FLOW_VERSION})
@@ -2312,7 +2338,7 @@ class StudioService:
             fields=('sourceText','name','narrationMode','includeChapterLabel')
             values={key:chapter.get(key) for key in fields}
             if chapter.get('narrationMode')=='manual':values['cleanNarrationText']=chapter.get('cleanNarrationText')
-            return digest({'chapter':values,'voice':{key:project['settings'].get(key) for key in
+            return digest({'chapter':values,**voice_identity(project['settings']),'voice':{key:project['settings'].get(key) for key in
                 ('voice','speed','soundEffects','narrationDelivery','emphasisPhrases')}})
         expected_input=narration_input(p,ch)
         text=self.narration_text(p,ch)
@@ -2328,7 +2354,7 @@ class StudioService:
                 raise ValueError('Narration inputs changed before generation; current text retained.')
             current.update(cleanNarrationText=text)
         self.store.mutate(p['id'],prepare_text)
-        result = self.create_audio(
+        result = self.create_selected_audio(
             text,
             p["settings"]["voice"],
             p["settings"]["speed"],
@@ -2336,6 +2362,7 @@ class StudioService:
             p['settings'].get('soundEffects', 'subtle'),
             p['settings'].get('narrationDelivery', 'standard'),
             p['settings'].get('emphasisPhrases', []),
+            settings=p['settings'],
         )
         result.update(
             signature=signature,
@@ -2373,7 +2400,10 @@ class StudioService:
         effects = options.get('soundEffects', p['settings'].get('soundEffects', 'subtle'))
         delivery = options.get('narrationDelivery', p['settings'].get('narrationDelivery', 'standard'))
         emphasis = options.get('emphasisPhrases', p['settings'].get('emphasisPhrases', []))
-        signature = digest({'text':text, 'voice':voice, 'speed':speed,
+        voice_settings=p['settings']|{'voiceEngine':options.get('voiceEngine',voice_engine(p['settings'])),
+            'voiceCompute':options.get('voiceCompute',p['settings'].get('voiceCompute','local')),
+            'voiceInstruction':options.get('voiceInstruction',p['settings'].get('voiceInstruction',''))}
+        signature = digest({'text':text, 'voice':voice, 'speed':speed, **voice_identity(voice_settings),
                             'effects':effects, 'delivery':AUDIO_DELIVERY_VERSION,
                             'narrationDelivery':delivery, 'emphasisPhrases':emphasis, 'flowVersion':FLOW_VERSION})
         name = f'voice-preview-{signature[:16]}.wav'
@@ -2381,7 +2411,8 @@ class StudioService:
         if existing and self.store.asset(p['id'], name).is_file():
             preview = dict(existing)
         else:
-            result = self.create_audio(text, voice, speed, self.store.folder(p['id']) / name, effects, delivery, emphasis)
+            result = self.create_selected_audio(text, voice, speed, self.store.folder(p['id']) / name, effects, delivery, emphasis,
+                settings=voice_settings,preview=True)
             preview = {**result, 'path':name, 'text':text, 'voice':voice, 'speed':speed,
                        'soundEffects':effects}
         renderer = getattr(self, 'renderer', None)
@@ -2393,6 +2424,20 @@ class StudioService:
             previews.append(preview)
             previews[:] = previews[-12:]
         self.store.mutate(p['id'], saved)
+
+    def create_selected_audio(self,text,voice,speed,target,effects='subtle',delivery='standard',emphasis=(),settings=None,preview=False):
+        settings=dict(settings or {})
+        if voice_location(settings)=='local':
+            return self.create_audio(text,voice,speed,target,effects,delivery,emphasis)
+        if type(speed) not in (int,float) or not math.isfinite(speed) or not .5<=speed<=2:
+            raise ValueError('Voice speed must be 0.5–2.')
+        settings.update(speed=speed,soundEffects=effects,voice=voice)
+        result=KaggleVoice(self.config).generate(text,target,settings,self.gate,preview=preview)
+        if preview:
+            verified=set(self.config.get('kaggleVerifiedModels',[]));verified.add(voice_engine(settings))
+            self.config['kaggleVerifiedModels']=sorted(verified)
+            self.config_path.write_text(json.dumps(self.config,indent=2),encoding='utf-8')
+        return result
 
     def create_audio(self, text, voice, speed, target, effects='subtle', delivery='standard', emphasis=()):
         import numpy as np
@@ -2533,6 +2578,7 @@ class StudioService:
     @staticmethod
     def intro_audio_signature(project):
         return digest({'text':project['intro'].get('voiceText','').strip(),
+            **voice_identity(project['settings']),
             'voice':{k:project['settings'].get(k) for k in ('voice','speed','soundEffects','narrationDelivery','emphasisPhrases')},
             'deliveryVersion':AUDIO_DELIVERY_VERSION,'flowVersion':FLOW_VERSION})
 
@@ -2551,9 +2597,9 @@ class StudioService:
         # A regenerate action always creates a separate version; never overwrite
         # a master referenced by an earlier render or a newer manual selection.
         name='intro-'+signature[:12]+'-'+uid()+'.wav'
-        result=self.create_audio(text,p['settings']['voice'],p['settings']['speed'],self.store.folder(p['id'])/name,
+        result=self.create_selected_audio(text,p['settings']['voice'],p['settings']['speed'],self.store.folder(p['id'])/name,
             p['settings'].get('soundEffects','subtle'),p['settings'].get('narrationDelivery','standard'),
-            p['settings'].get('emphasisPhrases',[]))
+            p['settings'].get('emphasisPhrases',[]),settings=p['settings'])
         saved={'audioPath':name,'audioDuration':result['duration'],'audioSentences':result['sentences'],
                'audioTextDigest':digest(text),'audioSignature':signature}
         def publish(q):

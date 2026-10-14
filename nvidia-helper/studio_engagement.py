@@ -62,8 +62,9 @@ def spoken_text(s):
     return '\n\n'.join(x.strip() for x in (s['outroText'], s['nextPartTeaser']) if x.strip())
 
 def audio_signature(p):
+    from studio_voice_provider import identity
     s = settings(p)
-    return digest({'version': 1, 'text': spoken_text(s),
+    return digest({'version': 1, 'text': spoken_text(s), **identity(p['settings']),
                    'voice': {k: p['settings'].get(k) for k in ('voice', 'speed', 'narrationDelivery')}})
 
 def schedule(p, duration, namespace='full'):

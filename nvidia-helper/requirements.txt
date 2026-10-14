@@ -7,3 +7,4 @@ safetensors==0.6.2
 Pillow==11.3.0
 boto3>=1.40,<2
 google-cloud-storage>=3.4,<4
+kaggle==1.8.4
