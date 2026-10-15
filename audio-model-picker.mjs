@@ -1,5 +1,5 @@
-import {VOICE_MODELS, voiceNotice} from './studio-voice-settings.mjs?v=voice-picker-20261015';
-import {DEFAULT_VOICE_SCRIPT,NARRATOR,mountVoicePicker} from './voice-catalogue.mjs?v=voice-picker-20261015';
+import {VOICE_MODELS, voiceNotice} from './studio-voice-settings.mjs?v=voice-picker-20261015b';
+import {DEFAULT_VOICE_SCRIPT,NARRATOR,mountVoicePicker} from './voice-catalogue.mjs?v=voice-picker-20261015b';
 import {helperJson,pairingKey} from './helper-connection.mjs?v=connection-20261009';
 
 // Audio and Studio share the authenticated helper and the same durable job queue.

@@ -1,4 +1,4 @@
-import {NARRATOR, DEFAULT_VOICE_SCRIPT, voicesFor, voiceCards, mountVoicePicker} from './voice-catalogue.mjs?v=voice-picker-20261015';
+import {NARRATOR, DEFAULT_VOICE_SCRIPT, voicesFor, voiceCards, mountVoicePicker} from './voice-catalogue.mjs?v=voice-picker-20261015b';
 export {NARRATOR, DEFAULT_VOICE_SCRIPT, voicesFor, voiceCards, mountVoicePicker};
 export const VOICE_MODELS = [
   ['kokoro-82m','Kokoro 82M · existing local voice'],

@@ -1,4 +1,4 @@
-import {VOICE_MODELS,NARRATOR,DEFAULT_VOICE_SCRIPT,voicesFor,voiceCards,mountVoicePicker,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voice-picker-20261015';
+import {VOICE_MODELS,NARRATOR,DEFAULT_VOICE_SCRIPT,voicesFor,voiceCards,mountVoicePicker,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voice-picker-20261015b';
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
 import {imagePresetChanges} from './studio-image-presets.mjs?v=short-video-20261011';
 import {videoRecipePatch,videoSettingsHTML} from './studio-video-settings.mjs?v=short-video-20261011';
