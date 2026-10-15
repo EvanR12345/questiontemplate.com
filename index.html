@@ -71,7 +71,6 @@
           <p class="note">Choose a model, then pick one of its available voices. Preview uses your script; changing a selection does not start generation.</p>
           <label class="label" for="audioVoiceModel">Voice model</label><select id="audioVoiceModel"></select>
           <p class="note" id="audioModelNotice"></p>
-          <div id="audioRemoteOptions" hidden><label class="label" for="audioVoiceProject">Save auditions in project</label><select id="audioVoiceProject"></select><label class="label" id="audioInstructionLabel" for="audioVoiceInstruction">Narrator instructions<textarea id="audioVoiceInstruction" maxlength="1200" rows="3" style="min-height:110px"></textarea></label><p class="note">Kaggle auditions: up to 1800 characters, WAV and AAC 128 kbps. Use Studio for full chapter narration. Startup and GPU quota apply; scripts are sent to your private Kaggle notebook.</p></div>
           <div class="presets" id="presets">
             <button class="preset active" data-voice="am_michael" aria-pressed="true"><span class="rank">#1 · Best recommendation</span><strong>Michael</strong><span>American male</span><span class="reason">Start here for balanced narration</span></button>
             <button class="preset" data-voice="am_fenrir" aria-pressed="false"><span class="rank">#2</span><strong>Fenrir</strong><span>American male</span><span class="reason">Try for a bolder delivery</span></button>
@@ -81,7 +80,8 @@
             <button class="preset" data-voice="af_nicole" aria-pressed="false"><span class="rank">#6</span><strong>Nicole</strong><span>American female</span><span class="reason">Another female voice to compare</span></button>
             <button class="preset" data-voice="bm_george" aria-pressed="false"><span class="rank">#7</span><strong>George</strong><span>British male</span><span class="reason">Try if you prefer a British accent</span></button>
           </div>
-          <button class="btn" id="audioVoiceCancel" hidden>Cancel this audition</button><div id="audioModelResults"></div><div class="range"><label for="rate">Speed</label><input id="rate" type="range" min="0.5" max="2" step="0.05" value="1"><output id="rateOut">1.00×</output></div>
+          <details id="audioRemoteOptions" hidden><summary>Voice settings &amp; Kaggle details</summary><p class="note" id="audioRuntimeNotice"></p><label class="label" for="audioVoiceProject">Save auditions in project</label><select id="audioVoiceProject"></select><label class="label" id="audioInstructionLabel" for="audioVoiceInstruction">Narrator instructions<textarea id="audioVoiceInstruction" maxlength="1200" rows="3" style="min-height:110px"></textarea></label><p class="note">Kaggle auditions: up to 1800 characters, WAV and AAC 128 kbps. Use Studio for full chapter narration. Startup and GPU quota apply; scripts are sent to your private Kaggle notebook.</p></details>
+<button class="btn" id="audioVoiceCancel" hidden>Cancel this audition</button><div id="audioModelResults"></div><div class="range"><label for="rate">Speed</label><input id="rate" type="range" min="0.5" max="2" step="0.05" value="1"><output id="rateOut">1.00×</output></div>
           <p class="note">Opus · 64 kbps by default · approximately 43–58 MB for 90–120 minutes.</p>
           <details><summary class="label">More settings</summary>
           <label class="label" for="studioVoice">Voice</label>

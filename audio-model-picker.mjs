@@ -17,7 +17,8 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
     mountVoicePicker({model:model.value,select:$('studioVoice'),cards:$('presets'),initial:selections[model.value],onSelect:id=>{
       selections[model.value]=id;onChange(id);
     }});
-    $('audioModelNotice').textContent=remote()?voiceNotice(model.value,{kaggleVoice:{configured:true}}):'Choose a voice, then preview your script. The existing local Kokoro engine is unchanged.';
+    $('audioModelNotice').textContent=model.value==='qwen3-tts-1.7b'?'Nine preset voices. Ryan and Aiden are native English speakers.':remote()?'Uses this project’s saved synthetic narrator; no named voice bank.':'Eight English voices. Pick a card, then preview your script.';
+    $('audioRuntimeNotice').textContent=voiceNotice(model.value,{});
     $('audioRemoteOptions').hidden=!remote();
     $('sizeEstimate').hidden=remote();
     $('audioInstructionLabel').hidden=model.value!=='qwen3-tts-1.7b';
@@ -30,7 +31,7 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
   async function loadProjects() {
     if(!pairingKey()) {status('Connect the shared helper to use Kaggle voices.');return;}
     const [projects,health]=await Promise.all([call('projects'),call('health')]);
-    $('audioModelNotice').textContent=voiceNotice(model.value,health);
+    $('audioRuntimeNotice').textContent=voiceNotice(model.value,health);
     if(!Array.isArray(projects))throw Error('The helper returned an invalid project list.');
     let preferred;try{preferred=localStorage.getItem('qt-production-project');}catch{}
     const current=$('audioVoiceProject').value||preferred;
