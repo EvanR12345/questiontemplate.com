@@ -111,6 +111,17 @@ class CloudSaveTests(unittest.TestCase):
         self.assertEqual(updated['renderCache'],manifest['renderCache'])
         self.assertEqual(updated['project']['name'],'Changed title')
 
+    def test_missing_cloud_saved_at_repairs_metadata_without_reuploading_media(self):
+        self.a.sync(self.p['id']);uploads=self.obj.uploads
+        key='studio/manifests/'+self.p['id']+'.json'
+        manifest,etag=self.a.manifest(self.p['id'],True);manifest.pop('savedAt')
+        self.obj.put_json(key,manifest,etag);self.a.manifests.pop(self.p['id'],None)
+        self.assertTrue(self.a.sync(self.p['id']))
+        current,_=self.a.manifest(self.p['id'],True)
+        self.assertGreater(current['savedAt'],0)
+        self.assertEqual(self.obj.uploads,uploads)
+        self.assertEqual(current['project'],manifest['project'])
+
     def test_uploads_before_manifest_and_does_not_repeat_unchanged_assets(self):
         self.a.sync(self.p['id']);n=self.obj.uploads
         self.a.sync(self.p['id']);self.assertEqual(self.obj.uploads,n)

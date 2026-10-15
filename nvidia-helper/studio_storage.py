@@ -236,7 +236,8 @@ class R2Archive:
         # Snapshot + immutable assets are already complete. Network requests
         # must not hold the project lock and stall edits/generation commits.
         # The cloud's condition still rejects concurrent remote revisions.
-        if old and old['project']==project and old.get('files')==records:
+        if (old and old['project']==project and old.get('files')==records
+                and type(old.get('savedAt')) in (int,float) and math.isfinite(old['savedAt'])):
             manifest['savedAt']=old['savedAt']
         else:
             from studio_data import digest
