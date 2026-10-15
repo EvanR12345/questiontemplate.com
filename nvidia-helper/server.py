@@ -349,7 +349,8 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     previous=studio.store.load(body['sourceProject'])['settings']
                     # Reuse the chosen production profile without borrowing
                     # story facts or project-specific generated media paths.
-                    for key in ('style','layoutMode','generationMode','voice','speed','narrationDelivery',
+                    for key in ('style','layoutMode','generationMode','voice','voiceEngine','voiceCompute',
+                                'voiceInstruction','qwenSpeaker','fishCommercialLicense','speed','narrationDelivery',
                                 'soundEffects','emphasisPhrases','director','video','customLayout','budget',
                                 'continuityStrictness','appearanceHandling','maxImageRetries','visionQC',
                                 'qcSampleEvery','qcCheckLevel','automaticRepair','qcPolicy','focusedPrompts','cloudImagesOnly',

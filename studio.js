@@ -1,3 +1,4 @@
+import {setupAudioModels} from './audio-model-picker.mjs?v=voice-picker-20261015';
 import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=speech-3';
 import { speechText } from './pronunciation.mjs?v=speech-3';
 import { GenerationEstimate, measuredPace, narrationEstimate } from './speech-progress.mjs?v=speech-3';
@@ -28,6 +29,7 @@ function updateCounts() {
   $('#words').textContent = words.toLocaleString();
   $('#targetWpm').textContent = '≈ ' + Math.round(estimate.wpm);
   $('#estimate').textContent = words ? estimateRange(estimate) : '0:00';
+  if($('#audioVoiceModel')?.value && $('#audioVoiceModel').value!=='kokoro-82m'){ $('#estimate').textContent='Unmeasured'; $('#targetWpm').textContent='—'; }
   $('#estimate').title = estimate.measured ? 'Based on audio measured for this voice, including pauses. Story punctuation can change the pace.' : 'Rough range until a voice preview measures your narration pace.';
 }
 function outputs() {
@@ -55,7 +57,7 @@ function remember(value) {
 }
 function controls(generating) {
   busy = generating;
-  for (const el of document.querySelectorAll('#generate,#sample,#studioVoice,#rate,#volume,#text,#clear,#importScript,#format,#bitrate,#engine,#restore,#resumeSaved,#pronunciation,#connectNative,[data-example],[data-voice]')) el.disabled = generating;
+  for (const el of document.querySelectorAll('#generate,#sample,#audioVoiceModel,#studioVoice,#rate,#volume,#text,#clear,#importScript,#format,#bitrate,#engine,#restore,#resumeSaved,#pronunciation,#connectNative,[data-example],[data-voice]')) el.disabled = generating;
   $('#generationControls').hidden = !generating;
   if (generating) $('#performance').hidden = false;
   $('#cancel').disabled = !generating;
@@ -260,12 +262,13 @@ async function startWorker() {
 }
 async function generate(sample = false) {
   if (busy || connectingNative) return;
+  if (audioModels.remote()) { await audioModels.generate(); return; }
   if ($('#engine').value === 'native' && (!nativeKey || !nativeConnected)) { $('#nativeSetup').open = true; status('Connect the NVIDIA helper before generating.'); $('#connectNative').focus(); return; }
   const full = script.value.trim();
   if (!full || !countWords(full)) { status('Add some words to your script first.'); script.focus(); return; }
   if (!window.Worker || !window.WebAssembly) { status('Use a current browser for downloadable audio.'); return; }
   let value = full;
-  if (sample) {
+  if (sample && full.length>1800) {
     const tokens = []; for (const match of full.matchAll(/\S+\s*/g)) { tokens.push(match[0]); if (tokens.length === 35) break; }
     value = tokens.join('').trim();
   }
@@ -413,13 +416,14 @@ $('#resume').onclick = () => { synth?.resume(); if (!busy) status('Device previe
 $('#stop').onclick = () => { stopPreview(); document.querySelectorAll('audio').forEach(audio => { audio.pause(); audio.currentTime = 0; }); if (!busy) status('Playback stopped.'); };
 $('#clear').onclick = () => { stopPreview(); script.value = ''; updateCounts(); script.focus(); };
 $('#clearHistory').onclick = () => { history = []; try { localStorage.removeItem('tts-history'); } catch {} renderHistory(); };
-document.querySelectorAll('[data-example]').forEach(button => button.onclick = () => { script.value = examples[button.dataset.example]; updateCounts(); });
+document.querySelectorAll('[data-example]').forEach(button => button.onclick = () => { script.value = button.dataset.example==='story'?audioModels.defaultScript:examples[button.dataset.example]; updateCounts(); });
 document.querySelectorAll('[data-voice]').forEach(button => button.onclick = () => selectVoice(button.dataset.voice));
 document.querySelectorAll('[data-sound]').forEach(button => button.onclick = () => sound(button.dataset.sound));
 $('#studioVoice').onchange = () => selectVoice($('#studioVoice').value);
 ['rate', 'pitch', 'volume'].forEach(id => $('#' + id).oninput = outputs);
 window.addEventListener('beforeunload', event => { if (busy) { event.preventDefault(); event.returnValue = ''; } });
 if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+const audioModels=setupAudioModels({document,status,onChange:selectVoice,isBusy:()=>busy});
 selectVoice($('#studioVoice').value); outputs(); formatOutputs(); renderHistory();
 if (nativeKey) setTimeout(() => $('#connectNative').click(), 120);
 

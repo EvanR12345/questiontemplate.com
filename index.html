@@ -32,7 +32,7 @@
 <style>.studio-nav{display:flex;align-items:center;gap:9px}.studio-switch{display:inline-flex;align-items:center;min-height:40px;padding:0 13px;border:1px solid #514a78;border-radius:12px;background:#211b3a;color:#f2eeff;text-decoration:none;font-weight:800;font-size:.82rem}.studio-switch:hover{filter:brightness(1.15);border-color:#7c5cff}@media(max-width:560px){.studio-nav .privacy{display:none}.studio-switch{font-size:.76rem;padding:0 10px}}</style><style>img.logo{display:block;object-fit:contain;background:none;box-shadow:none;flex-shrink:0}</style></head>
 <body>
   <main class="shell">
-    <header class="topbar"><div class="brand"><img class="logo" src="./favicon.svg?v=studio-2" width="40" height="40" alt="" aria-hidden="true">QuestionTemplate</div><div class="studio-nav"><span class="privacy"><i></i>Text stays on your device</span><a class="studio-switch" href="./studio.html" style="display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 16px;border:1px solid #7c5cff;border-radius:12px;background:linear-gradient(100deg,#7c5cff,#ec5eb7);color:#fff;text-decoration:none;font-weight:850;box-shadow:0 8px 24px #7c5cff42">✦ Studio</a></div></header>
+    <header class="topbar"><div class="brand"><img class="logo" src="./favicon.svg?v=studio-2" width="40" height="40" alt="" aria-hidden="true">QuestionTemplate</div><div class="studio-nav"><span class="privacy"><i></i>Local voices stay on device · Kaggle is optional</span><a class="studio-switch" href="./studio.html" style="display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 16px;border:1px solid #7c5cff;border-radius:12px;background:linear-gradient(100deg,#7c5cff,#ec5eb7);color:#fff;text-decoration:none;font-weight:850;box-shadow:0 8px 24px #7c5cff42">✦ Studio</a></div></header>
     <section class="hero"><div class="eyebrow">Your browser. Your voice studio.</div><h1>Type it. <span>Hear it.</span></h1><p>Paste your script, choose a voice, and download your audio. No fixed word limit. No account needed.</p><div class="steps"><span><b>1</b>Paste text</span><span><b>2</b>Choose a voice</span><span><b>3</b>Generate &amp; download</span></div></section>
     <section class="grid">
       <div>
@@ -45,7 +45,7 @@
           <div class="voice-choice"><span id="selectedVoice">Michael · American male</span><a href="#voices">Change voice</a></div>
           <div class="transport main-actions"><button class="btn" id="sample">▶ Preview voice</button><button class="btn primary" id="generate">↓ Generate audio</button></div>
           <div class="generation-controls" id="generationControls" hidden><button class="btn" id="pauseGeneration" disabled>Ⅱ Pause generation</button><button class="btn" id="cancel" disabled>Cancel</button></div>
-          <p class="note">Preview checks the first 35 words. Generate records your whole script. Keep this tab open; completed parts are saved for recovery.</p>
+          <p class="note">Kokoro preview reads the whole script up to 1800 characters (first 35 words for longer scripts); Generate records the whole script. Kaggle auditions use the full script up to 1800 characters. Keep this tab open for progress.</p>
           <div id="recovery" class="creator-note" hidden><span id="recoveryText"></span> <button class="chip" id="restore">Restore recording</button></div>
           <div class="metrics performance" id="performance" hidden><div class="metric"><strong id="elapsed">0:00</strong><span>Elapsed time</span></div><div class="metric"><strong id="generationSpeed">—</strong><span>Generation speed</span></div><div class="metric"><strong id="timeLeft">—</strong><span>Time remaining · estimate</span></div></div>
           <p class="note" id="engineStatus">Automatic acceleration · Opus 64 kbps output</p>
@@ -68,7 +68,10 @@
       <aside class="side">
         <article class="card settings" id="voices">
           <div class="card-head"><h2><span class="step-number">2</span>Best recommendations</h2></div>
-          <p class="note">Seven starting picks. Tap a voice, then Preview voice to hear your own script. Rankings are starting suggestions, not an objective score.</p>
+          <p class="note">Choose a model, then pick one of its available voices. Preview uses your script; changing a selection does not start generation.</p>
+          <label class="label" for="audioVoiceModel">Voice model</label><select id="audioVoiceModel"></select>
+          <p class="note" id="audioModelNotice"></p>
+          <div id="audioRemoteOptions" hidden><label class="label" for="audioVoiceProject">Save auditions in project</label><select id="audioVoiceProject"></select><label class="label" id="audioInstructionLabel" for="audioVoiceInstruction">Narrator instructions<textarea id="audioVoiceInstruction" maxlength="1200" rows="3" style="min-height:110px"></textarea></label><p class="note">Kaggle auditions: up to 1800 characters, WAV and AAC 128 kbps. Use Studio for full chapter narration. Startup and GPU quota apply; scripts are sent to your private Kaggle notebook.</p></div>
           <div class="presets" id="presets">
             <button class="preset active" data-voice="am_michael" aria-pressed="true"><span class="rank">#1 · Best recommendation</span><strong>Michael</strong><span>American male</span><span class="reason">Start here for balanced narration</span></button>
             <button class="preset" data-voice="am_fenrir" aria-pressed="false"><span class="rank">#2</span><strong>Fenrir</strong><span>American male</span><span class="reason">Try for a bolder delivery</span></button>
@@ -78,7 +81,7 @@
             <button class="preset" data-voice="af_nicole" aria-pressed="false"><span class="rank">#6</span><strong>Nicole</strong><span>American female</span><span class="reason">Another female voice to compare</span></button>
             <button class="preset" data-voice="bm_george" aria-pressed="false"><span class="rank">#7</span><strong>George</strong><span>British male</span><span class="reason">Try if you prefer a British accent</span></button>
           </div>
-          <div class="range"><label for="rate">Speed</label><input id="rate" type="range" min="0.5" max="2" step="0.05" value="1"><output id="rateOut">1.00×</output></div>
+          <button class="btn" id="audioVoiceCancel" hidden>Cancel this audition</button><div id="audioModelResults"></div><div class="range"><label for="rate">Speed</label><input id="rate" type="range" min="0.5" max="2" step="0.05" value="1"><output id="rateOut">1.00×</output></div>
           <p class="note">Opus · 64 kbps by default · approximately 43–58 MB for 90–120 minutes.</p>
           <details><summary class="label">More settings</summary>
           <label class="label" for="studioVoice">Voice</label>
@@ -110,6 +113,6 @@
     </section>
     <footer class="footer"><span>No fixed word cap. Available memory and processing time still depend on your device.</span><span>Local speech powered by Kokoro · Opus + MP3 + WAV · Best on desktop.</span></footer>
   </main>
-  <script type="module" src="./studio.js?v=speech-3"></script>
+  <script type="module" src="./studio.js?v=voice-picker-20261015"></script>
 </body>
 </html>

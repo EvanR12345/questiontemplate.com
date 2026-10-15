@@ -1008,6 +1008,17 @@ class StudioService:
                     raise ValueError('Choose an active job or execution to cancel.')
                 else:
                     self.cancel = True
+            elif action == "cancel-job":
+                target=self.db.execute('SELECT project,status FROM jobs WHERE id=?',(job,)).fetchone()
+                if not target or not project or target['project']!=project:
+                    raise ValueError('Choose a job in this project.')
+                if target['status']=='QUEUED':
+                    self.db.execute("UPDATE jobs SET status='CANCELLED',message='Cancelled; completed assets retained' WHERE id=?",(job,))
+                elif target['status']=='RUNNING':
+                    context=getattr(self,'active_executions',{}).get(job)
+                    if context:context.cancelled.set()
+                    elif job==self.current:self.cancel=True
+                    else:raise ValueError('This job is not active on this helper.')
             elif action == "cancel-all":
                 if project:self.store.folder(project) # Validate the selected identity.
                 current=self.db.execute('SELECT project FROM jobs WHERE id=?',(self.current,)).fetchone() if self.current else None
@@ -2403,6 +2414,7 @@ class StudioService:
         emphasis = options.get('emphasisPhrases', p['settings'].get('emphasisPhrases', []))
         voice_settings=p['settings']|{'voiceEngine':options.get('voiceEngine',voice_engine(p['settings'])),
             'voiceCompute':options.get('voiceCompute',p['settings'].get('voiceCompute','local')),
+            'qwenSpeaker':options.get('qwenSpeaker',p['settings'].get('qwenSpeaker','Ryan')),
             'voiceInstruction':options.get('voiceInstruction',p['settings'].get('voiceInstruction',''))}
         signature = digest({'text':text, 'voice':voice, 'speed':speed, **voice_identity(voice_settings),
                             'effects':effects, 'delivery':AUDIO_DELIVERY_VERSION,
@@ -2414,7 +2426,7 @@ class StudioService:
         else:
             result = self.create_selected_audio(text, voice, speed, self.store.folder(p['id']) / name, effects, delivery, emphasis,
                 settings=voice_settings,preview=True,project=p)
-            preview = {**result, 'path':name, 'text':text, 'voice':voice, 'speed':speed,
+            preview = {**result, 'path':name, 'text':text, 'voice':voice_settings.get('qwenSpeaker','Ryan') if voice_engine(voice_settings)=='qwen3-tts-1.7b' else voice, 'speed':speed,
                        'soundEffects':result.get('soundEffects',effects)}
         renderer = getattr(self, 'renderer', None)
         if renderer and renderer.config.get('ffmpeg'):

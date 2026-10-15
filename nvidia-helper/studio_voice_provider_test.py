@@ -23,6 +23,35 @@ class VoiceProviderTest(unittest.TestCase):
         first=StudioService.narration_signature(p,ch);p['settings']['voiceInstruction']='Calmer.'
         self.assertNotEqual(first,StudioService.narration_signature(p,ch))
 
+    def test_qwen_speaker_changes_cache_and_unknown_speakers_are_rejected(self):
+        settings={'voiceEngine':'qwen3-tts-1.7b'}
+        before=identity(settings)
+        self.assertEqual(before['qwenSpeaker'],'Ryan')
+        settings['qwenSpeaker']='Aiden';validate(settings)
+        self.assertNotEqual(before,identity(settings))
+        settings['qwenSpeaker']='invented'
+        with self.assertRaisesRegex(ValueError,'supported Qwen'):validate(settings)
+
+    def test_worker_honors_the_selected_qwen_speaker_in_single_and_batched_paths(self):
+        worker=Path(__file__).with_name('studio_kaggle_voice_worker.py').read_text(encoding='utf-8')
+        self.assertIn("speaker=request.get('qwenSpeaker','Ryan')",worker)
+        self.assertIn("speaker=[request.get('qwenSpeaker','Ryan')]*len(batch)",worker)
+
+    def test_single_audition_cancel_never_cancels_other_project_jobs(self):
+        import sqlite3,threading
+        from unittest.mock import Mock
+        service=StudioService.__new__(StudioService)
+        service.db=sqlite3.connect(':memory:');service.db.row_factory=sqlite3.Row
+        service.db.executescript("CREATE TABLE jobs(id TEXT,project TEXT,status TEXT,message TEXT); CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT); INSERT INTO jobs VALUES('mine','p1','QUEUED',''),('other','p2','QUEUED','');")
+        service.cv=threading.Condition();service.paused=False;service.current=None;service.cancel=False
+        service.sync_queue_states=Mock();service.snapshot=Mock(return_value={})
+        with self.assertRaisesRegex(ValueError,'this project'):service.control('cancel-job','other','p1')
+        service.control('cancel-job','mine','p1')
+        self.assertEqual(service.db.execute("SELECT status FROM jobs WHERE id='mine'").fetchone()[0],'CANCELLED')
+        self.assertEqual(service.db.execute("SELECT status FROM jobs WHERE id='other'").fetchone()[0],'QUEUED')
+        self.assertFalse(service.cancel);self.assertFalse(service.paused)
+        service.db.close()
+
     def test_unverified_models_cannot_start_production_and_fish_license_is_enforced(self):
         with patch.object(KaggleVoice,'health',return_value={'reason':''}):
             self.assertIn('audition',readiness({'voiceEngine':'qwen3-tts-1.7b'},{}) or '')

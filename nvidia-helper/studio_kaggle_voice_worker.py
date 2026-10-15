@@ -94,7 +94,7 @@ def run(request):
         engine=Qwen3TTSModel.from_pretrained(request['repo'],device_map='cuda:0',dtype=torch.float16,
                                            attn_implementation='sdpa')
         def speak(text):
-            wavs,sr=engine.generate_custom_voice(text=text,language='English',speaker='Ryan',
+            wavs,sr=engine.generate_custom_voice(text=text,language='English',speaker=request.get('qwenSpeaker','Ryan'),
                 instruct=request['instruction'],max_new_tokens=4096)
             return np.asarray(wavs[0],dtype=np.float32),sr
         word_limit=45
@@ -195,7 +195,7 @@ def run(request):
         for start in range(0,len(texts),4):
             batch=texts[start:start+4]
             wavs,sr=engine.generate_custom_voice(text=batch,language=['English']*len(batch),
-                speaker=['Ryan']*len(batch),instruct=[request['instruction']]*len(batch),max_new_tokens=4096)
+                speaker=[request.get('qwenSpeaker','Ryan')]*len(batch),instruct=[request['instruction']]*len(batch),max_new_tokens=4096)
             for text,audio in zip(batch,wavs):qwen_audio[text]=(np.asarray(audio,dtype=np.float32),sr)
     if model=='dia-1.6b':
         # Dia's documented useful passage length is roughly 5–20 seconds.

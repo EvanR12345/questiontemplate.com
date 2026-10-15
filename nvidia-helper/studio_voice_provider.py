@@ -18,7 +18,7 @@ import threading
 import time
 import wave
 
-VERSION = 2
+VERSION = 3
 _KAGGLE_ADMISSION=threading.BoundedSemaphore(1)
 NARRATOR = ('Calm, controlled, confident fantasy audiobook narrator. Medium-deep pitch, '
             'clear enunciation, smooth connected delivery, restrained cinematic tension, '
@@ -31,7 +31,7 @@ MODELS = {
     'qwen3-tts-1.7b': {'name':'Qwen3-TTS 1.7B · CustomVoice',
         'repo':'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice', 'location':'kaggle',
         'license':'Apache-2.0', 'commercial':True, 'instructions':True,
-        'note':'Built-in Ryan narrator with delivery instructions and bounded T4 batches.'},
+        'note':'Nine selectable preset speakers with delivery instructions and bounded T4 batches.'},
     'dia-1.6b': {'name':'Dia 1.6B', 'repo':'nari-labs/Dia-1.6B-0626', 'location':'kaggle',
         'license':'Apache-2.0', 'commercial':True, 'instructions':False,
         'note':'English dialogue model. Short passages and a generated voice anchor; long-form drift remains unverified.'},
@@ -39,6 +39,8 @@ MODELS = {
         'license':'Fish Audio Research License', 'commercial':False, 'instructions':False,
         'note':'Research auditions allowed; monetized narration requires a separate Fish commercial license. Tested workflow uses two T4 GPUs.'},
 }
+
+QWEN_SPEAKERS = ('Ryan','Aiden','Vivian','Serena','Uncle_Fu','Dylan','Eric','Ono_Anna','Sohee')
 
 def selected(settings):
     value=settings.get('voiceEngine','kokoro-82m')
@@ -50,6 +52,8 @@ def location(settings):
 
 def validate(settings):
     selected(settings)
+    if settings.get('qwenSpeaker','Ryan') not in QWEN_SPEAKERS:
+        raise ValueError('Choose a supported Qwen speaker.')
     if settings.get('voiceCompute','local') not in ('local','kaggle'):
         raise ValueError('Choose local or Kaggle voice compute.')
     instruction=settings.get('voiceInstruction',NARRATOR)
@@ -63,7 +67,8 @@ def identity(settings):
     engine=selected(settings)
     if location(settings)=='local':return {}
     return {'voiceEngine':engine,'voiceProviderVersion':VERSION,
-            'voiceCompute':'kaggle','voiceInstruction':settings.get('voiceInstruction',NARRATOR)}
+            'voiceCompute':'kaggle','voiceInstruction':settings.get('voiceInstruction',NARRATOR),
+            **({'qwenSpeaker':settings.get('qwenSpeaker','Ryan')} if engine=='qwen3-tts-1.7b' else {})}
 
 def readiness(settings,config,preview=False):
     model=MODELS[selected(settings)]
@@ -133,13 +138,14 @@ class KaggleVoice:
         finally:_KAGGLE_ADMISSION.release()
 
     def _generate(self,text,target,settings,gate,preview=False,reference=None):
+        validate(settings)
         reason=readiness(settings,self.config,preview)
         if reason:raise ValueError(reason)
         username=self.config['kaggleUsername']
         if not re.fullmatch(r'[A-Za-z0-9_]{3,40}',username):raise ValueError('Invalid Kaggle username.')
         engine=selected(settings)
         request={'version':VERSION,'model':engine,'repo':MODELS[engine]['repo'],'text':text,
-            'runtimeVersion':11,
+            'runtimeVersion':12,'qwenSpeaker':settings.get('qwenSpeaker','Ryan'),
             'instruction':settings.get('voiceInstruction',NARRATOR),'seed':81273,'speed':settings.get('speed',1),
             'preview':preview,'effects':settings.get('soundEffects','subtle')}
         request['voice']=settings.get('voice','am_michael')
@@ -240,6 +246,6 @@ class KaggleVoice:
             if not path.exists():shutil.copyfile(source,path)
             result['voiceAnchor']['path']=str(path)
         # Only output media enters the project's normal verified cloud archive.
-        result.update(path=str(target),provider='kaggle',kernel=slug,model=engine,
+        result.update(path=str(target),provider='kaggle',kernel=slug,model=engine,qwenSpeaker=request.get('qwenSpeaker') if engine=='qwen3-tts-1.7b' else None,
             timingSource='generated-passage-duration',words=[],paragraphs=[])
         return result

@@ -7,7 +7,7 @@ apply a new voice; its scene timing must be regenerated against the new duration
 | Model | Runs on | Voice control | Production license |
 | --- | --- | --- | --- |
 | Kokoro 82M | Existing laptop helper, or optional Kaggle notebook | Built-in voices; speed and connected delivery | Apache 2.0 |
-| Qwen3-TTS 1.7B CustomVoice | Private Kaggle GPU notebook | Ryan English preset and narrator instructions | Apache 2.0 |
+| Qwen3-TTS 1.7B CustomVoice | Private Kaggle GPU notebook | Nine selectable presets and narrator instructions | Apache 2.0 |
 | Dia 1.6B | Private Kaggle GPU notebook | Generated anchor, English narration; drift remains possible | Apache 2.0 |
 | Fish Audio S2 Pro | Private Kaggle GPU notebook | Generated anchor, research auditions | Fish Audio Research License; commercial license required for monetized use |
 
@@ -24,7 +24,7 @@ Kaggle's current Python 3.13/Torch 2.11 image differs from the laptop's working
 Python 3.11 environment. Remote packages use an isolated environment sharing the
 provided Torch/CUDA installation. No new Torch/CUDA stack is installed locally.
 
-- Qwen uses bounded batches of up to four passages with the Ryan preset.
+- Qwen uses bounded batches of up to four passages with the selected preset (Ryan by default).
 - Dia uses the official `Dia-1.6B-0626` checkpoint, float32, and grouped short
   passages. Sentence times inside a group are explicitly estimated; the complete
   audio duration is measured. Generated voice anchors persist per project.
@@ -72,3 +72,23 @@ completion guarantee is claimed.
 - [Dia](https://github.com/nari-labs/dia)
 - [Fish S2 Pro license](https://huggingface.co/fishaudio/s2-pro)
 - [Fish inference protocol](https://speech.fish.audio/inference/)
+
+## Model-specific voice picker
+
+Audio and Studio both show each model’s supported voices as selectable cards.
+Kokoro retains its eight enabled English speakers. Qwen CustomVoice exposes
+Ryan, Aiden, Vivian, Serena, Uncle_Fu, Dylan, Eric, Ono_Anna and Sohee. Ryan
+and Aiden are native English voices; the other presets are labeled by native
+language, and English synthesis still uses English text. Dia and Fish have
+one project narrator option backed by their saved synthetic anchor; they do
+not expose a fabricated named-speaker bank. New presets use the same tested
+model runtime, but have not each had a new perceptual audition.
+
+Audio’s Kaggle previews are saved to the selected existing Studio project and
+use its durable queue, private credential vault, and cloud archiving. The
+page monitors the same saved job after refresh without resubmission. Cancel
+applies only to that audition, never the whole production queue. Full remote
+chapter narration stays in Studio; the Audio audition limit is 1800 characters.
+The common default script retains the user’s narrator description, cries,
+sound cues, dialogue, and emphasis examples. Instructions remain a separate
+Qwen control; the text in the script field is the actual audition source.
