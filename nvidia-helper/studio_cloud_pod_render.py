@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from studio_runpod import ProductionGPU,ManagedGPUError,bootstrap_diagnostic
 
-SOURCES=('studio_remote_render_worker.py','studio_render.py','studio_gpu_render.py','studio_gpu_codec.py',
+SOURCES=('studio_voice_provider.py','studio_cloud_inputs.py','studio_cloud_render_plan.py','studio_remote_render_worker.py','studio_render.py','studio_gpu_render.py','studio_gpu_codec.py',
     'studio_gpu_motion.py','studio_gpu_runtime.py','studio_data.py','studio_qc.py','studio_video_settings.py',
     'studio_render_inputs.py','studio_branding.py','studio_engagement.py','render_queue.py','studio_automation.py','studio_director_limits.py')
 
@@ -159,17 +159,29 @@ if check.returncode:
  if result.returncode:
   result=subprocess.run(['uv','pip','install','--python',python,'--no-deps','--only-binary=:all:','PyNvVideoCodec==2.2.3'],capture_output=True,env=environment,timeout=120)
  if result.returncode:raise RuntimeError('Small official NVIDIA codec wheel could not install; no runtime replaced')
+smoke="import sys,json,torch;sys.path.insert(0,"+repr(str(root))+");from studio_gpu_codec import render_frames;x=torch.zeros((720,1280,3),device='cuda',dtype=torch.uint8);r=render_frames(x,"+repr(str(root/'encoder-smoke.mp4'))+",'static',frames=1,fps=30);print(json.dumps({'frames':r['frames'],'encoder':r['encoder']}))"
+encoded=subprocess.run([python,'-c',smoke],capture_output=True,text=True,timeout=45,env=environment)
+if encoded.returncode:
+ detail=encoded.stderr[-800:]
+ raise RuntimeError('Real NVENC startup failed before source transfer. Check host video support and NVIDIA_DRIVER_CAPABILITIES=compute,video,utility. '+detail)
+smoke_result=json.loads(encoded.stdout.strip().splitlines()[-1])
+if smoke_result.get('frames')!=1:raise RuntimeError('NVENC did not encode the smoke-test frame')
 (root/'launch.json').write_text(json.dumps({'python':python,'environment':{k:v for k,v in environment.items() if k in ('CUDA_VISIBLE_DEVICES','CUDA_DEVICE_ORDER','NVIDIA_VISIBLE_DEVICES','NVIDIA_DRIVER_CAPABILITIES','LD_LIBRARY_PATH','PYTHONPATH','RUNPOD_POD_ID','VIRTUAL_ENV','PATH','PYTHONDONTWRITEBYTECODE','STUDIO_GPU_CLOUD')}}))
-print(json.dumps({'ready':True,'code':str(root),'runtime':json.loads(test.stdout.strip().splitlines()[-1])}))
+print(json.dumps({'ready':True,'code':str(root),'runtime':json.loads(test.stdout.strip().splitlines()[-1]),'encoderSmoke':smoke_result}))
 '''.replace('CODEHASH',hashlib.sha256(raw).hexdigest()[:20])
         encoded=base64.b64encode(bootstrap.encode()).decode()
         command="python3 -c \"import base64;exec(base64.b64decode('"+encoded+"'))\""
         result=subprocess.run([*self.ssh,command],input=base64.b64encode(raw),capture_output=True,timeout=290,
             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-        if result.returncode:raise ManagedGPUError('Cloud renderer setup failed: '+bootstrap_diagnostic(result.stderr.decode(errors='replace'))[-1200:])
+        if result.returncode:
+            detail=bootstrap_diagnostic(result.stderr.decode(errors='replace'))[-1200:]
+            if 'Real NVENC startup failed before source transfer' in detail and 'returned error 2' in detail:
+                from studio_gpu_providers import GPUEncoderUnavailable
+                raise GPUEncoderUnavailable('The owned host could not open its NVIDIA video encoder; no source media was transferred.')
+            raise ManagedGPUError('Cloud renderer setup failed: '+detail)
         record=json.loads(result.stdout.decode().strip().splitlines()[-1])
         self.code=record['code'];self.ready=record['ready'] is True
-        self.report.update(runtime=record['runtime'],prepareSeconds=time.monotonic()-began,codeSHA256=hashlib.sha256(raw).hexdigest())
+        self.report.update(runtime=record['runtime'],encoderSmoke=record['encoderSmoke'],prepareSeconds=time.monotonic()-began,codeSHA256=hashlib.sha256(raw).hexdigest())
 
     def healthCheck(self,**_):return {'installed':self.ready}
     def invalidate_backend_cache(self):pass
@@ -189,7 +201,13 @@ print(json.dumps({'ready':True,'code':str(root),'runtime':json.loads(test.stdout
                     for block in iter(lambda:source.read(4*1024*1024),b''):checksum.update(block)
                 if local.stat().st_size!=record['bytes'] or checksum.hexdigest()!=record['sha256']:
                     raise ValueError('A local input differs from its saved Google copy. Save it before cloud rendering.')
-            assets.append({k:record[k] for k in ('sha256','bytes')} | {'path':name,'url':self.archive.objects.url(record['key'])})
+            assets.append({k:record[k] for k in ('sha256','bytes')} | {'path':name})
+        for alias,record in manifest.get('renderCache',{}).items():
+            self.store.asset_local(project['id'],alias)
+            if not alias.endswith('.mp4') or alias in {r['path'] for r in assets}:continue
+            if not isinstance(record,dict) or not record.get('path','').startswith('cloud-renders/'):continue
+            assets.append({k:record[k] for k in ('sha256','bytes')} | {'path':alias,
+                'objectPath':record['path'],'optionalCache':True})
         return assets,etag
 
     def upload_capability(self,pid,event):
@@ -209,9 +227,18 @@ print(json.dumps({'ready':True,'code':str(root),'runtime':json.loads(test.stdout
         headers={'Content-Type':mimetypes.guess_type(path)[0] or 'video/mp4',
                  'x-goog-if-generation-match':'0','x-goog-meta-sha256':checksum}
         url=self.archive.objects.bucket.blob(key).generate_signed_url(version='v4',
-            expiration=datetime.timedelta(minutes=30),method='PUT',content_type=headers['Content-Type'],
+            expiration=datetime.timedelta(seconds=min(604800,max(1800,getattr(self,'execution_deadline',time.time()+1800)-time.time()+60))),method='PUT',content_type=headers['Content-Type'],
             headers={k:v for k,v in headers.items() if k!='Content-Type'})
         return {'path':path,'sha256':checksum,'url':url,'headers':headers}
+
+    def source_capability(self,event):
+        path=event.get('path')
+        record=getattr(self,'source_records',{}).get(path)
+        if record is None:raise ValueError('Worker requested an input outside this saved export.')
+        current=self.archive.asset_record(self.source_project,record.get('objectPath',path))
+        if not current or any(current.get(k)!=record.get(k) for k in ('bytes','sha256')):
+            raise ValueError('Saved cloud input changed during rendering; current edits retained.')
+        return {k:record[k] for k in ('path','bytes','sha256')} | {'url':self.archive.objects.url(current['key'])}
 
     def run(self,project,identity,budget_usd,owned_startup=None,prepared_sources=None):
         if not re.fullmatch(r'[a-f0-9]{32}',identity):raise ValueError('Invalid cloud render identity.')
@@ -219,8 +246,18 @@ print(json.dumps({'ready':True,'code':str(root),'runtime':json.loads(test.stdout
         if project['settings']['video']['width']!=1280 or project['settings']['video']['height']!=720 or project['settings']['video']['fps']!=30:
             raise ValueError('This native cloud renderer has only been prepared for 720p30; no silent format substitution.')
         assets,self.source_etag=prepared_sources or self.capabilities(project)
+        from studio_cloud_render_plan import render_plan
+        plan=render_plan(project,sum(r['bytes'] for r in assets if not r.get('optionalCache')),self.config)
+        configured_disk=self.config.get('gpuWorkingDiskGB',25)
+        if configured_disk<plan['recommendedDiskGB']:
+            raise ValueError(f"Cloud export needs about {plan['recommendedDiskGB']} GB working disk under the conservative plan; configured {configured_disk} GB. Change the working disk before renting.")
+        self.report['resourcePlan']=plan
+        self.source_records={r['path']:r for r in assets};self.source_project=project['id']
         self.upload_prefix='cloud-renders/'+identity
-        config=self.config | {'runpodAvailabilityWaitSeconds':90,'runpodCheckRegionalStock':False}
+        # Rendering downloads no diffusion weights. The image lane's high
+        # model-download threshold must not exclude adequate render workers.
+        config=self.config | {'runpodAvailabilityWaitSeconds':90,'runpodCheckRegionalStock':False,
+            'gpuMinDownloadMbps':self.config.get('gpuRenderMinDownloadMbps',50)}
         owner=project['id']+'-render-'+identity
         lease=self.lease_factory(config,self.state_path,owner,{'gpuBudgetUSD':budget_usd},self,self.gate,
             report=lambda value:self.progress('rental',value),connector=self.connect,owned_startup=owned_startup)
@@ -229,7 +266,9 @@ print(json.dumps({'ready':True,'code':str(root),'runtime':json.loads(test.stdout
         try:
             lease.ensure();self.report['startupSeconds']=time.monotonic()-began
             lease.save(renderOnly=True,sourceProject=project['id'],renderJob=identity)
-            spec={'id':identity,'project':project,'assets':assets,'deadline':min(lease.deadline,time.time()+900)}
+            self.execution_deadline=min(lease.deadline,time.time()+plan['suggestedExecutionSeconds'])
+            spec={'id':identity,'project':project,'assets':assets,'deadline':self.execution_deadline,
+                  'scratchEstimateBytes':plan['scratchEstimateBytes']}
             launch="import pathlib,json,os;root=pathlib.Path('"+self.code+"');p=json.loads((root/'launch.json').read_text());env=os.environ.copy();env.update(p['environment']);os.execve(p['python'],[p['python'],str(root/'studio_remote_render_worker.py')],env)"
             encoded=base64.b64encode(launch.encode()).decode()
             command="python3 -c \"import base64;exec(base64.b64decode('"+encoded+"'))\""
@@ -251,10 +290,13 @@ print(json.dumps({'ready':True,'code':str(root),'runtime':json.loads(test.stdout
                 cursor=0
                 while not finished.is_set() or cursor<len(events):
                     self.gate('Cloud GPU rendering saved footage');lease.check()
-                    if time.time()>=spec['deadline']:raise RuntimeError('Cloud render pilot time limit reached.')
+                    if time.time()>=spec['deadline']:raise RuntimeError('Cloud render spending or execution deadline reached.')
                     while cursor<len(events):
                         event=events[cursor];cursor+=1;kind=event.get('event')
-                        if kind=='asset':
+                        if kind=='source':
+                            capability=self.source_capability(event)
+                            self.process.stdin.write(json.dumps(capability)+'\n');self.process.stdin.flush()
+                        elif kind=='asset':
                             capability=self.upload_capability(project['id'],event)
                             self.process.stdin.write(json.dumps(capability)+'\n');self.process.stdin.flush()
                         elif kind=='uploaded':
@@ -262,6 +304,7 @@ print(json.dumps({'ready':True,'code':str(root),'runtime':json.loads(test.stdout
                             blob=self.archive.objects.bucket.get_blob(record['key'],timeout=30)
                             if blob is None or blob.size!=record['bytes'] or (blob.metadata or {}).get('sha256')!=record['sha256']:
                                 raise ValueError('Cloud render upload verification failed.')
+                            self.progress('assetSaved',{'originalPath':event['path'],**record})
                         elif kind=='progress':self.progress('progress',event)
                         elif kind=='failed':raise RuntimeError('Cloud rendering failed: '+bootstrap_diagnostic(event.get('detail','')))
                         elif kind=='complete':completed=event
@@ -276,7 +319,8 @@ print(json.dumps({'ready':True,'code':str(root),'runtime':json.loads(test.stdout
                 try:self.process.wait(timeout=5)
                 except subprocess.TimeoutExpired:self.process.kill()
             lease.stop('render-only cloud job finished or interrupted')
-            self.report['rental']=copy.deepcopy(lease.state)
+            self.report['rental']=(copy.deepcopy(lease.state) if lease.state.get('project')==owner else
+                {'status':'STOPPED','noAllocation':True,'estimatedUSD':0,'providerAttempts':copy.deepcopy(getattr(lease,'attempts',[]))})
         record=self.uploaded[completed['result']['path']]
         # Stream verification uses bounded memory, not a saved laptop MP4.
         verify_started=time.monotonic()

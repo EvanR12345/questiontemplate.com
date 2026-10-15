@@ -250,11 +250,13 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
                     elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0],refresh=query.get('refresh',['false'])[0]=='true'))
                     elif path=='/studio/publisher':self.reply(200,studio.publisher.status())
+                    elif path=='/studio/vimeo':self.reply(200,studio.vimeo.health() | {'jobs':studio.vimeo.jobs(query['project'][0])} if query.get('project') else studio.vimeo.health(verify=query.get('verify',['false'])[0]=='true'))
                     elif path=='/studio/cloud-render-capabilities':self.reply(200,studio.cloud_renders.capabilities())
+                    elif path=='/studio/cloud-render-plan':self.reply(200,studio.cloud_renders.plan(studio.store.load(query['project'][0])))
                     elif path=='/studio/gpu-providers':
                         from studio_gpu_providers import provider_status
                         self.reply(200,provider_status(studio.config,refresh=query.get('refresh',['false'])[0]=='true'))
-                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey','runpodActionKeyFile','vastApiKey','liumApiKey','gpuProviderKeyFile','kaggleApiToken','kaggleKeyFile')})
+                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey','runpodActionKeyFile','vastApiKey','liumApiKey','gpuProviderKeyFile','kaggleApiToken','kaggleKeyFile','vimeoApiToken','vimeoKeyFile')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
                 except FileNotFoundError as error:
@@ -395,6 +397,14 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 if result.get('status')=='COMPLETE':
                     # Refresh cloud files without overwriting local manual project edits.
                     studio.storage.manifests.pop(body['project'],None)
+                return result
+            if path=='/studio/vimeo':
+                from studio_publisher import save_upload_snapshot
+                operation=body.get('operation');pid=body['project'];options=body.get('options',{})
+                if operation=='start':result=studio.vimeo.start(pid,options)
+                elif operation=='status':result=studio.vimeo.status(pid,options['id'])
+                else:raise ValueError('Unknown Vimeo publishing operation.')
+                save_upload_snapshot(studio.store,pid,result,initial=operation=='start')
                 return result
             if path=='/studio/publish':
                 from studio_publisher import save_upload_snapshot

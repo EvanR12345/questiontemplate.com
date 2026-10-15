@@ -67,6 +67,16 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_vimeo_credentials_and_private_paths_never_enter_browser_configuration(self):
+        service=self.server.RequestHandlerClass.studio_service
+        with patch.dict(service.config,{'vimeoApiToken':'private-vimeo-test-token','vimeoKeyFile':'C:/private/vimeo-key.json'}):
+            code,_,raw=self.request('/studio/config')
+        self.assertEqual(code,200)
+        self.assertNotIn(b'private-vimeo-test-token',raw)
+        self.assertNotIn(b'vimeo-key.json',raw)
+        self.assertNotIn('vimeoKeyFile',json.loads(raw))
+        self.assertEqual(self.request('/studio/vimeo',key='wrong')[0],401)
+
     def test_planner_profile_reports_the_actual_cpu_fallback_without_starting_work(self):
         service=self.server.RequestHandlerClass.studio_service
         project=service.store.save(new_project('Read-only renderer profile'))

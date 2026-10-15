@@ -381,6 +381,15 @@ class VideoRenderer:
         ):
             return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4",'reused':True}
         clip_jobs = []
+        # A prior cloud run may have archived this exact chapter even when its
+        # original project selection was retained. Recover by content identity
+        # before recreating all of its shot clips.
+        recovered = folder / f"chapter-{ch['number']:03d}-{signature[:12]}.mp4"
+        if self.cached_asset(p['id'], recovered):
+            return {'path':recovered.relative_to(self.store.folder(p['id'])).as_posix(),
+                'signature':signature,'renderIdentity':signature,'duration':ch['audio']['duration'],
+                'created':time.time(),'downloadName':f"chapter-{ch['number']:03d}.mp4",
+                'settingsSnapshot':capture_video_settings(p,ch),'reused':True}
         unique_jobs = {}
         durations = []
         for index, s in enumerate(shots):

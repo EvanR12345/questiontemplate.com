@@ -3,7 +3,7 @@ import copy,math
 from studio_qc import check_level
 from studio_performance import profile_for
 
-FIELDS = ('unattendedProduction','qcRepairBudgetMode','style','generationMode','layoutMode','voice','voiceEngine','voiceCompute','speed','narrationDelivery',
+FIELDS = ('unattendedProduction','qcRepairBudgetMode','style','generationMode','layoutMode','voice','voiceEngine','voiceCompute','qwenSpeaker','voiceInstruction','voiceChapterBatchSize','speed','narrationDelivery',
           'soundEffects','automaticRepair','maxImageRetries','cloudImagesOnly')
 GROUPS = {
     'video': ('width','height','fps','renderer','crf','imageFit','motionMode','zoomAmount','motionEasing'),

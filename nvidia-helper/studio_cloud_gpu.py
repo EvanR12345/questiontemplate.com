@@ -2,7 +2,8 @@
 import copy,json,math,threading,time,uuid
 from pathlib import Path
 from cost_control import atomic_replace
-from studio_gpu_providers import GPUProviderError,GPUCapacityUnavailable,GPURequestUncertain,GPUConnectNotReady,label,number
+from studio_gpu_providers import GPUProviderError,GPUCapacityUnavailable,GPURequestUncertain,GPUConnectNotReady,GPUEncoderUnavailable,label,number
+from studio_power import ProductionPowerRequest
 
 
 class CloudGPULease:
@@ -18,6 +19,7 @@ class CloudGPULease:
         if self.state.get('status')!='STOPPED':
             raise GPURequestUncertain('An earlier GPU allocation remains unresolved. Reconcile it before renting another.')
         self.pod=None;self.deadline=None
+        self.unsupported=dict(self.state.get('unsupportedRenderOffers',{}))
 
     def save(self,**values):
         with self.lock:
@@ -30,18 +32,52 @@ class CloudGPULease:
 
     def check(self):
         if self.finished.is_set():raise GPUProviderError('The cloud allocation is already closed.')
+        if self.state.get('status')=='SHUTDOWN_UNCONFIRMED':
+            raise GPURequestUncertain('Owned shutdown is unresolved; no new GPU work can begin.')
         if self.deadline and self.clock()>=self.deadline:
             self.stop('Render spending deadline reached')
             raise GPUProviderError('Render spending deadline reached; completed results retained.')
 
     def watch(self,finished):
-        while not finished.wait(1):
-            if self.deadline and self.clock()>=self.deadline:
-                try:self.stop('Independent spending watchdog')
-                except Exception:
-                    # A failed stop never authorizes another allocation. Keep
-                    # trying the same owned resource while the helper survives.
-                    self.finished.wait(3)
+        # The reservation can be used by a standalone controller as well as a
+        # production queue. Own the idle-sleep request on this same thread, so
+        # it is released reliably even when the queue/creator is interrupted.
+        with ProductionPowerRequest():
+            last_probe=0.
+            while not finished.wait(1):
+                now=self.clock()
+                if self.state.get('status')=='SHUTDOWN_UNCONFIRMED':
+                    try:self.stop('Retrying shutdown of the same owned allocation')
+                    except Exception:finished.wait(3)
+                    continue
+                if self.deadline and now>=self.deadline:
+                    try:self.stop('Independent spending watchdog')
+                    except Exception:finished.wait(3)
+                    continue
+                if self.state.get('status') in ('SUBMISSION_UNKNOWN','STARTING'):
+                    if now-self.started>=600:
+                        try:self.stop('Independent startup watchdog; creation did not become ready')
+                        except Exception:finished.wait(3)
+                        continue
+                    # Some providers finish the rent POST only after a long
+                    # image pull. Discover only its unique owned name and arm
+                    # the server-side removal before that response returns.
+                    if self.state.get('provider')=='lium' and now-last_probe>=5:
+                        last_probe=now
+                        try:
+                            identity=self.state.get('podId')
+                            if not identity:
+                                matches=self.client.resources(self.state['name'])
+                                if len(matches)>1:raise GPURequestUncertain('Ambiguous owned creation; no other allocation allowed.')
+                                if len(matches)==1:
+                                    identity=str(matches[0]['id']);self.save(podId=identity)
+                            if identity and self.owned and self.state.get('providerDeadline')!=self.deadline:
+                                self.client.schedule_stop(identity,self.state['name'],self.deadline)
+                                if self.owned:self.save(providerDeadline=self.deadline)
+                        except Exception:
+                            # Never infer absence or release the ownership lock
+                            # from an unsuccessful read/schedule operation.
+                            if self.owned:self.save(deadlineConfirmationPending=True)
 
     def ensure(self):
         if self.owned and self.state.get('status')=='RUNNING':return
@@ -69,6 +105,7 @@ class CloudGPULease:
                     if self.config.get('gpuWorkload')=='images':offers=[o for o in offers if o.get('cpuRAMMiB',0)>=32000]
             except GPUProviderError as error:
                 errors.append(str(error));continue  # Read-only failure is safe.
+            offers=[o for o in offers if self.clock()-self.unsupported.get(provider_name+':'+str(o['id']),-86400)>86400]
             for offer in offers[:3]:
                 self.gate('Checking '+provider_name+' capacity')
                 rate=number(offer['hourlyUSD'],.001)
@@ -80,7 +117,7 @@ class CloudGPULease:
                 if seconds<60:raise GPUProviderError('Remaining cap cannot cover startup and safe shutdown.')
                 identity=uuid.uuid4().hex;owned_label=label('studio-cloud-'+identity)
                 self.deadline=self.clock()+seconds;self.client=client;self.started=self.clock()
-                self.state={'spentByProject':dict(self.state.get('spentByProject',{}))}
+                self.state={'spentByProject':dict(self.state.get('spentByProject',{})),'unsupportedRenderOffers':dict(self.unsupported)}
                 self.owned=True
                 self.save(status='SUBMISSION_UNKNOWN',provider=provider_name,project=self.project,
                     name=owned_label,podId=None,started=self.started,deadline=self.deadline,
@@ -100,8 +137,11 @@ class CloudGPULease:
                             errors.append('Lium render template is not configured.');break
                         public_key=Path(self.config['runpodSSHKeyFile']+'.pub').read_text().strip()
                         self.pod=client.create(offer,owned_label,template,public_key,identity)
+                    self.check() # A watchdog may already have stopped a slow create.
                     self.save(podId=self.pod,status='STARTING')
-                    if provider_name=='lium':client.schedule_stop(self.pod,owned_label,self.deadline)
+                    if provider_name=='lium':
+                        client.schedule_stop(self.pod,owned_label,self.deadline)
+                        self.save(providerDeadline=self.deadline,deadlineConfirmationPending=False)
                     if provider_name=='vast' and self.config.get('runpodSSHKeyFile'):
                         client.attach_ssh(self.pod,owned_label,Path(self.config['runpodSSHKeyFile']+'.pub').read_text().strip())
                     # Cold container pulls are distinct from unavailable GPUs.
@@ -140,6 +180,14 @@ class CloudGPULease:
                     self.owned=False;self.finished.set();self.save(status='STOPPED',reason='Offer explicitly unavailable')
                     self.finished=threading.Event()
                     continue
+                except GPUEncoderUnavailable:
+                    self.stop('Real encoder probe failed; owned worker released before another offer')
+                    self.unsupported[provider_name+':'+str(offer['id'])]=self.clock()
+                    self.save(unsupportedRenderOffers=dict(self.unsupported))
+                    previous=number(self.state.get('spentByProject',{}).get(self.project,0))
+                    self.finished=threading.Event();self.pod=None;self.deadline=None
+                    errors.append(provider_name+' host did not pass the real video encoder probe')
+                    continue
                 except BaseException:
                     self.stop('Cloud startup failed or interrupted')
                     # Runtime errors and uncertain create responses must not
@@ -165,7 +213,7 @@ class CloudGPULease:
                 ended=self.clock();cost=max(0,ended-self.state['started'])*self.state['hourlyUSD']/3600
                 spent=dict(self.state.get('spentByProject',{}))
                 spent[self.project]=spent.get(self.project,0)+cost
-                self.save(status='STOPPED',stopped=ended,estimatedUSD=cost,spentByProject=spent,reason=reason,
+                self.save(status='STOPPED',stopped=ended,estimatedUSD=spent[self.project],lastAllocationUSD=cost,spentByProject=spent,reason=reason,
                     retainedStorageBilled=self.state['provider']=='vast')
                 self.owned=False;self.finished.set()
             except BaseException:

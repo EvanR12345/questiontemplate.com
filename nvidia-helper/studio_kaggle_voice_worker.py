@@ -205,6 +205,7 @@ def run(request):
             group=[];words=0
             while index<len(request['parts']):
                 part=request['parts'][index]
+                if group and part.get('chapterId')!=request['parts'][group[0][0]].get('chapterId'):break
                 if len(part['segments'])!=1 or part['segments'][0]['kind']!='speech':break
                 phrase=part['segments'][0].get('ttsText',part['text']);count=len(phrase.split())
                 if group and words+count>45:break

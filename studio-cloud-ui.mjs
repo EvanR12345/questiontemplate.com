@@ -1,6 +1,7 @@
+import {vimeoForm,wireVimeo} from './studio-vimeo-ui.mjs?v=cloud-recovery-20261015';
 import {thumbnailPicker,wireThumbnailPicker} from './studio-thumbnail-picker.mjs?v=picker-20261009';
 // Cloud storage and finishing controls share the existing Studio connection.
-import {cloudRenderForm,wireCloudRender} from './studio-cloud-render-ui.mjs?v=cloud-render-4';
+import {cloudRenderForm,wireCloudRender} from './studio-cloud-render-ui.mjs?v=cloud-render-5';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bytes=n=>n>=2**30?(n/2**30).toFixed(2)+' GiB':n>=2**20?(n/2**20).toFixed(1)+' MiB':(n/1024).toFixed(1)+' KiB';
 const transferring=new Set();
@@ -70,7 +71,7 @@ function filesPanelBase(p){
 }
 export function filesPanel(p){
   const html=filesPanelBase(p),before='<div class="section-box"><h3>Video parts</h3>';
-  return html.replace(before,cloudRenderForm(p)+before);
+  return html.replace(before,cloudRenderForm(p)+before)+vimeoForm();
 }
 export async function wireFiles({p,api,action,note,media,submit,reload}){
   const $=id=>document.getElementById(id);
@@ -107,10 +108,11 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
     const savedFiles=files.files.filter(file=>file.cloud);
     $('cloudStatus').textContent=status.enabled?`${status.provider||'Cloud storage'} · ${state.status??'Not yet synced'} · ${savedFiles.length} cloud files · ${bytes(savedFiles.reduce((sum,file)=>sum+file.bytes,0))}${state.error?' · '+state.error:''}${status.error?' · '+status.error:''}`:status.error||'Cloud storage is not connected yet. Existing helper files remain safe.';
     rows=files.files;paint();
+    void wireVimeo({p,files:rows,api,action,active,note});
     const legacyRender=publisher.cloudRendering===true&&publisherMatches&&status.provider==='Google Cloud Storage';
     await wireCloudRender({p,api,action,active,open,enabled:renderer.ready===true||legacyRender,capabilities:renderer.ready===true||!legacyRender?renderer:{}});
     if(!active()||version!==refreshVersion)return;
-    const publishedJobs=await Promise.all((p.publishing??[]).map(async job=>{
+    const publishedJobs=await Promise.all((p.publishing??[]).filter(job=>job.platform!=='vimeo').map(async job=>{
       if(!publisher.configured||['COMPLETE','CANCELLED'].includes(job.status))return job;
       try{return await api('publish',{project:p.id,operation:'status',options:{id:job.id}});}catch{return job;}
     }));

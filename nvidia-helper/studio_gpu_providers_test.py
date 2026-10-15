@@ -137,10 +137,34 @@ class LeaseTests(unittest.TestCase):
             self.assertAlmostEqual(lease.state['estimatedUSD'],.007)
             self.assertEqual(lease.state['status'],'STOPPED')
         finally:lease.stop()
+    def test_failed_encoder_host_is_released_before_another_offer_and_all_costs_count(self):
+        from studio_gpu_providers import GPUEncoderUnavailable
+        client=self.client();client.offers=lambda *_:[{'id':i,'hourlyUSD':.7,'diskGB':25,'downloadUSDPerGB':0,'uploadUSDPerGB':0} for i in ('bad','good')]
+        calls=[]
+        def prepare(_):
+            self.clock[0]+=10;calls.append('prepare')
+            if len(calls)==1:raise GPUEncoderUnavailable('Confirmed encoder failure')
+        self.runner.prepare=prepare
+        lease=self.lease({'vast':client})
+        try:
+            lease.ensure();self.clock[0]+=10;lease.stop()
+            self.assertEqual(self.events.count('create'),2);self.assertEqual(self.events.count('stop'),2)
+            self.assertAlmostEqual(lease.state['estimatedUSD'],30*.7/3600)
+            self.assertIn('vast:bad',lease.state['unsupportedRenderOffers'])
+        finally:lease.stop()
+
     def test_missing_budget_does_not_allocate(self):
         lease=self.lease({'vast':self.client()},cap=.01)
         with self.assertRaisesRegex(GPUProviderError,'Remaining cap'):lease.ensure()
         self.assertEqual(self.events,[])
+
+    def test_reservation_watchdog_owns_and_releases_its_own_sleep_request(self):
+        import threading
+        from unittest.mock import MagicMock,patch
+        lease=self.lease({'vast':self.client()});done=threading.Event();done.set()
+        hold=MagicMock()
+        with patch('studio_cloud_gpu.ProductionPowerRequest',return_value=hold):lease.watch(done)
+        hold.__enter__.assert_called_once();hold.__exit__.assert_called_once()
 
     def test_startup_waits_for_ssh_without_renting_another_worker(self):
         lease=self.lease({'vast':self.client()});attempts=[]

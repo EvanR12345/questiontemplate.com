@@ -1,7 +1,7 @@
 """Compact export input receipts, without story, credentials or spending grants."""
 import copy
 
-FIELDS = ('style','layoutMode','generationMode','voice','speed','narrationDelivery',
+FIELDS = ('style','layoutMode','generationMode','voice','voiceEngine','voiceCompute','voiceInstruction','qwenSpeaker','voiceChapterBatchSize','speed','narrationDelivery',
           'soundEffects','continuityStrictness','appearanceHandling','cloudImagesOnly')
 NESTED = {
  'video':('width','height','fps','crf','imageFit','motionMode','zoomAmount','motionEasing'),

@@ -81,6 +81,8 @@ class StudioService:
         self.storage = R2Archive(self.store, storage_config if storage_config.exists() else self.config_path.with_name('.r2-secrets.json'))
         from studio_publisher import CloudPublisher
         self.publisher=CloudPublisher(self.config_path.with_name('.publisher-secrets.json'))
+        from studio_vimeo import VimeoPublisher
+        self.vimeo=VimeoPublisher(self.store,self.storage,self.config)
         self.cv = threading.Condition(threading.RLock())
         self.current = None
         self.cancel = False
@@ -367,6 +369,7 @@ class StudioService:
             "font",
             "openaiApiKey",
             "kaggleApiToken",
+            "vimeoApiToken",
             "kaggleUsername",
             "openaiPromptCacheMode",
             "openaiServiceTier",
@@ -454,12 +457,12 @@ class StudioService:
             self.unload_models()
             data = dict(data)
             secret_updates = {}
-            for field in ("openaiApiKey", "runpodApiKey", "vastApiKey", "liumApiKey", "kaggleApiToken"):
+            for field in ("openaiApiKey", "runpodApiKey", "vastApiKey", "liumApiKey", "kaggleApiToken", "vimeoApiToken"):
                 if field not in data:
                     continue
                 key = str(data.pop(field)).strip()
                 if key and (len(key) < 20 or field == "openaiApiKey" and not key.startswith("sk-")):
-                    raise ValueError("Enter a valid " + {"openaiApiKey":"OpenAI","runpodApiKey":"Runpod","vastApiKey":"Vast","liumApiKey":"Lium","kaggleApiToken":"Kaggle"}[field] + " API key.")
+                    raise ValueError("Enter a valid " + {"openaiApiKey":"OpenAI","runpodApiKey":"Runpod","vastApiKey":"Vast","liumApiKey":"Lium","kaggleApiToken":"Kaggle","vimeoApiToken":"Vimeo"}[field] + " API key.")
                 secret_updates[field] = key
             if secret_updates:
                 path = self.config_path.with_name(".studio-secrets.json")
@@ -479,6 +482,8 @@ class StudioService:
                 temporary.replace(path)
                 if "openaiApiKey" in saved:
                     self.config["openaiKeyFile"] = str(path)
+                if "vimeoApiToken" in saved:
+                    self.config["vimeoKeyFile"] = str(path)
                 if "kaggleApiToken" in saved:
                     self.config["kaggleKeyFile"] = str(path)
                 if "runpodApiKey" in saved:
@@ -1446,7 +1451,7 @@ class StudioService:
 
     def measured_stage(self, pid, stage, callback, *args, **details):
         overlap=getattr(self,'_overlap',None)
-        if overlap and stage in ('Narration','Render chapter'):
+        if overlap and stage in ('Narration','Render chapter') and not (stage=='Narration' and voice_location(next((a for a in args if isinstance(a,dict) and 'settings' in a),{'settings':{}})['settings'])=='kaggle'):
             with overlap.local_lane.acquire(self.gate,repair=stage=='Narration'):
                 if self is overlap.main:
                     with overlap.stage(stage,args,details):
@@ -1490,6 +1495,8 @@ class StudioService:
         if old_audio is not None:
             current_audio=get_chapter(self.store.load(pid),args[1]['id']).get('audio',{})
             details['reused']=bool(old_audio_available and old_audio==current_audio)
+            if current_audio.get('voiceBatch'):
+                details.update(voiceBatch=current_audio['voiceBatch'],timingScope='shared-voice-group',excludeFromLearning=True)
         if stage=='AI directing':
             # A retry can use many paid replies from the durable cache. Its
             # shorter wall time must not train a fresh full-chapter forecast.
@@ -1537,7 +1544,10 @@ class StudioService:
                 units={'kind':'characters','value':len(self.narration_text(project,chapter))}
                 audio=chapter.get('audio',{})
                 if not self.saved_narration_ready(project,chapter):
-                    seconds=measure('Narration',units,{'chapter':chapter['number']})
+                    narration_details={'chapter':chapter['number']}
+                    if voice_location(project['settings'])=='kaggle':
+                        narration_details['voiceBatch']={'chapters':project['settings'].get('voiceChapterBatchSize',2)}
+                    seconds=measure('Narration',units,narration_details)
                     if seconds is not None:planning+=seconds
                 if not self.analysis_is_current(project,chapter,audio.get('signature')):
                     seconds=measure('AI directing',units,{'chapter':chapter['number']})
@@ -2365,7 +2375,10 @@ class StudioService:
                 raise ValueError('Narration inputs changed before generation; current text retained.')
             current.update(cleanNarrationText=text)
         self.store.mutate(p['id'],prepare_text)
-        result = self.create_selected_audio(
+        from studio_voice_batches import grouped_narration
+        self._last_voice_group=None
+        grouped=grouped_narration(self,p,ch)
+        result = grouped or self.create_selected_audio(
             text,
             p["settings"]["voice"],
             p["settings"]["speed"],

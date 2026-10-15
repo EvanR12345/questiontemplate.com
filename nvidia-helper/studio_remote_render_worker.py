@@ -75,8 +75,6 @@ def run(spec):
     project=validate_project(spec['project']);pid=project['id']
     records=spec.get('assets',[])
     if not isinstance(records,list) or not records:raise ValueError('Saved source assets required.')
-    total=sum(r['bytes'] for r in records)
-    if shutil.disk_usage(root).free<total*4+256*2**20:raise RuntimeError('Insufficient cloud scratch; sources remain in Google.')
     def gate(message=''):
         nonlocal last_progress
         if time.time()>=deadline:raise RuntimeError('Render spending deadline reached.')
@@ -84,20 +82,20 @@ def run(spec):
         if now-last_progress>=4:
             emit({'event':'progress','stage':message or 'Rendering saved footage','elapsed':now-started})
             last_progress=now
-    restore_started=time.monotonic()
-    for record in records:
-        gate('Loading saved Google assets')
-        if (type(record.get('bytes')) is not int or not 0<record['bytes']<=2**30
-                or not re.fullmatch(r'[a-f0-9]{64}',record.get('sha256',''))):raise ValueError('Invalid source identity.')
-        target=store.asset_local(pid,record['path']);target.parent.mkdir(parents=True,exist_ok=True)
-        checksum=hashlib.sha256();count=0
-        with urllib.request.urlopen(safe_url(record['url']),timeout=60) as response,target.open('xb') as output:
-            for part in iter(lambda:response.read(1024*1024),b''):
-                gate('Loading saved Google assets');count+=len(part)
-                if count>record['bytes']:raise ValueError('Source exceeded saved size.')
-                checksum.update(part);output.write(part)
-        if count!=record['bytes'] or checksum.hexdigest()!=record['sha256']:raise ValueError('Cloud source checksum mismatch.')
-    restored=time.monotonic()-restore_started
+    from studio_cloud_inputs import CloudInputCache
+    from studio_cloud_render_plan import timeout_for_bytes
+    def capability(path):
+        emit({'event':'source','path':path})
+        return receive()
+    cache=CloudInputCache(records,lambda path:store.asset_local(pid,path),capability,gate,deadline,safe_url)
+    ordinary_asset=store.asset
+    def source_asset(project_id,path):
+        if project_id!=pid:raise ValueError('Cloud input belongs to another project.')
+        return cache.ensure(path) if path in cache.records else ordinary_asset(project_id,path)
+    store.asset=source_asset
+    reserve=int(spec.get('scratchEstimateBytes',256*2**20))
+    if shutil.disk_usage(root).free<reserve:
+        raise RuntimeError('Insufficient cloud scratch for the planned output; Google originals remain intact.')
     project=store.save(project)
     renderer=NativeVideoRenderer(store,{'ffmpeg':'/usr/bin/ffmpeg','renderWorkers':1})
     operations=[]
@@ -132,7 +130,7 @@ def run(spec):
             with path.open('rb') as body:
                 request=urllib.request.Request(safe_url(capability['url']),data=body,method='PUT',
                     headers=headers|{'Content-Length':str(size)})
-                with urllib.request.urlopen(request,timeout=120) as response:
+                with urllib.request.urlopen(request,timeout=timeout_for_bytes(size,deadline-time.time())) as response:
                     if not 200<=response.status<300:raise RuntimeError('Google rejected render upload.')
         upload_seconds+=time.monotonic()-began
         emit({'event':'uploaded','path':relative,'bytes':size,'sha256':checksum})
@@ -144,7 +142,7 @@ def run(spec):
     final=store.asset(pid,result['path'])
     check_started=time.monotonic()
     metadata=json.loads(subprocess.check_output(['/usr/bin/ffprobe','-v','error','-show_streams','-show_format','-of','json',str(final)],text=True))
-    subprocess.run(['/usr/bin/ffmpeg','-v','error','-i',str(final),'-f','null','-'],check=True,capture_output=True,timeout=120)
+    subprocess.run(['/usr/bin/ffmpeg','-v','error','-i',str(final),'-f','null','-'],check=True,capture_output=True,timeout=max(.1,deadline-time.time()))
     video=next(s for s in metadata['streams'] if s['codec_type']=='video')
     average=validate_video(video,float(metadata['format']['duration']),result['duration'],
         sum(bool(c['sourceText'].strip()) for c in project['chapters']))
@@ -154,7 +152,7 @@ def run(spec):
     final_checksum=checksum.hexdigest()
     import torch
     emit({'event':'complete','result':result,'sha256':final_checksum,'bytes':final.stat().st_size,
-        'sourceTransferSeconds':restored,'renderAndUploadsSeconds':render_seconds,'uploadSeconds':upload_seconds,
+        'sourceTransferSeconds':cache.seconds,'sourceBytesDownloaded':cache.bytes,'sourceFilesDownloaded':cache.files,'renderAndUploadsSeconds':render_seconds,'uploadSeconds':upload_seconds,
         'decodeVerificationSeconds':time.monotonic()-check_started,'operations':operations,'uploadedAssetsCount':len(uploads),
         'width':video['width'],'height':video['height'],'fps':30,'measuredAverageFPS':average,'frames':video.get('nb_frames'),
         'fileDuration':float(metadata['format']['duration']),'gpu':torch.cuda.get_device_name(0),

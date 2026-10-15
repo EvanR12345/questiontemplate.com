@@ -11,7 +11,7 @@ export function voiceValues(root) {
   if(!VOICE_MODELS.some(([id])=>id===voiceEngine))throw Error('Choose a supported narration model.');
   const voiceInstruction=root.querySelector('#settingVoiceInstruction')?.value??NARRATOR;
   if(voiceInstruction.length>1200)throw Error('Narrator instructions must be at most 1200 characters.');
-  return {voiceEngine,voiceInstruction,...(voiceEngine==='qwen3-tts-1.7b'?{qwenSpeaker:root.querySelector('#settingModelVoice')?.value||'Ryan'}:{}),voiceCompute:voiceEngine!=='kokoro-82m'||root.querySelector('#settingKokoroKaggle')?.checked?'kaggle':'local',fishCommercialLicense:root.querySelector('#settingFishLicense')?.checked||false};
+  return {voiceEngine,voiceInstruction,...(root.querySelector('#settingVoiceBatchSize')?{voiceChapterBatchSize:Number(root.querySelector('#settingVoiceBatchSize').value)}:{}),...(voiceEngine==='qwen3-tts-1.7b'?{qwenSpeaker:root.querySelector('#settingModelVoice')?.value||'Ryan'}:{}),voiceCompute:voiceEngine!=='kokoro-82m'||root.querySelector('#settingKokoroKaggle')?.checked?'kaggle':'local',fishCommercialLicense:root.querySelector('#settingFishLicense')?.checked||false};
 }
 export function voiceNotice(engine,health,compute='local') {
   if(engine==='kokoro-82m' && compute==='local')return 'Existing local Kokoro voice. Chapter narration and earlier auditions remain saved.';

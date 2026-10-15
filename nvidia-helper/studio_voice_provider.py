@@ -56,6 +56,8 @@ def validate(settings):
         raise ValueError('Choose a supported Qwen speaker.')
     if settings.get('voiceCompute','local') not in ('local','kaggle'):
         raise ValueError('Choose local or Kaggle voice compute.')
+    batch=settings.get('voiceChapterBatchSize',2)
+    if type(batch) is not int or not 1<=batch<=4:raise ValueError('Choose 1–4 chapters per voice job.')
     instruction=settings.get('voiceInstruction',NARRATOR)
     if not isinstance(instruction,str) or len(instruction)>1200:
         raise ValueError('Narrator instructions must be at most 1200 characters.')
@@ -137,7 +139,94 @@ class KaggleVoice:
         try:return self._generate(text,target,settings,gate,preview,reference)
         finally:_KAGGLE_ADMISSION.release()
 
-    def _generate(self,text,target,settings,gate,preview=False,reference=None):
+    def generate_many(self,items,settings,gate,reference=None):
+        """One private notebook/model load, separate exact chapter WAVs.
+
+        Only bounded same-model groups; no chapter labels enter the audio.
+        Receipts publish independently so an interrupted split can recover.
+        """
+        from studio_data import sentences
+        from narration_audio import audio_segments
+        if not 1<=len(items)<=4 or len({item['id'] for item in items})!=len(items):
+            raise ValueError('Narration groups need 1–4 distinct chapters.')
+        if sum(len(item['text'].split()) for item in items)>4000:
+            raise ValueError('Keep one voice group under 4000 words.')
+        while not _KAGGLE_ADMISSION.acquire(timeout=.25):gate('Waiting for the shared Kaggle voice slot')
+        try:
+            cached=[]
+            for item in items:
+                target=Path(item['target']);receipt=target.with_suffix('.voice-ready.json')
+                value=json.loads(receipt.read_text(encoding='utf-8')) if receipt.is_file() else None
+                valid=bool(value and value.get('inputSignature')==item['signature'] and target.is_file())
+                if valid:
+                    checksum=hashlib.sha256()
+                    with target.open('rb') as source:
+                        for block in iter(lambda:source.read(1024*1024),b''):checksum.update(block)
+                    valid=checksum.hexdigest()==value.get('sha256')
+                cached.append(dict(value['result'],path=str(target)) if valid else None)
+            if all(cached):return cached
+            # A previous split may have saved only part of the group. Never
+            # submit those completed chapters again under a new notebook ID.
+            missing=[index for index,value in enumerate(cached) if value is None]
+            items=[items[index] for index in missing]
+            parts=[];ranges=[]
+            for item in items:
+                start=len(parts)
+                parts.extend({'text':line,'chapterId':item['id'],'segments':audio_segments(line,settings.get('soundEffects','subtle'))}
+                    for line in sentences(item['text']))
+                if len(parts)==start:raise ValueError('Chapter narration is empty.')
+                ranges.append((start,len(parts)))
+            fingerprint=hashlib.sha256(json.dumps([(i['id'],i['signature']) for i in items],sort_keys=True).encode()).hexdigest()
+            folder=Path(items[0]['target']).parent.parent/'.voice-groups';folder.mkdir(exist_ok=True)
+            combined=folder/(fingerprint+'.wav')
+            result=self._generate('\n'.join(i['text'] for i in items),combined,settings,gate,
+                reference=reference,parts_override=parts)
+            if result.get('voiceAnchor'):
+                # Internal notebook work is hidden from the asset archive. The
+                # reusable narrator anchor must be an ordinary project asset.
+                source=Path(result['voiceAnchor']['path'])
+                anchor=folder.parent/source.name
+                if not anchor.exists():shutil.copyfile(source,anchor)
+                result['voiceAnchor']=dict(result['voiceAnchor'],path=str(anchor))
+            results=[]
+            with wave.open(str(combined),'rb') as source:
+                rate=source.getframerate();width=source.getsampwidth();channels=source.getnchannels()
+                for item,(first,last) in zip(items,ranges):
+                    gate('Saving completed chapter narration from the shared voice job')
+                    timings=result['sentences'][first:last]
+                    begin=round(timings[0]['start']*rate);end=round(timings[-1]['end']*rate)
+                    target=Path(item['target']);target.parent.mkdir(exist_ok=True)
+                    temporary=target.with_suffix('.voice-partial.wav')
+                    try:
+                        source.setpos(begin)
+                        with wave.open(str(temporary),'wb') as output:
+                            output.setnchannels(channels);output.setsampwidth(width);output.setframerate(rate)
+                            remaining=end-begin
+                            while remaining:
+                                count=min(remaining,24000*10);data=source.readframes(count)
+                                if len(data)!=count*channels*width:raise ValueError('Incomplete grouped narration WAV.')
+                                output.writeframesraw(data);remaining-=count
+                        temporary.replace(target)
+                    finally:
+                        if temporary.is_file():temporary.unlink()
+                    chapter_result={k:v for k,v in result.items() if k not in ('setupAndModelLoadSeconds','speechGenerationSeconds','setupAndGenerationSeconds')} | {'path':str(target),'duration':(end-begin)/rate,
+                        'sentences':[dict(t,index=index,start=max(0,t['start']-begin/rate),end=t['end']-begin/rate)
+                            for index,t in enumerate(timings)],
+                        'voiceBatch':{'chapters':len(items),'group':fingerprint,'setupShared':True,
+                            'groupSetupSeconds':result.get('setupAndModelLoadSeconds'),
+                            'groupSpeechSeconds':result.get('speechGenerationSeconds')},
+                        'timingAllocation':'Shared notebook measurements; not isolated chapter throughput'}
+                    checksum=hashlib.sha256()
+                    with target.open('rb') as saved:
+                        for block in iter(lambda:saved.read(1024*1024),b''):checksum.update(block)
+                    self._write(target.with_suffix('.voice-ready.json'),{'inputSignature':item['signature'],
+                        'sha256':checksum.hexdigest(),'result':chapter_result})
+                    results.append(chapter_result)
+            for index,result in zip(missing,results):cached[index]=result
+            return cached
+        finally:_KAGGLE_ADMISSION.release()
+
+    def _generate(self,text,target,settings,gate,preview=False,reference=None,parts_override=None):
         validate(settings)
         reason=readiness(settings,self.config,preview)
         if reason:raise ValueError(reason)
@@ -153,6 +242,8 @@ class KaggleVoice:
         from studio_data import sentences
         from narration_audio import audio_segments
         request['parts']=[{'text':line,'segments':audio_segments(line,request['effects'])} for line in sentences(text)]
+        if parts_override is not None:
+            request['parts']=parts_override;request['runtimeVersion']=13
         if engine=='kokoro-82m':
             # Reuse the working phonemizer; Kaggle Python 3.13 cannot build its
             # older English G2P dependencies. Only inference runs on Kaggle.

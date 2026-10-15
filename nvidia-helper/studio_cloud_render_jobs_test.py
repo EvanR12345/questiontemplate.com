@@ -7,7 +7,7 @@ from studio_cloud_render_jobs import CloudRenderJobs,render_options
 
 class CloudJobTest(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.project=new_project();self.project['revision']=3
+        self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.project=new_project();self.project['revision']=3;self.project['chapters'][0].update(sourceText='A saved story.',audio={'duration':82.05,'path':'voice.wav'})
         self.database=sqlite3.connect(':memory:');self.database.row_factory=sqlite3.Row
         self.database.execute('CREATE TABLE jobs(id TEXT PRIMARY KEY,project TEXT,chapter TEXT,shot TEXT,kind TEXT,payload TEXT,status TEXT,message TEXT,priority INTEGER,created REAL,started REAL,seconds REAL,attempt INTEGER,seed INTEGER)')
         self.publications=[];self.calls=[]

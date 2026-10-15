@@ -98,6 +98,19 @@ class CloudSaveTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.store.asset(self.p['id'],'art.png')
         self.assertFalse(self.image.exists())
 
+    def test_cloud_render_reuse_index_survives_a_regular_project_save(self):
+        self.a.sync(self.p['id'])
+        key='studio/manifests/'+self.p['id']+'.json'
+        manifest,etag=self.a.manifest(self.p['id'],True)
+        manifest['renderCache']={'chapter-cached.mp4':{'path':'cloud-renders/old/chapter.mp4','sha256':'a'*64,'bytes':123}}
+        self.obj.put_json(key,manifest,etag)
+        self.a.manifests.pop(self.p['id'],None)
+        self.store.mutate(self.p['id'],lambda p:p.update(name='Changed title'))
+        self.a.sync(self.p['id'])
+        updated,_=self.a.manifest(self.p['id'],True)
+        self.assertEqual(updated['renderCache'],manifest['renderCache'])
+        self.assertEqual(updated['project']['name'],'Changed title')
+
     def test_uploads_before_manifest_and_does_not_repeat_unchanged_assets(self):
         self.a.sync(self.p['id']);n=self.obj.uploads
         self.a.sync(self.p['id']);self.assertEqual(self.obj.uploads,n)

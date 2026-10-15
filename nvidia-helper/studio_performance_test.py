@@ -134,3 +134,12 @@ class PerformanceTest(unittest.TestCase):
         self.assertNotEqual(a,profile_for('Narration',self.project,{}))
         self.assertNotEqual(profile_for('Image pipeline',self.project,{}, {'imageTasks':2}),
             profile_for('Image pipeline',self.project,{}, {'imageTasks':3}))
+
+    def test_kaggle_single_jobs_do_not_inherit_a_grouped_timing_profile(self):
+        self.project['settings'].update(voiceEngine='qwen3-tts-1.7b',voiceChapterBatchSize=4)
+        single=profile_for('Narration',self.project,{})
+        grouped=profile_for('Narration',self.project,{}, {'voiceBatch':{'chapters':2}})
+        self.assertEqual(single['chapterBatchSize'],1)
+        self.assertEqual(grouped['chapterBatchSize'],2)
+        self.store.record('single','run',single,{'kind':'characters','value':100},10,{})
+        self.assertIsNone(self.store.estimate(grouped,{'kind':'characters','value':100})['seconds'])

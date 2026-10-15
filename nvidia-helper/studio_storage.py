@@ -116,7 +116,7 @@ class S3Objects:
         return self.client.generate_presigned_url('get_object',Params=params,ExpiresIn=3600)
 
 class R2Archive:
-    def __init__(self, store, secret_path, objects=None):
+    def __init__(self, store, secret_path, objects=None, start_worker=True):
         self.store = store; self.secret_path = Path(secret_path)
         self.state_path = store.root / 'cloud-sync.json'
         self.cv = threading.Condition(threading.RLock()); self.stopped = False
@@ -153,9 +153,10 @@ class R2Archive:
         self.catalogue = None; self.catalogue_at = 0
         if self.enabled:
             store.archive = self
-            for p in store.list_local(): self.enqueue(p['id'])
-        self.thread = threading.Thread(target=self.worker,daemon=True,name='studio-cloud-save')
-        self.thread.start()
+            if start_worker:
+                for p in store.list_local(): self.enqueue(p['id'])
+        self.thread = threading.Thread(target=self.worker,daemon=True,name='studio-cloud-save') if start_worker else None
+        if self.thread:self.thread.start()
 
     def persist(self):
         temp = self.state_path.with_suffix('.tmp')
@@ -224,6 +225,10 @@ class R2Archive:
             if stable_file(path) != before: raise ValueError('An asset changed during upload. Previous cloud snapshot preserved.')
             records[relative] = {'key':key,'sha256':checksum,'bytes':before[0],'stamp':list(before)}
         manifest = {'version':1,'project':project,'files':records,'savedAt':time.time()}
+        if old and old.get('renderCache'):
+            # Cloud render aliases belong to immutable content-keyed outputs;
+            # an ordinary project edit must not discard their reuse index.
+            manifest['renderCache']=copy.deepcopy(old['renderCache'])
         # All immutable assets finish before publishing a new loadable project.
         with self.store.lock:
             if (folder/'project.json').read_bytes() != snapshot:
@@ -402,4 +407,4 @@ class R2Archive:
 
     def close(self):
         with self.cv: self.stopped=True; self.cv.notify_all()
-        self.thread.join(5)
+        if self.thread:self.thread.join(5)

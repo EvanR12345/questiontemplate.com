@@ -6,7 +6,7 @@ import threading
 import time
 import contextvars
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from openai_director import OpenAIDirector
 from studio_data import digest, get_chapter, get_shot, uid
 from studio_qc import decision as qc_decision, automatic_repairs, check_level
@@ -142,9 +142,11 @@ class CloudStoryOverlap:
         def execute():
             status,message='COMPLETE','Next chapter narration saved'
             try:
-                with self.local_lane.acquire(clone.gate,repair=True):
+                from studio_voice_provider import location as voice_location
+                remote=voice_location(snapshot['settings'])=='kaggle'
+                with (nullcontext() if remote else self.local_lane.acquire(clone.gate,repair=True)):
                     current=self.validate_settings();ch=get_chapter(current,chapter)
-                    clone.unload_models();clone.before_audio()
+                    if not remote:clone.unload_models();clone.before_audio()
                     # The lane is already owned; avoid reacquiring its only slot.
                     return clone.measured_execution_stage(self.project,'Narration',clone.narration,current,ch,chapter=ch['number'])
             except BaseException as error:

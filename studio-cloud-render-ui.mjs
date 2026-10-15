@@ -2,7 +2,7 @@ const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>'
 const terminal=new Set(['COMPLETE','FAILED','CANCELLED','INTERRUPTED','NOT_STARTED']);
 const mounts=new WeakMap();
 export function cloudRenderForm(p){
-  return `<div class="section-box"><h3>Render in cloud · save to Google</h3><p class="muted">Uses your saved narration, artwork and finishing settings. Completed videos stay in private Google storage. Your original video is preserved. This control becomes available after the cloud worker has been deployed and tested.</p><label>Video version<select id="cloudRenderDestination"><option value="youtube" ${p.settings.engagement?.exportDestination==='patreon'?'':'selected'}>YouTube</option><option value="patreon" ${p.settings.engagement?.exportDestination==='patreon'?'selected':''}>Patreon</option></select></label><label id="cloudRenderBudgetLabel" hidden>Total render spending cap · US$<input id="cloudRenderBudget" type="number" min="0.10" max="100" step="0.05" placeholder="Set before starting"></label><div class="toolbar"><button id="cloudRenderStart" disabled>Render full story in cloud</button><button id="cloudRenderRefresh" disabled>Refresh rendering</button><button id="cloudRenderCancel" disabled>Cancel cloud render</button></div><p id="cloudRenderStatus" role="status">Checking cloud renderer…</p><div id="cloudRenderResults"></div><p class="muted">Progress normally updates about every four seconds. An MP4 becomes playable when encoding and saving finish. Your saved chapter-split settings also apply. Google Cloud Run uses trial compute credits; GPU marketplace workers use their provider balance, including startup and working storage.</p></div>`;
+  return `<div class="section-box"><h3>Render in cloud · save to Google</h3><p class="muted">Uses your saved narration, artwork and finishing settings. Completed videos stay in private Google storage. Your original video is preserved. This control becomes available after the cloud worker has been deployed and tested.</p><label>Video version<select id="cloudRenderDestination"><option value="youtube" ${p.settings.engagement?.exportDestination==='patreon'?'':'selected'}>YouTube</option><option value="patreon" ${p.settings.engagement?.exportDestination==='patreon'?'selected':''}>Patreon</option></select></label><label id="cloudRenderBudgetLabel" hidden>Total render spending cap · US$<input id="cloudRenderBudget" type="number" min="0.10" max="100" step="0.05" placeholder="Set before starting"></label><div class="toolbar"><button id="cloudRenderPlan">Check cloud working space</button><button id="cloudRenderStart" disabled>Render full story in cloud</button><button id="cloudRenderRefresh" disabled>Refresh rendering</button><button id="cloudRenderCancel" disabled>Cancel cloud render</button></div><p id="cloudRenderStatus" role="status">Checking cloud renderer…</p><p id="cloudRenderPlanResult" class="muted" role="status"></p><div id="cloudRenderResults"></div><p class="muted">Progress normally updates about every four seconds. An MP4 becomes playable when encoding and saving finish. Your saved chapter-split settings also apply. Google Cloud Run uses trial compute credits; GPU marketplace workers use their provider balance, including startup and working storage.</p></div>`;
 }
 export class CloudRenderClient{
   constructor(project,api,newId=()=>crypto.randomUUID().replaceAll('-',''),configuration={}){
@@ -48,8 +48,13 @@ export async function wireCloudRender({p,api,action,active,open,enabled,capabili
   for(const button of [start,refresh,cancel]){button.disabled=true;button.onclick=null;}
   const marketplace=capabilities.backend==='marketplace';
   if($('cloudRenderBudgetLabel'))$('cloudRenderBudgetLabel').hidden=!marketplace;
+  if($('cloudRenderPlan'))$('cloudRenderPlan').onclick=()=>action(async()=>{
+    const plan=await api('cloud-render-plan?project='+encodeURIComponent(p.id));
+    if(!mounted())return;
+    $('cloudRenderPlanResult').textContent=`${(plan.durationSeconds/60).toFixed(1)} minutes · ${plan.chapterCount} chapters · ~${(plan.estimatedOutputBytes/2**30).toFixed(2)} GiB output planning allowance · ${plan.recommendedDiskGB} GB recommended worker disk (configured ${plan.configuredDiskGB} GB) · no laptop MP4. ${plan.estimateKind}. ${plan.withinVerifiedDuration?'Within tested duration.':'Longer than the verified duration: validation required.'} ${plan.missingCloudInputs?plan.missingCloudInputs+' inputs still need cloud saving.':''}`;
+  });
   if(!enabled){view.textContent=capabilities.reason||'Cloud rendering is not connected yet. No local rendering starts from this button.';return;}
-  start.textContent=marketplace?'Render cloud preview · 720p30':'Render full story in cloud';
+  start.textContent=marketplace?(capabilities.longExportVerified?'Render saved story in cloud · 720p30':'Render cloud preview · 720p30'):'Render full story in cloud';
   const client=new CloudRenderClient(p,api,undefined,{backend:marketplace?'marketplace':undefined});let timer;
   const paint=state=>{
     if(!mounted())return;
@@ -57,7 +62,7 @@ export async function wireCloudRender({p,api,action,active,open,enabled,capabili
     view.textContent=state.status==='NOT_STARTED'?(marketplace?`Ready for previews up to ${capabilities.maximumDurationSeconds} seconds. Save all assets to Google and set the total cap.`:'Ready. Save the current project and all assets to Google before rendering.'):
       `${state.status} · ${state.stage??''}${state.elapsed?` · ${Math.floor(state.elapsed/60)} min ${Math.floor(state.elapsed%60)} sec`:''}${state.completedAssets?` · ${state.completedAssets} assets saved`:''}${state.cancelRequested?' · Cancellation requested':''}`;
     if(state.cost?.computeWindowEstimateUSD!=null)view.textContent+=` · Compute window estimate $${state.cost.computeWindowEstimateUSD.toFixed(4)} (other charges may apply)`;
-    const outputs=state.status==='COMPLETE'?[state.result,...(state.result?.parts??[])].filter(x=>x?.path):[];
+    const outputs=[...new Map([...(state.status==='COMPLETE'?[state.result,...(state.result?.parts??[])]:[]),...(state.completedOutputs??[])].filter(x=>x?.path).map(x=>[x.path,x])).values()];
     $('cloudRenderResults').innerHTML=outputs.map(x=>`<p>${escape(x.downloadName??x.path)} <button data-render-open="${escape(x.path)}">Open saved video</button></p>`).join('');
     $('cloudRenderResults').querySelectorAll('[data-render-open]').forEach(b=>b.onclick=()=>action(()=>open(b.dataset.renderOpen)));
   };

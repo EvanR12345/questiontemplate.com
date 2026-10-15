@@ -1,7 +1,7 @@
 """Render-only queue integration. A durable nonce never repeats a paid allocation.
 
 The marketplace path remains gated by a completed real renderer verification.
-Until longer exports are measured, its website control admits short previews only.
+Long exports keep a separate measured-duration gate; resource planning is free.
 """
 import copy,json,math,re,threading,time
 from pathlib import Path
@@ -50,13 +50,43 @@ class CloudRenderJobs:
         status=provider_status(self.studio.config)
         order=status['providerOrder'];configured=[r['provider'] for r in status['providers']
             if r['credentialSaved'] and r['renderVerified'] and r['provider'] in order]
+        limits={p:max(MAX_PREVIEW_SECONDS,int(self.studio.config.get('gpuRenderVerifiedDurationSeconds',{}).get(p,MAX_PREVIEW_SECONDS))) for p in configured}
         archive=self.studio.storage
         ready=bool(configured and archive.enabled and archive.provider=='Google Cloud Storage')
         return {'backend':'marketplace','ready':ready,'providers':configured,'resolution':'720p30',
-            'maximumDurationSeconds':MAX_PREVIEW_SECONDS,'voiceLocation':'local',
+            'maximumDurationSeconds':max(limits.values(),default=MAX_PREVIEW_SECONDS),'providerDurationLimits':limits,'voiceLocation':'selected project voice engine',
             'videoLocation':'private Google storage','paidRequestsSubmitted':0,
-            'reason':'Ready for verified short render-only previews.' if ready else
+            'longExportPrepared':True,'longExportVerified':any(v>MAX_PREVIEW_SECONDS for v in limits.values()),
+            'reason':'Ready for verified short render-only previews; long exports need a capped validation run.' if ready else
                 'Cloud GPU rendering needs a successful video test and private Google storage. Existing local rendering remains available.'}
+
+    def plan(self,project):
+        from studio_cloud_render_plan import render_plan
+        from studio_cloud_pod_render import render_assets
+        sizes=[];missing=[]
+        for path in render_assets(project):
+            record=self.studio.storage.asset_record(project['id'],path)
+            if record:sizes.append(record['bytes'])
+            else:missing.append(path)
+        plan=render_plan(project,sum(sizes),self.studio.config)
+        limit=self.capabilities()['maximumDurationSeconds']
+        plan.update(currentVerifiedLimitSeconds=limit,withinVerifiedDuration=plan['durationSeconds']<=limit,
+            missingCloudInputs=len(missing),configuredDiskGB=self.studio.config.get('gpuWorkingDiskGB',25),
+            paidRequestsSubmitted=0)
+        plan['workingDiskSufficient']=plan['configuredDiskGB']>=plan['recommendedDiskGB']
+        return plan
+
+    def publish_saved_files(self,pid,files):
+        if not files:return
+        manifest,etag=self.studio.storage.manifest(pid,True)
+        if not manifest:raise ValueError('Cloud project manifest is missing; completed objects remain saved.')
+        publication=copy.deepcopy(manifest)
+        for alias,record in files.items():
+            publication.setdefault('files',{})[record['path']]={k:v for k,v in record.items() if k!='path'}
+            publication.setdefault('renderCache',{})[alias]=record
+        self.studio.storage.objects.put_json('studio/manifests/'+pid+'.json',publication,etag=etag)
+        self.studio.storage.manifests.pop(pid,None)
+        with self.studio.storage.catalogue_lock:self.studio.storage.catalogue_at=0
 
     def validate(self,project,options):
         if not self.capabilities()['ready']:raise ValueError(self.capabilities()['reason'])
@@ -79,7 +109,11 @@ class CloudRenderJobs:
         if intro.get('enabled'):duration+=intro['duration']*(len(chapters) if intro.get('placement')=='every_chapter' else 1)
         engagement=project['settings'].get('engagement',{})
         if engagement.get('outroEnabled'):duration+=engagement.get('outroDuration',15)
-        if duration>MAX_PREVIEW_SECONDS:raise ValueError('Long cloud exports are not verified yet. This control is limited to 120-second previews.')
+        from studio_cloud_render_plan import render_plan
+        version=copy.deepcopy(project);version['settings'].setdefault('engagement',{})['exportDestination']=options['destination']
+        duration=render_plan(version,config=self.studio.config)['durationSeconds']
+        limit=self.capabilities()['maximumDurationSeconds']
+        if duration>limit:raise ValueError(f'Cloud exports are verified up to {limit:g} seconds on the configured providers. A longer capped validation is required before production.')
         rental=self.studio.store.root/'.managed-rental.json'
         if rental.exists() and json.loads(rental.read_text()).get('status')!='STOPPED':
             raise ValueError('An earlier GPU allocation remains unresolved; no second rental will start.')
@@ -103,6 +137,7 @@ class CloudRenderJobs:
                 'cancelRequested':bool(record.get('cancelRequested')),'capUSD':options['capUSD'],
                 'completedAssets':record.get('completedAssets',0),'result':record.get('result'),
                 'cost':record.get('cost'),'error':record.get('error'),
+                'completedOutputs':list(record.get('savedFiles',{}).values()),
                 'originalProjectPreserved':True}
 
     def start(self,pid,value):
@@ -154,10 +189,19 @@ class CloudRenderJobs:
         def progress(kind,value):
             if kind=='progress':record.update(stage=value.get('stage','Rendering'),completedAssets=value.get('completedAssets',record.get('completedAssets',0)))
             elif kind=='rental':record.update(stage=value.get('status','Starting worker'),rentalStatus=value.get('status'))
+            elif kind=='assetSaved':
+                item=dict(value);alias=item.pop('originalPath')
+                record.setdefault('savedFiles',{})[alias]=item
+                record['completedAssets']=len(record['savedFiles'])
+                self.publish_saved_files(project['id'],{alias:item})
             self.save(record)
         from studio_cloud_pod_render import CloudPodRenderer
         from studio_gpu_broker import RenderGPUReservation
-        verified=self.capabilities().get('providers',[])
+        capabilities=self.capabilities();verified=capabilities.get('providers',[])
+        from studio_cloud_render_plan import render_plan
+        seconds=render_plan(render_project,config=self.studio.config)['durationSeconds']
+        limits=capabilities.get('providerDurationLimits',{})
+        verified=[p for p in verified if limits.get(p,MAX_PREVIEW_SECONDS)>=seconds]
         config=copy.deepcopy(self.studio.config)
         config['gpuProviderOrder']=[p for p in config.get('gpuProviderOrder',['runpod','vast','lium']) if p in verified]
         renderer=(self.renderer_factory or CloudPodRenderer)(self.studio.store,self.studio.storage,config,gate,
@@ -170,8 +214,15 @@ class CloudRenderJobs:
             manifest,etag=self.studio.storage.manifest(project['id'],True)
             if digest(self.studio.store.load(project['id']))!=digest(project) or digest(manifest['project'])!=digest(project):
                 raise ValueError('The source changed during rendering. Completed immutable videos are retained; originals were not replaced.')
+            for path,source in getattr(renderer,'source_records',{}).items():
+                if source.get('optionalCache'):continue
+                current=manifest.get('files',{}).get(path,{})
+                if any(current.get(k)!=source.get(k) for k in ('bytes','sha256')):
+                    raise ValueError('Saved input bytes changed during rendering. Completed earlier outputs remain in the archive.')
             publication=copy.deepcopy(manifest)
-            for output in report['files'].values():publication['files'][output['path']]={k:v for k,v in output.items() if k!='path'}
+            for alias,output in report['files'].items():
+                publication['files'][output['path']]={k:v for k,v in output.items() if k!='path'}
+                publication.setdefault('renderCache',{})[alias]=output
             self.studio.storage.objects.put_json('studio/manifests/'+project['id']+'.json',publication,etag=etag)
             self.studio.storage.manifests.pop(project['id'],None)
             with self.studio.storage.catalogue_lock:self.studio.storage.catalogue_at=0

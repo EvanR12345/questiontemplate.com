@@ -160,6 +160,10 @@ def profile_for(stage, project, config, details=None):
     elif stage=='Narration':
         from studio_voice_provider import identity
         profile.update(identity(settings))
+        if profile.get('voiceCompute')=='kaggle':
+            # Actual single-chapter jobs and shared notebook waits have distinct
+            # histories, regardless of the project's configured batch ceiling.
+            profile['chapterBatchSize']=details.get('voiceBatch',{}).get('chapters',1)
         from narration_audio import VERSION as delivery_version, FLOW_VERSION
         profile.update(voice=settings.get('voice'),speed=settings.get('speed',1),deliveryVersion=delivery_version,flowVersion=FLOW_VERSION,
             delivery=settings.get('narrationDelivery','standard'),effectMode=settings.get('soundEffects','subtle'),
@@ -200,7 +204,7 @@ class PerformanceStore:
         self.db.commit()
 
     def record(self,identity,run_id,profile,units,seconds,details,finished=None,source='live'):
-        if not profile or not units or not positive(units['value']) or not positive(seconds):return False
+        if not profile or not units or not positive(units['value']) or not positive(seconds) or details.get('excludeFromLearning'):return False
         cost=details.get('estimatedUSD')
         if type(cost) not in (int,float) or not math.isfinite(cost) or cost<0:cost=None
         with self.lock:
