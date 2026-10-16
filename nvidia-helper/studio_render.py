@@ -38,6 +38,14 @@ class VideoRenderer:
         self._asset_digests = {}
 
     @staticmethod
+    def review_context(project):
+        # Reuse reference digests within this preflight only. A later render
+        # revalidates references and manual acceptances against current bytes.
+        return {'files': {}, 'reviews': {},
+                'chapters': {c['id']: c for c in project['chapters']},
+                'intro': {s['id'] for s in project.get('intro', {}).get('shots', []) if s.get('id')}}
+
+    @staticmethod
     def available_memory_bytes():
         try:
             if os.name == 'nt':
@@ -327,8 +335,9 @@ class VideoRenderer:
             raise ValueError("Generate every shot before rendering this chapter.")
         if not ch.get("audio", {}).get("path"):
             raise ValueError("Generate chapter narration first.")
+        review_context = self.review_context(p)
         for index,shot in enumerate(shots):
-            if qc_decision(p,shot,self.store)['blocking']:
+            if qc_decision(p,shot,self.store,review_context)['blocking']:
                 raise ValueError(f'Shot {index+1} needs review. Accept this image or request a repair before rendering.')
         if p['settings'].get('qcCheckLevel')!='off' and any(s.get('qc', {}).get('status') == 'PENDING' for s in shots):
             raise ValueError('Finish pending image quality checks before rendering.')
@@ -605,10 +614,11 @@ class VideoRenderer:
         if audio.get('textDigest') and audio['textDigest'] != digest(ch['cleanNarrationText']):
             raise ValueError('Narration changed. Regenerate audio before previewing the new script.')
         start, end, candidates = self.preview_plan(ch, shot_id, p['settings']['video']['fps'])
+        review_context = self.review_context(p)
         for shot in candidates:
             if not shot.get('imagePath'):
                 raise ValueError('Generate the pictures in this preview interval first.')
-            if qc_decision(p, shot, self.store)['blocking'] or (
+            if qc_decision(p, shot, self.store, review_context)['blocking'] or (
                 p['settings'].get('qcCheckLevel') != 'off' and shot.get('qc', {}).get('status') == 'PENDING'):
                 raise ValueError('Review or repair the selected preview pictures first; visual checks are preserved.')
         folder = self.store.folder(p['id']) / ch['id']
@@ -686,10 +696,11 @@ class VideoRenderer:
         v = p["settings"]["video"]
         planned_duration = float(intro['duration'])
         duration = self.intro_duration(p)
+        review_context = self.review_context(p)
         for index, shot in enumerate(intro.get('shots', [])):
             if p['settings'].get('qcCheckLevel')!='off' and shot.get('qc', {}).get('status') == 'PENDING':
                 raise ValueError('Finish pending intro image quality checks before rendering.')
-            if qc_decision(p,shot,self.store)['blocking']:
+            if qc_decision(p,shot,self.store,review_context)['blocking']:
                 raise ValueError(f'Intro shot {index+1} needs review. Accept it or request a repair before rendering.')
             if shot.get('imagePath') and not self.store.asset(p['id'], shot['imagePath']).is_file():
                 raise ValueError(f'Generate intro shot {index+1} before rendering. No previous intro was replaced.')

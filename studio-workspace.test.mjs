@@ -11,6 +11,12 @@ test('next action follows actual assets, save state and the project-specific que
   p.render={path:'final.mp4'};assert.equal(nextAction(p,{},true).tab,'timeline');
   p.renderStale=true;assert.match(nextAction(p,{},true).label,/generate/);
 });
+
+test('dashboard can share its freshly computed problems with the next-action hint',()=>{
+  const p=project([chapter(1)]),issues=[{label:'Fix selected image',chapter:'c1',tab:'review'}];
+  assert.equal(nextAction(p,{},true,issues).detail,'Fix selected image');
+  assert.match(nextAction(p,{},true,[]).label,/generate/);
+});
 test('problems distinguish practical warnings from blocking findings and ignore obsolete failed attempts',()=>{
   const p=project([chapter(1,{scenes:[{shots:[{id:'minor',qc:{pass:false},qcDecision:{blocking:false}},
     {id:'major',qc:{issues:['Wrong person']},qcDecision:{blocking:true}}]}]})]);

@@ -26,13 +26,13 @@ export function problemList(p,queue){
   for(const w of p.warnings||[])if(!w.resolved)items.push({key:w.id,tab:'write',label:w.message});
   return items;
 }
-export function nextAction(p,queue,connected){
+export function nextAction(p,queue,connected,knownProblems){
   if(!connected)return {label:'Connect the shared helper',detail:'Your saved project remains available. Connect before running generation.',tab:'write',connect:true};
   const running=queue?.jobs?.find(j=>j.project===p.id&&active(j));
   if(running)return {label:queue.paused?'Resume when ready':'Production is running',detail:running.message||running.kind,tab:'write'};
   const empty=p.chapters.find(c=>!c.sourceText?.trim());
   if(empty)return {label:'Add the next chapter text',detail:empty.name,chapter:empty.id,tab:'write'};
-  const problems=problemList(p,queue);
+  const problems=knownProblems??problemList(p,queue);
   if(problems.length)return {label:'Review an issue',detail:problems[0].label,...problems[0]};
   if(p.render?.path&&!p.renderStale)return {label:'Watch or publish your finished video',detail:'Publishing is an explicit action in Files.',tab:'timeline'};
   const chapter=p.chapters.find(c=>!c.audio?.path||!allShots(c).length||allShots(c).some(s=>!s.imagePath));
@@ -73,7 +73,7 @@ export function createWorkspaceTools(ctx){
   function dashboard(){
     const {project:p,queue:q,connected,root}=ctx.get(),el=root.querySelector('#studioWorkspaceSummary');if(!el)return;
     // Queue failures can change without a new project revision.
-    const problems=problemList(p,q),next=nextAction(p,q,connected);
+    const problems=problemList(p,q),next=nextAction(p,q,connected,problems);
     const jobs=(q?.jobs||[]).filter(j=>j.project===p.id&&active(j));
     const other=(q?.jobs||[]).some(j=>j.project!==p.id&&active(j));
     const use=lunaUsage(p.production?.timings||[]),gpu=p.production?.costs?.gpuWindowEstimatedUSD;

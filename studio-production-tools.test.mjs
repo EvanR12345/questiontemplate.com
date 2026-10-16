@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {searchProject,indexProjectSearch,searchProjectIndex,reportHTML,createProductionTools} from './studio-production-tools.mjs';
+import {searchProject,indexProjectSearch,searchProjectIndex,reportHTML,coverageHTML,imagePhasesHTML,createProductionTools} from './studio-production-tools.mjs';
 import {readFileSync} from 'node:fs';
 const p={id:'p',characters:[{name:'Jonathan',description:'A magician'}],chapters:[{id:'c',name:'Return',sourceText:'He said, I cannot leave you.',cleanNarrationText:'I cannot leave you.',people:[{name:'Guard',role:'Watchman'}],scenes:[{id:'s',location:'Castle',purpose:'Return home',shots:[{id:'sh',action:'Raises a wand',prompt:'blue magic',narrationSegment:'He returned.'}]}]}]};
 test('project search finds characters, dialogue, temporary people, scene composition, prompts and files',()=>{
@@ -21,6 +21,22 @@ test('search never indexes settings or credentials and report escapes arbitrary 
 test('toolbar exposes all four project-wide tools without starting requests',()=>{
   const tools=createProductionTools({api:()=>{throw Error('unexpected request');}});
   for(const name of ['health','search','history','report'])assert.match(tools.toolbar(),new RegExp('data-project-tool="'+name+'"'));
+});
+
+test('timing gaps distinguish unrecorded time from GPU idle and absent measurements',()=>{
+  assert.match(coverageHTML({}),/not recorded/);
+  const html=coverageHTML({activity:{recordedSeconds:30,unrecordedSeconds:10,largestGapSeconds:10,note:'<unsafe>'},
+    rental:{seconds:100,attributedStageSeconds:30,unattributedSeconds:70,beforeFirstRecordedSeconds:10,afterLastRecordedSeconds:30}});
+  assert.match(html,/Rental time without a recorded stage/);assert.match(html,/1.2 min/);
+  assert.match(html,/&lt;unsafe&gt;/);assert.doesNotMatch(html,/<unsafe>/);
+  assert.match(html,/not a GPU utilization measurement/);
+});
+
+test('phase report shows measured zero separately from unknown and never calls polling pure inference',()=>{
+  assert.match(imagePhasesHTML(),/not recorded/);
+  const html=imagePhasesHTML({measuredOutputs:1,retainedOutputs:2,phases:{referenceUploadSeconds:{seconds:0,samples:1}},note:'Wait includes inference and polling.'});
+  assert.match(html,/Reference upload<\/td><td>0.0 min/);assert.match(html,/Submission<\/td><td>Unknown/);
+  assert.match(html,/1 \/ 2 retained outputs/);assert.match(html,/includes phases/);
 });
 test('one-modal index preserves matches and snippets without rereading project data',()=>{
   const fixture=structuredClone(p),files=[{path:'private-magic.png',storageStatus:'MISSING'}];

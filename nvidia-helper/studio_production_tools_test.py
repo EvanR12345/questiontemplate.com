@@ -72,6 +72,29 @@ class HistoryTest(unittest.TestCase):
 
 
 class ReportTest(unittest.TestCase):
+    def test_image_phase_report_tolerates_old_imported_metadata_without_inventing_measurements(self):
+        from studio_workspace_report import image_phase_report
+        shots=[{'history':[None,{'imagePath':'a.png','metadata':'old format'}],
+                'imagePath':'b.png','imageMetadata':{'provider':[], 'time':[], 'result':{'providerTimings':[]}}},
+               {'history':None,'imagePath':'c.png','imageMetadata':{'result':'old format'}}]
+        report=image_phase_report(shots)
+        self.assertEqual(report['retainedOutputs'],3)
+        self.assertEqual(report['measuredOutputs'],0)
+
+    def test_image_phase_report_deduplicates_selected_history_and_keeps_unknown_phases_unknown(self):
+        from studio_workspace_report import image_phase_report
+        meta={'provider':'comfyui','time':1,'result':{'remotePromptId':'request-1','providerTimings':
+            {'referenceUploadSeconds':0,'waitAndPollingSeconds':2,'totalClientSeconds':3,'submissionSeconds':True}}}
+        shots=[{'imagePath':'a.png','imageMetadata':meta,'history':[{'imagePath':'a.png','metadata':meta}]},
+               {'imagePath':'b.png','imageMetadata':{'time':2,'result':{'providerTimings':{'totalClientSeconds':float('nan')}}}}]
+        result=image_phase_report(shots)
+        self.assertEqual(result['retainedOutputs'],2);self.assertEqual(result['measuredOutputs'],1)
+        self.assertEqual(result['phases']['referenceUploadSeconds'],{'seconds':0,'samples':1})
+        self.assertEqual(result['phases']['submissionSeconds']['samples'],0)
+        self.assertEqual(result['phases']['totalClientSeconds'],{'seconds':3,'samples':1})
+        shots.append({'imagePath':'c.png','imageMetadata':meta|{'result':meta['result']|{'remotePromptId':'request-2'}}})
+        self.assertEqual(image_phase_report(shots)['phases']['totalClientSeconds']['samples'],2)
+
     def test_shared_reference_availability_is_checked_once_per_request_and_not_cached_across_requests(self):
         p=new_project('Test')
         p['characters']=[{'id':name,'name':name,'references':[{'path':'shared.png'},{'path':'shared.png'}]} for name in ('a','b')]

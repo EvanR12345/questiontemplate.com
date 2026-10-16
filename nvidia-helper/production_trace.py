@@ -26,6 +26,28 @@ def interval_union(intervals):
     return total
 
 
+def window_coverage(intervals, start, end):
+    """Account for a recorded window without pretending gaps are GPU idle."""
+    clipped = sorted((max(start, a), min(end, b)) for a, b in intervals
+                     if b > start and a < end and b > a)
+    cursor = start
+    gaps = []
+    for a, b in clipped:
+        if a > cursor:
+            gaps.append((cursor, a))
+        cursor = max(cursor, b)
+    if cursor < end:
+        gaps.append((cursor, end))
+    covered = interval_union(clipped)
+    return {'seconds': end-start, 'recordedSeconds': covered,
+            'unrecordedSeconds': max(0, end-start-covered),
+            'gapCount': len(gaps),
+            'largestGapSeconds': max((b-a for a,b in gaps), default=0),
+            'beforeFirstRecordedSeconds': max(0, clipped[0][0]-start) if clipped else end-start,
+            'afterLastRecordedSeconds': max(0, end-max(b for _,b in clipped)) if clipped else 0,
+            'note': 'Gaps have no recorded process. They may include startup, transfer, pauses, idle or missing telemetry; they are not measured GPU idle.'}
+
+
 def summarize(rows, rental=None):
     completed = [r for r in rows if r['finished'] is not None]
     by_stage = {}
@@ -40,16 +62,22 @@ def summarize(rows, rental=None):
               'coveredWallSeconds': interval_union([(r['started'], r['finished']) for r in completed]),
               'note': 'Nested/overlapping stage sums cannot be added to get elapsed production time. '
                       'Intervals are client wall time, not GPU utilization or an invoice.'}
+    activity = [(r['started'], r['finished']) for r in completed if r['kind'] != 'job']
+    if activity:
+        report['activity'] = window_coverage(activity, min(a for a,_ in activity), max(b for _,b in activity))
     if rental:
         start, end = rental.get('cloudStartedAt'), rental.get('cloudStoppedAt')
         if all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
                for v in (start, end)) and end >= start:
             intervals = [(max(start, r['started']), min(end, r['finished']))
                          for r in completed if r['kind'] != 'job']
-            covered = interval_union(intervals)
-            report['rental'] = {'seconds': end-start, 'attributedStageSeconds': covered,
-                                'unattributedSeconds': max(0, end-start-covered),
-                                'note': 'Unattributed time is unknown/startup/idle; not proof of idle GPU.'}
+            coverage = window_coverage(intervals, start, end)
+            report['rental'] = coverage | {'attributedStageSeconds': coverage['recordedSeconds'],
+                                'unattributedSeconds': coverage['unrecordedSeconds'],
+                                'startupToReadySeconds': rental['cloudReadyAt']-start
+                                    if type(rental.get('cloudReadyAt')) in (int,float)
+                                    and math.isfinite(rental['cloudReadyAt']) and start <= rental['cloudReadyAt'] <= end else None,
+                                'note': 'Unattributed time is unknown/startup/transfer/idle; not proof of idle GPU.'}
     return report
 
 

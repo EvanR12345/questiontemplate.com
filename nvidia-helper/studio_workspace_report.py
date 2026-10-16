@@ -3,6 +3,36 @@ import math
 import time
 
 
+def image_phase_report(shots):
+    fields=('preparationSeconds','referenceUploadSeconds','submissionSeconds',
+            'waitAndPollingSeconds','retrievalAndValidationSeconds','totalClientSeconds')
+    totals={name:{'seconds':0,'samples':0} for name in fields}
+    seen=set(); retained=0; measured=0
+    for shot in shots:
+        history=shot.get('history') if isinstance(shot.get('history'),list) else []
+        for version in [*history,{'imagePath':shot.get('imagePath'),'metadata':shot.get('imageMetadata',{})}]:
+            if not isinstance(version,dict):continue
+            path=version.get('imagePath')
+            if not isinstance(path,str) or not path:continue
+            meta=version.get('metadata') if isinstance(version.get('metadata'),dict) else {}
+            result=meta.get('result') if isinstance(meta.get('result'),dict) else {}
+            prompt_id=result.get('remotePromptId')
+            key=(str(meta.get('provider') or ''),prompt_id if isinstance(prompt_id,str) and prompt_id else (path,str(meta.get('time'))))
+            if key in seen:continue
+            seen.add(key);retained+=1
+            phases=result.get('providerTimings') if isinstance(result.get('providerTimings'),dict) else {}
+            found=False
+            for name in fields:
+                n=phases.get(name)
+                if type(n) in (int,float) and math.isfinite(n) and n>=0:
+                    totals[name]['seconds']+=n;totals[name]['samples']+=1;found=True
+            measured+=int(found)
+    return {'phases':totals,'retainedOutputs':retained,'measuredOutputs':measured,
+            'note':'Retained successful output attempts only; missing, failed or unretained attempts are not measured here. '
+                   'Phase work can overlap across images. Total client time includes its phases; never add it again. '
+                   'Wait includes server queue, inference and polling, not pure GPU execution.'}
+
+
 def reference_checks(store, project):
     checks = []
     availability = {}
@@ -87,6 +117,9 @@ def completion_report(service, pid):
         'duration': p.get('render', {}).get('duration'),
         'scope': 'All retained project attempts, including failures and previews; not a single-run invoice.',
         'time': {'coveredWorkSeconds': trace.get('summary', {}).get('coveredWallSeconds'),
+            'activity': trace.get('summary', {}).get('activity'),
+            'rental': trace.get('summary', {}).get('rental'),
+            'imagePhases': image_phase_report(shots),
             'observedCalendarSeconds': max(r['finished'] for r in closed) - min(r['started'] for r in closed) if closed else None,
             'unfinishedSpans': trace.get('summary', {}).get('unfinishedOrInterrupted', 0),
             'stages': trace.get('summary', {}).get('stages', {}),

@@ -1534,7 +1534,8 @@ class StudioService:
     def trace_report(self, pid):
         project = self.store.load(pid)
         rental=project.get('production',{}).get('gpuRental',{})
-        window=({'cloudStartedAt':rental.get('started'),'cloudStoppedAt':rental.get('stopped')}
+        window=({'cloudStartedAt':rental.get('started'),'cloudStoppedAt':rental.get('stopped'),
+                 'cloudReadyAt':rental.get('ready')}
                 if rental else project['settings'].get('cloudWindow'))
         return self.trace.report(pid,window)
 

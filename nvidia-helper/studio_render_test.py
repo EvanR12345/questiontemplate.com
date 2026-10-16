@@ -262,6 +262,72 @@ class RenderReuseTest(unittest.TestCase):
                 self.assertEqual(len(encoding), 1)
                 self.assertIn('first.png', ' '.join(encoding[0].args[0]))
 
+    def test_render_review_hashes_shared_refs_once_but_a_later_render_rechecks_them(self):
+        from studio_qc import review_signature
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,ch=self.setup_project(folder);renderer=VideoRenderer(store,{})
+            p['settings']['qcCheckLevel']='practical'
+            p['characters']=[{'id':'hero','name':'Hero','references':[{'path':'face.png'}]}]
+            calls=[];fingerprints={'face.png':'original'}
+            store.asset_digest=lambda pid,path:calls.append(path) or fingerprints.get(path,path)
+            for shot in ch['scenes'][0]['shots']:
+                shot.update(chapterId=ch['id'],characters=[{'id':'hero'}],qc={'pass':False,'issues':['Wrong weapon.']})
+                shot['qcOverride']={'decision':'accepted','imagePath':shot['imagePath'],
+                    'imageSHA256':shot['imagePath'],'reviewSpecSignature':review_signature(p,shot,store)}
+            calls.clear()
+            with patch.object(renderer,'run',side_effect=self.save_output):
+                ch['render']=renderer.chapter(p,ch,lambda *_:None)
+            self.assertEqual(calls.count('face.png'),1)
+            fingerprints['face.png']='replaced';calls.clear()
+            with patch.object(renderer,'run') as run:
+                with self.assertRaisesRegex(ValueError,'needs review'):
+                    renderer.chapter(p,ch,lambda *_:None)
+                run.assert_not_called()
+            self.assertEqual(calls.count('face.png'),1)
+
+    def test_thousand_clip_interruption_restart_and_single_shot_edit_reuse_completed_work(self):
+        # Real cache/files/planning with synthetic encoder bytes, not a 1000s encode.
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,ch=self.setup_project(folder)
+            original=store.asset(p['id'],'previous.mp4');original.write_bytes(b'original video')
+            shots=[]
+            for i in range(1000):
+                name=f'frame-{i}.png';store.asset(p['id'],name).write_bytes(f'unique pixels {i}'.encode())
+                shots.append({'id':f'shot-{i}','start':i,'end':i+1,'imagePath':name,'motion':'slow zoom in'})
+            ch['scenes']=[{'shots':shots}];ch['audio']['duration']=1000
+            calls=[]
+            def interrupted(args,*_):
+                if '-frames:v' in args:
+                    calls.append(args)
+                    if len(calls)==201:
+                        Path(args[-1]).write_bytes(b'partial must never count as completed')
+                        raise RuntimeError('synthetic host interruption')
+                self.save_output(args)
+            renderer=VideoRenderer(store,{'renderWorkers':1})
+            with patch.object(renderer,'run',side_effect=interrupted):
+                with self.assertRaisesRegex(RuntimeError,'synthetic host interruption'):
+                    renderer.chapter(p,ch,lambda *_:None)
+            cache=store.folder(p['id'])/ch['id']
+            self.assertEqual(len(list(cache.glob('clip-*.mp4'))),201)  # 200 complete, one partial
+            self.assertEqual(len([x for x in cache.glob('clip-*.mp4') if '.partial.' not in x.name]),200)
+            # Recreate the renderer as after a helper restart: no process-local cache.
+            renderer=VideoRenderer(ProjectStore(folder),{'renderWorkers':1})
+            with patch.object(renderer,'run',side_effect=self.save_output) as run:
+                ch['render']=renderer.chapter(p,ch,lambda *_:None)
+            encodes=[c for c in run.call_args_list if '-frames:v' in c.args[0]]
+            self.assertEqual(len(encodes),800)
+            self.assertFalse(list(cache.glob('*.partial.mp4')))
+            self.assertEqual(original.read_bytes(),b'original video')
+            for index in (0,501,999):
+                store.asset(p['id'],f'frame-{index}.png').write_bytes(f'changed pixels {index}'.encode())
+                with patch.object(renderer,'run',side_effect=self.save_output) as run:
+                    ch['render']=renderer.chapter(p,ch,lambda *_:None)
+                encodes=[c for c in run.call_args_list if '-frames:v' in c.args[0]]
+                self.assertEqual(len(encodes),1)
+                self.assertIn(f'frame-{index}.png',' '.join(encodes[0].args[0]))
+            with patch.object(renderer,'run') as run:
+                self.assertTrue(renderer.chapter(p,ch,lambda *_:None)['reused']);run.assert_not_called()
+
     def test_mid_render_image_edit_cannot_poison_the_old_clip_cache(self):
         with tempfile.TemporaryDirectory() as folder:
             # Isolate the changed source. A parallel unchanged shot may validly

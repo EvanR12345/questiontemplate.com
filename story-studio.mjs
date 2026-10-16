@@ -1,5 +1,6 @@
-import {createWorkspaceTools} from './studio-workspace.mjs?v=tools-20261016';
-import {createProductionTools} from './studio-production-tools.mjs?v=tools-perf-20261016';
+import {updateHTML,queuePart,renderTimingHistory} from './studio-queue-view.mjs?v=queue-perf-20261016';
+import {createWorkspaceTools} from './studio-workspace.mjs?v=queue-perf-20261016';
+import {createProductionTools} from './studio-production-tools.mjs?v=queue-perf-20261016';
 import {workspaceGuideHTML,organizeSettings,organizeFileTools,openStudioGuide} from './studio-guide.mjs?v=tools-20261016';
 import {VOICE_MODELS,NARRATOR,DEFAULT_VOICE_SCRIPT,voicesFor,voiceCards,mountVoicePicker,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voice-groups-20261015';
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
@@ -792,11 +793,13 @@ function renderQueue() {
   const displayedProject=project.id;
   const el = $("#productionQueue");
   if (!el) return;
-  const openDetails = new Set([...root.querySelectorAll('details[data-ui][open]')].map(detail => detail.dataset.ui));
   if (!queue) {
-    el.innerHTML =
-      '<p class="muted">Connect the helper to see production jobs. Completed assets stay saved after refresh.</p>';
+    el.innerHTML = '<p class="muted">Connect the helper to see production jobs. Completed assets stay saved after refresh.</p>';
+    delete el.dataset.queueProject;
     return;
+  }
+  if (el.dataset.queueProject !== displayedProject) {
+    el.replaceChildren(); el.dataset.queueProject = displayedProject;
   }
   const fullButton = $("#productionFullVideo");
   const activeFullRun = queue.jobs.find(
@@ -832,18 +835,8 @@ function renderQueue() {
               ? run.status + " · " + run.message
               : run.stage || run.message || run.status;
     const delivery=ready?videoDeliveryStatus(project,queue.storage):null;
-    runStatus.innerHTML = `<span>${escape(status)}${delivery?' · '+escape(delivery.label):''}</span>${ready ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}${delivery?.retry?'<button id="retryVideoCloudSave">Retry cloud save</button>':''}`;
-    if(run.generationStrategyLabel)runStatus.insertAdjacentHTML('beforeend',`<p class="muted">This run: ${escape(run.generationStrategyLabel)} · ${run.rentalControl==='managed'?'Studio-managed GPU':'GPU rental start/stop remain external'}.</p>`);
-    $('#retryVideoCloudSave')?.addEventListener('click',()=>action(async()=>{
-      await api('storage-sync',{project:project.id});queue=await api('queue');renderQueue();
-    }));
-    const open = $("#openFullVideo");
-    if (open)
-      open.onclick = () =>
-        action(async () => {
-          tab = "timeline";
-          render();
-        });
+    let statusHTML = `<span>${escape(status)}${delivery?' · '+escape(delivery.label):''}</span>${ready ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}${delivery?.retry?'<button id="retryVideoCloudSave">Retry cloud save</button>':''}`;
+    if(run.generationStrategyLabel)statusHTML += `<p class="muted">This run: ${escape(run.generationStrategyLabel)} · ${run.rentalControl==='managed'?'Studio-managed GPU':'GPU rental start/stop remain external'}.</p>`;
     if (activeFullRun?.started && activeFullRun.kind === "produce-story") {
       const elapsed = Math.max(0, Date.now() / 1000 - activeFullRun.started);
       const estimate=imageWorkEstimate(run.timings || [],run.chapterNumber,activeFullRun.started,run.totalImages-run.completedImages);
@@ -856,45 +849,25 @@ function renderQueue() {
       ) {
         remaining = `Remaining chapter image work: about ${time(estimate.seconds)} at the observed throughput of ${estimate.samples} matching fresh shots. This is work, not a complete elapsed ETA; later chapters, idle gaps and rendering take additional time.`;
       }
-      runStatus.insertAdjacentHTML(
-        "beforeend",
-        `<p class="muted">This attempt: ${time(elapsed)} elapsed. ${remaining}</p>`,
-      );
+      statusHTML += `<p class="muted">This attempt: ${time(elapsed)} elapsed. ${remaining}</p>`;
     }
-    if (run.timings?.length) {
-      let costSummary = "";
-      if (run.costs) {
-        const gpu = Number.isFinite(run.costs.gpuWindowEstimatedUSD)
-          ? '$' + run.costs.gpuWindowEstimatedUSD.toFixed(4) : 'not recorded';
-        costSummary = `<p class="muted">Estimated run cost: OpenAI $${Number(run.costs.apiEstimatedUSD || 0).toFixed(4)} · GPU window ${gpu}. Storage and account billing are reported separately.</p>`;
-      }
-      const receipt = run.completionReceipt;
-      if (Number.isFinite(receipt?.balancePlusAPIEstimateUSD)) {
-        costSummary += `<p class="muted">Completion snapshot, including earlier rejected work and account storage/settlement: $${receipt.balancePlusAPIEstimateUSD.toFixed(2)}. Recorded ${escape(new Date(receipt.verifiedAt * 1000).toLocaleString())}. Retained storage continues billing while GPUs are stopped.</p>`;
-      }
-      const entries = run.timings.filter((t) => !t.detail),
-        totals = {}, scopes = {};
-      for (const entry of entries) {
-        totals[entry.stage] = (totals[entry.stage] || 0) + entry.seconds;
-        const scope = entry.chapter ? 'Chapter ' + entry.chapter : 'Project / intro';
-        const breakdown = scopes[entry.stage] ||= {};
-        breakdown[scope] = (breakdown[scope] || 0) + entry.seconds;
-      }
-      runStatus.insertAdjacentHTML(
-        "beforeend",
-        `<details data-ui="production-times"><summary>Costs and measured times</summary>${costSummary}<p class="muted">Recorded stage wall time includes loading, retries and pauses. Reused assets take only their validation time. Director passes are details within directing; GPU rental overlaps generation. Do not add either to the stage totals again.</p><table><thead><tr><th>Stage</th><th>Total time</th><th>By chapter</th></tr></thead><tbody>${Object.entries(
-          totals,
-        )
-          .map(
-            ([stage, seconds]) =>
-              `<tr><td>${escape(stage)}</td><td>${time(seconds)}</td><td>${Object.entries(scopes[stage]).map(([scope, value]) => escape(scope) + ': ' + time(value)).join('<br>')}</td></tr>`,
-          )
-          .join(
-            "",
-          )}</tbody></table><details data-ui="production-passes"><summary>Every stage and director pass</summary>${run.timings.map((t) => `<p class="muted">${t.chapter ? "Chapter " + t.chapter + " · " : ""}${escape(t.stage)}${t.shot ? " · " + escape(t.shot) : ""} · ${t.seconds.toFixed(1)} s${t.reused ? " · reused" : ""}${t.status === "FAILED" ? " · failed attempt" : ""}</p>`).join("")}</details></details>`,
-      );
+    const statusPart=queuePart(runStatus,'status');
+    if(updateHTML(statusPart,statusHTML)) {
+      $('#retryVideoCloudSave')?.addEventListener('click',()=>action(async()=>{
+        await api('storage-sync',{project:project.id});queue=await api('queue');renderQueue();
+      }));
+      const open = $("#openFullVideo");
+      if (open)
+        open.onclick = () =>
+          action(async () => {
+            tab = "timeline";
+            render();
+          });
     }
-  }
+    const timesPart=queuePart(runStatus,'times');
+    timesPart.hidden=!run.timings?.length;
+    if(run.timings?.length)renderTimingHistory(timesPart,displayedProject,run);
+  } else if(runStatus) { runStatus.replaceChildren(); }
   const jobs = queue.jobs.filter((j) => j.project === project.id),
     counts = queue.projectCounts?.[project.id],
     done =
@@ -918,7 +891,7 @@ function renderQueue() {
     currentScene = project.chapters
       .find((c) => c.id === current?.chapter)
       ?.scenes.find((s) => s.id === currentShot?.sceneId);
-  el.innerHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting in this project · ${failureCount} images need attention · Shared queue ETA ${queue.paused ? "Paused" : queue.etaStatus === "LONGER_THAN_HISTORY" ? "Longer than earlier runs" : queue.etaSeconds == null ? "Measuring" : time(queue.etaSeconds)}</span></div><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || (otherCurrent?"Another project is using the shared helper; this project waits.":"Ready")))}</p><progress aria-label="Images saved in this project" max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel project queue</button><button data-control="retry-missing" ${imageDone === imageTotal ? "disabled" : ""}>Retry missing images</button></div><p class="muted">Pause and Resume affect the shared helper queue. Cancel project queue stops only this project’s work; other projects and completed assets are retained.</p><details data-ui="job-history"><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
+  const queueHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting in this project · ${failureCount} images need attention · Shared queue ETA ${queue.paused ? "Paused" : queue.etaStatus === "LONGER_THAN_HISTORY" ? "Longer than earlier runs" : queue.etaSeconds == null ? "Measuring" : time(queue.etaSeconds)}</span></div><!--queue-part--><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || (otherCurrent?"Another project is using the shared helper; this project waits.":"Ready")))}</p><!--queue-part--><progress aria-label="Images saved in this project" max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><!--queue-part--><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel project queue</button><button data-control="retry-missing" ${imageDone === imageTotal ? "disabled" : ""}>Retry missing images</button></div><!--queue-part--><p class="muted">Pause and Resume affect the shared helper queue. Cancel project queue stops only this project’s work; other projects and completed assets are retained.</p><!--queue-part--><details data-ui="job-history"><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
     .filter(
       (j) =>
         j.status === "FAILED" ||
@@ -932,14 +905,10 @@ function renderQueue() {
         `<div class="queue-job"><span>${escape(j.kind)} · ${escape(j.message)}</span><button data-job-priority="${j.id}">Prioritize</button>${["FAILED", "CANCELLED"].includes(j.status) ? `<button data-job-retry="${j.id}">Retry same seed</button>` : ""}</div>`,
     )
     .join("")}</div></details>`;
-  for (const detail of root.querySelectorAll('details[data-ui]')) {
-    if (openDetails.has(detail.dataset.ui)) detail.open = true;
-  }
-  el.insertAdjacentHTML("beforeend", '<button id="downloadProductionTrace">Download timing report</button>');
+  queueHTML.split('<!--queue-part-->').forEach((html,index)=>updateHTML(queuePart(el,'queue-'+index),html));
+  updateHTML(queuePart(el,'download'),'<button id="downloadProductionTrace">Download timing report</button>');
   const executions = (queue.executions || []).filter(item => item.project === project.id && item.kind === "image-qc");
-  if (executions.length) {
-    el.insertAdjacentHTML("beforeend", `<details data-ui="cloud-tasks"><summary>Cloud tasks · ${executions.filter(item => item.status === "RUNNING").length} active</summary>${executions.map(item => `<p class="muted">${escape(item.message || item.status)}${item.status === "UNKNOWN" ? " · Needs reconciliation before retry" : ""}${item.status === "RUNNING" ? ` <button data-control="cancel-current" data-execution="${escape(item.id)}">Cancel this task</button>` : ""}</p>`).join("")}</details>`);
-  }
+  updateHTML(queuePart(el,'cloud-tasks'), executions.length ? `<details data-ui="cloud-tasks"><summary>Cloud tasks · ${executions.filter(item => item.status === "RUNNING").length} active</summary>${executions.map(item => `<p class="muted">${escape(item.message || item.status)}${item.status === "UNKNOWN" ? " · Needs reconciliation before retry" : ""}${item.status === "RUNNING" ? ` <button data-control="cancel-current" data-execution="${escape(item.id)}">Cancel this task</button>` : ""}</p>`).join("")}</details>` : '');
   el.querySelector("#downloadProductionTrace").onclick = () => action(async () => {
     const trace = await api("trace?project=" + encodeURIComponent(displayedProject));
     downloadBlob(new Blob([JSON.stringify(trace, null, 2)], {type: "application/json"}), "studio-timing-report.json");

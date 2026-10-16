@@ -88,3 +88,33 @@ accepted images sharing two 256 KiB references took 693.9 to 27.9 ms (seven tria
 hashing each reference once instead of 400 times. The latter uses synthetic
 in-memory SHA256 data, not network or disk measurements. These measure project
 tools and do not predict faster narration, image generation or video rendering.
+
+## Queue, timing and recovery update (October 16)
+
+Queue polling updates changed sections instead of replacing unchanged controls.
+Keyboard focus and expanded histories survive polling. Detailed stage history is
+formatted only when opened, with 100 entries per page; the full timing download
+remains available. Missing recorded costs are shown as unknown, not zero.
+The workspace dashboard also reuses its current problem scan within each refresh.
+
+Completion reports expose recorded process gaps and the latest recorded rental
+window, including startup-to-readiness only when measured. Retained image metadata
+supplies preparation, reference upload, submission, server wait/polling and retrieval
+times where available. These are client measurements, not GPU utilization. Missing
+history and failed/unretained outputs are not silently counted as zero. Nested
+phases, rental time and total image time must not be added to their own totals.
+
+Render preflight reuses reference fingerprints within that request, then checks
+them again on a new render. Existing clip caching remains active: an unchanged
+clip is reused, while changes to its source/settings invalidate it.
+
+Verification: 352 non-codec frontend tests passed. The backend suite ran 149 tests:
+148 passed and one optional FFmpeg preview test skipped because its executable
+path was not supplied. A synthetic 1,000-clip interruption/restart test retained
+200 completed clips, rebuilt the remaining 800, rejected partial output, preserved
+the previous video and rebuilt exactly one clip for each of three image edits.
+A separate persistent 1,000-job queue recovery regression preserved completed
+assets and retry seeds. Encoder calls in the long clip test were simulated; this
+does not certify a real 12-hour production export. Chrome verified 10,000 timing
+entries with bounded pages, preserved page selection and stable queue-control
+focus in a paused isolated fixture. No paid generation or new rental was used.
