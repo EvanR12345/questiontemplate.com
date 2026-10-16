@@ -8,7 +8,8 @@ class FileRefreshTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);calls=[]
             archive=object.__new__(R2Archive);archive.enabled=True
-            archive.store=SimpleNamespace(folder=lambda _:root,asset_local=lambda _pid,name:root/name)
+            archive.states={}
+            archive.store=SimpleNamespace(folder=lambda _:root,asset_local=lambda _pid,name:root/name,load_local=lambda _: {})
             def manifest(pid,refresh=False):
                 calls.append(refresh)
                 files={'cloud-renders/verified/story.mp4':{'bytes':42,'sha256':'a'*64}} if refresh else {}

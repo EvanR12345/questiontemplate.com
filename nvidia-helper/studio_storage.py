@@ -335,7 +335,8 @@ class R2Archive:
                 self.store.asset_local(pid,name)
                 rows.append({'path':name,'bytes':path.stat().st_size,'cloud':False,
                     'category':{'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(path.suffix[1:].lower(),'Images')})
-            return {'files':rows, 'cloud':False}
+            from studio_file_locations import located_files
+            return {'files':located_files(self.store,pid,rows), 'cloud':False}
         manifest,_=self.manifest(pid,refresh)
         rows={}
         for name,r in (manifest or {}).get('files',{}).items():
@@ -355,7 +356,9 @@ class R2Archive:
             if record.get('stamp')==list(stable_file(path)):continue
             rows[name]={'path':name,'bytes':path.stat().st_size,'cloud':False,
                         'category':{'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(path.suffix[1:].lower(),'Images')}
-        return {'files':[rows[name] for name in sorted(rows)],'cloud':True,'revision':(manifest or {}).get('project',{}).get('revision')}
+        from studio_file_locations import located_files
+        return {'files':located_files(self.store,pid,list(rows.values()),True,
+                    self.states.get(pid,{}).get('status')),'cloud':True,'revision':(manifest or {}).get('project',{}).get('revision')}
 
     def list_projects(self):
         with self.catalogue_lock:

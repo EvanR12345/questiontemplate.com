@@ -371,6 +371,23 @@ class CloudOverlapTest(unittest.TestCase):
         self.assertFalse(current.get('audio',{}).get('path'))
         self.assertFalse(current['audioHistory'][0]['selected'])
 
+    def test_successful_narration_replacement_retains_previous_recording(self):
+        self.service.wait_for_overlap=False
+        p=self.service.store.load(self.project['id']);ch=p['chapters'][0]
+        previous={'path':'earlier.wav','duration':1,'textDigest':'earlier-script'}
+        self.service.store.asset_local(p['id'],'earlier.wav').write_bytes(b'previous')
+        self.service.store.mutate(p['id'],lambda q:get_chapter(q,ch['id']).update(audio=previous))
+        p=self.service.store.load(p['id']);ch=get_chapter(p,ch['id'])
+        def create(text,voice,speed,target,*args):
+            Path(target).write_bytes(b'new synthetic audio')
+            return {'path':str(target),'duration':2,'sentences':[]}
+        self.service.create_audio=create
+        StudioService.narration(self.service,p,ch)
+        current=get_chapter(self.service.store.load(p['id']),ch['id'])
+        self.assertNotEqual(current['audio']['path'],'earlier.wav')
+        self.assertEqual(current['audioHistory'][-1]['path'],'earlier.wav')
+        self.assertTrue(self.service.store.asset_local(p['id'],'earlier.wav').is_file())
+
     def test_direction_lookahead_waits_for_results_older_than_one_chapter(self):
         third=new_chapter(3);third['sourceText']='Mira carries a brass key.'
         self.service.store.mutate(self.project['id'],lambda q:q['chapters'].append(third))

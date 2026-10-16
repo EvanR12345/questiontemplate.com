@@ -1,3 +1,4 @@
+import {fileLocation} from './studio-workspace.mjs?v=workspace-20261016';
 import {vimeoForm,wireVimeo} from './studio-vimeo-ui.mjs?v=cloud-recovery-20261015';
 import {thumbnailPicker,wireThumbnailPicker} from './studio-thumbnail-picker.mjs?v=picker-20261009';
 // Cloud storage and finishing controls share the existing Studio connection.
@@ -84,7 +85,7 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
   function paint(){
     const selected=rows.filter(r=>(filter==='All'||r.category===filter)&&r.path.toLowerCase().includes(term));
     page=Math.min(page,Math.max(0,Math.ceil(selected.length/50)-1));
-    $('cloudFiles').innerHTML=`<p class="muted">${selected.length} files · ${bytes(selected.reduce((sum,r)=>sum+r.bytes,0))}</p><div style="overflow-x:auto"><table style="width:100%;text-align:left"><thead><tr><th>File</th><th>Type</th><th>Size</th><th>Storage</th><th></th></tr></thead><tbody>${selected.slice(page*50,page*50+50).map(r=>`<tr><td style="overflow-wrap:anywhere">${esc(r.path)}</td><td>${esc(r.category)}</td><td>${bytes(r.bytes)}</td><td>${r.cloud?'Cloud saved':'Helper cache'}</td><td><button data-cloud-open="${esc(r.path)}">Open</button></td></tr>`).join('')}</tbody></table></div><div class="toolbar"><button id="filePrev" ${page?'':'disabled'}>Previous</button><span>Page ${page+1} / ${Math.max(1,Math.ceil(selected.length/50))}</span><button id="fileNext" ${(page+1)*50<selected.length?'':'disabled'}>Next</button></div>`;
+    $('cloudFiles').innerHTML=`<p class="muted">${selected.length} files · ${bytes(selected.reduce((sum,r)=>sum+r.bytes,0))}</p><div style="overflow-x:auto"><table style="width:100%;text-align:left"><thead><tr><th>File</th><th>Type</th><th>Size</th><th>Storage</th><th></th></tr></thead><tbody>${selected.slice(page*50,page*50+50).map(r=>`<tr><td style="overflow-wrap:anywhere">${esc(r.path)}</td><td>${esc(r.category)}</td><td>${bytes(r.bytes)}</td><td><span class="ws-location">${esc(fileLocation(r)[0])}</span><small class="ws-location-note">${esc(fileLocation(r)[1])}</small></td><td><button data-cloud-open="${esc(r.path)}" ${r.storageStatus==='MISSING'?'disabled':''}>Open</button></td></tr>`).join('')}</tbody></table></div><div class="toolbar"><button id="filePrev" ${page?'':'disabled'}>Previous</button><span>Page ${page+1} / ${Math.max(1,Math.ceil(selected.length/50))}</span><button id="fileNext" ${(page+1)*50<selected.length?'':'disabled'}>Next</button></div>`;
     $('filePrev').onclick=()=>{page--;paint();};$('fileNext').onclick=()=>{page++;paint();};bindOpen();
   }
   async function refresh(){

@@ -67,6 +67,30 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_workspace_requires_auth_and_revision_and_keeps_caps(self):
+        service=self.server.RequestHandlerClass.studio_service
+        p=service.store.save(new_project('Workspace'))
+        body={'project':p['id'],'revision':p['revision'],'operation':'save-setup','name':'Fantasy'}
+        self.assertEqual(self.request('/studio/workspace',body,key='wrong')[0],401)
+        code,_,raw=self.request('/studio/workspace',body)
+        self.assertEqual(code,200);saved=json.loads(raw)
+        self.assertEqual(saved['savedSetups'][0]['name'],'Fantasy')
+        self.assertEqual(self.request('/studio/workspace',body)[0],400)
+        self.assertFalse(self.engine.calls)
+
+    def test_workspace_cannot_replace_state_during_queued_work(self):
+        service=self.server.RequestHandlerClass.studio_service
+        p=service.store.save(new_project('Busy'))
+        with service.cv:
+            service.paused=True
+            service.db.execute("INSERT INTO jobs(id,project,chapter,kind,status,payload,created) VALUES(?,?,?,?,?,?,?)",
+                ('workspace-job',p['id'],p['chapters'][0]['id'],'image','QUEUED','{}',1))
+            service.db.commit()
+        code,_,raw=self.request('/studio/workspace',{'project':p['id'],'revision':p['revision'],
+            'operation':'save-setup','name':'Unsafe boundary'})
+        self.assertEqual(code,400);self.assertIn('idle',json.loads(raw)['error'])
+        self.assertEqual(service.store.load(p['id'])['revision'],p['revision'])
+
     def test_vimeo_credentials_and_private_paths_never_enter_browser_configuration(self):
         service=self.server.RequestHandlerClass.studio_service
         with patch.dict(service.config,{'vimeoApiToken':'private-vimeo-test-token','vimeoKeyFile':'C:/private/vimeo-key.json'}):

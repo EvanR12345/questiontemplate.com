@@ -2406,6 +2406,8 @@ class StudioService:
                 current.setdefault('audioHistory',[]).append(result | {'selected':False,
                     'reason':'Narration inputs changed while audio was generated; current text/audio retained.'})
                 return False
+            if current.get('audio',{}).get('path') and current['audio'].get('path')!=result.get('path'):
+                current.setdefault('audioHistory',[]).append(copy.deepcopy(current['audio']) | {'selected':False,'reason':'Earlier chapter narration'})
             get_chapter(q, ch["id"]).update(
                 audio=result, status="DIRECTING", renderStale=True
             )

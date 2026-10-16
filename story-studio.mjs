@@ -1,4 +1,5 @@
-import {workspaceGuideHTML,organizeSettings,organizeFileTools,openStudioGuide} from './studio-guide.mjs?v=usability-20261015';
+import {createWorkspaceTools} from './studio-workspace.mjs?v=workspace-20261016';
+import {workspaceGuideHTML,organizeSettings,organizeFileTools,openStudioGuide} from './studio-guide.mjs?v=workspace-20261016';
 import {VOICE_MODELS,NARRATOR,DEFAULT_VOICE_SCRIPT,voicesFor,voiceCards,mountVoicePicker,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voice-groups-20261015';
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
 import {imagePresetChanges} from './studio-image-presets.mjs?v=short-video-20261011';
@@ -17,7 +18,7 @@ import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
 import {rendererPlacement,chapterDisplayStatus} from './studio-render-status.mjs?v=grounding-20261011';
 import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=scheduling-20261013';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=cloud-recovery-20261015';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=workspace-20261016-cloud-recovery-20261015';
 import {
   loadProjectState,
   saveStudioProject,
@@ -73,6 +74,25 @@ const mediaLoader=createMediaLoader({resolve:(path,projectId,options)=>media(pat
 const root = document.createElement("section");
 root.id = "productionStudio";
 root.className = "production";
+
+let workspaceAddChapter;
+const workspace=createWorkspaceTools({
+  get:()=>({project,chapter:ch(),chapterId,tab,queue,connected,health,projects,root}),
+  action,api,mutate,patch,formDialog,media,note,saveSettings,upload,
+  connect:()=>connectHelper(),addChapter:()=>workspaceAddChapter?.(),
+  refreshQueue:async()=>{queue=await api('queue');renderQueue();},
+  replaceImage:async(shot,result)=>mutate('workspace',{operation:'attach-image',chapter:chapterId,shot:shot.id,path:result.path,revision:project.revision}),
+  navigate:async target=>{
+    if(target.chapter&&!project.chapters.some(c=>c.id===target.chapter))throw Error('That chapter no longer exists.');
+    if(target.chapter)chapterId=target.chapter;
+    tab=target.tab||tab;scenePage=0;
+    if(target.shot){const n=ch().scenes.findIndex(s=>s.shots.some(x=>x.id===target.shot));scenePage=Math.max(0,Math.floor(n/10));}
+    render();
+    const anchor=target.shot?root.querySelector('#shot-'+CSS.escape(target.shot)):root.querySelector('[role="tab"][aria-selected="true"]');
+    anchor?.scrollIntoView({block:'center',behavior:'smooth'});anchor?.focus({preventScroll:true});
+  }
+});
+
 function settingsDraftStatus(){
   const status=$('#settingsDraftStatus');
   if(status)status.textContent=settingsDrafts.has(project?.id)?'Unsaved settings · retained in this open page until you save.':'Settings are saved per project. Save after making changes.';
@@ -525,7 +545,7 @@ function render() {
         `<div class="notice"><strong>${escape(w.message)}</strong><p>${escape(w.categories.join(", "))}</p><button data-warning="${w.id}" data-choice="update">Update affected chapters</button> <button data-warning="${w.id}" data-choice="keep">Keep existing chapters</button></div>`,
     )
     .join("")}
-  <div class="studio-grid"><aside class="chapter-rail" aria-label="Chapters"><h2>Chapters</h2>${project.chapters.map((x) => `<button class="chapter-button ${x.id === c.id ? "selected" : ""}" data-chapter="${x.id}" ${x.id === c.id ? 'aria-current="true"' : ''}><span>${x.number.toString().padStart(2, "0")}</span><strong>${escape(x.name)}</strong><small>${escape(chapterDisplayStatus(project,x))}${x.continuityNeedsReview ? " · review continuity" : ""}</small></button>`).join("")}<button class="chapter-add" id="productionAddChapter">+ New chapter</button></aside>
+  <div id="studioWorkspaceSummary"></div><div class="studio-grid"><aside class="chapter-rail" aria-label="Chapters">${workspace.railHTML()}</aside>
   <div class="production-main"><div class="chapter-heading"><div><h2>${escape(c.name)}</h2><div class="subtitle">${escape(chapterDisplayStatus(project,c))} · ${escape(project.settings.image.model)}</div></div><details class="action-menu" data-ui="chapter-actions"><summary>Chapter actions</summary><div class="toolbar"><button id="productionDuplicate">Duplicate</button><button id="productionMoveUp" aria-label="Move chapter earlier">↑</button><button id="productionMoveDown" aria-label="Move chapter later">↓</button><button class="danger" id="productionDelete">Delete chapter</button></div></details></div>
   <nav class="workspace-tabs" role="tablist" aria-label="Chapter workflow">${[
     ["write", "Story", "Paste your chapter"],
@@ -548,7 +568,10 @@ function render() {
     settingsOrganizer=organizeSettings(root.querySelector("#productionContent"),settingsGuideState);
   }
   if(tab==='files')organizeFileTools(root.querySelector('#productionContent'));
+  if(tab==='settings')root.querySelector('#productionContent').insertAdjacentHTML('afterbegin',workspace.setupHTML()+'<p class="ws-settings-impact">Settings affect future generation or the next render. Existing images and audio keep their own settings. Changes to voice require new chapter audio; overlays require rendering only. Time and cost depend on the affected stages and saved spending caps.</p>');
+  if(tab==='timeline')root.querySelector('#productionContent').insertAdjacentHTML('beforeend',workspace.finishingHTML());
   wire();
+  workspace.wire();
   settingsDraftStatus();
   renderQueue();
   for (const detail of root.querySelectorAll('details[data-ui]:not(.settings-group)')) detail.open = openControls.includes(detail.dataset.ui);
@@ -762,6 +785,7 @@ function shotMotionLabel(shot) {
   return "slow zoom in";
 }
 function renderQueue() {
+  workspace.dashboard();
   const displayedProject=project.id;
   const el = $("#productionQueue");
   if (!el) return;
@@ -1093,7 +1117,7 @@ function wire() {
       });
     };
   });
-  $("#productionAddChapter").onclick = () =>
+  $("#productionAddChapter").onclick = workspaceAddChapter = () =>
     action(async () => {
       if (connected) {
         await mutate("chapter", { action: "add" });
@@ -1186,10 +1210,10 @@ function wire() {
     }),
   );
   $("#productionAnalyze")?.addEventListener("click", () =>
-    action(() => submit("analyze")),
+    action(() => workspace.confirmImpact("analyze",{},()=>submit("analyze"))),
   );
   $("#productionNarrate")?.addEventListener("click", () =>
-    action(() => submit("narration")),
+    action(() => workspace.confirmImpact("narration",{},()=>submit("narration"))),
   );
   $("#productionExample")?.addEventListener("click", () =>
     confirmAction(
@@ -1353,10 +1377,10 @@ function wire() {
     ),
   );
   $("#productionRenderChapter")?.addEventListener("click", () =>
-    action(() => submit("render-chapter")),
+    action(() => workspace.confirmImpact("render-chapter",{},()=>submit("render-chapter"))),
   );
   $("#productionRenderFull")?.addEventListener("click", () =>
-    action(() => submit("render-full")),
+    action(() => workspace.confirmImpact("render-full",{},()=>submit("render-full"))),
   );
   $("#validateTimeline")?.addEventListener("click", () => {
     let cursor = 0;
@@ -1406,7 +1430,8 @@ function wire() {
 }
 async function shotAction(sid, act) {
   const s = shots().find((s) => s.id === sid);
-  if (act === "generate") return submit("image", [sid]);
+  if (act === "versions") return workspace.compare(s);
+  if (act === "generate") return workspace.confirmImpact("image",{},()=>submit("image", [sid]));
   if (act === "qc") return submit("qc", [sid]);
   if (act === "accept-image") {
     if (!connected) throw new Error("Connect the helper to accept the current image; AI findings will remain saved.");

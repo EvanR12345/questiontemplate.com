@@ -348,7 +348,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 if studio.config.get('fluxValidated') and not legacy:
                     p['settings']['image'].update(studio.providers['native-flux'].getRecommendedSettings(),provider='native-flux',model='flux2-klein-4b-q4',workflow='text-to-image')
                 if body.get('sourceProject') and not legacy:
-                    previous=studio.store.load(body['sourceProject'])['settings']
+                    source=studio.store.load(body['sourceProject'])
+                    p['savedSetups']=copy.deepcopy(source.get('savedSetups',[]))
+                    previous=source['settings']
                     # Reuse the chosen production profile without borrowing
                     # story facts or project-specific generated media paths.
                     for key in ('style','layoutMode','generationMode','voice','voiceEngine','voiceCompute',
@@ -441,6 +443,14 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 return {'health':health,'settings':settings|{'provider':'comfyui','workflow':'qwen-studio-auto'}}
             if path=='/studio/control':return studio.control(body['action'],body.get('job'),body.get('project'))
             if path=='/studio/jobs':return studio.enqueue(body['project'],body.get('chapter'),body['kind'],body.get('shots'),body.get('options'))
+            if path=='/studio/workspace':
+                from studio_workspace import workspace_change
+                from studio_qc import project_view
+                with studio.cv:
+                    busy=studio.db.execute("SELECT 1 FROM jobs WHERE project=? AND status IN ('QUEUED','RUNNING') LIMIT 1",(body['project'],)).fetchone()
+                    if busy:raise ValueError('Wait for this project queue to become idle before choosing versions or applying saved setups.')
+                    workspace_change(studio.store,body['project'],body)
+                    return project_view(studio.store,body['project'])
             pid=body['project']
             if path=='/studio/production-preset':
                 if studio.current:raise ValueError('Wait for an idle generation queue before applying the production preset.')
