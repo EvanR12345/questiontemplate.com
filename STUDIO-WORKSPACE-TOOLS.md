@@ -73,3 +73,18 @@ scene/shot and file search, and the report in an isolated 80-chapter fixture.
 390-pixel mobile report layout had no horizontal overflow. Preview-only jobs cannot
 change chapter completion/failure status or pollute chapter-render ETA samples.
 No paid generation, model downloads or full-production run was performed.
+
+## Project-tool performance update (October 16)
+
+Search builds one private in-memory index per open dialog and reuses results for
+pagination. Closing/reopening builds from the current project; credentials and
+settings are not indexed. File-inventory errors remain visible while typing.
+Reports share reference fingerprints only within the current request; each new
+report rechecks changed files and acceptance signatures.
+
+Synthetic alternating paired measurements: 80 chapters / 6,400 shots, index build
+plus 12 changing searches, median 180.7 to 72.2 ms (nine trials). A report with 400
+accepted images sharing two 256 KiB references took 693.9 to 27.9 ms (seven trials),
+hashing each reference once instead of 400 times. The latter uses synthetic
+in-memory SHA256 data, not network or disk measurements. These measure project
+tools and do not predict faster narration, image generation or video rendering.

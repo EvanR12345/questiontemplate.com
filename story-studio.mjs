@@ -1,5 +1,5 @@
 import {createWorkspaceTools} from './studio-workspace.mjs?v=tools-20261016';
-import {createProductionTools} from './studio-production-tools.mjs?v=tools-20261016';
+import {createProductionTools} from './studio-production-tools.mjs?v=tools-perf-20261016';
 import {workspaceGuideHTML,organizeSettings,organizeFileTools,openStudioGuide} from './studio-guide.mjs?v=tools-20261016';
 import {VOICE_MODELS,NARRATOR,DEFAULT_VOICE_SCRIPT,voicesFor,voiceCards,mountVoicePicker,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voice-groups-20261015';
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';

@@ -5,6 +5,11 @@ import time
 
 def reference_checks(store, project):
     checks = []
+    availability = {}
+    def available(path):
+        if path not in availability:
+            availability[path] = store.has_asset(project['id'], path)
+        return availability[path]
     shots = [s for c in project['chapters'] for scene in c.get('scenes', []) for s in scene.get('shots', [])]
     shots += project.get('intro', {}).get('shots', []) if project.get('intro', {}).get('enabled') else []
     used = {cast['id'] for shot in shots for cast in shot.get('characters', [])}
@@ -13,11 +18,11 @@ def reference_checks(store, project):
             continue
         refs = person.get('references', [])
         paths = [r if isinstance(r, str) else r.get('path') or r.get('imagePath') for r in refs]
-        available = [path for path in paths if path and store.has_asset(project['id'], path)]
-        checks.append({'name': 'reference-' + person['id'], 'ready': bool(available),
-            'blocking': False, 'message': person['name'] + (': character reference available.' if available else
+        present = {path for path in paths if path and available(path)}
+        checks.append({'name': 'reference-' + person['id'], 'ready': bool(present),
+            'blocking': False, 'message': person['name'] + (': character reference available.' if present else
                 ': no available identity reference. Add one in Characters for consistent images.')})
-        if any(path and path not in available for path in paths):
+        if any(path and path not in present for path in paths):
             checks.append({'name': 'reference-file-' + person['id'], 'ready': False,
                 'blocking': True, 'message': person['name'] + ': a selected reference file is missing. Restore it or remove the broken reference.'})
     return checks
@@ -39,6 +44,10 @@ def completion_report(service, pid):
     intro_shots = p.get('intro', {}).get('shots', [])
     shots = [s for c in p['chapters'] for scene in c.get('scenes', []) for s in scene.get('shots', [])] + intro_shots
     from studio_qc import decision
+    # Request-local only: shared reference bytes are hashed once, while a later
+    # report always rechecks changed files and current manual acceptances.
+    context = {'files': {}, 'reviews': {}, 'chapters': {c['id']: c for c in p['chapters']},
+               'intro': {s['id'] for s in intro_shots}}
     issues = []
     for c in p['chapters']:
         if c.get('timingNeedsReview') or c.get('continuityNeedsReview'):
@@ -47,7 +56,7 @@ def completion_report(service, pid):
             for s in scene.get('shots', []):
                 qc = s.get('qc', {})
                 if s.get('generationError') or qc.get('pass') is False or qc.get('status') in ('UNREVIEWED', 'PENDING'):
-                    assessment = decision(p, s, service.store)
+                    assessment = decision(p, s, service.store, context)
                     if assessment.get('disposition') == 'accepted':continue
                     issues.append({'chapter': c['id'], 'shot': s['id'], 'label':
                         c['name'] + ': ' + (s.get('generationError') or '; '.join(qc.get('issues', [])) or qc.get('status', 'Review finding')),
@@ -55,7 +64,7 @@ def completion_report(service, pid):
     for s in intro_shots:
         qc = s.get('qc', {})
         if s.get('generationError') or qc.get('pass') is False or qc.get('status') in ('UNREVIEWED', 'PENDING'):
-            assessment = decision(p, s, service.store)
+            assessment = decision(p, s, service.store, context)
             if assessment.get('disposition') == 'accepted':continue
             issues.append({'intro': True, 'label': 'Intro: ' + (s.get('generationError') or
                 '; '.join(qc.get('issues', [])) or qc.get('status', 'Review finding')),

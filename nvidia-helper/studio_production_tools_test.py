@@ -72,6 +72,34 @@ class HistoryTest(unittest.TestCase):
 
 
 class ReportTest(unittest.TestCase):
+    def test_shared_reference_availability_is_checked_once_per_request_and_not_cached_across_requests(self):
+        p=new_project('Test')
+        p['characters']=[{'id':name,'name':name,'references':[{'path':'shared.png'},{'path':'shared.png'}]} for name in ('a','b')]
+        p['chapters'][0]['scenes']=[{'shots':[{'characters':[{'id':'a'},{'id':'b'}]}]}]
+        calls=[];present=True
+        store=SimpleNamespace(has_asset=lambda pid,path:calls.append(path) or present)
+        self.assertTrue(reference_checks(store,p)[0]['ready']);self.assertEqual(calls,['shared.png'])
+        present=False
+        self.assertTrue(reference_checks(store,p)[-1]['blocking']);self.assertEqual(calls,['shared.png','shared.png'])
+    def test_report_reuses_reference_hashes_but_rechecks_changes_on_the_next_request(self):
+        from studio_qc import review_signature
+        p=new_project('Test');p['settings']['qcCheckLevel']='practical'
+        c=p['chapters'][0]
+        p['characters']=[{'id':'hero','name':'Hero','references':[{'path':'face.png'}]}]
+        shots=[{'id':str(i),'chapterId':c['id'],'characters':[{'id':'hero'}],
+                'imagePath':f'{i}.png','qc':{'pass':False,'issues':['Wrong weapon.']}} for i in range(6)]
+        c['scenes']=[{'shots':shots}]
+        calls=[];fingerprints={'face.png':'original-reference'}
+        store=SimpleNamespace(load=lambda pid:copy.deepcopy(p),asset_digest=lambda pid,path:calls.append(path) or fingerprints.get(path,path))
+        for shot in shots:
+            shot['qcOverride']={'decision':'accepted','imagePath':shot['imagePath'],'imageSHA256':shot['imagePath'],
+                'reviewSpecSignature':review_signature(p,shot,store)}
+        service=SimpleNamespace(store=store,trace_report=lambda pid:{'spans':[],'summary':{}})
+        calls.clear();self.assertEqual(completion_report(service,p['id'])['issues'],[])
+        self.assertEqual(calls.count('face.png'),1)
+        fingerprints['face.png']='changed-reference';calls.clear()
+        self.assertEqual(len(completion_report(service,p['id'])['issues']),6)
+        self.assertEqual(calls.count('face.png'),1)
     def test_reference_checks_are_metadata_only_and_report_missing_paths(self):
         p=new_project('Test');p['characters']=[{'id':'hero','name':'Hero','references':[{'path':'face.png'}]}]
         p['chapters'][0]['scenes']=[{'shots':[{'characters':[{'id':'hero'}]}]}]

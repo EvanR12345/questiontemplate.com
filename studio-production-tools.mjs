@@ -3,10 +3,9 @@ const finite=v=>Number.isFinite(v)&&v>=0;
 const seconds=v=>finite(v)?`${(v/60).toFixed(1)} min`:'Unknown';
 const money=v=>finite(v)?`$${v.toFixed(4)}`:'Unknown';
 
-export function searchProject(project,query,files=[]){
-  const q=query.trim().toLowerCase();if(!q)return [];
+export function indexProjectSearch(project,files=[]){
   const rows=[];
-  const add=(kind,label,text,target)=>{const source=String(text??''),i=source.toLowerCase().indexOf(q);if(i>=0)rows.push({kind,label,snippet:source.slice(Math.max(0,i-55),i+130),...target});};
+  const add=(kind,label,text,target)=>{const source=String(text??'');rows.push({kind,label,source,folded:source.toLowerCase(),...target});};
   for(const person of project.characters||[])add('Character',person.name,[person.name,person.description,JSON.stringify(person.permanentIdentity||{}),JSON.stringify(person.currentAppearance||{})].join(' '),{tab:'cast'});
   for(const c of project.chapters||[]){
     add('Chapter',c.name,`${c.name} ${c.sourceText||''}`,{chapter:c.id,tab:'write'});
@@ -19,6 +18,20 @@ export function searchProject(project,query,files=[]){
   }
   for(const f of files)add('File',f.path,`${f.path} ${f.category||''}`,{path:f.path,tab:'files',missing:f.storageStatus==='MISSING'});
   return rows;
+}
+
+export function searchProjectIndex(index,query){
+  const q=query.trim().toLowerCase();if(!q)return [];
+  const rows=[];
+  for(const row of index){
+    const i=row.folded.indexOf(q);
+    if(i>=0){const {source,folded,...target}=row;rows.push({...target,snippet:source.slice(Math.max(0,i-55),i+130)});}
+  }
+  return rows;
+}
+
+export function searchProject(project,query,files=[]){
+  return query.trim()?searchProjectIndex(indexProjectSearch(project,files),query):[];
 }
 
 export function reportHTML(report){
@@ -43,18 +56,25 @@ export function createProductionTools(ctx){
     }catch(e){if(current(m,id))m.querySelector('#wsHealth').textContent='Check failed: '+e.message;}
   }
   function search(){
-    const {project:p,connected}=ctx.get();let files=[],page=0;
+    const {project:p,connected}=ctx.get();let files=[],page=0,results=[],searched=null,fileError=false;
+    const storyIndex=indexProjectSearch(p);let fileIndex=[];
     const m=readonly('Search this project','<label>Find character, dialogue, scene, shot or file<input id="wsSearchAll" type="search" placeholder="Name, spoken words, action or filename"></label><p id="wsSearchStatus" class="muted" role="status">Type to search your saved project.</p><ul id="wsSearchResults" class="ws-result-list"></ul><div class="toolbar"><button id="wsSearchPrev">Previous</button><button id="wsSearchNext">Next</button></div>');
     const input=m.querySelector('#wsSearchAll');
-    const paint=()=>{if(!current(m,p.id))return;const results=searchProject(p,input.value,files);page=Math.max(0,Math.min(page,Math.ceil(results.length/30)-1));const visible=results.slice(page*30,page*30+30);
-      m.querySelector('#wsSearchStatus').textContent=`${results.length} matches · ${files.length} indexed files${connected?'':' · helper offline; file inventory unavailable'}.`;
+    const paint=()=>{if(!current(m,p.id))return;
+      const query=input.value.trim().toLowerCase();
+      if(query!==searched){results=[...searchProjectIndex(storyIndex,query),...searchProjectIndex(fileIndex,query)];searched=query;}
+      page=Math.max(0,Math.min(page,Math.ceil(results.length/30)-1));const visible=results.slice(page*30,page*30+30);
+      m.querySelector('#wsSearchStatus').textContent=`${results.length} matches · ${files.length} indexed files${!connected?' · helper offline; file inventory unavailable':fileError?' · file inventory failed; reconnect and reopen to retry':''}.`;
       m.querySelector('#wsSearchResults').innerHTML=visible.map((r,n)=>`<li><div><small>${esc(r.kind)}</small><strong>${esc(r.label)}</strong><p>${esc(r.snippet)}</p></div><button data-search-open="${n}" ${r.missing?'disabled':''}>${r.path?'Preview':'Open'}</button></li>`).join('');
       m.querySelector('#wsSearchPrev').disabled=page===0;m.querySelector('#wsSearchNext').disabled=(page+1)*30>=results.length;
       m.querySelectorAll('[data-search-open]').forEach(b=>b.onclick=()=>ctx.action(async()=>{const r=visible[Number(b.dataset.searchOpen)];if(!current(m,p.id))return;
         if(r.path){const url=await ctx.media(r.path,p.id);if(!current(m,p.id))return;const a=m.ownerDocument.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';a.textContent='Open private file';b.replaceWith(a);a.focus();}
         else{m.close();await ctx.navigate(r);}}));};
     input.oninput=()=>{page=0;paint();};m.querySelector('#wsSearchPrev').onclick=()=>{page--;paint();};m.querySelector('#wsSearchNext').onclick=()=>{page++;paint();};
-    if(connected)void ctx.api('files?project='+encodeURIComponent(p.id)).then(r=>{files=Array.isArray(r)?r:r.files||[];paint();}).catch(()=>{if(current(m,p.id))m.querySelector('#wsSearchStatus').textContent='Story search works; file inventory failed. Reconnect and reopen to search files.';});
+    if(connected)void ctx.api('files?project='+encodeURIComponent(p.id)).then(r=>{
+      if(!current(m,p.id))return;
+      files=Array.isArray(r)?r:r.files||[];fileIndex=indexProjectSearch({},files);searched=null;paint();
+    }).catch(()=>{fileError=true;paint();});
     paint();input.focus();
   }
   function history(){
