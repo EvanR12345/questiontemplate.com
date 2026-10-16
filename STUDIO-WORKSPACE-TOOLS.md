@@ -34,11 +34,15 @@ voice environment, spending cap or existing generation is replaced by this updat
 
 ## Verification
 
-338 top-level frontend regression tests passed. After final safeguards, the 28
-focused frontend tests and 48 backend/HTTP/storage/history tests passed. Browser
+339 frontend regression tests passed. After final safeguards, the 28
+focused frontend tests plus the legacy Video-tab regression and 48 backend/HTTP/storage/history tests passed. Browser
 checks used a separate paused synthetic 80-chapter fixture: search, range selection,
 three selected queued exports, presets, image/audio selection, saved-video playback,
 narration selection, reminder removal and file badges. Mobile 390-pixel layout had
 no horizontal overflow. Automated browser upload selection was blocked by Chrome's
 extension permission; backend attachment, traversal rejection and missing-file
 rejection passed. No production generation or cloud-render benchmark is implied.
+
+Legacy validation/imported projects without audio/render objects now open their
+Video workspace safely. Four unrelated codec tests need ffmpeg/ffprobe executables
+on PATH and were excluded from the passing frontend suite.

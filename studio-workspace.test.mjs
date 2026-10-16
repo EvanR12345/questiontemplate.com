@@ -48,3 +48,15 @@ test('comparison indexes exclude unrelated plan history and retain image metadat
   assert.equal(versionsOf({},shot).length,2);
   assert.equal(versionsOf({audioHistory:[{path:'a.wav'},{error:'old'}]}).length,1);
 });
+
+
+test('legacy chapters without render objects still open Video and expose saved-asset rendering',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const source=await readFile(new URL('./story-studio.mjs',import.meta.url),'utf8');
+  const section=source.slice(source.indexOf('function timeline()'),source.indexOf('function settings()'));
+  const p={intro:{enabled:false},chapters:[{name:'Original chapter'}]};
+  const render=new Function('ch','shots','escape','time','project','shotMotionLabel',section+';return timeline();');
+  const html=render(()=>({}),()=>[],String,String,p,()=> 'static');
+  assert.match(html,/Render chapter/);assert.match(html,/Original chapter/);
+  assert.doesNotMatch(html,/<video/);
+});
