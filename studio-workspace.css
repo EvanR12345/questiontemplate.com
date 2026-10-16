@@ -9,5 +9,6 @@
 .ws-result-list li>div,.ws-result-list li>span{min-width:0;overflow-wrap:anywhere}.ws-result-list strong,.ws-result-list small{display:block}.ws-result-list p{margin:.35rem 0;font-size:.85rem}.ws-result-list button{flex-shrink:0}
 .ws-health-list li{display:grid;grid-template-columns:5rem 1fr;gap:.75rem;padding:.65rem 0;border-bottom:1px solid var(--line,#30384a)}
 .ws-report-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;font-variant-numeric:tabular-nums}.ws-report-metrics dd{margin:0;font-weight:650;font-size:1.25rem}.ws-report-metrics dt{font-size:.8rem;color:var(--muted,#a9b3c4)}
+#wsReportBody table{width:100%;border-collapse:collapse;margin:.65rem 0;font-size:.86rem;font-variant-numeric:tabular-nums}#wsReportBody :is(th,td){text-align:left;padding:.5rem .65rem;vertical-align:top;border-bottom:1px solid var(--line,#30384a);overflow-wrap:anywhere}#wsReportBody :is(th,td):first-child{padding-left:0}#wsReportBody :is(th,td):last-child{padding-right:0}
 .ws-finishing video{width:100%;max-height:22rem}.ws-finishing figure{margin:1rem 0}
 @media(max-width:520px){.ws-tools button{flex:1 1 42%}.ws-health-list li{grid-template-columns:1fr;gap:.2rem}.ws-report-metrics{grid-template-columns:1fr}}
