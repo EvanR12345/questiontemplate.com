@@ -239,6 +239,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/revision':self.reply(200,studio.store.revision(query['id'][0]))
                     elif path=='/studio/queue':self.reply(200,studio.snapshot())
                     elif path=='/studio/production-readiness':self.reply(200,studio.production_readiness(query['project'][0],{'overlap':query.get('overlap',['false'])[0]=='true','generationStrategy':query.get('generationStrategy',['legacy'])[0],'unattended':query.get('unattended',['false'])[0]=='true'}))
+                    elif path=='/studio/workspace-report':
+                        from studio_workspace_report import completion_report
+                        self.reply(200,completion_report(studio,query['project'][0]))
                     elif path=='/studio/trace':self.reply(200,studio.trace_report(query['project'][0]))
                     elif path=='/studio/performance':self.reply(200,studio.performance_report(query['project'][0]))
                     elif path=='/studio/planner-profile':
@@ -471,6 +474,8 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 from PIL import Image
                 raw=base64.b64decode(body['data'].split(',',1)[-1]);img=Image.open(io.BytesIO(raw));img.thumbnail((1536,1536));name='references/'+uid()+'.png';target=studio.store.asset(pid,name);target.parent.mkdir(exist_ok=True);img.convert('RGBA' if body.get('purpose')=='watermark' else 'RGB').save(target,'PNG');return {'path':name}
             def change(p):
+                from studio_action_history import snapshot
+                history_before=snapshot(p)
                 scope=body.get('scope','project');id=body.get('id');action=body.get('action','patch')
                 if path=='/studio/edit':
                     if scope=='project':target=p
@@ -574,6 +579,8 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         for ch in p['chapters']:
                             if ch['id'] in warning['affected']:ch['continuityNeedsReview']=True
                 else:raise ValueError('Unknown studio endpoint.')
+                from studio_action_history import record
+                record(p,history_before,f"{scope}: {action if path!='/studio/edit' else ', '.join(changed)}")
             studio.store.mutate(pid,change)
             if path=='/studio/warning' and body.get('action')=='update':
                 latest=studio.store.load(pid);warning=next(x for x in latest['warnings'] if x['id']==body['id'])

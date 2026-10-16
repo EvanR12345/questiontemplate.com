@@ -45,18 +45,28 @@ def workspace_change(store, pid, body):
         if type(body.get('revision')) is not int or body['revision'] != p['revision']:
             raise ValueError('This project changed. Refresh its saved state before applying this change.')
         operation = body.get('operation')
+        if operation == 'undo':
+            from studio_action_history import undo
+            undo(p, body.get('actionId'))
+            return
+        from studio_action_history import snapshot
+        before = snapshot(p)
+        def remember():
+            from studio_action_history import record
+            record(p, before, operation.replace('-', ' '))
         if operation == 'save-setup':
             name = str(body.get('name', '')).strip()
             if not name or len(name) > 80:
                 raise ValueError('Use a setup name between 1 and 80 characters.')
             setups = p.setdefault('savedSetups', [])
-            snapshot = setup_snapshot(p)
+            setup = setup_snapshot(p)
             # A matching name updates that preset; its previous contents remain recoverable.
             old = next((s for s in setups if s['name'].casefold() == name.casefold()), None)
             if old:
                 p.setdefault('setupHistory', []).append(copy.deepcopy(old))
                 setups.remove(old)
-            setups.append({'name': name, 'created': time.time(), **snapshot})
+            setups.append({'name': name, 'created': time.time(), **setup})
+            remember()
             return
         if operation == 'apply-setup':
             source = store.load(body.get('sourceProject') or pid)
@@ -79,6 +89,7 @@ def workspace_change(store, pid, body):
             for c in p['chapters']:
                 c['renderStale'] = True
             p['renderStale'] = True
+            remember()
             return
         c = get_chapter(p, body.get('chapter'))
         if operation in ('restore-image', 'attach-image'):
@@ -140,4 +151,5 @@ def workspace_change(store, pid, body):
             raise ValueError('Unknown workspace operation.')
         c['renderStale'] = True
         p['renderStale'] = True
+        remember()
     return store.mutate(pid, change)

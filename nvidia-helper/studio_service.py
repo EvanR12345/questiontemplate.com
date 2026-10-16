@@ -125,7 +125,7 @@ class StudioService:
         """Record direct jobs once per attempt; parent pipelines measure their stages."""
         stages = {'image':'Image generation', 'qc':'Visual QC', 'qc-intro':'Intro visual QC',
                   'intro-image':'Intro images', 'character-reference':'Character reference',
-                  'render-chapter':'Render chapter', 'render-full':'Assemble full video',
+                  'render-chapter':'Render chapter', 'render-preview':'Edit preview', 'render-full':'Assemble full video',
                   'intro-render':'Render intro', 'narration':'Narration', 'intro-audio':'Intro narration',
                   'analyze':'Chapter analysis (audio + directing)', 'scene-plan':'Chapter analysis (audio + directing)',
                   'retarget-images':'Image prompt planning', 'voice-preview':'Voice preview'}
@@ -151,7 +151,7 @@ class StudioService:
             rows = [
                 dict(r)
                 for r in self.db.execute(
-                    "SELECT project,chapter,shot,status FROM jobs" + (' WHERE project=?' if project_id else '') + ' ORDER BY created',
+                    "SELECT project,chapter,shot,status FROM jobs WHERE kind!='render-preview'" + (' AND project=?' if project_id else '') + ' ORDER BY created',
                     (project_id,) if project_id else (),
                 )
             ]
@@ -712,6 +712,8 @@ class StudioService:
             reason=repair_budget_reason(p['settings'])
             check('automatic-repairs',automatic_repairs(p['settings']),
                   reason or ('Automatic repairs are enabled for confirmed major errors.' if qc_policy(p['settings'])=='practical' else 'Bounded automatic repairs are enabled.'),False)
+        from studio_workspace_report import reference_checks
+        checks.extend(reference_checks(self.store,p))
         return {'project':pid,'revision':p['revision'],'ready':all(x['ready'] for x in checks if x['blocking']),
                 'generationStrategy':selected_strategy,'rentalControl':'managed' if managed else 'external',
                 'voiceLocation':voice_location(p['settings']),
@@ -735,6 +737,9 @@ class StudioService:
         if 'overlap' in options and not isinstance(options['overlap'],bool):
             raise ValueError('Cloud overlap must be explicitly enabled or disabled.')
         ch = get_chapter(p, chapter) if chapter else None
+        if kind == 'render-preview':
+            if not ch:raise ValueError('Choose a chapter for the edit preview.')
+            if not any(s['id']==options.get('shot') for scene in ch['scenes'] for s in scene['shots']):raise ValueError('Choose an existing shot for the preview.')
         if kind == 'voice-preview':
             chapter = None
             ch = None
@@ -758,6 +763,7 @@ class StudioService:
             "qc",
             "character-reference",
             "render-chapter",
+            "render-preview",
             "render-full",
             "intro-audio",
             "intro-image",
@@ -901,7 +907,7 @@ class StudioService:
         return self.providers[id]
 
     def require_resolved_execution(self,pid,kind):
-        if kind in ('narration','intro-audio','voice-preview','render-chapter','render-full','intro-render'):
+        if kind in ('narration','intro-audio','voice-preview','render-chapter','render-preview','render-full','intro-render'):
             return
         journal=getattr(self,'execution_journal',None)
         unresolved=journal.unresolved_project(pid) if journal else []
@@ -1131,7 +1137,7 @@ class StudioService:
                                          {'jobId': job['id']}, kind='job')
             trace_token=self.trace.parent.set(trace_job)
             from studio_power import ProductionPowerRequest
-            power=ProductionPowerRequest(enabled=job['kind'] in ('produce-story','prepare-story','render-full','render-chapter','render-cloud'))
+            power=ProductionPowerRequest(enabled=job['kind'] in ('produce-story','prepare-story','render-full','render-chapter','render-preview','render-cloud'))
             try:
                 power.acquire()
                 self.legacy_queue.control("yield-audio")
@@ -1219,7 +1225,18 @@ class StudioService:
                     else:
                         self.unload_models()
                         self.providers["existing"].unload()
-                        if job['kind'] == 'split-video':
+                        if job['kind'] == 'render-preview':
+                            ch = get_chapter(p,job['chapter'])
+                            expected = self.renderer.preview_signature(p,ch,options['shot'])
+                            result = self.renderer.preview(p,ch,options['shot'],self.gate)
+                            def preview_saved(q):
+                                c = get_chapter(q,ch['id'])
+                                try:superseded=self.renderer.preview_signature(q,c,options['shot']) != expected
+                                except (ValueError,KeyError,OSError):superseded=True
+                                c.setdefault('previewRenders',[]).append(result | {
+                                    'sourceSignature':expected,'superseded':superseded})
+                            self.store.mutate(p['id'],preview_saved)
+                        elif job['kind'] == 'split-video':
                             if not p.get('render',{}).get('path'): raise ValueError('Render a full video before splitting it.')
                             from studio_engagement import settings as engagement_settings
                             splitting=engagement_settings(p)
@@ -1301,11 +1318,11 @@ class StudioService:
                 state = "QUEUED"
                 message = str(error)
                 self.paused = True
-                self.status(job['project'], job['chapter'], 'PAUSED')
+                if job['kind'] != 'render-preview':self.status(job['project'], job['chapter'], 'PAUSED')
             except JobCancelled:
                 state = "CANCELLED"
                 message = "Cancelled; completed assets preserved"
-                self.status(job["project"], job["chapter"], "CANCELLED")
+                if job['kind'] != 'render-preview':self.status(job["project"], job["chapter"], "CANCELLED")
             except Exception as error:
                 state = "FAILED"
                 message = type(error).__name__ + ": " + str(error)[:1800]
@@ -1324,7 +1341,7 @@ class StudioService:
                             s["generationError"] = message
 
                 try:
-                    if job['kind']!='render-cloud':self.store.mutate(job["project"], fail)
+                    if job['kind'] not in ('render-cloud','render-preview'):self.store.mutate(job["project"], fail)
                 except Exception:
                     pass
             finally:
@@ -4582,6 +4599,8 @@ class StudioService:
             effective_settings = result.get("settings", settings)
             metadata = {
                 "preflight": preflight,
+                "operation": request['operation'],
+                "repair": bool(options.get('budgetedQCRepair') or attempt > 0),
                 "provider": provider.id,
                 "model": result.get("model", settings["model"]),
                 "workflow": result.get("workflow", actual_workflow),

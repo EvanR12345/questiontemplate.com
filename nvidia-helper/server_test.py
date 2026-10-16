@@ -67,6 +67,26 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_manual_edit_history_undo_and_private_report_are_authenticated(self):
+        service=self.server.RequestHandlerClass.studio_service
+        p=service.store.save(new_project('History fixture'))
+        body={'project':p['id'],'scope':'chapter','id':p['chapters'][0]['id'],
+              'chapter':p['chapters'][0]['id'],'patch':{'sourceText':'A quiet return.'}}
+        code,_,raw=self.request('/studio/edit',body)
+        self.assertEqual(code,200,raw)
+        edited=json.loads(raw);entry=edited['actionHistory'][-1]
+        self.assertEqual(edited['chapters'][0]['cleanNarrationText'],'A quiet return.')
+        code,_,raw=self.request('/studio/workspace',{'project':p['id'],'operation':'undo',
+             'actionId':entry['id'],'revision':edited['revision']})
+        self.assertEqual(code,200,raw)
+        restored=json.loads(raw);self.assertEqual(restored['chapters'][0]['sourceText'],'')
+        self.assertTrue(restored['actionHistory'][-1]['undone'])
+        self.assertEqual(self.request('/studio/workspace-report?project='+p['id'],key='wrong')[0],401)
+        code,_,raw=self.request('/studio/workspace-report?project='+p['id'])
+        self.assertEqual(code,200,raw)
+        report=json.loads(raw);self.assertIsNone(report['cost']['apiKnownEstimatedUSD'])
+        self.assertEqual(report['status'],'NOT_COMPLETE');self.assertFalse(self.engine.calls)
+
     def test_workspace_requires_auth_and_revision_and_keeps_caps(self):
         service=self.server.RequestHandlerClass.studio_service
         p=service.store.save(new_project('Workspace'))

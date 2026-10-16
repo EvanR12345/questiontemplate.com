@@ -14,6 +14,11 @@ export const WORKSPACES = {
 
 // Titles are the real interface labels, not model-generated documentation.
 export const FEATURES = [
+  ['Start & save', 'Project health', 'Run the same free readiness checks as Generate full video: voices, director, model configuration, saved caps, disk, archive and selected character references. Passing setup checks does not guarantee live GPU stock or enough disk for a full production.', 'write'],
+  ['Start & save', 'Edit history / Undo', 'Undo recorded manual edits without deleting generated files. Conflicting newer work is protected. Affected exports become stale and illustrations require review. Older generations stay in their existing image and audio histories.', 'write'],
+  ['Start & save', 'Search everything', 'Find saved dialogue, chapters, characters, scenes, shots and filenames across this project. File search needs the helper connection; private file links are created only when requested.', 'write'],
+  ['Video', 'Render short edit preview', 'Queue a local preview up to 30 seconds around the selected shot, using saved pictures, motion, narration and watermark. No new images or directing. This excludes intro, outro and reminders and does not replace the saved chapter export.', 'timeline'],
+  ['Video', 'Completion report', 'View and download retained stage timings, API/GPU cost estimates, recorded repairs and unresolved findings. Overlapping work is separate from calendar time. Missing costs stay unknown; this is not the account invoice.', 'timeline'],
   ['Start & save', 'What’s next? and production overview', 'Shows the next useful workspace, exported chapter count, active task, shared-queue ETA coverage, recorded API/GPU estimates and cloud-save state. Unknown costs and timing remain labeled unknown.', 'write'],
   ['Queue & recovery', 'Problems inbox', 'Links current blocking image findings, timing or continuity warnings and latest failed chapter jobs directly to their chapter or shot. Old failed attempts do not automatically remain current problems.', 'review'],
   ['Start & save', 'Chapter search, ranges and selected work', 'Search chapter names or story text, filter rendered/unfinished chapters, select a number range and queue analysis, narration or individual chapter exports in saved order. Selection does not limit Generate full video.', 'write'],

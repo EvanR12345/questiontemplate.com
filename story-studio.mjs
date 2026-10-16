@@ -1,5 +1,6 @@
-import {createWorkspaceTools} from './studio-workspace.mjs?v=workspace-20261016';
-import {workspaceGuideHTML,organizeSettings,organizeFileTools,openStudioGuide} from './studio-guide.mjs?v=workspace-20261016';
+import {createWorkspaceTools} from './studio-workspace.mjs?v=tools-20261016';
+import {createProductionTools} from './studio-production-tools.mjs?v=tools-20261016';
+import {workspaceGuideHTML,organizeSettings,organizeFileTools,openStudioGuide} from './studio-guide.mjs?v=tools-20261016';
 import {VOICE_MODELS,NARRATOR,DEFAULT_VOICE_SCRIPT,voicesFor,voiceCards,mountVoicePicker,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voice-groups-20261015';
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
 import {imagePresetChanges} from './studio-image-presets.mjs?v=short-video-20261011';
@@ -76,9 +77,9 @@ root.id = "productionStudio";
 root.className = "production";
 
 let workspaceAddChapter;
-const workspace=createWorkspaceTools({
+const toolContext={
   get:()=>({project,chapter:ch(),chapterId,tab,queue,connected,health,projects,root}),
-  action,api,mutate,patch,formDialog,media,note,saveSettings,upload,
+  action,api,mutate,patch,formDialog,media,note,saveSettings,upload,flush,productionOptions,saveSettingsIfVisible,saveStrategy,
   connect:()=>connectHelper(),addChapter:()=>workspaceAddChapter?.(),
   refreshQueue:async()=>{queue=await api('queue');renderQueue();},
   replaceImage:async(shot,result)=>mutate('workspace',{operation:'attach-image',chapter:chapterId,shot:shot.id,path:result.path,revision:project.revision}),
@@ -91,7 +92,9 @@ const workspace=createWorkspaceTools({
     const anchor=target.shot?root.querySelector('#shot-'+CSS.escape(target.shot)):root.querySelector('[role="tab"][aria-selected="true"]');
     anchor?.scrollIntoView({block:'center',behavior:'smooth'});anchor?.focus({preventScroll:true});
   }
-});
+};
+const productionTools=createProductionTools(toolContext);
+const workspace=createWorkspaceTools({...toolContext,productionTools});
 
 function settingsDraftStatus(){
   const status=$('#settingsDraftStatus');
@@ -965,6 +968,22 @@ function renderQueue() {
         )),
   );
 }
+function productionOptions(validate=true){
+    const choose=validate?strategyOptions:(value,eligible,legacyOverlap)=>({generationStrategy:value,overlap:value!=='legacy'||legacyOverlap});
+    const planned={...choose($('#productionStrategy')?.value || selectedStrategy(project),
+    connected && health?.cloudSchedulingAvailable && project.settings.image.provider==='comfyui' &&
+    project.settings.director.provider==='openai-luna' && Number(project.settings.budget?.openaiUSD)>0 && !project.settings.economyPanels,
+    !!$('#productionOverlap')?.checked),unattended:project.settings.unattendedProduction!==false};
+    if(validate && planned.unattended && !health?.unattendedProductionAvailable)
+      throw Error('Update the shared helper before automatic full-video production; this older helper cannot complete its repair and cloud-save stages automatically.');
+    return planned;
+  };
+async function saveStrategy(){
+    const wanted=strategyChoices.get(project.id) || selectedStrategy(project),target=project.id;
+    if(project.generationStrategy!==wanted)await patch('project',target,{generationStrategy:wanted});
+    if(project.id===target && (strategyChoices.get(target)||selectedStrategy(project))===wanted)strategyDirty.delete(target);
+  };
+
 async function submit(kind, selected, options) {
   const targetProject=project.id,targetChapter=chapterId;
   await saveSettingsIfVisible();
@@ -1007,20 +1026,6 @@ function wire() {
   }
   $('#prepareOutro')?.addEventListener('click',()=>action(async()=>{await saveSettings();await submit('outro-audio');}));
   $("#productionOverlap").onchange = (event) => { overlapRequested = event.target.checked; };
-  const productionOptions=()=>{
-    const planned={...strategyOptions($('#productionStrategy').value,
-    connected && health?.cloudSchedulingAvailable && project.settings.image.provider==='comfyui' &&
-    project.settings.director.provider==='openai-luna' && Number(project.settings.budget?.openaiUSD)>0 && !project.settings.economyPanels,
-    !!$('#productionOverlap')?.checked),unattended:project.settings.unattendedProduction!==false};
-    if(planned.unattended && !health?.unattendedProductionAvailable)
-      throw Error('Update the shared helper before automatic full-video production; this older helper cannot complete its repair and cloud-save stages automatically.');
-    return planned;
-  };
-  const saveStrategy=async()=>{
-    const wanted=strategyChoices.get(project.id) || selectedStrategy(project),target=project.id;
-    if(project.generationStrategy!==wanted)await patch('project',target,{generationStrategy:wanted});
-    if(project.id===target && (strategyChoices.get(target)||selectedStrategy(project))===wanted)strategyDirty.delete(target);
-  };
   $('#productionStrategy').onchange=event=>{
     const wanted=event.target.value,target=project.id;strategyChoices.set(target,wanted);strategyDirty.add(target);
     void action(async()=>{

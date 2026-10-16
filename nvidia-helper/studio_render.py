@@ -561,6 +561,86 @@ class VideoRenderer:
         return result | {'path':target.name,'signature':signature,'renderIdentity':signature,
                          'watermarkIdentity':branding,'narrationRender':result}
 
+    @staticmethod
+    def preview_plan(ch, shot_id, fps):
+        all_shots = [s for scene in ch.get('scenes', []) for s in scene.get('shots', [])]
+        selected = next((s for s in all_shots if s['id'] == shot_id), None)
+        if not selected:raise ValueError('Choose an existing shot for the edit preview.')
+        total = ch.get('audio', {}).get('duration', 0)
+        if type(total) not in (int, float) or not math.isfinite(total) or total <= 0:
+            raise ValueError('Generate chapter narration before an edit preview.')
+        center = (selected['start'] + selected['end']) / 2
+        start = round(max(0, min(center - 7.5, total - 15)) * fps) / fps
+        end = min(total, start + 15)
+        candidates = [s for s in all_shots if s['end'] > start and s['start'] < end]
+        if candidates and candidates[-1]['end'] - candidates[0]['start'] <= 30:
+            start, end = candidates[0]['start'], candidates[-1]['end']
+        if not candidates or end <= start or end - start > 30.08:
+            raise ValueError('This shot has no valid bounded preview interval.')
+        return start, end, candidates
+
+    def preview_signature(self, p, ch, shot_id):
+        start, end, selected = self.preview_plan(ch, shot_id, p['settings']['video']['fps'])
+        from studio_branding import identity
+        return digest({'start':start,'end':end,'script':ch['cleanNarrationText'],
+            'audio':self.asset_identity(p['id'],ch['audio']['path']),
+            'video':p['settings']['video'],'watermark':identity(p,self.store),
+            'shots':[{**{key:shot.get(key) for key in ('id','start','end','motion','motionSettings','transition','camera')},
+                      'image':self.asset_identity(p['id'],shot['imagePath'])} for shot in selected]})
+
+    def preview(self, p, ch, shot_id, gate):
+        """Render at most 30 seconds of saved media; never publish as a chapter.
+
+        Original shot QC is checked before retiming a private copy. It is not
+        re-run against the transformed preview or purchased as another API call.
+        """
+        all_shots = [s for scene in ch.get('scenes', []) for s in scene.get('shots', [])]
+        selected = next((s for s in all_shots if s['id'] == shot_id), None)
+        if not selected:
+            raise ValueError('Choose an existing shot for the edit preview.')
+        audio = ch.get('audio', {})
+        total = audio.get('duration', 0)
+        if not audio.get('path') or not math.isfinite(total) or total <= 0:
+            raise ValueError('Generate chapter narration before an edit preview.')
+        if audio.get('textDigest') and audio['textDigest'] != digest(ch['cleanNarrationText']):
+            raise ValueError('Narration changed. Regenerate audio before previewing the new script.')
+        start, end, candidates = self.preview_plan(ch, shot_id, p['settings']['video']['fps'])
+        for shot in candidates:
+            if not shot.get('imagePath'):
+                raise ValueError('Generate the pictures in this preview interval first.')
+            if qc_decision(p, shot, self.store)['blocking'] or (
+                p['settings'].get('qcCheckLevel') != 'off' and shot.get('qc', {}).get('status') == 'PENDING'):
+                raise ValueError('Review or repair the selected preview pictures first; visual checks are preserved.')
+        folder = self.store.folder(p['id']) / ch['id']
+        folder.mkdir(exist_ok=True)
+        identity = digest({'audio': self.asset_identity(p['id'], audio['path']), 'start': start, 'end': end})
+        sliced = folder / ('preview-audio-' + identity[:20] + '.wav')
+        if not self.cached_asset(p['id'], sliced):
+            self.run(['-ss', str(start), '-i', str(self.store.asset(p['id'], audio['path'])),
+                      '-t', str(end-start), '-vn', '-c:a', 'pcm_s16le', str(sliced)],
+                     gate, sliced.with_suffix('.log'))
+            self.completed_output(sliced)
+        preview_p, preview_c = copy.deepcopy(p), copy.deepcopy(ch)
+        preview_p['settings']['qcCheckLevel'] = 'off'  # original shot decisions checked above
+        preview_p['settings']['visionQC'] = False
+        preview_c['audio'] = audio | {'path': sliced.relative_to(self.store.folder(p['id'])).as_posix(), 'duration': end-start}
+        preview_c['render'] = {}
+        preview_c['scenes'] = []
+        for scene in ch['scenes']:
+            selected_shots = []
+            for shot in scene['shots']:
+                if shot in candidates:
+                    clipped = copy.deepcopy(shot)
+                    clipped.update(start=max(start, shot['start'])-start, end=min(end, shot['end'])-start)
+                    selected_shots.append(clipped)
+            if selected_shots:
+                preview_c['scenes'].append(scene | {'shots': selected_shots})
+        result = self.chapter(preview_p, preview_c, gate)
+        result = self.watermark_export(preview_p, result, gate)
+        return result | {'downloadName': 'edit-preview.mp4', 'preview': True, 'chapterId': ch['id'],
+            'shotId': shot_id, 'start': start, 'end': end,
+            'note': 'Saved narration, pictures, motion and watermark only. Intro, outro and subscribe reminders are excluded. Cropped long shots restart their movement.'}
+
     def chapter_export(self, p, ch, gate):
         base = self.chapter(p, ch, gate)
         if not p["intro"]["enabled"] or p["intro"]["placement"] != "every_chapter":

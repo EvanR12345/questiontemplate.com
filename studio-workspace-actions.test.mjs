@@ -34,7 +34,8 @@ function fixture(api){
     dirtyEditor:()=>{},flush:async()=>{},saveSettingsIfVisible:async()=>{},render:()=>{},renderQueue:()=>{},cache:async()=>{},
     note:message=>notes.push(message),escape:String};
   context.action=fn=>{const task=(async()=>{await context.flush();try{await fn();}catch(e){notes.push(e.message);}})();tasks.push(task);return task;};
-  vm.runInNewContext(source.slice(source.indexOf('function wire()'),source.indexOf('async function shotAction('))+';wire();',context);
+  const shared=source.slice(source.indexOf('function productionOptions('),source.indexOf('async function submit('));
+  vm.runInNewContext(shared+source.slice(source.indexOf('function wire()'),source.indexOf('async function shotAction('))+';wire();',context);
   return {context,controls,calls,tasks,notes,get,select(value){const target=get('#productionProject');target.value=value;target.onchange({target});return tasks.at(-1);}};
 }
 test('actual project selector adopts only the latest requested project',async()=>{
