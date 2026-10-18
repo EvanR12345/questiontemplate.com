@@ -17,21 +17,24 @@ def check_level(settings):
         return settings.get('qcPolicy', 'practical')
     return 'off'
 
-def should_check(project, shot):
+def should_check(project, shot, context=None):
     level = check_level(project['settings'])
     if level == 'off': return False
     if level != 'sampled': return True
     interval = project['settings'].get('qcSampleEvery', 5)
-    intro = project.get('intro', {}).get('shots', [])
     identity=shot.get('id')
-    if intro and intro[0].get('id')==identity:return True
-    # Sampling needs only each chapter's first shot. Flattening every chapter
-    # for every decision makes long-project progress scans quadratic in shots.
-    for chapter in project['chapters']:
-        for scene in chapter.get('scenes',[]):
-            if scene['shots']:
-                if scene['shots'][0].get('id')==identity:return True
-                break
+    # A context belongs to one unchanged project scan. Build its small first-
+    # shot index once, never keep it between requests or production mutations.
+    first = context.get('sampleFirstShots') if context is not None else None
+    if first is None:
+        intro = project.get('intro', {}).get('shots', [])
+        first = {intro[0].get('id')} if intro else set()
+        for chapter in project['chapters']:
+            for scene in chapter.get('scenes',[]):
+                if scene['shots']:
+                    first.add(scene['shots'][0].get('id'));break
+        if context is not None:context['sampleFirstShots']=first
+    if identity in first:return True
     key = project['id'] + ':' + shot['id']
     return int(hashlib.sha256(key.encode()).hexdigest()[:16], 16) % interval == 0
 
@@ -61,9 +64,14 @@ def review_settings_signature(settings):
         'reasoning':director.get('qcReasoning') or ('High' if settings.get('generationMode')=='MAX QUALITY' else 'Fast')})
 
 
-def review_settings_stale(project, shot):
+def review_settings_stale(project, shot, context=None):
     signature=shot.get('qc',{}).get('reviewSettingsSignature')
-    return bool(signature and signature!=review_settings_signature(project['settings']))
+    if not signature:return False
+    current=context.get('reviewSettingsSignature') if context is not None else None
+    if current is None:
+        current=review_settings_signature(project['settings'])
+        if context is not None:context['reviewSettingsSignature']=current
+    return signature!=current
 
 
 def retain_review_settings(project, previous_settings):
@@ -149,7 +157,7 @@ def decision(project, shot, store, context=None):
         return {'disposition':'checks_off','blocking':False,'policy':mode}
     if qc.get('status')=='PENDING': return {'disposition':'pending','blocking':True,'policy':mode}
     if valid_acceptance(project, shot, store,context): return {'disposition':'accepted','blocking':False,'policy':mode}
-    if review_settings_stale(project,shot) and should_check(project,shot):
+    if review_settings_stale(project,shot,context) and should_check(project,shot,context):
         return {'disposition':'pending','blocking':True,'policy':mode,'reason':'Visual review settings changed; recheck the saved image.'}
     if qc.get('pass') is True: return {'disposition':'passed','blocking':False,'policy':mode}
     if qc.get('pass') is not False:

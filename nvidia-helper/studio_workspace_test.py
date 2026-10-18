@@ -1,6 +1,7 @@
 import copy
 import tempfile
 import unittest
+from unittest.mock import patch
 from studio_data import ProjectStore, new_project, digest
 from studio_workspace import workspace_change, setup_snapshot
 from studio_file_locations import located_files
@@ -79,5 +80,19 @@ class WorkspaceTest(unittest.TestCase):
         self.assertEqual(rows['missing.wav']['storageStatus'],'MISSING')
         self.assertTrue(rows['old.png']['local']);self.assertEqual(rows['old.png']['storageStatus'],'CLOUD_SAVED')
         self.assertFalse(self.store.asset_local(self.p['id'],'missing.wav').exists())
+
+    def test_repeated_history_references_are_resolved_once_and_rechecked_next_listing(self):
+        self.store.mutate(self.p['id'],lambda p:p.update(styleReferences=[{'path':'old.png'} for _ in range(2000)]+
+            [{'path':'missing.png'} for _ in range(1000)]))
+        with patch.object(self.store,'asset_local',wraps=self.store.asset_local) as resolve:
+            rows=located_files(self.store,self.p['id'],[{'path':'old.png','cloud':True,'bytes':4}])
+            names=[call.args[1] for call in resolve.call_args_list]
+            self.assertEqual(names.count('old.png'),1)
+            self.assertEqual(names.count('missing.png'),2) # discovery + final evidence
+            self.assertEqual(next(r for r in rows if r['path']=='missing.png')['storageStatus'],'MISSING')
+        self.store.asset_local(self.p['id'],'old.png').unlink()
+        rows=located_files(self.store,self.p['id'],[{'path':'old.png','cloud':True,'bytes':4}])
+        self.assertFalse(next(r for r in rows if r['path']=='old.png')['local'])
+        self.assertTrue(next(r for r in rows if r['path']=='old.png')['cloud'])
 
 if __name__=='__main__':unittest.main()

@@ -60,6 +60,7 @@ class CloudRenderTests(unittest.TestCase):
         names=copy_line.split()
         self.assertIn('studio_video_settings.py',names)
         self.assertIn('studio_render_inputs.py',names)
+        self.assertIn('studio_voice_provider.py',names)
         with tempfile.TemporaryDirectory() as folder:
             for name in names:shutil.copy2(root/name,Path(folder)/name)
             environment=os.environ.copy();environment.pop('PYTHONPATH',None)

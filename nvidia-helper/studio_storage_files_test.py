@@ -1,9 +1,35 @@
-import tempfile,unittest
+import os,tempfile,unittest
 from pathlib import Path
 from types import SimpleNamespace
-from studio_storage import R2Archive
+from unittest.mock import patch
+from studio_storage import R2Archive,local_media
 
 class FileRefreshTest(unittest.TestCase):
+    def test_unreadable_tree_cannot_be_reported_as_a_successful_partial_scan(self):
+        def unreadable(folder, **options):
+            options['onerror'](PermissionError('Synthetic unreadable folder'))
+            yield
+        with patch('studio_storage.os.walk',side_effect=unreadable):
+            with self.assertRaises(PermissionError):list(local_media(Path('fixture')))
+
+    def test_listing_prunes_private_and_working_trees_without_hiding_saved_nested_assets(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            paths=['image.PNG','nested/voice.wav','nested/part.mp4','project.json','notes.txt',
+                   'working/deep/clip.mp4','.private/secret.json','nested/.hidden/photo.png',
+                   'nested/clip.partial.abc.mp4','batch.writing.abc/result.png']
+            for name in paths:
+                file=root/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_bytes(b'test')
+            walk=os.walk;visited=[]
+            def observed(*args,**kwargs):
+                for entry in walk(*args,**kwargs):
+                    visited.append(Path(entry[0]).relative_to(root).as_posix());yield entry
+            with patch('studio_storage.os.walk',side_effect=observed):
+                found={p.relative_to(root).as_posix() for p in local_media(root)}
+            self.assertEqual(found,{'image.PNG','nested/voice.wav','nested/part.mp4','project.json'})
+            self.assertEqual(set(visited),{'.','nested'})
+            self.assertTrue((root/'working/deep/clip.mp4').exists(),'Listing must not delete cached work')
+
     def test_explicit_refresh_discovers_remote_worker_outputs_without_downloading_media(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);calls=[]

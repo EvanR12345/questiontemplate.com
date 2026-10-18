@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {updateHTML,queuePart,renderTimingHistory,timingPageHTML,timingSummaryHTML} from './studio-queue-view.mjs';
+import {updateHTML,queuePart,renderTimingHistory,timingPageHTML,timingSummaryHTML,queueJobHTML} from './studio-queue-view.mjs';
+
+test('cloud attempts expose review instead of an unsupported paid retry',()=>{
+  for(const status of ['FAILED','CANCELLED','INTERRUPTED']){
+    const html=queueJobHTML({id:'a',kind:'render-cloud',status,message:'Saved result needs review'});
+    assert.match(html,/Open cloud render/);assert.doesNotMatch(html,/Retry same seed|Prioritize/);
+  }
+  assert.match(queueJobHTML({id:'b',kind:'image',status:'FAILED',message:'<test>'}),/Retry same seed/);
+  assert.match(queueJobHTML({id:'b',kind:'image',status:'FAILED',message:'<test>'}),/&lt;test&gt;/);
+  assert.match(queueJobHTML({id:'b',kind:'image',status:'QUEUED'}),/Prioritize/);
+});
 
 class Element {
   constructor(){this.children=[];this.dataset={};this.nodes=new Map();this.listeners={};this.writes=0;this.html='';this.ownerDocument={createElement:()=>new Element()};}

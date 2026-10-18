@@ -85,18 +85,18 @@ def completion_report(service, pid):
         for scene in c.get('scenes', []):
             for s in scene.get('shots', []):
                 qc = s.get('qc', {})
-                if s.get('generationError') or qc.get('pass') is False or qc.get('status') in ('UNREVIEWED', 'PENDING'):
-                    assessment = decision(p, s, service.store, context)
+                assessment = decision(p, s, service.store, context)
+                if s.get('generationError') or qc.get('pass') is False or qc.get('status') in ('UNREVIEWED', 'PENDING') or assessment.get('blocking'):
                     if assessment.get('disposition') == 'accepted':continue
                     issues.append({'chapter': c['id'], 'shot': s['id'], 'label':
-                        c['name'] + ': ' + (s.get('generationError') or '; '.join(qc.get('issues', [])) or qc.get('status', 'Review finding')),
+                        c['name'] + ': ' + (s.get('generationError') or assessment.get('reason') or '; '.join(qc.get('issues', [])) or qc.get('status', 'Review finding')),
                         'blocking': bool(assessment.get('blocking'))})
     for s in intro_shots:
         qc = s.get('qc', {})
-        if s.get('generationError') or qc.get('pass') is False or qc.get('status') in ('UNREVIEWED', 'PENDING'):
-            assessment = decision(p, s, service.store, context)
+        assessment = decision(p, s, service.store, context)
+        if s.get('generationError') or qc.get('pass') is False or qc.get('status') in ('UNREVIEWED', 'PENDING') or assessment.get('blocking'):
             if assessment.get('disposition') == 'accepted':continue
-            issues.append({'intro': True, 'label': 'Intro: ' + (s.get('generationError') or
+            issues.append({'intro': True, 'label': 'Intro: ' + (s.get('generationError') or assessment.get('reason') or
                 '; '.join(qc.get('issues', [])) or qc.get('status', 'Review finding')),
                 'blocking': bool(assessment.get('blocking'))})
     current = bool(p.get('render', {}).get('path')) and not p.get('renderStale')

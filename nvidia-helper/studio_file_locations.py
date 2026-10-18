@@ -4,16 +4,23 @@ from pathlib import Path
 
 def located_files(store, pid, rows, storage_enabled=False, sync_status=None):
     result = {r['path']: dict(r) for r in rows}
+    inspected = set()
     # Show references that have lost BOTH copies, including saved historical versions.
     def visit(value):
         if isinstance(value, dict):
             for key, child in value.items():
                 if key in ('path', 'imagePath', 'audioPath', 'visualPath', 'sourceImagePath') and isinstance(child, str) and child and '://' not in child:
+                    # Repeated references/history entries are common in long
+                    # stories. Known inventory rows are checked once below;
+                    # unknown references need only one check in this request.
+                    if child in result or child in inspected:
+                        continue
+                    inspected.add(child)
                     try:
                         local = store.asset_local(pid, child)
                     except ValueError:
                         continue
-                    if not local.exists() and child not in result:
+                    if not local.exists():
                         result[child] = {'path': child, 'bytes': 0, 'cloud': False, 'category':
                             'Video' if local.suffix == '.mp4' else 'Audio' if local.suffix in ('.wav','.flac','.m4a') else 'Images'}
                 elif isinstance(child, (dict, list)):

@@ -102,6 +102,10 @@ class StudioService:
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)"
         )
+        # Keep long histories cheap to inspect without dropping pending work.
+        self.db.execute("CREATE INDEX IF NOT EXISTS jobs_created ON jobs(created DESC)")
+        self.db.execute("CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status)")
+        self.db.execute("CREATE INDEX IF NOT EXISTS jobs_project_kind_status ON jobs(project,kind,status)")
         # A lost cloud execution is never replayed as a fresh paid allocation.
         self.db.execute("UPDATE jobs SET status='INTERRUPTED',message='Helper restarted during cloud rendering. Reconcile the saved rental and results; no automatic new rental.' WHERE kind='render-cloud' AND status='RUNNING'")
         recovered = self.db.execute(
@@ -529,17 +533,17 @@ class StudioService:
             rows = [
                 dict(r)
                 for r in self.db.execute(
-                    "SELECT id,project,chapter,shot,kind,status,message,priority,created,started,seconds,attempt,seed,payload FROM jobs WHERE status IN ('QUEUED','RUNNING') OR id IN (SELECT id FROM jobs ORDER BY created DESC LIMIT 1100) ORDER BY created DESC"
+                    "SELECT id,project,chapter,shot,kind,status,message,priority,created,started,seconds,attempt,seed,CASE WHEN kind='image' THEN payload ELSE '{}' END AS payload FROM jobs WHERE status IN ('QUEUED','RUNNING') OR id IN (SELECT id FROM jobs ORDER BY created DESC LIMIT 1100) ORDER BY created DESC"
                 )
             ]
             counts = {
-                s: 0 for s in ("QUEUED", "RUNNING", "COMPLETE", "FAILED", "CANCELLED")
+                s: 0 for s in ("QUEUED", "RUNNING", "COMPLETE", "FAILED", "CANCELLED", "INTERRUPTED")
             }
             project_counts = {}
             for group in self.db.execute(
                 "SELECT project,kind,status,count(*) AS total FROM jobs GROUP BY project,kind,status"
             ):
-                counts[group["status"]] += group["total"]
+                counts[group["status"]] = counts.get(group["status"], 0) + group["total"]
                 project = project_counts.setdefault(
                     group["project"], {"all": {}, "image": {}}
                 )
@@ -548,22 +552,19 @@ class StudioService:
                 )
                 if group["kind"] == "image":
                     project["image"][group["status"]] = group["total"]
-            averages = {}
             samples = {}
             for row in rows:
-                payload = json.loads(row.pop("payload"))
-                row["timingProfile"] = timing_profile(row['kind'], payload)
-            for kind in {j["timingProfile"] for j in rows}:
-                durations = [
-                    r["seconds"]
-                    for r in rows
-                    if r["timingProfile"] == kind
-                    and r["status"] == "COMPLETE"
-                    and r["seconds"] > 0
-                ][:30]
-                if durations:
-                    samples[kind] = durations
-                    averages[kind] = sum(durations) / len(durations)
+                raw = row.pop("payload")
+                # Other job profiles depend only on kind; their saved requests
+                # can contain large chapter plans that polling need not parse.
+                row["timingProfile"] = timing_profile(row['kind'], json.loads(raw) if row['kind']=='image' else {})
+                kind = row['timingProfile']
+                value = row['seconds']
+                if (row['status']=='COMPLETE' and type(value) in (int,float)
+                        and math.isfinite(value) and value>0):
+                    values = samples.setdefault(kind, [])
+                    if len(values)<30:values.append(value)
+            averages = {kind:sum(values)/len(values) for kind,values in samples.items()}
             pending = [r for r in rows if r["status"] in ("QUEUED", "RUNNING")]
             estimate = remaining_time(pending, samples, time.time())
             return {

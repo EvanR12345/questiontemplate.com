@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import mimetypes
+import os
 import re
 import threading
 import time
@@ -16,6 +17,21 @@ from pathlib import Path
 from urllib.parse import quote
 
 MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.wav', '.m4a', '.mp4', '.json', '.flac'}
+
+def local_media(folder):
+    """Prune excluded working/private trees before visiting their contents."""
+    def excluded(name):
+        return name.startswith('.') or name=='working' or '.writing.' in name or '.partial.' in name
+    def scan_error(error):
+        # A denied/unreadable folder must not become a successful partial sync.
+        raise error
+    for root, directories, filenames in os.walk(folder, followlinks=False, onerror=scan_error):
+        parent=Path(root)
+        directories[:]=[name for name in directories if not excluded(name) and not (parent/name).is_symlink()]
+        for name in filenames:
+            if excluded(name) or Path(name).suffix.lower() not in MEDIA:continue
+            path=parent/name
+            if not path.is_symlink() and path.is_file():yield path
 
 def project_video_paths(project):
     paths=set()
@@ -203,11 +219,8 @@ class R2Archive:
         records = dict(old.get('files',{})) if old else {}
         uploaded = 0
         video_references=project_video_paths(project)
-        paths=[path for path in sorted(folder.rglob('*'))
-            if path.is_file() and not path.is_symlink() and path.suffix.lower() in MEDIA
-            and not any(x.startswith('.') or x=='working' for x in path.relative_to(folder).parts)
-            and '.partial.' not in path.relative_to(folder).as_posix() and '.writing.' not in path.relative_to(folder).as_posix()
-            and not render_scratch(project,path.relative_to(folder).as_posix(),video_references)
+        paths=[path for path in sorted(local_media(folder))
+            if not render_scratch(project,path.relative_to(folder).as_posix(),video_references)
             and path.name not in ('project.json','revision.json','project.previous.json')]
         for index,path in enumerate(paths):
             relative = path.relative_to(folder).as_posix()
@@ -328,10 +341,8 @@ class R2Archive:
         """Credential-free dashboard data; URLs are created only on request."""
         if not self.enabled:
             folder=self.store.folder(pid); rows=[]
-            for path in folder.rglob('*'):
-                if not path.is_file() or path.is_symlink() or path.suffix.lower() not in MEDIA:continue
+            for path in local_media(folder):
                 name=path.relative_to(folder).as_posix()
-                if any(x.startswith('.') or x=='working' for x in path.relative_to(folder).parts) or '.writing.' in name or '.partial.' in name:continue
                 self.store.asset_local(pid,name)
                 rows.append({'path':name,'bytes':path.stat().st_size,'cloud':False,
                     'category':{'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(path.suffix[1:].lower(),'Images')})
@@ -346,10 +357,8 @@ class R2Archive:
         # A cloud connection must not hide newly generated or edited files while
         # the immutable snapshot is still uploading. Show their local status.
         folder=self.store.folder(pid)
-        for path in folder.rglob('*'):
-            if not path.is_file() or path.is_symlink() or path.suffix.lower() not in MEDIA:continue
+        for path in local_media(folder):
             name=path.relative_to(folder).as_posix()
-            if any(x.startswith('.') or x=='working' for x in path.relative_to(folder).parts) or '.writing.' in name or '.partial.' in name:continue
             if path.name in ('project.json','revision.json','project.previous.json'):continue
             self.store.asset_local(pid,name)
             record=(manifest or {}).get('files',{}).get(name,{})

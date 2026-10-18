@@ -11,7 +11,12 @@ export function chapterStage(c){
   return c.sourceText?.trim()?'Needs analysis':'Empty';
 }
 export function problemList(p,queue){
-  const items=[];
+  const items=[],latestByChapter=new Map(),latestByKind=new Map();
+  for(const job of queue?.jobs||[]){
+    if(job.project!==p.id)continue;
+    const index=job.chapter?latestByChapter:latestByKind,key=job.chapter||job.kind;
+    if(!index.has(key))index.set(key,job);
+  }
   for(const c of p.chapters||[]){
     if(c.continuityNeedsReview)items.push({key:c.id+'continuity',chapter:c.id,tab:'cast',label:`${c.name}: continuity changed`});
     if(c.timingNeedsReview)items.push({key:c.id+'timing',chapter:c.id,tab:'timeline',label:`${c.name}: review restored-audio timing`});
@@ -19,9 +24,14 @@ export function problemList(p,queue){
       const blocked=s.qcDecision?.blocking||(!s.qcDecision&&s.qc?.pass===false&&s.qc?.status!=='ACCEPTED');
       if(s.generationError||blocked)items.push({key:s.id,chapter:c.id,shot:s.id,tab:'review',label:`${c.name}: ${s.generationError||s.qc?.issues?.[0]||'Image needs review'}`});
     }
-    const latest=(queue?.jobs||[]).find(j=>j.project===p.id&&j.chapter===c.id);
-    if(latest?.status==='FAILED')items.push({key:latest.id,chapter:c.id,tab:'write',label:`${c.name}: ${latest.message||'Latest job failed'}`});
+    const latest=latestByChapter.get(c.id);
+    if(['FAILED','INTERRUPTED'].includes(latest?.status))items.push({key:latest.id,chapter:c.id,tab:'write',label:`${c.name}: ${latest.message||'Latest job needs attention'}`});
     else if(c.status==='FAILED'&&c.errors?.length)items.push({key:c.id+'error',chapter:c.id,tab:'write',label:`${c.name}: ${c.errors.at(-1).message}`});
+  }
+  // Full-story/cloud jobs have no chapter, so chapter-only scans miss them.
+  for(const job of latestByKind.values()){
+    if(['FAILED','INTERRUPTED'].includes(job.status))items.push({key:job.id,tab:job.kind==='render-cloud'?'files':'timeline',
+      label:job.message||`${job.kind}: ${job.status.toLowerCase()}; review saved results`});
   }
   for(const w of p.warnings||[])if(!w.resolved)items.push({key:w.id,tab:'write',label:w.message});
   return items;
@@ -33,7 +43,7 @@ export function nextAction(p,queue,connected,knownProblems){
   const empty=p.chapters.find(c=>!c.sourceText?.trim());
   if(empty)return {label:'Add the next chapter text',detail:empty.name,chapter:empty.id,tab:'write'};
   const problems=knownProblems??problemList(p,queue);
-  if(problems.length)return {label:'Review an issue',detail:problems[0].label,...problems[0]};
+  if(problems.length)return {...problems[0],label:'Review an issue',detail:problems[0].label};
   if(p.render?.path&&!p.renderStale)return {label:'Watch or publish your finished video',detail:'Publishing is an explicit action in Files.',tab:'timeline'};
   const chapter=p.chapters.find(c=>!c.audio?.path||!allShots(c).length||allShots(c).some(s=>!s.imagePath));
   return chapter?{label:'Ready to generate your story',detail:'Use Generate full video after reviewing your setup and spending limits.',chapter:chapter.id,tab:'write'}:

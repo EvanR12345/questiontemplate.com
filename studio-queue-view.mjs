@@ -25,6 +25,12 @@ const escape = s => String(s ?? '').replace(/[&<>"']/g, c =>
 const time = n => `${Math.floor((n || 0)/60).toString().padStart(2,'0')}:${Math.floor((n || 0)%60).toString().padStart(2,'0')}`;
 const seconds = n => Number.isFinite(n) && n >= 0 ? n : 0;
 
+export function queueJobHTML(job) {
+  const stopped = ['FAILED','CANCELLED','INTERRUPTED'].includes(job.status);
+  const cloud = job.kind === 'render-cloud';
+  return `<div class="queue-job"><span>${escape(job.kind)} · ${escape(job.status)} · ${escape(job.message)}</span>${job.status==='QUEUED'?`<button data-job-priority="${escape(job.id)}">Prioritize</button>`:''}${cloud&&stopped?'<button data-job-cloud-review>Open cloud render</button>':!cloud&&['FAILED','CANCELLED'].includes(job.status)?`<button data-job-retry="${escape(job.id)}">Retry same seed</button>`:''}</div>`;
+}
+
 export function timingSummaryHTML(run) {
   const totals = new Map();
   for (const entry of run.timings || []) {

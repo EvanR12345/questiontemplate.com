@@ -145,6 +145,22 @@ class ReportTest(unittest.TestCase):
         p['renderStale']=False;p['production']['status']='RUNNING'
         self.assertEqual(completion_report(service,p['id'])['status'],'RUNNING')
 
+    def test_report_exposes_previously_passed_images_that_need_a_new_policy_review(self):
+        p=new_project('Test');p['settings']['qcCheckLevel']='strict';c=p['chapters'][0]
+        shot={'id':'shot','chapterId':c['id'],'imagePath':'image.png',
+              'qc':{'pass':True,'status':'PASSED','reviewSettingsSignature':'older-policy'}}
+        c['scenes']=[{'shots':[shot]}]
+        p['intro']['shots']=[dict(shot,id='intro-shot')]
+        service=SimpleNamespace(store=SimpleNamespace(load=lambda pid:copy.deepcopy(p)),
+            trace_report=lambda pid:{'spans':[],'summary':{}})
+        r=completion_report(service,p['id'])
+        self.assertEqual(len(r['issues']),2)
+        self.assertTrue(all(i['blocking'] for i in r['issues']))
+        self.assertTrue(all('settings changed' in i['label'] for i in r['issues']))
+        self.assertTrue(p['chapters'][0]['scenes'][0]['shots'][0]['qc']['pass'])
+        p['settings']['qcCheckLevel']='off'
+        self.assertEqual(completion_report(service,p['id'])['issues'],[])
+
 
 class PreviewTest(unittest.TestCase):
     def setUp(self):

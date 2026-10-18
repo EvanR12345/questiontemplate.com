@@ -6,6 +6,32 @@ from studio_qc import decision, production_status, accept_image, project_view, a
 from studio_render import VideoRenderer
 
 class SamplingTest(unittest.TestCase):
+    def test_request_context_preserves_selection_for_all_levels_and_intervals(self):
+        from studio_qc import should_check
+        p={'id':'sample-project','settings':{},'intro':{'shots':[{'id':'intro'}]},
+           'chapters':[{'scenes':[{'shots':[]},{'shots':[{'id':f'first-{i}'}]}]} for i in range(80)]}
+        identities=['intro']+[f'first-{i}' for i in range(80)]+[f'other-{i}' for i in range(200)]
+        for level in ('off','sampled','practical','strict'):
+            for interval in (2,5,20):
+                p['settings']={'qcCheckLevel':level,'qcSampleEvery':interval};context={}
+                for identity in identities:
+                    self.assertEqual(should_check(p,{'id':identity},context),should_check(p,{'id':identity}))
+        # A new request sees a newly inserted opening shot rather than old cache.
+        p['settings']={'qcCheckLevel':'sampled','qcSampleEvery':20}
+        p['chapters'][0]['scenes'].insert(0,{'shots':[{'id':'new-opening'}]})
+        self.assertTrue(should_check(p,{'id':'new-opening'},{}))
+
+    def test_settings_fingerprint_is_once_per_scan_and_rechecked_next_request(self):
+        from studio_qc import review_settings_stale,review_settings_signature
+        p={'settings':{'style':'fantasy'}};shot={'qc':{'reviewSettingsSignature':review_settings_signature(p['settings'])}}
+        with patch('studio_qc.review_settings_signature',wraps=review_settings_signature) as signature:
+            context={}
+            for _ in range(100):self.assertFalse(review_settings_stale(p,shot,context))
+            self.assertEqual(signature.call_count,1)
+            p['settings']['style']='watercolor'
+            self.assertTrue(review_settings_stale(p,shot,{}))
+            self.assertEqual(signature.call_count,2)
+
     def test_long_project_sampling_keeps_exact_selection_without_scanning_shot_lists(self):
         from studio_qc import should_check
         class Shots(list):

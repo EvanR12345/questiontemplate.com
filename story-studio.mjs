@@ -1,5 +1,5 @@
-import {updateHTML,queuePart,renderTimingHistory} from './studio-queue-view.mjs?v=queue-perf-20261016';
-import {createWorkspaceTools} from './studio-workspace.mjs?v=queue-perf-20261016';
+import {updateHTML,queuePart,renderTimingHistory,queueJobHTML} from './studio-queue-view.mjs?v=queue-recovery-20261017';
+import {createWorkspaceTools} from './studio-workspace.mjs?v=queue-recovery-20261017';
 import {createProductionTools} from './studio-production-tools.mjs?v=queue-perf-20261016';
 import {workspaceGuideHTML,organizeSettings,organizeFileTools,openStudioGuide} from './studio-guide.mjs?v=tools-20261016';
 import {VOICE_MODELS,NARRATOR,DEFAULT_VOICE_SCRIPT,voicesFor,voiceCards,mountVoicePicker,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=voice-groups-20261015';
@@ -873,7 +873,8 @@ function renderQueue() {
     done =
       counts?.all.COMPLETE ??
       jobs.filter((j) => j.status === "COMPLETE").length,
-    failed = jobs.filter((j) => j.status === "FAILED"),
+    failedCount = counts?.all.FAILED ?? jobs.filter((j) => j.status === "FAILED").length,
+    interrupted = counts?.all.INTERRUPTED ?? jobs.filter(j=>j.status==='INTERRUPTED').length,
     pending =
       counts?.all.QUEUED ?? jobs.filter((j) => j.status === "QUEUED").length,
     current = jobs.find((j) => j.id === queue.current),
@@ -891,21 +892,20 @@ function renderQueue() {
     currentScene = project.chapters
       .find((c) => c.id === current?.chapter)
       ?.scenes.find((s) => s.id === currentShot?.sceneId);
-  const queueHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting in this project · ${failureCount} images need attention · Shared queue ETA ${queue.paused ? "Paused" : queue.etaStatus === "LONGER_THAN_HISTORY" ? "Longer than earlier runs" : queue.etaSeconds == null ? "Measuring" : time(queue.etaSeconds)}</span></div><!--queue-part--><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || (otherCurrent?"Another project is using the shared helper; this project waits.":"Ready")))}</p><!--queue-part--><progress aria-label="Images saved in this project" max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><!--queue-part--><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel project queue</button><button data-control="retry-missing" ${imageDone === imageTotal ? "disabled" : ""}>Retry missing images</button></div><!--queue-part--><p class="muted">Pause and Resume affect the shared helper queue. Cancel project queue stops only this project’s work; other projects and completed assets are retained.</p><!--queue-part--><details data-ui="job-history"><summary>Job history · ${done} completed attempts · ${failed.length} failed attempts</summary><div class="queue-jobs">${jobs
+  const queueHTML = `<div class="toolbar"><h3 style="flex:1">Production queue${imageTotal ? " · " + imageDone + " / " + imageTotal + " images saved" : ""}</h3><span class="muted">${pending} jobs waiting in this project · ${failureCount} images need attention · Shared queue ETA ${queue.paused ? "Paused" : queue.etaStatus === "LONGER_THAN_HISTORY" ? "Longer than earlier runs" : queue.etaSeconds == null ? "Measuring" : time(queue.etaSeconds)}</span></div><!--queue-part--><p class="muted" role="status">${queue.paused ? "PAUSED · " : ""}${escape((currentShot && currentScene ? "Scene " + (project.chapters.find((c) => c.id === current.chapter).scenes.indexOf(currentScene) + 1) + " — Shot " + (currentScene.shots.indexOf(currentShot) + 1) + " · " : "") + (current?.message || (otherCurrent?"Another project is using the shared helper; this project waits.":"Ready")))}</p><!--queue-part--><progress aria-label="Images saved in this project" max="${Math.max(1, imageTotal)}" value="${imageDone}"></progress><!--queue-part--><div class="toolbar"><button data-control="pause" ${queue.paused ? "disabled" : ""}>Pause</button><button data-control="resume" ${queue.paused ? "" : "disabled"}>Resume</button><button data-control="cancel-current" ${current ? "" : "disabled"}>${current?.kind === "produce-story" ? "Cancel full run" : "Cancel current"}</button><button data-control="cancel-all" ${current || pending ? "" : "disabled"}>Cancel project queue</button><button data-control="retry-missing" ${imageDone === imageTotal ? "disabled" : ""}>Retry missing images</button></div><!--queue-part--><p class="muted">Pause and Resume affect the shared helper queue. Cancel project queue stops only this project’s work; other projects and completed assets are retained.</p><!--queue-part--><details data-ui="job-history"><summary>Job history · ${done} completed attempts · ${failedCount} failed attempts</summary><div class="queue-jobs">${jobs
     .filter(
       (j) =>
-        j.status === "FAILED" ||
+        j.status === "FAILED" || j.status === "INTERRUPTED" ||
         j.status === "CANCELLED" ||
         j.status === "RUNNING" ||
         j.status === "QUEUED",
     )
     .slice(0, 30)
-    .map(
-      (j) =>
-        `<div class="queue-job"><span>${escape(j.kind)} · ${escape(j.message)}</span><button data-job-priority="${j.id}">Prioritize</button>${["FAILED", "CANCELLED"].includes(j.status) ? `<button data-job-retry="${j.id}">Retry same seed</button>` : ""}</div>`,
-    )
-    .join("")}</div></details>`;
+    .map(queueJobHTML)
+    .join("")}</div><p class="muted">Showing up to 30 recent active, failed, cancelled or interrupted attempts. Totals include retained history.</p></details>`;
   queueHTML.split('<!--queue-part-->').forEach((html,index)=>updateHTML(queuePart(el,'queue-'+index),html));
+  updateHTML(queuePart(el,'interrupted'),interrupted?`<p class="muted" role="status">${interrupted} interrupted attempt${interrupted===1?'':'s'} retained. Check cloud-render results in Files before starting another rental.</p>`:'');
+  el.querySelectorAll('[data-job-cloud-review]').forEach(button=>button.onclick=()=>action(async()=>{tab='files';render();}));
   updateHTML(queuePart(el,'download'),'<button id="downloadProductionTrace">Download timing report</button>');
   const executions = (queue.executions || []).filter(item => item.project === project.id && item.kind === "image-qc");
   updateHTML(queuePart(el,'cloud-tasks'), executions.length ? `<details data-ui="cloud-tasks"><summary>Cloud tasks · ${executions.filter(item => item.status === "RUNNING").length} active</summary>${executions.map(item => `<p class="muted">${escape(item.message || item.status)}${item.status === "UNKNOWN" ? " · Needs reconciliation before retry" : ""}${item.status === "RUNNING" ? ` <button data-control="cancel-current" data-execution="${escape(item.id)}">Cancel this task</button>` : ""}</p>`).join("")}</details>` : '');

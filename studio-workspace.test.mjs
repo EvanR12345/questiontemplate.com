@@ -15,7 +15,16 @@ test('next action follows actual assets, save state and the project-specific que
 test('dashboard can share its freshly computed problems with the next-action hint',()=>{
   const p=project([chapter(1)]),issues=[{label:'Fix selected image',chapter:'c1',tab:'review'}];
   assert.equal(nextAction(p,{},true,issues).detail,'Fix selected image');
+  assert.equal(nextAction(p,{},true,issues).label,'Review an issue');
   assert.match(nextAction(p,{},true,[]).label,/generate/);
+});
+
+test('project-level render failures and interruptions appear without reviving superseded failures',()=>{
+  const p=project([chapter(1)]),cloud={project:p.id,id:'cloud',kind:'render-cloud',chapter:null,status:'INTERRUPTED',message:'Reconcile saved cloud results'};
+  assert.deepEqual(problemList(p,{jobs:[cloud]}),[{key:'cloud',tab:'files',label:cloud.message}]);
+  assert.equal(problemList(p,{jobs:[{...cloud,id:'new',status:'COMPLETE'},cloud]}).length,0);
+  assert.equal(problemList(p,{jobs:[{...cloud,project:'other'}]}).length,0);
+  assert.equal(problemList(p,{jobs:[{...cloud,kind:'render-full',status:'FAILED'}]})[0].tab,'timeline');
 });
 test('problems distinguish practical warnings from blocking findings and ignore obsolete failed attempts',()=>{
   const p=project([chapter(1,{scenes:[{shots:[{id:'minor',qc:{pass:false},qcDecision:{blocking:false}},
