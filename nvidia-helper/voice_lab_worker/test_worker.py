@@ -172,6 +172,40 @@ class HTTPContract(unittest.TestCase):
 
 
 class GenerationLimits(unittest.TestCase):
+    def test_drama_audition_start_skips_optional_capture_and_still_requires_health(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'logs').mkdir()
+            with patch.object(adapter, 'ROOT', root), \
+                    patch.object(adapter, 'install_drama_design_hook') as hook, \
+                    patch.object(adapter, 'drama_cuda_environment', return_value={'CUDA_HOME': '/pinned/toolkit'}), \
+                    patch.object(adapter.subprocess, 'Popen') as process, \
+                    patch.object(adapter.urllib.request, 'urlopen') as health:
+                process.return_value.poll.return_value = None
+                health.return_value.__enter__.return_value.status = 200
+                runtime = adapter.Runtime('drama3')
+                runtime.start_drama()
+                command = process.call_args.args[0]
+                flags = dict(zip(command[2::2], command[3::2]))
+                self.assertEqual(command[:2], [str(root / 'envs/drama3/bin/sgl-omni'), 'serve'])
+                self.assertEqual(flags['--model-path'], str(root / 'models/drama3'))
+                self.assertEqual(flags['--vocoder.factory.codec_path'], str(root / 'models/drama3-codec'))
+                self.assertEqual(flags['--tts_engine.engine.cuda_graph_backend_prefill'], 'disabled')
+                self.assertEqual(flags['--tts_engine.factory.first_frame_cuda_graphs'], 'false')
+                self.assertEqual(flags['--tts_engine.factory.max_running_requests'], '1')
+                self.assertNotIn('--tts_engine.engine.disable_cuda_graph', flags)
+                self.assertNotIn('--tts_engine.engine.cuda_graph_backend_decode', flags)
+                self.assertEqual(process.call_args.kwargs['env']['CUDA_HOME'], '/pinned/toolkit')
+                hook.assert_called_once_with(root)
+                health.assert_called_once_with('http://127.0.0.1:18767/health', timeout=2)
+                # A process exit cannot become a false ready state merely
+                # because the reduced-capture command was constructed.
+                process.return_value.poll.return_value = 1
+                health.reset_mock()
+                with self.assertRaisesRegex(RuntimeError, 'exited before readiness'):
+                    adapter.Runtime('drama3').start_drama()
+                health.assert_not_called()
+
     def test_drama_jit_uses_its_pinned_cuda_toolkit_instead_of_older_base_image(self):
         with tempfile.TemporaryDirectory() as directory:
             toolkit = cuda_fixture(directory, development_names=False)

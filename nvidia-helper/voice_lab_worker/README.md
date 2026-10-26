@@ -236,6 +236,31 @@ separately. A measured rate-normalized 30-second audio estimate is
 
 ## Verification
 
+### Drama audition startup
+
+The audition launcher sets
+`--tts_engine.engine.cuda_graph_backend_prefill disabled` and
+`--tts_engine.factory.first_frame_cuda_graphs false`. These documented options
+are supported by the pinned source revision
+`65868af0592a852459aa31a6be7ae742c7756841`: the engine explicitly accepts eager
+prefill, and its factory exposes the first-frame graph boolean. Decode graphs
+retain their native default. The full FP8-expert/BF16 checkpoint, codec, sampling
+settings and one-request limit are unchanged.
+
+In the 2026-10-26 H200 audition, weight loading alone took **116.66 seconds**.
+The old launcher then began capturing 42 prefill shapes; the worker had not
+become ready before the authorized rental was stopped. This change avoids that
+optional prefill/first-frame capture work, trading its warm first-audio
+optimization for less startup work. Model loading, decode-graph capture and
+first-use kernel compilation still take time. **The new total startup time and
+generation behavior are GPU-unverified**; CPU tests verify the launch arguments
+and readiness gate, not a measured startup improvement or a completed Drama
+audition. No paid retest was run.
+
+Sources: [official defaults](https://sgl-project.github.io/sglang-omni/cookbook/fishaudio_drama3.html#defaults-parameters),
+[pinned factory fields](https://github.com/sgl-project/sglang-omni/blob/65868af0592a852459aa31a6be7ae742c7756841/sglang_omni/models/fishaudio_drama3/config.py),
+[pinned engine validation and capture branch](https://github.com/sgl-project/sglang-omni/blob/65868af0592a852459aa31a6be7ae742c7756841/sglang_omni/models/fishaudio_drama3/engine_builder.py).
+
 Drama character design uses the official Fish Audio Space's pinned
 `drama3_space_ext.py`, vendored unchanged as `drama_space_ext.py` from revision
 `c368729ab9347dda6635c5272ad31e6521114b79` (upstream SHA256

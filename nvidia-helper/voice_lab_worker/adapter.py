@@ -27,6 +27,22 @@ DRAMA_DESIGN_HOOK = ('\n\n# QuestionTemplate: pinned Fish Audio Space described-
                      'from drama_space_ext import Drama3SpacePreprocessor as Drama3SpeechPreprocessor  # noqa: E402\n')
 
 
+def drama_start_command(root):
+    """Audition startup avoids optional prefill/first-frame graph capture.
+
+    These are supported by the pinned Drama engine. Decode graphs retain their
+    native default; checkpoints, precision, sampling and request limits are
+    unchanged. The startup saving has not been measured on a GPU.
+    """
+    root = Path(root)
+    return [str(root / 'envs' / 'drama3' / 'bin' / 'sgl-omni'), 'serve',
+            '--model-path', str(root / 'models' / 'drama3'), '--host', '127.0.0.1', '--port', '18767',
+            '--tts_engine.factory.max_running_requests', '1',
+            '--tts_engine.engine.cuda_graph_backend_prefill', 'disabled',
+            '--tts_engine.factory.first_frame_cuda_graphs', 'false',
+            '--vocoder.factory.codec_path', str(root / 'models' / 'drama3-codec')]
+
+
 def install_drama_design_hook(root):
     """Use the author's Dockerfile rebind so spawned stages receive the hook too.
 
@@ -299,11 +315,7 @@ class Runtime:
         # Current official default is the full FP8-expert/BF16 checkpoint. Int4 is
         # a different checkpoint and is deliberately not substituted here.
         install_drama_design_hook(ROOT)
-        command = [str(ROOT / 'envs' / 'drama3' / 'bin' / 'sgl-omni'), 'serve',
-                   '--model-path', str(ROOT / 'models' / 'drama3'), '--host', '127.0.0.1', '--port', '18767',
-                   '--tts_engine.factory.max_running_requests', '1',
-                   '--tts_engine.factory.first_frame_cuda_graph_max_requests', '1',
-                   '--vocoder.factory.codec_path', str(ROOT / 'models' / 'drama3-codec')]
+        command = drama_start_command(ROOT)
         log = (ROOT / 'logs' / 'drama3-sglang.log').open('a')
         self.drama = subprocess.Popen(command, stdout=log, stderr=log, env=drama_cuda_environment(ROOT))
         log.close()
