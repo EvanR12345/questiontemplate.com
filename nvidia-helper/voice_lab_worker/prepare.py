@@ -21,6 +21,15 @@ QUOTA_ROOT = None
 QUOTA_BYTES = 100_000_000_000
 RESERVE_BYTES = 2_000_000_000
 QUOTA_RACE_BUFFER_BYTES = 64 * 1024 * 1024
+QUOTA_SCAN_ATTEMPTS = 8
+
+
+class QuotaScanError(subprocess.CalledProcessError):
+    def __str__(self):
+        # CalledProcessError normally hides stderr, which concealed the exact
+        # GNU FTS race during the first controlled recovery attempt.
+        return (super().__str__() + '\nQuota scan stdout: ' + repr((self.stdout or '')[-2048:])
+                + '\nQuota scan stderr: ' + repr((self.stderr or '')[-4096:]))
 
 
 def quota_usage(root):
@@ -30,32 +39,48 @@ def quota_usage(root):
     # stat(). Retry only that exact ENOENT race, never permission or I/O errors.
     command = ['du', '-s', '-B1', str(root)]
     observed = []
-    for attempt in range(3):
-        result = subprocess.run(command, text=True, capture_output=True, timeout=60,
+    incomplete_fts_scan = False
+    deadline = time.monotonic() + 45
+    for attempt in range(QUOTA_SCAN_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        result = subprocess.run(command, text=True, capture_output=True, timeout=min(15, remaining),
                                 env=dict(os.environ, LC_ALL='C', LANG='C'))
         lines = result.stdout.strip().splitlines()
         match = re.fullmatch(r'([0-9]+)\t(.+)', lines[0]) if len(lines) == 1 else None
         valid_total = match is not None and match[2] == str(root)
         diagnostics = result.stderr.strip().splitlines()
         harmless = bool(diagnostics)
+        fts_race = False
         for line in diagnostics:
             missing = re.fullmatch(r"du: cannot (?:access|stat|read directory) '(.+)': No such file or directory", line)
-            if not missing or not Path(missing[1]).is_relative_to(root) or Path(missing[1]) == Path(root):
+            fts = re.fullmatch(r'du: fts_read failed: (.+): No such file or directory', line)
+            path = Path(os.path.normpath(missing[1] if missing else fts[1])) if missing or fts else None
+            if path is None or not path.is_relative_to(root) or path == Path(root):
                 harmless = False
                 break
+            fts_race |= fts is not None
         if result.returncode == 0 and not diagnostics:
             if not valid_total:
                 raise RuntimeError('Volume usage scan did not return a valid quota total.')
             return max([*observed, int(match[1])])
-        if result.returncode != 1 or not harmless or not valid_total:
-            raise subprocess.CalledProcessError(result.returncode or 1, command, output=result.stdout, stderr=result.stderr)
-        observed.append(int(match[1]))
-        if attempt < 2:
-            time.sleep(.1)
-    # Continuous unlink activity still produced three numeric totals. Use the
-    # highest observed allocation plus extra headroom, retaining the separate
-    # 2GB quota reserve. The next monitor pass measures again.
-    return max(observed) + QUOTA_RACE_BUFFER_BYTES
+        # GNU fts_read may abort before writing any summary when uv atomically
+        # renames a cache directory. Retry that exact owned-root ENOENT, but do
+        # not invent a total or relax permission/I/O failures.
+        no_total_fts_race = fts_race and not result.stdout.strip()
+        if result.returncode != 1 or not harmless or not (valid_total or no_total_fts_race):
+            raise QuotaScanError(result.returncode or 1, command, output=result.stdout, stderr=result.stderr)
+        incomplete_fts_scan |= no_total_fts_race
+        if valid_total:
+            observed.append(int(match[1]))
+        if len(observed) >= 3 and not incomplete_fts_scan:
+            return max(observed) + QUOTA_RACE_BUFFER_BYTES
+        if attempt < QUOTA_SCAN_ATTEMPTS - 1:
+            time.sleep(min(.1 * (2 ** attempt), 2, max(0, deadline - time.monotonic())))
+    # An FTS-aborted scan requires a later clean, complete numeric summary.
+    # Even partial numeric observations do not establish a safe total here.
+    raise QuotaScanError(result.returncode or 1, command, output=result.stdout, stderr=result.stderr)
 
 
 def quota_guard(root, needed=0):
