@@ -14,12 +14,23 @@ data center, before any GPU is rented. The service requires Linux, Python 3.11,
 `uv`, `git`, `ffmpeg`, and `ffprobe`; install these from the base image's official
 repositories. The model environments are independent because current Drama3
 SGLang-Omni pins a different Torch/Transformers stack than Qwen.
+For Drama3, the adapter explicitly selects the complete pip-installed CUDA13
+toolkit inside its own environment for JIT compilation. A CUDA-capable driver
+alone does not make an older base-image compiler suitable: DeepGemm rejected
+the CUDA12.8 image compiler during the live probe. The override applies only to
+the Drama subprocess and does not replace the image's shared CUDA installation.
+The final live Drama probe reached CUDA compilation, then failed at the host
+linker because the pip toolkit supplied `libcudart.so.13` without the development
+name `libcudart.so` required by `-lcudart`. The packaged layout repair now creates
+that relative link inside the owned toolkit and runs at every Drama launch,
+including launches that reuse earlier preparation receipts. This source fix has
+offline regression coverage; it does not establish successful Drama inference.
 
 Copy this directory to the persistent volume. For example:
 
 ```sh
 export QT_LAB_ROOT=/workspace/questiontemplate-voice-lab
-python3 /workspace/voice_lab_worker/prepare.py --root "$QT_LAB_ROOT" --model all
+python3 /workspace/voice_lab_worker/prepare.py --root "$QT_LAB_ROOT" --model all --volume-gb 150
 ```
 
 `prepare.py` explicitly downloads pinned snapshots and installs pinned upstream
@@ -33,14 +44,40 @@ same filesystem and uses hard links to avoid a second full copy of package data.
 No model is downloaded by the HTTP inference service, which starts with Hub and
 Transformers offline modes.
 
+Before another authorized Drama GPU test, run the build preflight on the cheap
+preparation machine:
+
+```sh
+python3 /workspace/voice_lab_worker/preflight.py --root /workspace/questiontemplate-voice-lab
+```
+
+It checks NVCC, Ninja and C++20, then compiles a tiny `cudaGetDeviceCount` program
+with NVCC and links it with the same `-lcudart` development-library search used
+by SGLang. It never executes that program or initializes a GPU. Only a completed
+compile/link writes `cudaRuntimeCompileLink: true` in the preflight receipt;
+the receipt explicitly keeps `inferenceVerified: false`. This strengthened probe
+was added after the final budget-limited GPU shutdown and was not executed on
+that installation. All test pods and the temporary volume were subsequently
+deleted. A future authorized setup must recreate the pinned installation and
+pass this preflight plus a live Drama inference test.
+
 The four full checkpoint directories total approximately **55.53 decimal GB**,
 from the primary repositories' current file metadata. Drama3 also requires the
 official pinned S2-Pro **codec file only**, not the S2-Pro language model. Runtime
 environments, package caches, CUDA caches and outputs require additional disk.
-The setup script requires at least 90 decimal GB free for a fresh all-model
-preparation as a safety margin; this is not a measured installation footprint.
-A 100 GB volume is an initial planning choice, subject to actual free-space
-checks. Do not silently resize a paid volume if the installation does not fit.
+The live preparation audit reached approximately **100.6 GB** including runtime
+files, and the initial 100 GB quota failed. The all-model example therefore uses
+a **150 GB** volume. Pass its actual approved quota explicitly; do not rely on
+the script's 100 GB default for this full installation.
+The setup script measures deduplicated allocated usage with GNU `du` against the
+explicit `--volume-gb` quota. A network mount's `df` free-space value can describe
+the shared storage system and does not establish this volume's remaining quota.
+Preparation reserves two decimal GB, checks known remaining checkpoint bytes,
+and monitors child installs/downloads at ten-second intervals. It stops setup
+when the watermark is reached. This reduces quota-related partial writes;
+transient peak writes can still cause an individual command to fail. Stop and
+review rebuildable caches or approve a resize explicitly if installation does
+not fit. Model and environment files are never silently deleted to free space.
 
 Preparation needs network access and may need private Hub access if a license
 gate is added upstream. Credentials belong only in the owner's private runtime
@@ -140,6 +177,12 @@ but that is not a billing shutdown.
 Use the same approximately 30-second script for each model and record the actual
 output duration. The models stop on their own end marker; no audio is cut to
 force a 30-second score. Record startup cold and a second warm run separately.
+The worker rejects cap-bound output instead of marking it complete. Drama3 must
+return a normal `X-Finish-Reason` and stay below its frame cap. The pinned Qwen
+and Vox adapters inspect generated codec/feature counts before decoding, including
+VoxCPM's internal text-ratio cap. An unknown or cap-bound result fails visibly
+and is never automatically retried. This detects generation limits, not omitted
+words or semantic errors; listening and later ASR quality checks remain separate.
 
 The worker records `loadSeconds`, `referenceDecodeSeconds`, `conditioningSeconds`,
 `generationSeconds`, `audioSeconds`, and `workerWallSeconds`. `startupSeconds`

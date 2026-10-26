@@ -288,6 +288,8 @@ class Supervisor:
                 self.store.update(job_id, 'completed', metrics)
                 return
             if event['event'] in {'error', 'exit'}:
+                if event.get('code') == 'AUDITION_LIMIT':
+                    raise RuntimeError('The model reached its audition output limit or did not confirm completion. Shorten the script; this output was not marked complete.')
                 raise RuntimeError('Model inference failed. The private worker log contains diagnostics; this audition was not retried.')
         self.stop_model()
         raise RuntimeError('Audition exceeded its runtime limit and was stopped without retry.')

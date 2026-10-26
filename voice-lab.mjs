@@ -2,7 +2,7 @@ import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
 import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=lab-20261026';
 const $=id=>document.getElementById(id);
-let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null;
+let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
 const DRAFT_KEY='qt-voice-lab-draft-v1';
 const json=(path,body)=>helperJson('/studio/voice-lab'+path,key,body);
@@ -60,12 +60,12 @@ function jobMetrics(metrics={}){
   if(Number.isFinite(metrics.loadSeconds))items.push(`${metrics.loadSeconds.toFixed(1)}s model loading`);
   if(Number.isFinite(metrics.startupSeconds))items.push(`${metrics.startupSeconds.toFixed(1)}s startup / loading`);
   const costs=previewCosts(metrics);
-  if(costs)items.push(`Estimated warm 30s: ${usd(costs.warm30USD)}`,...(costs.modelLoad30USD===null?[]:[`With model loading: ${usd(costs.modelLoad30USD)}`]),...(costs.cold30USD===null?[]:[`With recorded startup: ${usd(costs.cold30USD)}`]));
+  if(costs)items.push(`Estimated 30s synthesis: ${usd(costs.warm30USD)}`,...(costs.modelLoad30USD===null?[]:[`With model loading: ${usd(costs.modelLoad30USD)}`]),...(costs.cold30USD===null?[]:[`With recorded startup: ${usd(costs.cold30USD)}`]));
   return items.map(item=>`<span>${esc(item)}</span>`).join('');
 }
 async function loadAudio(id,element){
-  if(objectURLs.has(id)){element.src=objectURLs.get(id);return true;}
-  try{const response=await nativeRequest('/studio/voice-lab/audio?id='+encodeURIComponent(id),key);const url=URL.createObjectURL(await response.blob());objectURLs.set(id,url);if(element.isConnected)element.src=url;return true;}
+  if(objectURLs.has(id)){element.src=objectURLs.get(id);element.hidden=false;return true;}
+  try{const response=await nativeRequest('/studio/voice-lab/audio?id='+encodeURIComponent(id),key);const url=URL.createObjectURL(await response.blob());objectURLs.set(id,url);if(element.isConnected){element.src=url;element.hidden=false;}return true;}
   catch(error){notice(error.message);return false;}
 }
 function jobsView(){
@@ -79,11 +79,11 @@ function jobsView(){
     const status=String(job.status||'UNKNOWN').toLowerCase(),complete=status==='completed',active=['queued','submitting','running','unknown','cancel_requested'].includes(status);
     const article=document.createElement('article');article.className='audition';article.dataset.job=job.id;
     const model=snapshot.models.find(model=>model.id===job.model);
-    article.innerHTML=`<div class="audition-head"><h3>${esc(model?.name||job.model)} · ${esc(job.mode)}</h3><span class="status ${esc(status)}">${esc(status.replaceAll('_',' '))}</span></div><p>${esc(job.text||'')}</p><div class="metrics">${jobMetrics(job.metrics)}</div>${job.error?`<p class="job-error">${esc(job.error)}</p>`:''}${job.audioReady?'<audio controls preload="none" aria-label="Audition preview"></audio>':''}<div class="job-actions">${complete&&job.audioReady?'<button class="secondary" data-load type="button">Load preview</button><button class="secondary" data-pick type="button">Save this pick</button><a data-download download="audition.opus" hidden>Download Opus</a>':''}${active?'<button class="secondary" data-cancel type="button">Cancel job</button>':''}<span class="muted">${esc(new Date(job.createdAt*1000).toLocaleString())}</span></div>`;
+    article.innerHTML=`<div class="audition-head"><h3>${esc(model?.name||job.model)} · ${esc(job.mode)}</h3><span class="status ${esc(status)}">${esc(status.replaceAll('_',' '))}</span></div><p>${esc(job.text||'')}</p><div class="metrics">${jobMetrics(job.metrics)}</div>${job.error?`<p class="job-error">${esc(job.error)}</p>`:''}${job.audioReady?'<audio hidden controls preload="none" aria-label="Audition preview"></audio>':''}<div class="job-actions">${complete&&job.audioReady?'<button class="secondary" data-load type="button">Load preview</button><button class="secondary" data-pick type="button">Save this pick</button><a data-download download="audition.opus" hidden>Download Opus</a>':''}${active?'<button class="secondary" data-cancel type="button">Cancel job</button>':''}<span class="muted">${esc(new Date(job.createdAt*1000).toLocaleString())}</span></div>`;
     if(existing){const oldAudio=existing.querySelector('audio'),newAudio=article.querySelector('audio');if(oldAudio&&newAudio)newAudio.replaceWith(oldAudio);existing.replaceWith(article);}else host.append(article);
     jobFingerprints.set(job.id,fingerprint);
     const audio=article.querySelector('audio'),load=article.querySelector('[data-load]'),download=article.querySelector('[data-download]');
-    if(audio&&objectURLs.has(job.id)){if(!audio.src)audio.src=objectURLs.get(job.id);if(load)load.hidden=true;if(download){download.href=objectURLs.get(job.id);download.hidden=false;}}
+    if(audio&&objectURLs.has(job.id)){if(!audio.src)audio.src=objectURLs.get(job.id);audio.hidden=false;if(load)load.hidden=true;if(download){download.href=objectURLs.get(job.id);download.hidden=false;}}
     load?.addEventListener('click',async()=>{load.disabled=true;load.textContent='Loading…';const success=await loadAudio(job.id,audio);load.disabled=false;load.textContent=success?'Loaded':'Retry preview';load.hidden=success;if(success&&download){download.href=objectURLs.get(job.id);download.hidden=false;}});
     article.querySelector('[data-pick]')?.addEventListener('click',()=>act(async()=>{await json('/select',{model:job.model,jobId:job.id});await refresh();notice('Audition choice saved.');}));
     article.querySelector('[data-cancel]')?.addEventListener('click',()=>act(async()=>{await json('/cancel',{id:job.id});await refresh();}));
@@ -97,6 +97,7 @@ async function refresh(){
   try{
     const first=!snapshot;snapshot=await json('');
     if(!Array.isArray(snapshot.models)||snapshot.models.length!==3)throw Error('Update the helper to use the three-model Voice Lab.');
+    if(connectionFailure){notice('');connectionFailure=false;}
     if(!snapshot.models.some(model=>model.id===modelId))modelId=snapshot.models[0].id;
     $('lab').hidden=false;$('connectionTitle').textContent='Private helper connected';$('connectionDetail').textContent='References and audition history are available through your pairing.';
     if(first)modelView();referencesView();workerView();jobsView();
@@ -106,7 +107,7 @@ async function act(action){
   if(busy)return;busy=true;$('generate').disabled=true;
   try{notice('');await action();}catch(error){notice(error.message);}finally{busy=false;if(snapshot)workerView();}
 }
-async function connect(){key=pairingKey();if(!key)throw Error('Open your shared helper pairing link, or import its pairing file.');await refresh();clearInterval(timer);timer=setInterval(()=>{if(document.visibilityState==='visible')refresh().catch(error=>notice(error.message));},5000);}
+async function connect(){key=pairingKey();if(!key)throw Error('Open your shared helper pairing link, or import its pairing file.');await refresh();clearInterval(timer);timer=setInterval(()=>{if(document.visibilityState==='visible')refresh().catch(error=>{connectionFailure=true;notice(error.message);});},5000);}
 $('connect').addEventListener('click',()=>act(connect));
 $('pair').addEventListener('click',()=>$('pairFile').click());
 $('pairFile').addEventListener('change',()=>act(async()=>{const file=$('pairFile').files[0];if(!file)return;if(file.size>1024)throw Error('Choose the helper’s small pairing text file.');importHelperPairing(await file.text());await connect();}));

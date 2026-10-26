@@ -3,6 +3,7 @@
 Official interfaces pinned in manifest.json; no substitute checkpoints or voices.
 """
 import base64
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -12,12 +13,87 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from preflight import ensure_cuda_layout
 
 ROOT = Path(os.environ.get('QT_LAB_ROOT', '/workspace/questiontemplate-voice-lab')).resolve()
 
 
+class AuditionLimit(RuntimeError):
+    """Generation hit a cap and cannot be presented as a complete audition."""
+
+
+def check_frame_count(count, limit):
+    # Conservative at the final frame because some wrappers remove an EOS row.
+    if int(count) >= int(limit) - 1:
+        raise AuditionLimit('The model reached its audition output limit. Shorten the script; this output was not marked complete.')
+
+
+@contextmanager
+def qwen_limit_guard(model):
+    original = model.generate
+    def checked(*args, **kwargs):
+        result = original(*args, **kwargs)
+        for codes in result[0]:
+            check_frame_count(codes.shape[0], kwargs['max_new_tokens'])
+        return result
+    model.generate = checked
+    try:
+        yield
+    finally:
+        model.generate = original
+
+
+@contextmanager
+def vox_limit_guard(model):
+    original = model._inference
+    def checked(*args, **kwargs):
+        generator = original(*args, **kwargs)
+        try:
+            for result in generator:
+                if not kwargs.get('streaming', False):
+                    check_frame_count(result[1].shape[0], kwargs['max_len'])
+                yield result
+        finally:
+            generator.close()
+    model._inference = checked
+    try:
+        yield
+    finally:
+        model._inference = original
+
+
+def check_drama_finish(headers, limit):
+    reason = headers.get('X-Finish-Reason', '').strip().lower()
+    if reason not in {'stop', 'eos'}:
+        raise AuditionLimit('The model did not confirm a complete audition. Shorten the script; capped or unknown output was not marked complete.')
+    count = headers.get('X-Completion-Tokens')
+    if count is not None:
+        check_frame_count(int(count), limit)
+    return reason
+
+
 def emit(event, **values):
     print('QT_EVENT ' + json.dumps({'event': event, **values}), flush=True)
+
+
+def drama_cuda_environment(root, inherited=None):
+    environment = dict(os.environ if inherited is None else inherited)
+    # The base image's nvcc can be older than the CUDA runtime installed by the
+    # pinned SGLang wheel stack. DeepGemm JIT needs >=12.9; use that stack's own
+    # complete CUDA13 toolkit rather than the image's /usr/local/cuda12.8.
+    toolkit = ensure_cuda_layout(root)['toolkit']
+    required = [toolkit / 'bin' / 'nvcc', toolkit / 'include' / 'cuda_runtime.h',
+                toolkit / 'nvvm' / 'libdevice' / 'libdevice.10.bc']
+    if not all(path.is_file() for path in required):
+        raise RuntimeError('Drama3 requires the complete CUDA13 toolkit from its pinned runtime environment.')
+    environment.update(CUDA_HOME=str(toolkit), CUDA_PATH=str(toolkit), CUDACXX=str(toolkit / 'bin' / 'nvcc'))
+    environment['PATH'] = str(toolkit / 'bin') + os.pathsep + str(Path(root) / 'envs' / 'drama3' / 'bin') + os.pathsep + environment.get('PATH', '')
+    environment['LD_LIBRARY_PATH'] = str(toolkit / 'lib') + os.pathsep + environment.get('LD_LIBRARY_PATH', '')
+    cache = Path(root) / 'cache'
+    environment.update(SGLANG_CACHE_DIR=str(cache / 'sglang'), SGLANG_JIT_CACHE_DIR=str(cache / 'sglang-jit'),
+                       SGLANG_DG_CACHE_DIR=str(cache / 'deep-gemm'), DG_JIT_CACHE_DIR=str(cache / 'deep-gemm'),
+                       TORCH_EXTENSIONS_DIR=str(cache / 'torch-extensions'))
+    return environment
 
 
 def reference_wav(reference):
@@ -41,7 +117,7 @@ def reference_wav(reference):
             raise ValueError('Reference audio must last between 0.25 and 60 seconds.')
         pending = folder / (digest + '.pending.wav')
         subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', str(source), '-map', '0:a:0',
-                        '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', str(pending)],
+                        '-vn', '-ac', '1', '-c:a', 'pcm_s16le', str(pending)],
                        check=True, capture_output=True, timeout=30)
         os.replace(pending, output)
         return output
@@ -111,7 +187,7 @@ class Runtime:
                    '--tts_engine.factory.first_frame_cuda_graph_max_requests', '1',
                    '--vocoder.factory.codec_path', str(ROOT / 'models' / 'drama3-codec')]
         log = (ROOT / 'logs' / 'drama3-sglang.log').open('a')
-        self.drama = subprocess.Popen(command, stdout=log, stderr=log)
+        self.drama = subprocess.Popen(command, stdout=log, stderr=log, env=drama_cuda_environment(ROOT))
         log.close()
         deadline = time.monotonic() + 1100
         while time.monotonic() < deadline:
@@ -149,6 +225,7 @@ class Runtime:
             request = urllib.request.Request('http://127.0.0.1:18767/v1/audio/speech',
                                              json.dumps(payload).encode(), {'Content-Type': 'application/json'}, method='POST')
             with urllib.request.urlopen(request, timeout=180) as response:
+                check_drama_finish(response.headers, payload['max_new_tokens'])
                 data = response.read(32 * 1024 * 1024 + 1)
             if len(data) > 32 * 1024 * 1024:
                 raise ValueError('Drama3 output exceeded the audition size limit.')
@@ -171,7 +248,8 @@ class Runtime:
                     kwargs.update(prompt_wav_path=str(reference), prompt_text=transcript)
                 else:
                     kwargs['reference_wav_path'] = str(reference)
-            audio = self.model.generate(**kwargs)
+            with vox_limit_guard(self.model.tts_model):
+                audio = self.model.generate(**kwargs)
             write_audio(output, audio, self.model.tts_model.sample_rate)
         else:
             import torch
@@ -190,9 +268,11 @@ class Runtime:
                                                                                x_vector_only_mode=False)
                 prompt = self.clone_cache[key]
                 conditioning_seconds = time.monotonic() - started
-                wavs, sample_rate = self.model.generate_voice_clone(**kwargs, voice_clone_prompt=prompt)
+                with qwen_limit_guard(self.model.model):
+                    wavs, sample_rate = self.model.generate_voice_clone(**kwargs, voice_clone_prompt=prompt)
             else:
-                wavs, sample_rate = self.model.generate_voice_design(**kwargs, instruct=body['description'])
+                with qwen_limit_guard(self.model.model):
+                    wavs, sample_rate = self.model.generate_voice_design(**kwargs, instruct=body['description'])
             write_audio(output, wavs[0], sample_rate)
         # Avoid recording asynchronous CUDA submission time as completed compute.
         if self.kind != 'drama3':
@@ -214,10 +294,11 @@ def main():
             body = json.loads(line)
             metrics = runtime.generate(body)
             emit('done', id=body['id'], metrics=metrics)
-        except Exception:
+        except Exception as error:
             import traceback
             traceback.print_exc(file=sys.stderr)
-            emit('error', id=body.get('id') if isinstance(locals().get('body'), dict) else None)
+            emit('error', id=body.get('id') if isinstance(locals().get('body'), dict) else None,
+                 code='AUDITION_LIMIT' if isinstance(error, AuditionLimit) else 'INFERENCE_FAILED')
             # Release a failed runtime rather than attempting an implicit retry.
             return
 
