@@ -215,6 +215,37 @@ class GenerationLimits(unittest.TestCase):
 
 
 class PreparationQuota(unittest.TestCase):
+    def test_fts_enoent_without_total_retries_until_a_complete_numeric_scan(self):
+        race = types.SimpleNamespace(returncode=1, stdout='',
+                                      stderr='du: fts_read failed: /unused/cache/uv/.tmp123: No such file or directory\n')
+        stable = types.SimpleNamespace(returncode=0, stdout='17000000000\t/unused\n', stderr='')
+        with patch.object(prepare.subprocess, 'run', side_effect=[race, race, stable]) as scan, \
+                patch.object(prepare.time, 'sleep'):
+            self.assertEqual(prepare.quota_usage(PurePosixPath('/unused')), 17000000000)
+            self.assertEqual(scan.call_count, 3)
+
+    def test_fts_races_never_invent_a_total_when_every_scan_aborts(self):
+        race = types.SimpleNamespace(returncode=1, stdout='',
+                                      stderr='du: fts_read failed: /unused/cache/uv/.tmp123: No such file or directory\n')
+        with patch.object(prepare.subprocess, 'run', return_value=race) as scan, \
+                patch.object(prepare.time, 'sleep'):
+            with self.assertRaises(prepare.QuotaScanError) as error:
+                prepare.quota_usage(PurePosixPath('/unused'))
+            self.assertEqual(scan.call_count, prepare.QUOTA_SCAN_ATTEMPTS)
+            self.assertIn('fts_read failed', str(error.exception))
+            self.assertEqual(error.exception.stdout, '')
+
+    def test_fts_permission_io_and_outside_root_errors_are_not_retried(self):
+        for message in ['du: fts_read failed: /unused/cache/uv/.tmp123: Permission denied\n',
+                        'du: fts_read failed: /unused/cache/uv/.tmp123: Input/output error\n',
+                        'du: fts_read failed: /outside/.tmp123: No such file or directory\n',
+                        'du: fts_read failed: /unused/../outside/.tmp123: No such file or directory\n']:
+            result = types.SimpleNamespace(returncode=1, stdout='', stderr=message)
+            with self.subTest(message=message), patch.object(prepare.subprocess, 'run', return_value=result) as scan:
+                with self.assertRaises(prepare.QuotaScanError):
+                    prepare.quota_usage(PurePosixPath('/unused'))
+                self.assertEqual(scan.call_count, 1)
+
     def test_du_disappearing_file_is_retried_without_aborting_a_live_install(self):
         missing = types.SimpleNamespace(returncode=1, stdout='70000000000\t/unused\n',
                                         stderr="du: cannot access '/unused/envs/qwen3/old.py': No such file or directory\n")
@@ -319,6 +350,92 @@ class CUDARuntimeDevelopmentLayout(unittest.TestCase):
             self.assertTrue(result['cudaRuntimeCompileLink'])
             self.assertFalse(result['cudaRuntimeProbeExecuted'])
             self.assertEqual(len(calls), 2)
+
+
+class ModelControlForwarding(unittest.TestCase):
+    def test_qwen_presets_use_customvoice_variant_and_native_speaker_api(self):
+        self.assertEqual(adapter.qwen_variant('preset'), 'preset')
+        self.assertEqual(adapter.qwen_variant('design'), 'design')
+        self.assertEqual(adapter.qwen_variant('clone'), 'base')
+        with self.assertRaises(ValueError):
+            adapter.qwen_variant('default')
+        custom = [item for item in service.MANIFEST['models']['qwen3'] if item['folder'] == 'qwen3-preset']
+        self.assertEqual(len(custom), 1)
+        self.assertEqual(custom[0]['repo'], 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice')
+        captured = {}
+        def generate_custom_voice(**kwargs):
+            captured.update(kwargs)
+            return [object()], 24000
+        runtime = adapter.Runtime('qwen3')
+        runtime.model = types.SimpleNamespace(model=types.SimpleNamespace(generate=lambda **kwargs: ([], [])),
+                                               generate_custom_voice=generate_custom_voice)
+        runtime.load = lambda mode: 0.0
+        fake_torch = types.SimpleNamespace(manual_seed=lambda _: None,
+                                            cuda=types.SimpleNamespace(manual_seed_all=lambda _: None, synchronize=lambda: None))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = body(model='qwen3', mode='preset', description='Calm delivery.',
+                       parameters={'seed': 42, 'speaker': 'ryan'}, reference=None,
+                       directory=str(root / 'jobs' / 'audition-12345678'))
+            with patch.object(adapter, 'ROOT', root), patch.object(adapter, 'reference_wav', return_value=None), \
+                    patch.object(adapter, 'write_audio') as writer, patch.object(adapter, 'emit'), \
+                    patch.dict('sys.modules', {'torch': fake_torch}):
+                runtime.generate(job)
+        self.assertEqual(captured['speaker'], 'ryan')
+        self.assertEqual(captured['instruct'], 'Calm delivery.')
+        self.assertEqual(captured['temperature'], .9)
+        writer.assert_called_once()
+
+    def test_qwen_checkpoint_sampler_defaults_and_explicit_false_are_not_lost(self):
+        options = adapter.qwen_generation_options({'seed': 42})
+        self.assertTrue(options['do_sample'])
+        self.assertEqual(options['temperature'], .9)
+        self.assertEqual(options['repetition_penalty'], 1.05)
+        self.assertEqual(options['subtalker_top_k'], 50)
+        changed = adapter.qwen_generation_options({'do_sample': False, 'subtalker_dosample': False,
+                                                   'temperature': 1.2, 'top_k': 75, 'subtalker_top_p': .8})
+        self.assertFalse(changed['do_sample'])
+        self.assertFalse(changed['subtalker_dosample'])
+        self.assertEqual(changed['temperature'], 1.2)
+        self.assertEqual(changed['top_k'], 75)
+        self.assertEqual(changed['subtalker_top_p'], .8)
+        self.assertEqual(changed['max_new_tokens'], 750)
+
+    def vox_body(self, strategy='auto', transcript='The exact reference words.', description=''):
+        return body(model='voxcpm2', mode='clone', description=description,
+                    reference={'transcript': transcript},
+                    parameters={'cfg_value': 2, 'inference_timesteps': 10, 'seed': 42, 'clone_strategy': strategy})
+
+    def test_vox_auto_preserves_old_continuation_while_new_strategy_uses_both_paths(self):
+        reference = Path('/private/reference.wav')
+        old = adapter.voxcpm_generation_options(self.vox_body(), reference)
+        self.assertEqual(old['prompt_wav_path'], str(reference))
+        self.assertNotIn('reference_wav_path', old)
+        both = adapter.voxcpm_generation_options(self.vox_body('prompt_reference'), reference)
+        self.assertEqual(both['prompt_wav_path'], both['reference_wav_path'])
+        self.assertEqual(both['prompt_text'], 'The exact reference words.')
+        self.assertFalse(both['retry_badcase'])
+
+    def test_vox_reference_only_applies_style_and_does_not_accidentally_use_transcript(self):
+        options = adapter.voxcpm_generation_options(self.vox_body('reference', description='Warm (clear) voice（calm）'), Path('/private/ref.wav'))
+        self.assertNotIn('prompt_wav_path', options)
+        self.assertNotIn('prompt_text', options)
+        self.assertEqual(options['text'], '(Warm clear voicecalm)A short audition.')
+        for value in [self.vox_body('prompt_reference', transcript=''),
+                      self.vox_body('prompt_reference', description='cheerful')]:
+            with self.assertRaises(ValueError):
+                adapter.voxcpm_generation_options(value, Path('/private/ref.wav'))
+
+    def test_worker_validation_keeps_typed_controls_and_rejects_invalid_combinations(self):
+        qwen = body(model='qwen3', mode='design', description='An adult warm narrator.',
+                    parameters={'do_sample': False, 'subtalker_dosample': False, 'subtalker_top_k': 60})
+        clean = service.validate(qwen)
+        self.assertIs(clean['parameters']['do_sample'], False)
+        self.assertIs(clean['parameters']['subtalker_dosample'], False)
+        self.assertEqual(clean['parameters']['subtalker_top_k'], 60)
+        for params in [{'do_sample': 'false'}, {'temperature': True}, {'subtalker_top_k': 2.5}]:
+            with self.assertRaises(ValueError):
+                service.validate(qwen | {'parameters': params})
 
 
 if __name__ == '__main__':

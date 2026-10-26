@@ -1,14 +1,17 @@
 import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs?v=connection-20261009';
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
-import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=lab-20261026';
+import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=library-20261026';
+import {REFERENCE_SCRIPT,VOICE_DESIGNS,QWEN_PRESETS,INCLUDED_VOICES,preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
 const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
+const referenceURLs=new Map();let libraryFingerprint='';
 const DRAFT_KEY='qt-voice-lab-draft-v1';
 const json=(path,body)=>helperJson('/studio/voice-lab'+path,key,body);
 const notice=message=>{$('notice').textContent=message||'';};
 function selectedModel(){return snapshot?.models?.find(model=>model.id===modelId);}
-function saveDraft(){try{if(modelId&&$('parameters').dataset.model===modelId){const parameters={};document.querySelectorAll('[data-parameter]').forEach(input=>parameters[input.dataset.parameter]=input.value);parameterDrafts[modelId]=parameters;}sessionStorage.setItem(DRAFT_KEY,JSON.stringify({model:modelId,mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,parameterDrafts}));}catch{}}
+function formParameters(){const parameters={};document.querySelectorAll('[data-parameter]').forEach(input=>parameters[input.dataset.parameter]=input.type==='checkbox'?input.checked:input.value);return parameters;}
+function saveDraft(){try{if(modelId&&$('parameters').dataset.model===modelId)parameterDrafts[modelId]=formParameters();sessionStorage.setItem(DRAFT_KEY,JSON.stringify({model:modelId,mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,parameterDrafts}));}catch{}}
 let draft={};try{draft=JSON.parse(sessionStorage.getItem(DRAFT_KEY)||'{}');}catch{}
 const parameterDrafts=draft.parameterDrafts||{};
 $('script').value=draft.text||'';$('description').value=draft.description||'';modelId=draft.model||'';
@@ -16,14 +19,15 @@ function words(){const n=$('script').value.trim().split(/\s+/).filter(Boolean).l
 function modeView(){
   const model=selectedModel(),mode=model?.modes?.find(mode=>(typeof mode==='string'?mode:mode.id)===$('mode').value);
   const descriptor=typeof mode==='string'?{id:mode}:mode||{};
-  $('descriptionField').hidden=!(descriptor.requiresDescription||descriptor.id==='design');
+  $('descriptionField').hidden=!(descriptor.requiresDescription||descriptor.allowsDescription||descriptor.id==='design');
   $('referenceField').hidden=!(descriptor.requiresReference||descriptor.id==='clone');
   $('referenceHint').textContent=descriptor.requiresTranscript?'This model requires an exact transcript of the reference.':'Use a clear reference of a voice you are authorized to use.';
+  for(const label of $('parameters').querySelectorAll('[data-parameter-modes]'))if(label.dataset.parameterModes)label.hidden=!label.dataset.parameterModes.split(',').includes(descriptor.id);
   saveDraft();if(snapshot)workerView();
 }
 function modelView(){
   const model=selectedModel();if(!model)return;
-  $('models').innerHTML=snapshot.models.map(item=>`<button type="button" class="model" data-model="${esc(item.id)}" aria-pressed="${item.id===modelId}"><strong>${esc(item.name)}</strong><small>${esc(item.subtitle||({drama3:'Fish Audio',voxcpm2:'OpenBMB',qwen3:'Base + VoiceDesign'}[item.id]||''))}</small></button>`).join('');
+  $('models').innerHTML=snapshot.models.map(item=>`<button type="button" class="model" data-model="${esc(item.id)}" aria-pressed="${item.id===modelId}"><strong>${esc(item.name)}</strong><small>${esc(item.subtitle||({drama3:'Fish Audio',voxcpm2:'OpenBMB',qwen3:'Base · Design · Presets'}[item.id]||''))}</small></button>`).join('');
   $('models').querySelectorAll('[data-model]').forEach(button=>button.addEventListener('click',()=>{saveDraft();modelId=button.dataset.model;draft={};modelView();}));
   $('modelNote').textContent=Array.isArray(model.notes)?model.notes.join(' '):model.notes||model.checkpoint||'';
   $('mode').innerHTML=model.modes.map(mode=>typeof mode==='string'?`<option value="${esc(mode)}">${esc(mode)}</option>`:`<option value="${esc(mode.id)}">${esc(mode.label||mode.id)}</option>`).join('');
@@ -32,10 +36,65 @@ function modelView(){
   const language=model.languages.includes(draft.language)?draft.language:model.languages.find(item=>item.toLowerCase()==='english');
   if(language)$('language').value=language;
   $('parameters').dataset.model=modelId;
-  $('parameters').innerHTML=(model.parameters||[]).map(param=>`<label>${esc(param.label)}<input data-parameter="${esc(param.id)}" type="number" min="${esc(param.min)}" max="${esc(param.max)}" step="${esc(param.step??(param.type==='integer'?1:'any'))}" value="${esc(parameterDrafts[model.id]?.[param.id]??param.default)}"><span class="muted">Default ${esc(param.default)}</span></label>`).join('');
-  $('parameters').querySelectorAll('input').forEach(input=>input.addEventListener('input',saveDraft));
+  $('parameters').innerHTML=(model.parameters||[]).map(param=>{
+    const value=parameterDrafts[model.id]?.[param.id]??param.default;
+    const modes=`data-parameter-modes="${esc((param.modes||[]).join(','))}"`;
+    if(param.type==='boolean')return `<label ${modes} class="check parameter-check"><input data-parameter="${esc(param.id)}" type="checkbox" ${value===true?'checked':''}><span>${esc(param.label)}<small class="muted">Default ${param.default?'on':'off'}</small></span></label>`;
+    if(param.type==='select')return `<label ${modes}>${esc(param.label)}<select data-parameter="${esc(param.id)}">${param.options.map(option=>{const id=typeof option==='string'?option:option.value;return `<option value="${esc(id)}" ${value===id?'selected':''}>${esc(typeof option==='string'?option:option.label)}</option>`;}).join('')}</select><span class="muted">Default ${esc(param.default)}</span></label>`;
+    return `<label ${modes}>${esc(param.label)}<input data-parameter="${esc(param.id)}" type="number" min="${esc(param.min)}" max="${esc(param.max)}" step="${esc(param.step??(param.type==='integer'?1:'any'))}" value="${esc(value)}"><span class="muted">Default ${esc(param.default)}</span></label>`;
+  }).join('');
+  $('parameters').querySelectorAll('input,select').forEach(input=>input.addEventListener('input',saveDraft));
   $('advanced').hidden=!(model.parameters||[]).length;modeView();
 }
+function useReference(id,targetModel=modelId){
+  const reference=snapshot.references.find(ref=>ref.id===id);if(!reference)return;
+  saveDraft();modelId=targetModel;
+  if(targetModel==='voxcpm2')parameterDrafts[targetModel]={...parameterDrafts[targetModel],clone_strategy:reference.transcript?'prompt_reference':'reference'};
+  draft={mode:'clone',referenceId:id,language:$('language').value};$('description').value='';modelView();$('reference').value=id;saveDraft();
+  $('create').scrollIntoView({behavior:'smooth',block:'start'});notice(`Reference selected: ${reference.name}. Review the script and settings, then generate.`);
+}
+async function loadReference(id,element){
+  try{
+    if(!referenceURLs.has(id)){const response=await nativeRequest('/studio/voice-lab/reference-audio?id='+encodeURIComponent(id),key);referenceURLs.set(id,URL.createObjectURL(await response.blob()));}
+    if(element.isConnected){element.src=referenceURLs.get(id);element.hidden=false;}return true;
+  }catch(error){notice(error.message);return false;}
+}
+function libraryView(){
+  const references=snapshot.references||[],completed=(snapshot.jobs||[]).filter(job=>job.status==='COMPLETED'&&job.audioReady),fingerprint=JSON.stringify([references,completed.map(job=>job.id)]);
+  if(libraryFingerprint===fingerprint)return;libraryFingerprint=fingerprint;
+  const host=$('referenceLibrary'),ids=new Set(references.map(ref=>ref.id));
+  for(const element of host.querySelectorAll('[data-library-reference]'))if(!ids.has(element.dataset.libraryReference))element.remove();
+  $('emptyReferences')?.remove();
+  if(!references.length){host.innerHTML='<p id="emptyReferences" class="muted">No references saved yet. Add a recording in Reference voice mode, or save a completed audition below.</p>';return;}
+  for(const ref of references){
+    if([...host.children].some(node=>node.dataset.libraryReference===ref.id))continue;
+    const article=document.createElement('article');article.className='reference-voice';article.dataset.libraryReference=ref.id;
+    article.innerHTML=`<div class="audition-head"><h3>${esc(ref.name)}</h3><span class="status">${Number(ref.durationSeconds).toFixed(1)}s${preferredReference(ref.durationSeconds)?' · target length':''}</span></div><p class="muted">${esc(referenceSource(ref,snapshot.models))}</p><audio hidden controls preload="none" aria-label="${esc(ref.name)} reference preview"></audio><div class="job-actions"><button class="secondary" data-reference-play type="button">Load reference audio</button>${snapshot.models.filter(model=>model.modes.some(mode=>mode.id==='clone')).map(model=>`<button class="secondary" data-reference-model="${esc(model.id)}" type="button">Use in ${esc(model.name)}</button>`).join('')}</div><div class="reference-auditions"></div><details><summary>Reference transcript</summary><p class="muted">${esc(ref.transcript||'No transcript saved. Add one before using a model that requires it.')}</p></details>`;
+    host.append(article);
+    article.querySelector('[data-reference-play]').addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;const success=await loadReference(ref.id,article.querySelector('audio'));button.disabled=false;button.hidden=success;if(!success)button.textContent='Retry reference audio';});
+    article.querySelectorAll('[data-reference-model]').forEach(button=>button.addEventListener('click',()=>useReference(ref.id,button.dataset.referenceModel)));
+  }
+  for(const ref of references){
+    const article=[...host.children].find(node=>node.dataset.libraryReference===ref.id),target=article.querySelector('.reference-auditions');
+    for(const job of completed.filter(job=>job.referenceId===ref.id)){
+      if([...target.children].some(node=>node.dataset.referenceAudition===job.id))continue;
+      const row=document.createElement('div');row.className='reference-audition';row.dataset.referenceAudition=job.id;
+      const name=snapshot.models.find(model=>model.id===job.model)?.name||job.model;
+      row.innerHTML=`<span>${esc(name)} · ${Number(job.metrics?.audioSeconds||0).toFixed(1)}s</span><button class="text-button" type="button">Load clone audition</button><audio hidden controls preload="none" aria-label="${esc(ref.name)} cloned by ${esc(name)}"></audio>`;
+      target.append(row);row.querySelector('button').addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;const success=await loadAudio(job.id,row.querySelector('audio'));button.disabled=false;button.hidden=success;if(!success)button.textContent='Retry clone audition';});
+    }
+  }
+}
+$('voiceDesigns').innerHTML=VOICE_DESIGNS.map(voice=>`<article class="voice-design"><h4>${esc(voice.name)}</h4><p class="muted">${esc(voice.description)}</p><button class="secondary" data-design="${esc(voice.id)}" type="button">Set up this voice</button></article>`).join('');
+$('voiceDesigns').querySelectorAll('[data-design]').forEach(button=>button.addEventListener('click',()=>{
+  const voice=VOICE_DESIGNS.find(item=>item.id===button.dataset.design);saveDraft();modelId='qwen3';draft={mode:'design',language:'English'};$('script').value=REFERENCE_SCRIPT;$('description').value=voice.description;modelView();words();$('create').scrollIntoView({behavior:'smooth',block:'start'});notice('Voice recipe is ready. Generate, listen, then save a clean take as a clone reference.');
+}));
+$('includedVoices').innerHTML=INCLUDED_VOICES.map(item=>`<article class="included-voice"><h4>${esc(item.name)}</h4><p class="muted">${esc(item.summary)} <a href="${esc(item.url)}" target="_blank" rel="noopener">Official source</a></p></article>`).join('');
+$('qwenPresets').innerHTML=QWEN_PRESETS.map(voice=>`<button class="secondary" data-preset="${esc(voice.id)}" type="button">${esc(voice.name)}</button>`).join('');
+$('qwenPresets').querySelectorAll('[data-preset]').forEach(button=>button.addEventListener('click',()=>{
+  if(!snapshot.models.find(model=>model.id==='qwen3')?.modes.some(mode=>mode.id==='preset')){notice('Update your paired helper to use the named Qwen voices.');return;}
+  saveDraft();modelId='qwen3';parameterDrafts.qwen3={...parameterDrafts.qwen3,speaker:button.dataset.preset};draft={mode:'preset',language:'English'};$('script').value=REFERENCE_SCRIPT;$('description').value='';modelView();words();$('create').scrollIntoView({behavior:'smooth',block:'start'});notice('Qwen preset selected. Generate an audition, then save it as a reference to clone its voice with any model.');
+}));
 function referencesView(){
   const selected=$('reference').value||draft.referenceId;
   $('reference').innerHTML='<option value="">Choose a reference</option>'+(snapshot.references||[]).map(ref=>`<option value="${esc(ref.id)}">${esc(ref.name)} · ${Number(ref.durationSeconds).toFixed(1)}s</option>`).join('');
@@ -74,18 +133,20 @@ function jobsView(){
   if(!jobs.length){host.innerHTML='<p class="muted" id="emptyHistory">Your first preview will appear here.</p>';return;}
   $('emptyHistory')?.remove();
   for(const job of [...jobs].sort((a,b)=>b.createdAt-a.createdAt)){
-    const fingerprint=JSON.stringify(job),existing=[...host.children].find(node=>node.dataset.job===job.id);
+    const fingerprint=JSON.stringify([job,jobVoiceName(job,snapshot.references)]),existing=[...host.children].find(node=>node.dataset.job===job.id);
     if(existing&&jobFingerprints.get(job.id)===fingerprint)continue;
     const status=String(job.status||'UNKNOWN').toLowerCase(),complete=status==='completed',active=['queued','submitting','running','unknown','cancel_requested'].includes(status);
     const article=document.createElement('article');article.className='audition';article.dataset.job=job.id;
+    article.hidden=$('historyModel').value!==''&&job.model!==$('historyModel').value;
     const model=snapshot.models.find(model=>model.id===job.model);
-    article.innerHTML=`<div class="audition-head"><h3>${esc(model?.name||job.model)} · ${esc(job.mode)}</h3><span class="status ${esc(status)}">${esc(status.replaceAll('_',' '))}</span></div><p>${esc(job.text||'')}</p><div class="metrics">${jobMetrics(job.metrics)}</div>${job.error?`<p class="job-error">${esc(job.error)}</p>`:''}${job.audioReady?'<audio hidden controls preload="none" aria-label="Audition preview"></audio>':''}<div class="job-actions">${complete&&job.audioReady?'<button class="secondary" data-load type="button">Load preview</button><button class="secondary" data-pick type="button">Save this pick</button><a data-download download="audition.opus" hidden>Download Opus</a>':''}${active?'<button class="secondary" data-cancel type="button">Cancel job</button>':''}<span class="muted">${esc(new Date(job.createdAt*1000).toLocaleString())}</span></div>`;
+    article.innerHTML=`<div class="audition-head"><h3>${esc(model?.name||job.model)} · ${esc(job.mode)}</h3><span class="status ${esc(status)}">${esc(status.replaceAll('_',' '))}</span></div><p class="voice-name">${esc(jobVoiceName(job,snapshot.references))}</p><p>${esc(job.text||'')}</p><div class="metrics">${jobMetrics(job.metrics)}</div>${job.error?`<p class="job-error">${esc(job.error)}</p>`:''}${job.audioReady?'<audio hidden controls preload="none" aria-label="Audition preview"></audio>':''}<div class="job-actions">${complete&&job.audioReady?'<button class="secondary" data-load type="button">Load preview</button><button class="secondary" data-promote type="button">Save as clone reference</button><button class="secondary" data-pick type="button">Save this pick</button><a data-download download="audition.opus" hidden>Download Opus</a>':''}${active?'<button class="secondary" data-cancel type="button">Cancel job</button>':''}<span class="muted">${esc(new Date(job.createdAt*1000).toLocaleString())}</span></div>`;
     if(existing){const oldAudio=existing.querySelector('audio'),newAudio=article.querySelector('audio');if(oldAudio&&newAudio)newAudio.replaceWith(oldAudio);existing.replaceWith(article);}else host.append(article);
     jobFingerprints.set(job.id,fingerprint);
     const audio=article.querySelector('audio'),load=article.querySelector('[data-load]'),download=article.querySelector('[data-download]');
     if(audio&&objectURLs.has(job.id)){if(!audio.src)audio.src=objectURLs.get(job.id);audio.hidden=false;if(load)load.hidden=true;if(download){download.href=objectURLs.get(job.id);download.hidden=false;}}
     load?.addEventListener('click',async()=>{load.disabled=true;load.textContent='Loading…';const success=await loadAudio(job.id,audio);load.disabled=false;load.textContent=success?'Loaded':'Retry preview';load.hidden=success;if(success&&download){download.href=objectURLs.get(job.id);download.hidden=false;}});
     article.querySelector('[data-pick]')?.addEventListener('click',()=>act(async()=>{await json('/select',{model:job.model,jobId:job.id});await refresh();notice('Audition choice saved.');}));
+    article.querySelector('[data-promote]')?.addEventListener('click',()=>act(async()=>{const ref=await json('/reference-from-job',{jobId:job.id,name:`${model?.name||job.model} · ${job.mode} · ${Number(job.metrics?.audioSeconds||0).toFixed(1)}s`,rightsConfirmed:true});await refresh();useReference(ref.id,job.model);notice('Voice saved in your reference library. Its original audio and script are preserved. Listen and check the transcript before further clones.');}));
     article.querySelector('[data-cancel]')?.addEventListener('click',()=>act(async()=>{await json('/cancel',{id:job.id});await refresh();}));
   }
   // Reorder existing nodes without replacing an audio element that is playing.
@@ -100,7 +161,7 @@ async function refresh(){
     if(connectionFailure){notice('');connectionFailure=false;}
     if(!snapshot.models.some(model=>model.id===modelId))modelId=snapshot.models[0].id;
     $('lab').hidden=false;$('connectionTitle').textContent='Private helper connected';$('connectionDetail').textContent='References and audition history are available through your pairing.';
-    if(first)modelView();referencesView();workerView();jobsView();
+    if(first)modelView();referencesView();libraryView();workerView();jobsView();
   }finally{polling=false;}
 }
 async function act(action){
@@ -114,6 +175,9 @@ $('pairFile').addEventListener('change',()=>act(async()=>{const file=$('pairFile
 $('example').addEventListener('click',()=>{$('script').value=SAMPLE_SCRIPT;words();});
 $('script').addEventListener('input',words);$('description').addEventListener('input',saveDraft);$('mode').addEventListener('change',modeView);$('language').addEventListener('change',saveDraft);$('reference').addEventListener('change',saveDraft);
 $('refresh').addEventListener('click',()=>act(refresh));
+$('historyModel').addEventListener('change',()=>{for(const article of $('jobs').querySelectorAll('[data-job]')){const job=snapshot.jobs.find(item=>item.id===article.dataset.job);article.hidden=$('historyModel').value!==''&&job.model!==$('historyModel').value;}});
+$('openReferenceUpload').addEventListener('click',()=>{draft={mode:'clone',language:$('language').value};modelView();$('referenceField').querySelector('details').open=true;$('referenceField').scrollIntoView({behavior:'smooth',block:'start'});});
+$('resetParameters').addEventListener('click',()=>{delete parameterDrafts[modelId];draft={mode:$('mode').value,language:$('language').value};$('parameters').dataset.model='';modelView();saveDraft();notice('This model’s settings were reset to their defaults.');});
 $('saveReference').addEventListener('click',()=>act(async()=>{
   const file=$('referenceFile').files[0];if(!file)throw Error('Choose an audio reference.');
   if(!file.type.startsWith('audio/')||file.size>12*1024*1024)throw Error('Choose an audio file smaller than 12 MB.');
@@ -123,10 +187,10 @@ $('saveReference').addEventListener('click',()=>act(async()=>{
   await refresh();$('reference').value=reference.id;saveDraft();notice('Reference saved privately.');
 }));
 $('generate').addEventListener('click',()=>act(async()=>{
-  const parameters={};document.querySelectorAll('[data-parameter]').forEach(input=>parameters[input.dataset.parameter]=input.value);
+  const parameters=formParameters();
   const body=auditionRequest(selectedModel(),{mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,parameters});
   await json('/jobs',body);saveDraft();await refresh();notice('Audition queued. You can leave this page while the helper runs.');
 }));
-window.addEventListener('pagehide',event=>{clearInterval(timer);if(!event.persisted){for(const url of objectURLs.values())URL.revokeObjectURL(url);objectURLs.clear();}});
+window.addEventListener('pagehide',event=>{clearInterval(timer);if(!event.persisted){for(const url of [...objectURLs.values(),...referenceURLs.values()])URL.revokeObjectURL(url);objectURLs.clear();referenceURLs.clear();}});
 window.addEventListener('pageshow',event=>{if(event.persisted&&key)connect().catch(error=>notice(error.message));});
 words();if(pairingKey())act(connect);

@@ -20,9 +20,21 @@ export function auditionRequest(model, values) {
   if (requirements.requiresDescription && !String(values.description||'').trim()) throw Error('Describe the voice you want to create.');
   const parameters={};
   for (const control of model.parameters||[]) {
-    const value=Number(values.parameters?.[control.id]??control.default);
-    if (!Number.isFinite(value) || value<control.min || value>control.max || (control.type==='integer'&&!Number.isInteger(value))) throw Error('Check '+control.label+'.');
+    const value=parameterValue(control,values.parameters?.[control.id]??control.default);
     parameters[control.id]=value;
   }
   return {model:model.id,mode:values.mode,text,language:values.language,description:String(values.description||'').trim(),...(values.referenceId?{referenceId:values.referenceId}:{}),parameters};
+}
+export function parameterValue(control,raw) {
+  if(control.type==='boolean'){
+    if(typeof raw!=='boolean')throw Error('Check '+control.label+'.');
+    return raw;
+  }
+  if(control.type==='select'){
+    if(!(control.options||[]).some(option=>(typeof option==='string'?option:option.value)===raw))throw Error('Check '+control.label+'.');
+    return raw;
+  }
+  const value=Number(raw);
+  if(raw===''||!Number.isFinite(value)||value<control.min||value>control.max||(control.type==='integer'&&!Number.isInteger(value)))throw Error('Check '+control.label+'.');
+  return value;
 }

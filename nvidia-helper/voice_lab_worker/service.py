@@ -28,15 +28,33 @@ MANIFEST = json.loads((HERE / 'manifest.json').read_text())
 MAX_BODY = 16 * 1024 * 1024
 ID = re.compile(r'[A-Za-z0-9_-]{8,80}')
 FINAL = {'completed', 'failed', 'cancelled'}
-MODES = {'drama3': {'default', 'clone'}, 'voxcpm2': {'default', 'design', 'clone'}, 'qwen3': {'design', 'clone'}}
+MODES = {'drama3': {'default', 'clone'}, 'voxcpm2': {'default', 'design', 'clone'}, 'qwen3': {'design', 'clone', 'preset'}}
 LANGUAGES = {'english', 'chinese', 'japanese', 'korean', 'german', 'french', 'russian', 'portuguese', 'spanish', 'italian', 'auto'}
 CONTROLS = {'drama3': {'temperature': (0.1, 2, 1), 'top_p': (0.1, 1, .9), 'top_k': (1, 100, 30)},
             'voxcpm2': {'cfg_value': (.1, 10, 2), 'inference_timesteps': (1, 50, 10), 'seed': (0, 2147483647, 42)},
-            'qwen3': {'seed': (0, 2147483647, 42)}}
+            'qwen3': {'seed': (0, 2147483647, 42), 'temperature': (.1, 2, .9),
+                      'top_p': (.1, 1, 1), 'top_k': (1, 100, 50), 'repetition_penalty': (.8, 2, 1.05),
+                      'subtalker_temperature': (.1, 2, .9), 'subtalker_top_p': (.1, 1, 1),
+                      'subtalker_top_k': (1, 100, 50)}}
+BOOLEAN_CONTROLS = {'qwen3': {'do_sample': True, 'subtalker_dosample': True}}
+SELECT_CONTROLS = {'voxcpm2': {'clone_strategy': (('auto', 'reference', 'prompt_reference'), 'auto')},
+                   'qwen3': {'speaker': (('vivian', 'serena', 'uncle_fu', 'dylan', 'eric', 'ryan',
+                                         'aiden', 'ono_anna', 'sohee'), 'vivian')}}
 
 
 class Conflict(ValueError):
     pass
+
+
+def checkpoint_for(model, mode):
+    items = MANIFEST['models'][model]
+    if model != 'qwen3':
+        return items[0]
+    folder = {'clone': 'qwen3-base', 'design': 'qwen3-design', 'preset': 'qwen3-preset'}.get(mode)
+    checkpoint = next((item for item in items if item['folder'] == folder), None)
+    if checkpoint is None:
+        raise ValueError('The requested Qwen checkpoint variant is not configured.')
+    return checkpoint
 
 
 def validate(body):
@@ -61,15 +79,26 @@ def validate(body):
     if model != 'qwen3' and language.lower() != 'auto':
         raise ValueError('This adapter infers language from text; select Auto.')
     params = body.get('parameters', {})
-    if not isinstance(params, dict) or set(params) - set(CONTROLS[model]):
+    if not isinstance(params, dict) or set(params) - (set(CONTROLS[model])
+            | set(BOOLEAN_CONTROLS.get(model, {})) | set(SELECT_CONTROLS.get(model, {}))):
         raise ValueError('Unsupported model control.')
     clean_params = {}
     for key, (minimum, maximum, default) in CONTROLS[model].items():
         value = params.get(key, default)
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not minimum <= value <= maximum:
             raise ValueError('A model control exceeds its audition limits.')
-        if key in {'seed', 'top_k', 'inference_timesteps'} and int(value) != value:
+        if key in {'seed', 'top_k', 'subtalker_top_k', 'inference_timesteps'} and int(value) != value:
             raise ValueError('This model control requires a whole number.')
+        clean_params[key] = value
+    for key, default in BOOLEAN_CONTROLS.get(model, {}).items():
+        value = params.get(key, default)
+        if type(value) is not bool:
+            raise ValueError('This model control must be enabled or disabled.')
+        clean_params[key] = value
+    for key, (choices, default) in SELECT_CONTROLS.get(model, {}).items():
+        value = params.get(key, default)
+        if not isinstance(value, str) or value not in choices:
+            raise ValueError('Choose a supported built-in voice.' if key == 'speaker' else 'Choose a supported clone strategy.')
         clean_params[key] = value
     reference = None
     if body['mode'] == 'clone':
@@ -87,6 +116,11 @@ def validate(body):
             raise ValueError('Invalid reference transcript.')
         if model in {'drama3', 'qwen3'} and not transcript.strip():
             raise ValueError('This model needs an accurate reference transcript.')
+        if model == 'voxcpm2' and clean_params['clone_strategy'] == 'prompt_reference':
+            if not transcript.strip():
+                raise ValueError('Prompt + reference cloning requires the reference transcript.')
+            if description.strip():
+                raise ValueError('Prompt + reference cloning cannot use a voice description. Choose Reference only for style control.')
         reference = {'audioBase64': ref['audioBase64'], 'transcript': transcript, 'mime': 'application/octet-stream'}
     return {'id': job_id, 'model': model, 'mode': body['mode'], 'text': text.strip(),
             'language': language.lower(), 'description': description.strip(),
@@ -278,10 +312,10 @@ class Supervisor:
                     duration = audio.getnframes() / audio.getframerate()
                 if not 0 < duration <= 120:
                     raise RuntimeError('The output exceeds the audition limit; it was retained privately for inspection.')
+                checkpoint = checkpoint_for(body['model'], body['mode'])
                 metrics = event['metrics'] | {'audioSeconds': duration, 'workerWallSeconds': time.monotonic() - started,
                                              'hourlyUSD': self.hourly_usd, 'model': body['model'],
-                                             'checkpoint': MANIFEST['models'][body['model']][0]['repo'],
-                                             'revision': MANIFEST['models'][body['model']][0]['revision'],
+                                             'checkpoint': checkpoint['repo'], 'revision': checkpoint['revision'],
                                              'costBasis': 'Per-job worker wall time excludes GPU allocation, image pull, package/model downloads and idle time. Full cold-start receipt must add them.'}
                 if self.hourly_usd is not None:
                     metrics['workerEstimatedUSD'] = metrics['workerWallSeconds'] * self.hourly_usd / 3600

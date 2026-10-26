@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -16,6 +17,58 @@ import urllib.request
 from preflight import ensure_cuda_layout
 
 ROOT = Path(os.environ.get('QT_LAB_ROOT', '/workspace/questiontemplate-voice-lab')).resolve()
+QWEN_SAMPLER_DEFAULTS = {
+    'do_sample': True, 'temperature': .9, 'top_p': 1.0, 'top_k': 50, 'repetition_penalty': 1.05,
+    'subtalker_dosample': True, 'subtalker_temperature': .9, 'subtalker_top_p': 1.0, 'subtalker_top_k': 50,
+}
+QWEN_VARIANTS = {'clone': 'base', 'design': 'design', 'preset': 'preset'}
+
+
+def qwen_variant(mode):
+    try:
+        return QWEN_VARIANTS[mode]
+    except KeyError:
+        raise ValueError('Choose cloning, voice design, or a named Qwen preset.') from None
+
+
+def qwen_generation_options(parameters):
+    """Explicit checkpoint defaults; older seed-only jobs retain their behavior."""
+    options = {key: parameters.get(key, default) for key, default in QWEN_SAMPLER_DEFAULTS.items()}
+    for key in ('top_k', 'subtalker_top_k'):
+        options[key] = int(options[key])
+    options['max_new_tokens'] = 750  # Visible audition safety cap, not a pacing control.
+    return options
+
+
+def voxcpm_generation_options(body, reference):
+    parameters = body['parameters']
+    strategy = parameters.get('clone_strategy', 'auto')
+    if strategy not in {'auto', 'reference', 'prompt_reference'}:
+        raise ValueError('Choose a supported VoxCPM cloning strategy.')
+    description = body.get('description', '').strip()
+    transcript = (body.get('reference') or {}).get('transcript', '').strip()
+    if body['mode'] == 'clone' and strategy == 'prompt_reference':
+        if not reference or not transcript:
+            raise ValueError('VoxCPM prompt and reference cloning needs a recording and its exact transcript.')
+        if description:
+            raise ValueError('VoxCPM prompt and reference cloning preserves reference delivery; use reference-only cloning for style instructions.')
+    # The official demo removes nested half/full-width parentheses to preserve
+    # the model's documented "(control)text" conditioning syntax.
+    control = re.sub(r'[()（）]', '', description).strip()
+    text = '(' + control + ')' + body['text'] if control else body['text']
+    options = {'text': text, 'cfg_value': parameters['cfg_value'],
+               'inference_timesteps': int(parameters['inference_timesteps']), 'seed': int(parameters['seed']),
+               'normalize': False, 'denoise': False, 'retry_badcase': False, 'max_len': 2048}
+    if reference:
+        if strategy == 'prompt_reference':
+            options.update(reference_wav_path=str(reference), prompt_wav_path=str(reference), prompt_text=transcript)
+        elif strategy == 'reference' or not transcript:
+            options['reference_wav_path'] = str(reference)
+        else:
+            # Preserve the original job contract: auto + transcript means
+            # continuation only. The explicit new strategy opts into both paths.
+            options.update(prompt_wav_path=str(reference), prompt_text=transcript)
+    return options
 
 
 class AuditionLimit(RuntimeError):
@@ -148,7 +201,7 @@ class Runtime:
         self.clone_cache = {}
 
     def load(self, mode):
-        variant = ('base' if mode == 'clone' else 'design') if self.kind == 'qwen3' else self.kind
+        variant = qwen_variant(mode) if self.kind == 'qwen3' else self.kind
         if self.variant == variant:
             return 0.0
         started = time.monotonic()
@@ -236,18 +289,7 @@ class Runtime:
                             '-ac', '1', '-c:a', 'pcm_s16le', str(output)], capture_output=True, check=True, timeout=30)
             raw.unlink()
         elif self.kind == 'voxcpm2':
-            text = body['text']
-            if body['description']:
-                text = '(' + body['description'] + ')' + text
-            kwargs = {'text': text, 'cfg_value': parameters['cfg_value'], 'inference_timesteps': int(parameters['inference_timesteps']),
-                      'seed': int(parameters['seed']), 'normalize': False, 'denoise': False,
-                      'retry_badcase': False, 'max_len': 2048}
-            if reference:
-                transcript = body['reference']['transcript'].strip()
-                if transcript:
-                    kwargs.update(prompt_wav_path=str(reference), prompt_text=transcript)
-                else:
-                    kwargs['reference_wav_path'] = str(reference)
+            kwargs = voxcpm_generation_options(body, reference)
             with vox_limit_guard(self.model.tts_model):
                 audio = self.model.generate(**kwargs)
             write_audio(output, audio, self.model.tts_model.sample_rate)
@@ -255,7 +297,7 @@ class Runtime:
             import torch
             torch.manual_seed(int(parameters['seed']))
             torch.cuda.manual_seed_all(int(parameters['seed']))
-            kwargs = {'text': body['text'], 'language': body['language'], 'max_new_tokens': 750}
+            kwargs = {'text': body['text'], 'language': body['language'], **qwen_generation_options(parameters)}
             if body['mode'] == 'clone':
                 started = time.monotonic()
                 key = hashlib.sha256((str(reference) + '\n' + body['reference']['transcript']).encode()).hexdigest()
@@ -270,6 +312,10 @@ class Runtime:
                 conditioning_seconds = time.monotonic() - started
                 with qwen_limit_guard(self.model.model):
                     wavs, sample_rate = self.model.generate_voice_clone(**kwargs, voice_clone_prompt=prompt)
+            elif body['mode'] == 'preset':
+                with qwen_limit_guard(self.model.model):
+                    wavs, sample_rate = self.model.generate_custom_voice(**kwargs, speaker=parameters.get('speaker', 'vivian'),
+                                                                         instruct=body.get('description', ''))
             else:
                 with qwen_limit_guard(self.model.model):
                     wavs, sample_rate = self.model.generate_voice_design(**kwargs, instruct=body['description'])

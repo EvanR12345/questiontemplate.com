@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080a11">
 <title>Private Voice Lab · QuestionTemplate</title>
-<link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./voice-lab.css?v=lab-20261026">
+<link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./voice-lab.css?v=library-20261026">
 </head>
 <body><main class="shell">
 <header class="topbar"><a class="brand" href="./studio.html"><img src="./favicon.svg" width="34" height="34" alt="">QuestionTemplate <span>Voice Lab</span></a><nav aria-label="Main"><a href="./">Audio</a><a href="./studio.html">Studio</a><a href="./pipeline.html">Planner</a></nav></header>
@@ -12,7 +12,8 @@
 <section class="connection" aria-label="Private connection"><div><strong id="connectionTitle">Connect your shared helper</strong><p id="connectionDetail">Your pairing unlocks private scripts, references and previews.</p></div><div class="actions"><button id="connect" type="button">Connect</button><button id="pair" class="secondary" type="button">Import pairing file</button><input id="pairFile" type="file" accept=".txt,text/plain" hidden></div></section>
 <p id="notice" class="notice" role="status" aria-live="polite"></p>
 <div id="lab" hidden>
-<div class="workspace"><section class="editor" aria-label="Create an audition">
+<nav class="lab-nav" aria-label="Voice Lab sections"><a href="#create">Create an audition</a><a href="#voice-library">Reference voices</a><a href="#advanced">All model settings</a><a href="#audition-history">Saved auditions</a></nav>
+<div class="workspace"><section id="create" class="editor" aria-label="Create an audition">
 <fieldset class="model-field"><legend>1. Choose a model</legend><div id="models" class="models"></div><p id="modelNote" class="muted"></p></fieldset>
 <div class="two"><label>Mode<select id="mode"></select></label><label>Language<select id="language"></select></label></div>
 <label class="script-label" for="script">2. Use the same script to compare voices <span id="wordCount"></span></label>
@@ -20,13 +21,16 @@
 <div class="script-tools"><button id="example" type="button" class="text-button">Use a roughly 30-second sample</button><span class="muted">Actual duration depends on the voice.</span></div>
 <label id="descriptionField">Voice description<textarea id="description" rows="2" maxlength="1000" placeholder="Describe the voice and delivery, for example: a warm, clear adult narrator with calm, thoughtful pacing."></textarea></label>
 <div id="referenceField"><label>Saved reference<select id="reference"><option value="">Choose a reference</option></select></label><p id="referenceHint" class="muted"></p><details><summary>Add an authorized voice reference</summary><div class="reference-form"><label>Audio · up to 60 seconds<input id="referenceFile" type="file" accept="audio/*"></label><label>Name<input id="referenceName" maxlength="100" placeholder="My narrator"></label><label>Exact reference transcript<textarea id="transcript" rows="3" maxlength="4000" placeholder="The words spoken in this reference…"></textarea></label><label class="check"><input id="rights" type="checkbox">I have permission to use this voice for this audition.</label><button id="saveReference" type="button" class="secondary">Save reference privately</button><p class="muted">Stored by your helper. Sent to your RunPod worker only when needed for a requested audition.</p></div></details></div>
-<details id="advanced"><summary>Model controls</summary><div id="parameters" class="parameter-grid"></div><p class="muted">Controls apply only to this model and use its documented inference API.</p></details>
+<details id="advanced" open><summary>All model settings</summary><p class="muted">Settings belong to the selected model. Descriptions guide pace and delivery where supported; the model determines the final clip length.</p><div id="parameters" class="parameter-grid"></div><button id="resetParameters" class="text-button" type="button">Reset this model’s settings</button></details>
 <div class="generate-row"><button id="generate" type="button">Generate preview</button><p id="generationHint" class="muted"></p></div>
 </section><aside>
 <section class="worker-panel"><div class="eyebrow">RunPod worker</div><h2 id="workerTitle">Checking worker</h2><p id="workerDetail" class="muted"></p><p id="workerCost" class="cost-note"></p><p class="muted">The first request can include model loading. Keeping a worker warm reduces waiting and continues GPU billing.</p></section>
 <section class="pick-panel"><div class="eyebrow">Your choice</div><h2 id="pickTitle">Listen, then choose</h2><p id="pickDetail" class="muted">Use “Save this pick” on a completed preview. Your Studio production voice stays as configured.</p></section>
 <section class="cost-panel"><h2>What did 30 seconds cost?</h2><p class="muted">Completed previews show generation time and available startup time separately. Costs appear only when the worker has a verified hourly rate.</p><p class="muted">One-time setup and model downloads are separate from a warm preview. A 30-second estimate scales inference only; startup stays fixed.</p></section>
 </aside></div>
-<section class="history"><div class="history-head"><div><div class="eyebrow">Private history</div><h2>Your auditions</h2></div><button id="refresh" class="secondary" type="button">Refresh</button></div><p class="muted">Jobs stay with your helper if you close this page. Previews are saved as Opus 128 kbps.</p><div id="jobs"></div></section>
+<section id="voice-library" class="voice-library"><div class="eyebrow">Reference voices</div><h2>Your voice library</h2><p class="muted">Play a reference, then choose the model to clone it. You can reuse it with the model that created it. Your production voice stays as configured.</p><button id="openReferenceUpload" type="button" class="secondary">Add a reference recording</button><div id="referenceLibrary" class="reference-library"></div>
+<h3>Qwen’s nine preset voices</h3><p class="muted">CustomVoice presets. Select one to set up an audition; this does not submit a generation job.</p><div id="qwenPresets" class="preset-voices"></div><h3>Design a reference voice</h3><p class="muted">Three starting descriptions for clean narration. These recipes target a 25–30-second reference; actual duration and quality must be checked after generation. “Set up” fills the form without submitting a job.</p><div id="voiceDesigns" class="voice-designs"></div>
+<details class="included-voices" open><summary>Voices supplied by the model authors</summary><div id="includedVoices"></div></details></section>
+<section id="audition-history" class="history"><div class="history-head"><div><div class="eyebrow">Private history</div><h2>Your auditions</h2></div><button id="refresh" class="secondary" type="button">Refresh</button></div><p class="muted">Jobs stay with your helper if you close this page. Previews are saved as Opus 128 kbps. Use “Save as clone reference” on a completed preview to add its voice to your library.</p><label class="history-filter">Filter by model<select id="historyModel"><option value="">All models</option><option value="qwen3">Qwen3-TTS</option><option value="voxcpm2">VoxCPM2</option><option value="drama3">Drama 3</option></select></label><div id="jobs"></div></section>
 </div><footer>QuestionTemplate · Private Voice Lab · Paired helper required</footer>
-</main><script type="module" src="./voice-lab.mjs?v=lab-20261026b"></script></body></html>
+</main><script type="module" src="./voice-lab.mjs?v=library-20261026"></script></body></html>

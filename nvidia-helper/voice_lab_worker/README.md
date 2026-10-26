@@ -1,7 +1,8 @@
 # QuestionTemplate private Voice Lab worker
 
 This worker implements auditions of **Fish Audio Drama 3**, **VoxCPM2**, and
-**Qwen3-TTS 1.7B Base + VoiceDesign**. It does not provision, start, stop, or change
+**Qwen3-TTS 1.7B Base + VoiceDesign + CustomVoice**. CustomVoice and its nine
+named speakers were added after the user's explicit opt-in. It does not provision, start, stop, or change
 RunPod resources. The owner's controller must enforce the authorized total spend
 and stop the exact voice pod at its deadline. Releasing model memory does not stop
 GPU billing. No anonymous inference endpoint is exposed.
@@ -61,7 +62,7 @@ that installation. All test pods and the temporary volume were subsequently
 deleted. A future authorized setup must recreate the pinned installation and
 pass this preflight plus a live Drama inference test.
 
-The four full checkpoint directories total approximately **55.53 decimal GB**,
+The five full checkpoint directories total approximately **60.05 decimal GB**,
 from the primary repositories' current file metadata. Drama3 also requires the
 official pinned S2-Pro **codec file only**, not the S2-Pro language model. Runtime
 environments, package caches, CUDA caches and outputs require additional disk.
@@ -141,8 +142,37 @@ It never automatically resubmits that job or blindly retries a request.
 | ID | Modes | Behavior |
 | --- | --- | --- |
 | `drama3` | `default`, `clone` | Official SGLang-Omni `POST /v1/audio/speech`, full `fishaudio/drama-3` checkpoint. FP8 MoE experts/BF16 remainder are upstream's actual checkpoint precision. No int4 substitution. Clone needs a reference plus accurate transcript. Sampling controls are temperature, top-p, and top-k. Emotion/event tags belong in the input text. |
-| `voxcpm2` | `default`, `design`, `clone` | Official `VoxCPM.from_pretrained` and `generate`. Voice description is prepended in parentheses as upstream documents. Clone with transcript uses prompt continuation; without transcript uses `reference_wav_path`. Controls: guidance scale, diffusion steps, seed. |
-| `qwen3` | `design`, `clone` | Official `Qwen3TTSModel.generate_voice_design` with the VoiceDesign checkpoint, or `create_voice_clone_prompt` + `generate_voice_clone` with Base. BF16/SDPA baseline. Seed is controlled; model sampling defaults otherwise stay intact. No CustomVoice substitution. |
+| `voxcpm2` | `default`, `design`, `clone` | Official `VoxCPM.from_pretrained` and `generate`. Voice description is prepended in parentheses as upstream documents. Explicit cloning strategies select prompt continuation, reference conditioning, or both. Controls: guidance scale, diffusion steps, seed. |
+| `qwen3` | `design`, `clone`, `preset` | Official `Qwen3TTSModel.generate_voice_design` with VoiceDesign, `create_voice_clone_prompt` + `generate_voice_clone` with Base, or `generate_custom_voice` with the explicitly added CustomVoice checkpoint. BF16/SDPA baseline. Documented sampler settings and seed are forwarded, retaining pinned checkpoint defaults unless changed. Each mode loads its own pinned checkpoint. |
+
+Drama3 and VoxCPM2 do not contain a named stock-speaker catalog. Both pinned
+Qwen Base and VoiceDesign configurations have empty speaker-ID maps. The
+explicitly added CustomVoice checkpoint supplies nine real speaker IDs:
+`vivian`, `serena`, `uncle_fu`, `dylan`, `eric`, `ryan`, `aiden`, `ono_anna`, and
+`sohee`. Preset mode forwards the selected ID and optional instruction to
+`generate_custom_voice`; it never silently uses Base or VoiceDesign instead.
+Public demonstration reference recordings remain separate reference assets.
+
+Qwen exposes its documented main and sub-talker sampling controls. Both pinned
+checkpoints default to `do_sample=true`, `temperature=0.9`, `top_p=1.0`,
+`top_k=50`, `repetition_penalty=1.05`, `subtalker_dosample=true`,
+`subtalker_temperature=0.9`, `subtalker_top_p=1.0`, and `subtalker_top_k=50`.
+The service forwards explicit false switches as false. Top-p/top-k/temperature
+affect sampling only when the corresponding sampling switch is enabled. The
+750-token audition cap stays separate from these controls. There is no invented
+numeric pacing control: Qwen VoiceDesign and Vox descriptions can request a
+speaking style or pace, but do not guarantee a duration.
+
+Vox cloning now has an explicit `clone_strategy`. `auto` preserves prior jobs:
+a transcript selects prompt continuation; no transcript selects reference-only
+cloning. `reference` always uses reference-only cloning and allows an optional
+style description. `prompt_reference` sends the same clip through both prompt
+and reference paths, as the official maximum-similarity example does, and
+requires an exact transcript. It rejects a nonempty style description instead
+of implying that reference-preserving delivery also applied an independent
+style instruction. Parentheses inside Vox descriptions are stripped like the
+official demo to preserve its `(control)text` conditioning format. No automatic
+retry, denoiser download, checkpoint change or new paid run is enabled here.
 
 Qwen language selection supports English, Chinese, Japanese, Korean, German,
 French, Russian, Portuguese, Spanish, Italian and Auto. Drama3 and VoxCPM2 infer

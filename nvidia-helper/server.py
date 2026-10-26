@@ -246,6 +246,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     if path=='/studio/voice-lab':self.reply(200,get_voice_lab().snapshot())
                     elif path=='/studio/voice-lab/job':self.reply(200,get_voice_lab().job(query['id'][0]))
                     elif path=='/studio/voice-lab/audio':self.send_asset(get_voice_lab().audio(query['id'][0]),query.get('download',[None])[0])
+                    elif path=='/studio/voice-lab/reference-audio':self.send_asset(get_voice_lab().reference_audio(query['id'][0]),query.get('download',[None])[0])
                     elif path=='/studio/health':self.reply(200,studio.health())
                     elif path=='/studio/projects':self.reply(200,studio.store.list())
                     elif path=='/studio/project':
@@ -331,6 +332,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
         def studio_post(self,path,body):
             nonlocal next_media_cleanup
             if path=='/studio/voice-lab/reference':return get_voice_lab().reference(body)
+            if path=='/studio/voice-lab/reference-from-job':return get_voice_lab().reference_from_job(body)
             if path=='/studio/voice-lab/jobs':return get_voice_lab().enqueue(body)
             if path=='/studio/voice-lab/cancel':return get_voice_lab().cancel(body.get('id'))
             if path=='/studio/voice-lab/select':return get_voice_lab().select(body)

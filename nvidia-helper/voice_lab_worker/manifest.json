@@ -10,6 +10,6 @@
   "models": {
     "drama3": [{"repo":"fishaudio/drama-3","revision":"b2b5ee998034b2975720906c815e7fb0e9f007bd","folder":"drama3","bytes":41502594240}, {"repo":"fishaudio/s2-pro","revision":"1de9996b6be38b745688de084d87a5633f714e4e","folder":"drama3-codec","allow":["codec.pth","LICENSE"]}],
     "voxcpm2": [{"repo":"openbmb/VoxCPM2","revision":"32279effe8c19989596f05d353d1447f51d9e915","folder":"voxcpm2","bytes":4960731866}],
-    "qwen3": [{"repo":"Qwen/Qwen3-TTS-12Hz-1.7B-Base","revision":"fd4b254389122332181a7c3db7f27e918eec64e3","folder":"qwen3-base","bytes":4544229700}, {"repo":"Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign","revision":"5ecdb67327fd37bb2e042aab12ff7391903235d3","folder":"qwen3-design","bytes":4520163832}]
+    "qwen3": [{"repo":"Qwen/Qwen3-TTS-12Hz-1.7B-Base","revision":"fd4b254389122332181a7c3db7f27e918eec64e3","folder":"qwen3-base","bytes":4544229700}, {"repo":"Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign","revision":"5ecdb67327fd37bb2e042aab12ff7391903235d3","folder":"qwen3-design","bytes":4520163832}, {"repo":"Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice","revision":"0c0e3051f131929182e2c023b9537f8b1c68adfe","folder":"qwen3-preset","bytes":4520218951}]
   }
 }

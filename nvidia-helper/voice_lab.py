@@ -6,6 +6,7 @@ An interrupted submission is reconciled by its original ID, never blindly retrie
 import base64
 import binascii
 import copy
+import hashlib
 import json
 import math
 import os
@@ -45,19 +46,37 @@ MODELS = [
          notes='Language follows the script. Controls use bounded audition ranges. Voice reference permissions are required.'),
     dict(id='voxcpm2', name='VoxCPM2', checkpoint='openbmb/VoxCPM2',
          modes=[_mode('default', 'Unconditioned voice'), _mode('design', 'Describe a voice', description=True),
-                _mode('clone', 'Reference voice', True)], languages=['Auto'],
+                _mode('clone', 'Reference voice', True) | {'allowsDescription': True}], languages=['Auto'],
          parameters=[_parameter('cfg_value', 'Guidance', .1, 10, .1, 2),
              _parameter('inference_timesteps', 'Inference steps', 1, 50, 1, 10),
-             _parameter('seed', 'Seed', 0, 2147483647, 1, 42)],
-         notes='Language follows the script. Automatic retry is disabled for predictable audition cost.'),
+             _parameter('seed', 'Seed', 0, 2147483647, 1, 42),
+             dict(id='clone_strategy', label='Clone strategy', type='select', default='auto', options=[
+                 dict(value='auto', label='Automatic'), dict(value='reference', label='Reference only'),
+                 dict(value='prompt_reference', label='Prompt + reference')])],
+         notes='Language follows the script. Prompt + reference requires a transcript and uses the recording for both inputs; voice descriptions are unavailable with that strategy. Automatic retry is disabled for predictable audition cost.'),
     dict(id='qwen3', name='Qwen3-TTS 1.7B',
-         checkpoint='Qwen/Qwen3-TTS-12Hz-1.7B-Base + Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign',
+         checkpoint='Qwen/Qwen3-TTS-12Hz-1.7B-Base + Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign + Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
          modes=[_mode('design', 'Describe a voice', description=True),
-                _mode('clone', 'Reference voice', True, True)],
+                _mode('clone', 'Reference voice', True, True),
+                _mode('preset', 'Built-in Qwen voices') | {'allowsDescription': True}],
          languages=['English', 'Chinese', 'Japanese', 'Korean', 'German', 'French', 'Russian',
                     'Portuguese', 'Spanish', 'Italian'],
-         parameters=[_parameter('seed', 'Seed', 0, 2147483647, 1, 42)],
-         notes='Base handles cloning; VoiceDesign handles descriptions. Chinese is the model language label; Cantonese support is not verified.'),
+         parameters=[_parameter('seed', 'Seed', 0, 2147483647, 1, 42),
+             dict(id='speaker', label='Built-in voice', type='select', default='vivian', modes=['preset'], options=[
+                 dict(value='vivian', label='Vivian'), dict(value='serena', label='Serena'),
+                 dict(value='uncle_fu', label='Uncle Fu'), dict(value='dylan', label='Dylan'),
+                 dict(value='eric', label='Eric'), dict(value='ryan', label='Ryan'),
+                 dict(value='aiden', label='Aiden'), dict(value='ono_anna', label='Ono Anna'),
+                 dict(value='sohee', label='Sohee')]),
+             dict(id='do_sample', label='Sample main voice tokens', type='boolean', default=True),
+             _parameter('temperature', 'Temperature', .1, 2, .05, .9),
+             _parameter('top_p', 'Top P', .1, 1, .05, 1), _parameter('top_k', 'Top K', 1, 100, 1, 50),
+             _parameter('repetition_penalty', 'Repetition penalty', .8, 2, .05, 1.05),
+             dict(id='subtalker_dosample', label='Sample subtalker tokens', type='boolean', default=True),
+             _parameter('subtalker_temperature', 'Subtalker temperature', .1, 2, .05, .9),
+             _parameter('subtalker_top_p', 'Subtalker Top P', .1, 1, .05, 1),
+             _parameter('subtalker_top_k', 'Subtalker Top K', 1, 100, 1, 50)],
+         notes='Base handles cloning; VoiceDesign creates described voices; CustomVoice provides nine built-in voices with optional style instructions. Controls use bounded audition ranges. Chinese is the model language label; Cantonese support is not verified.'),
 ]
 
 
@@ -136,6 +155,15 @@ class VoiceLab:
                 transcript TEXT NOT NULL, duration REAL NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         ''')
+        # Add provenance without rebuilding or replacing existing reference rows.
+        columns = {r['name'] for r in self.db.execute('PRAGMA table_info(refs)')}
+        for name, definition in (
+                ('source_kind', "TEXT NOT NULL DEFAULT 'upload'"),
+                ('source_job', 'TEXT'), ('source_model', 'TEXT'), ('source_mode', 'TEXT'),
+                ('source_sha256', 'TEXT')):
+            if name not in columns:
+                self.db.execute('ALTER TABLE refs ADD COLUMN ' + name + ' ' + definition)
+        self.db.execute('CREATE UNIQUE INDEX IF NOT EXISTS refs_source_job ON refs(source_job) WHERE source_job IS NOT NULL')
         self.db.execute("UPDATE jobs SET status='UNKNOWN',error=? WHERE status='SUBMITTING'",
                         ('Submission was interrupted. Checking the original worker job; it will not be resubmitted.',))
         self.db.commit()
@@ -196,7 +224,7 @@ class VoiceLab:
         worker = self.health()
         with self.lock:
             jobs = [self._view(r) for r in self.db.execute('SELECT * FROM jobs ORDER BY created DESC LIMIT 200')]
-            references = [dict(id=r['id'], name=r['name'], transcript=r['transcript'], durationSeconds=r['duration'])
+            references = [self._reference_view(r)
                           for r in self.db.execute('SELECT * FROM refs ORDER BY created DESC LIMIT 100')]
             selected = self.db.execute("SELECT value FROM settings WHERE key='selected'").fetchone()
         models = [copy.deepcopy(m) | {'ready': worker['ready'] and worker['models'].get(m['id']) is True} for m in MODELS]
@@ -208,6 +236,76 @@ class VoiceLab:
     def job(self, id):
         with self.lock:
             return self._view(self._get(id))
+
+    def _reference_view(self, row):
+        source = dict(kind=row['source_kind'])
+        for column, key in (('source_job', 'jobId'), ('source_model', 'model'),
+                            ('source_mode', 'mode'), ('source_sha256', 'sha256')):
+            if row[column] is not None:
+                source[key] = row[column]
+        return dict(id=row['id'], name=row['name'], transcript=row['transcript'],
+                    durationSeconds=row['duration'], createdAt=row['created'], source=source,
+                    preferredDuration=25 <= row['duration'] <= 30,
+                    audioReady=(self.root / (row['id'] + '.opus')).is_file())
+
+    def _reference_row(self, id):
+        row = self.db.execute('SELECT * FROM refs WHERE id=?', (self._id(id),)).fetchone()
+        if row is None:
+            raise ValueError('Voice Lab reference was not found.')
+        return row
+
+    def reference_audio(self, id):
+        with self.lock:
+            row = self._reference_row(id)
+            path = self.root / (row['id'] + '.opus')
+            if not path.is_file():
+                raise ValueError('This saved reference audio is unavailable.')
+            return path
+
+    def reference_from_job(self, body):
+        if body.get('rightsConfirmed') is not True:
+            raise ValueError('Confirm permission to save and reuse this voice as a reference.')
+        name = body.get('name', 'Saved audition voice')
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 160:
+            raise ValueError('Reference name must contain 1 to 160 characters.')
+        if 'transcript' in body:
+            raise ValueError('A saved audition uses its original script as the reference transcript.')
+        with self.lock:
+            row = self._get(body.get('jobId'))
+            payload = json.loads(row['payload'])
+            if row['status'] != 'COMPLETED' or payload['model'] not in [m['id'] for m in MODELS]:
+                raise ValueError('Choose a completed audition from a Voice Lab model.')
+            path = self.root / (row['id'] + '.opus')
+            if not path.is_file() or not 0 < path.stat().st_size <= MAX_REFERENCE_BYTES:
+                raise ValueError('The completed audition audio is unavailable or too large for a reference.')
+            info = probe(path, self.config.get('ffmpeg'))
+            if not 1 <= info['duration'] <= 60:
+                raise ValueError('The complete audition must be 1 to 60 seconds to save as a reference. It will not be trimmed.')
+            existing = self.db.execute('SELECT * FROM refs WHERE source_job=?', (row['id'],)).fetchone()
+            if existing:
+                return self._reference_view(existing)
+            if self.db.execute('SELECT count(*) FROM refs').fetchone()[0] >= 100:
+                raise ValueError('The audition library has reached its 100-reference limit.')
+            raw = path.read_bytes()
+            id = uuid.uuid4().hex
+            temporary, target = self.root / (id + '.writing'), self.root / (id + '.opus')
+            try:
+                # Preserve the entire generated recording and its exact script.
+                # It is not cropped, stretched, transcoded, or regenerated.
+                temporary.write_bytes(raw)
+                temporary.replace(target)
+                self.db.execute('''INSERT INTO refs(id,name,transcript,duration,created,
+                    source_kind,source_job,source_model,source_mode,source_sha256)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)''', (id, name.strip(), payload['text'], info['duration'],
+                    time.time(), 'audition', row['id'], payload['model'], payload['mode'], hashlib.sha256(raw).hexdigest()))
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                target.unlink(missing_ok=True)
+                raise
+            finally:
+                temporary.unlink(missing_ok=True)
+            return self._reference_view(self._reference_row(id))
 
     def _decode(self, body):
         encoded = body.get('audioBase64')
@@ -261,9 +359,13 @@ class VoiceLab:
             if not 1 <= info['duration'] <= 60:
                 raise ValueError('Decoded reference must contain 1 to 60 seconds of audio.')
             with self.lock:
-                self.db.execute('INSERT INTO refs VALUES(?,?,?,?,?)', (id, name.strip(), transcript.strip(), info['duration'], time.time()))
+                if self.db.execute('SELECT count(*) FROM refs').fetchone()[0] >= 100:
+                    raise ValueError('The audition library has reached its 100-reference limit.')
+                self.db.execute('''INSERT INTO refs(id,name,transcript,duration,created,source_sha256)
+                    VALUES(?,?,?,?,?,?)''', (id, name.strip(), transcript.strip(), info['duration'],
+                    time.time(), hashlib.sha256(target.read_bytes()).hexdigest()))
                 self.db.commit()
-            return dict(id=id, name=name.strip(), transcript=transcript.strip(), durationSeconds=info['duration'])
+                return self._reference_view(self._reference_row(id))
         except (OSError, subprocess.SubprocessError):
             target.unlink(missing_ok=True)
             raise ValueError('Reference audio could not be safely decoded. Check FFmpeg and the audio file.') from None
@@ -294,7 +396,13 @@ class VoiceLab:
         parameters = {}
         for p in model['parameters']:
             value = supplied.get(p['id'], p['default'])
-            if _number(value, p['min'], p['max']) is None or p['step'] == 1 and int(value) != value:
+            if p['type'] == 'boolean':
+                if type(value) is not bool:
+                    raise ValueError(p['label'] + ' must be enabled or disabled.')
+            elif p['type'] == 'select':
+                if not isinstance(value, str) or value not in [o['value'] for o in p['options']]:
+                    raise ValueError('Choose a supported ' + p['label'].lower() + '.')
+            elif _number(value, p['min'], p['max']) is None or p['step'] == 1 and int(value) != value:
                 raise ValueError(p['label'] + ' is outside the audition limit.')
             parameters[p['id']] = value
         payload = dict(model=model['id'], mode=mode['id'], text=text.strip(), language=language,
@@ -307,6 +415,11 @@ class VoiceLab:
                 raise ValueError('Upload a permitted reference voice first.')
             if mode['requiresTranscript'] and not ref['transcript'].strip():
                 raise ValueError('This cloning mode requires the reference transcript.')
+            if model['id'] == 'voxcpm2' and parameters['clone_strategy'] == 'prompt_reference':
+                if not ref['transcript'].strip():
+                    raise ValueError('Prompt + reference cloning requires the reference transcript.')
+                if description.strip():
+                    raise ValueError('Prompt + reference cloning cannot use a voice description. Choose Reference only for style control.')
             payload['referenceId'] = ref_id
         health = self.health()
         if not health['ready']:
