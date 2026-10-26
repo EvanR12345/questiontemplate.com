@@ -48,7 +48,7 @@
           <p class="note">Kokoro preview reads the whole script up to 1800 characters (first 35 words for longer scripts); Generate records the whole script. Kaggle auditions use the full script up to 1800 characters. Keep this tab open for progress.</p>
           <div id="recovery" class="creator-note" hidden><span id="recoveryText"></span> <button class="chip" id="restore">Restore recording</button></div>
           <div class="metrics performance" id="performance" hidden><div class="metric"><strong id="elapsed">0:00</strong><span>Elapsed time</span></div><div class="metric"><strong id="generationSpeed">—</strong><span>Generation speed</span></div><div class="metric"><strong id="timeLeft">—</strong><span>Time remaining · estimate</span></div></div>
-          <p class="note" id="engineStatus">Automatic acceleration · Opus 64 kbps output</p>
+          <p class="note" id="engineStatus">Automatic acceleration · Opus 128 kbps output</p>
           <details id="nativeSetup"><summary class="label" style="cursor:pointer">Use your NVIDIA GPU directly</summary>
             <p class="note">One local NVIDIA helper powers both Audio and Studio. Once paired, both pages reconnect after refresh while the helper is running. Audio speed depends on your GPU; 10× is a target, not a guarantee.</p>
             <ol class="note"><li><a style="color:var(--cyan)" href="https://www.python.org/downloads/release/python-3119/" target="_blank" rel="noopener noreferrer">Install Python 3.11 for Windows</a> with the Python launcher enabled.</li><li><a class="download" href="./update-helper.bat" download>Download / update NVIDIA helper</a> Run it once. The same helper powers Audio and Studio, and future refreshes reconnect automatically. First setup downloads several GB; later launches reuse them.</li><li>Keep its window open. It opens this site when ready. Click <strong>Connect NVIDIA</strong> below and allow Local network access if your browser asks.</li></ol>
@@ -80,19 +80,19 @@
             <button class="preset" data-voice="af_nicole" aria-pressed="false"><span class="rank">#6</span><strong>Nicole</strong><span>American female</span><span class="reason">Another female voice to compare</span></button>
             <button class="preset" data-voice="bm_george" aria-pressed="false"><span class="rank">#7</span><strong>George</strong><span>British male</span><span class="reason">Try if you prefer a British accent</span></button>
           </div>
-          <details id="audioRemoteOptions" hidden><summary>Voice settings &amp; Kaggle details</summary><p class="note" id="audioRuntimeNotice"></p><label class="label" for="audioVoiceProject">Save auditions in project</label><select id="audioVoiceProject"></select><label class="label" id="audioInstructionLabel" for="audioVoiceInstruction">Narrator instructions<textarea id="audioVoiceInstruction" maxlength="1200" rows="3" style="min-height:110px"></textarea></label><p class="note">Kaggle auditions: up to 1800 characters. Choose Opus, MP3 or WAV below. WAV is the lossless editing master, not a GPU requirement. Use Studio for full chapter narration. Startup and GPU quota apply; scripts are sent to your private Kaggle notebook.</p></details>
+          <details id="audioRemoteOptions" hidden><summary>Voice settings &amp; Kaggle details</summary><p class="note" id="audioRuntimeNotice"></p><label class="label" for="audioVoiceProject">Save auditions in project</label><select id="audioVoiceProject"></select><label class="label" id="audioInstructionLabel" for="audioVoiceInstruction">Narrator instructions<textarea id="audioVoiceInstruction" maxlength="1200" rows="3" style="min-height:110px"></textarea></label><p class="note">Kaggle auditions: up to 1800 characters. Audio is saved and downloaded as Opus. No new WAV master is created. Use Studio for full chapter narration. Startup and GPU quota apply; scripts are sent to your private Kaggle notebook.</p></details>
           <p class="note"><a href="https://huggingface.co/spaces/ResembleAI/Dramabox" target="_blank" rel="noopener">Try DramaBox’s official free voice demo ↗</a> · No laptop model download. Its default workflow needs about 24 GB VRAM; Studio’s Kaggle integration is not yet verified.</p>
 <button class="btn" id="audioVoiceCancel" hidden>Cancel this audition</button><div id="audioModelResults"></div><div class="range"><label for="rate">Speed</label><input id="rate" type="range" min="0.5" max="2" step="0.05" value="1"><output id="rateOut">1.00×</output></div>
-          <p class="note">Opus · 64 kbps by default · approximately 43–58 MB for 90–120 minutes.</p>
+          <p class="note">Opus · 128 kbps by default · approximately 86–115 MB for 90–120 minutes.</p>
           <details><summary class="label">More settings</summary>
           <label class="label" for="studioVoice">Voice</label>
           <select id="studioVoice"><option value="am_michael" selected>Michael · American male</option><option value="am_fenrir">Fenrir · American male</option><option value="am_puck">Puck · American male</option><option value="af_heart">Heart · American female</option><option value="af_bella">Bella · American female</option><option value="af_nicole">Nicole · American female</option><option value="bm_george">George · British male</option><option value="bf_emma">Emma · British female</option></select>
           <label class="label" for="format">Download format</label>
-          <select id="format"><option value="opus" selected>Opus · efficient, recommended</option><option value="mp3">MP3 · widely compatible</option><option value="wav">WAV · uncompressed editing file</option></select>
+          <select id="format"><option value="opus" selected>Opus · efficient, recommended</option></select>
           <label class="label" for="bitrate">Compressed audio quality</label>
-          <select id="bitrate"><option value="64" selected>64 kbps · recommended</option><option value="128">128 kbps · higher bitrate</option><option value="256">256 kbps · highest bitrate</option></select>
-          <p class="note">Opus uses variable bitrate. For editing software that does not accept Opus, choose WAV or MP3.</p>
-          <p class="note" id="sizeEstimate">90–120 minutes: about 43–58 MB.</p>
+          <select id="bitrate"><option value="64">64 kbps · smaller file</option><option value="128" selected>128 kbps · default</option><option value="256">256 kbps · highest bitrate</option></select>
+          <p class="note">Opus uses variable bitrate. The same saved audio is used for playback and video editing; no WAV master is kept.</p>
+          <p class="note" id="sizeEstimate">90–120 minutes: about 86–115 MB.</p>
           <details><summary class="label">Generation options</summary>
             <label class="label" for="engine">Acceleration</label><select id="engine"><option value="auto">Automatic · use browser GPU when available</option><option value="cpu">Smaller model · CPU (about 90 MB)</option><option value="gpu">Browser GPU only</option><option value="native">NVIDIA CUDA · requires local helper</option></select>
             <p class="note">The GPU model downloads about 330 MB once. CPU uses a smaller model. Both are cached when browser storage is available.</p>
@@ -112,8 +112,8 @@
         <article class="card sounds"><details><summary>Sound effects</summary><p class="note">Standalone previews, not mixed into your recording.</p><div class="sound-grid"><button class="sound" data-sound="ding"><b>🔔</b>Ding</button><button class="sound" data-sound="pop"><b>🫧</b>Pop</button><button class="sound" data-sound="laser"><b>⚡</b>Laser</button><button class="sound" data-sound="whoosh"><b>💨</b>Whoosh</button><button class="sound" data-sound="buzz"><b>📳</b>Buzz</button><button class="sound" data-sound="win"><b>🏆</b>Win</button></div></details></article>
       </aside>
     </section>
-    <footer class="footer"><span>No fixed word cap. Available memory and processing time still depend on your device.</span><span>Local speech powered by Kokoro · Opus + MP3 + WAV · Best on desktop.</span></footer>
+    <footer class="footer"><span>No fixed word cap. Available memory and processing time still depend on your device.</span><span>Local speech powered by Kokoro · Opus audio · Best on desktop.</span></footer>
   </main>
-  <script type="module" src="./studio.js?v=voice-downloads-20261026"></script>
+  <script type="module" src="./studio.js?v=opus-only-20261026-voice-downloads-20261026"></script>
 <script type="module" src="./studio-guide-entry.mjs?v=tools-20261016"></script></body>
 </html>

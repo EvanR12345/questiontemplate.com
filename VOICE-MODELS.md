@@ -95,17 +95,19 @@ Qwen control; the text in the script field is the actual audition source.
 
 ## Download formats and actual model storage
 
-The Audio page sends its selected Opus/MP3/WAV format and 64/128/256 kbps
-bitrate to the helper. Synthesis keeps a lossless WAV master; changing the
-download format reuses that master and does not submit another Kaggle notebook.
-Older Studio audition calls retain their AAC 128 kbps default. Export labels
-describe the actual saved codec, not just the selected control. Opus and MP3
-are included in authenticated asset delivery and normal cloud archiving.
+New narration, auditions, intro/outro narration, sound cues and narrator references
+are saved as Opus at 128 kbps. PCM stays in memory or pipes; no new WAV master
+is created. Editing reads Opus directly. Optional 64/256 kbps Opus downloads reuse
+the existing recording without another synthesis request. Previously saved audio
+remains readable and is not deleted. MP4 video exports retain compatible AAC
+tracks; this does not create a WAV intermediary.
 
+Grouped Kaggle jobs encode each chapter directly from generated PCM into its own
+Opus file, avoiding chapter re-encoding from a combined compressed recording.
 Qwen, Dia and remote Kokoro weights use `/kaggle/tmp/studio-voice/models/hub`;
-Fish uses `/kaggle/tmp/studio-voice/s2-pro`. These are temporary notebook caches,
-not persistent Kaggle Models/Datasets. Notebook outputs retain `narration.wav`
-and `result.json`; the helper validates and saves the WAV with project assets.
+Fish uses `/kaggle/tmp/studio-voice/s2-pro`. These are temporary notebook caches.
+Outputs retain `narration.opus` or separate `chapter-NNN.opus` assets, optional
+`voice-anchor.opus`, and `result.json`.
 Local Kokoro uses the laptop's Hugging Face cache. No new local voice weights
 are installed by this update.
 

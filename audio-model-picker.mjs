@@ -21,7 +21,7 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
     $('audioRuntimeNotice').textContent=voiceNotice(model.value,{});
     $('audioRemoteOptions').hidden=!remote();
     if($('audioRunLocationNote'))$('audioRunLocationNote').textContent=remote()
-      ?'The helper must stay running to submit and recover your private Kaggle audition. Voice weights download into Kaggle’s temporary session storage, not onto this laptop. WAV masters are saved with your project; downloads use the format selected below.'
+      ?'The helper must stay running to submit and recover your private Kaggle audition. Voice weights download into Kaggle’s temporary session storage, not onto this laptop. Opus recordings are saved with your project and used directly for video editing; no WAV master is created.'
       :'Kokoro runs locally without an API key. First use downloads its voice model and runtime; later recordings reuse them.';
     $('sizeEstimate').hidden=remote();
     $('audioInstructionLabel').hidden=model.value!=='qwen3-tts-1.7b';
@@ -67,7 +67,7 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
       if(!projectId)throw Error('Create a project in Studio first, then return here to save voice auditions in it.');
       const settings={text,voiceEngine:model.value,voiceCompute:'kaggle',voiceInstruction:$('audioVoiceInstruction').value,
         voice:model.value==='kokoro-82m'?$('studioVoice').value:'am_michael',audioRequestId:crypto.randomUUID(),qwenSpeaker:model.value==='qwen3-tts-1.7b'?$('studioVoice').value:'Ryan',
-        audioFormat:$('format').value,audioBitrate:Number($('bitrate').value),
+        audioFormat:'opus',audioBitrate:Number($('bitrate').value),
         speed:Number($('rate').value),soundEffects:'subtle',narrationDelivery:'cinematic',emphasisPhrases:['already gone','only twelve days']};
       status('Submitting a private Kaggle audition…');
       const previous=await call('queue'),known=new Set(previous.jobs.map(j=>j.id));

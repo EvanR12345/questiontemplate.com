@@ -445,19 +445,17 @@ class RenderReuseTest(unittest.TestCase):
                 self.assertIn('libopus',run.call_args.args[0])
                 self.assertNotIn('-movflags',run.call_args.args[0])
                 high = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,'opus',128)
-                mp3 = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,'mp3',128)
-                self.assertIn('libmp3lame',run.call_args.args[0])
                 self.assertNotEqual(opus['exportPath'],high['exportPath'])
-                self.assertTrue(mp3['exportPath'].endswith('.mp3'))
-                wav = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,'wav',128)
-                self.assertEqual(wav,{'exportPath':'chapter.wav','exportCodec':'WAV','exportBitrate':None})
-                self.assertEqual(run.call_count,3)
+                for fmt in ('wav','mp3','aac'):
+                    with self.assertRaises(ValueError):
+                        renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,fmt,128)
+                self.assertEqual(run.call_count,2)
                 self.assertEqual((store.folder(p['id'])/'chapter.wav').read_bytes(),original)
                 from studio_storage import local_media
-                for exported in (opus, high, mp3):
+                for exported in (opus, high):
                     self.assertTrue(store.asset(p['id'], exported['exportPath']).is_file())
                 archived = {file.name for file in local_media(store.folder(p['id']))}
-                self.assertTrue({opus['exportPath'],high['exportPath'],mp3['exportPath']} <= archived)
+                self.assertTrue({opus['exportPath'],high['exportPath']} <= archived)
                 for fmt,rate in [('invalid',128),('opus',True),('opus',999)]:
                     with self.assertRaises(ValueError):
                         renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,fmt,rate)

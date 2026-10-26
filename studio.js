@@ -1,4 +1,4 @@
-import {setupAudioModels} from './audio-model-picker.mjs?v=voice-downloads-20261026';
+import {setupAudioModels} from './audio-model-picker.mjs?v=opus-only-20261026';
 import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=speech-3';
 import { speechText } from './pronunciation.mjs?v=speech-3';
 import { GenerationEstimate, measuredPace, narrationEstimate } from './speech-progress.mjs?v=speech-3';
@@ -253,7 +253,7 @@ async function startWorker() {
   $('#pauseGeneration').textContent = 'Ⅱ Pause generation'; run.pauseRequested = false;
   status('Preparing the local voice engine…');
   try {
-    if (!worker) { worker = new Worker('./tts.worker.js?v=speech-3', { type: 'module' }); worker.onmessage = receive;
+    if (!worker) { worker = new Worker('./tts.worker.js?v=opus-only-20261026', { type: 'module' }); worker.onmessage = receive;
       worker.onerror = event => { event.preventDefault(); fail(event.message || 'Voice engine failed'); }; }
     worker.postMessage({ type: 'generate', text: run.text, voice: run.voice, speed: run.speed, volume: run.volume,
       format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', offset: run.processed,
@@ -273,7 +273,7 @@ async function generate(sample = false) {
     value = tokens.join('').trim();
   }
   initializeRun({ text: value, voice: $('#studioVoice').value, voiceName: $('#studioVoice').selectedOptions[0].textContent,
-    speed: Number($('#rate').value), volume: Number($('#volume').value), format: $('#format').value,
+    speed: Number($('#rate').value), volume: Number($('#volume').value), format: 'opus',
     bitrate: Number($('#bitrate').value), engine: $('#engine').value, pronunciation: $('#pronunciation').value, sample, processed: 0 });
   controls(true); remember(full); $('#recovery').hidden = true;
   $('#recordingNote').textContent = 'Parts appear as they finish. Raw audio is compressed immediately for compact downloads.';
@@ -282,6 +282,7 @@ async function generate(sample = false) {
 }
 async function resumeSaved() {
   if (busy || !run || run.processed >= run.text.length) return;
+  if (run.format !== 'opus') { status('Old recording parts are preserved. Start a new Opus recording for the remaining text; old and new codecs cannot be joined directly.'); return; }
   if (run.engine === 'native' && (!nativeKey || !nativeConnected)) { $('#nativeSetup').open = true; status('Reconnect the NVIDIA helper, then resume your saved recording.'); return; }
   document.querySelectorAll('audio').forEach(audio => audio.pause());
   run.startFrames = run.frames; run.startOffset = run.processed; run.wallStart = performance.now();
@@ -296,7 +297,7 @@ async function restore() {
     const saved = await loadSession(); if (!saved?.parts.length) { status('No completed parts are saved yet.'); return; }
     const { job, parts } = saved;
     script.value = job.text; $('#studioVoice').value = job.voice; selectVoice(job.voice);
-    $('#rate').value = job.speed; $('#volume').value = job.volume; $('#format').value = job.format; $('#bitrate').value = [64, 128, 256].includes(job.bitrate) ? job.bitrate : 64; $('#engine').value = job.engine;
+    $('#rate').value = job.speed; $('#volume').value = job.volume; $('#format').value = 'opus'; $('#bitrate').value = [64, 128, 256].includes(job.bitrate) ? job.bitrate : 64; $('#engine').value = job.engine;
     $('#pronunciation').value = job.pronunciation || '';
     initializeRun(job, parts); outputs(); formatOutputs(); $('#recovery').hidden = true; setFullDownload(!job.complete);
     $('#resumeSaved').hidden = job.complete || job.processed >= job.text.length;

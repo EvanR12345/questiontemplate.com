@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from studio_runpod import ProductionGPU,ManagedGPUError,bootstrap_diagnostic
 
-SOURCES=('studio_voice_provider.py','studio_cloud_inputs.py','studio_cloud_render_plan.py','studio_remote_render_worker.py','studio_render.py','studio_gpu_render.py','studio_gpu_codec.py',
+SOURCES=('studio_audio.py','studio_voice_provider.py','studio_cloud_inputs.py','studio_cloud_render_plan.py','studio_remote_render_worker.py','studio_render.py','studio_gpu_render.py','studio_gpu_codec.py',
     'studio_gpu_motion.py','studio_gpu_runtime.py','studio_data.py','studio_qc.py','studio_video_settings.py',
     'studio_render_inputs.py','studio_branding.py','studio_engagement.py','render_queue.py','studio_automation.py','studio_director_limits.py')
 

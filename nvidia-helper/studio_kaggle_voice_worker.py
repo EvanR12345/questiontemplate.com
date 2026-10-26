@@ -47,14 +47,30 @@ def run(request):
     (scratch/'constraints.txt').write_text('torch==='+torch.__version__+'\n')
     original_torch=torch.__version__
     install(['soundfile','huggingface-hub','einops','librosa'])
+    ffmpeg=shutil.which('ffmpeg')
+    if not ffmpeg:raise RuntimeError('Kaggle needs FFmpeg with libopus before downloading voice weights.')
     model=request['model'];torch.manual_seed(request['seed'])
     import numpy as np
     import soundfile as sf
+    def save_opus(path,audio,sr):
+        audio=np.asarray(audio,dtype='<f4')
+        if audio.ndim>1:audio=audio.mean(axis=1)
+        output=subprocess.run([ffmpeg,'-v','error','-nostdin','-y','-f','f32le',
+            '-ar',str(sr),'-ac','1','-i','pipe:0','-c:a','libopus','-b:a','128k',
+            '-vbr','on','-f','opus',str(path)],input=np.clip(audio,-.99,.99).tobytes(),
+            stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+        if output.returncode:raise RuntimeError('Kaggle Opus encoding failed.')
     reference=request.get('reference')
     reference_path=None
     if reference:
-        reference_path=scratch/'saved-narrator.wav'
-        reference_path.write_bytes(base64.b64decode(reference['audio'],validate=True))
+        reference_path=scratch/'saved-narrator.opus'
+        raw=base64.b64decode(reference['audio'],validate=True)
+        if raw.startswith(b'OggS') and b'OpusHead' in raw[:128]:reference_path.write_bytes(raw)
+        else:
+            converted=subprocess.run([ffmpeg,'-v','error','-nostdin','-y','-i','pipe:0',
+                '-c:a','libopus','-b:a','128k','-ac','1',str(reference_path)],
+                input=raw,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+            if converted.returncode:raise RuntimeError('Saved narrator reference cannot be decoded.')
     if model=='kokoro-82m':
         # Kokoro's pure-Python wheel declares <3.13. Kaggle now uses 3.13;
         # this path stays audition-gated until the actual runtime passes.
@@ -115,8 +131,8 @@ def run(request):
             audio=engine.generate(prompt+' [S1]',use_torch_compile=False,verbose=False,
                 cfg_scale=4.0,temperature=1.8,top_p=.9,cfg_filter_top_k=50,**kwargs)
             if anchor is None:
-                anchor=scratch/'narrator-anchor.wav';anchor_text=text
-                sf.write(anchor,audio,44100)
+                anchor=scratch/'narrator-anchor.opus';anchor_text=text
+                save_opus(anchor,audio,44100)
             return np.asarray(audio,dtype=np.float32),44100
         word_limit=25
     elif model=='fish-s2-pro':
@@ -174,7 +190,7 @@ def run(request):
             response.raise_for_status()
             audio,sr=sf.read(io.BytesIO(response.content),dtype='float32')
             if anchor is None:
-                anchor=scratch/'narrator-anchor.wav';anchor_text=text;sf.write(anchor,audio,sr)
+                anchor=scratch/'narrator-anchor.opus';anchor_text=text;save_opus(anchor,audio,sr)
             return np.asarray(audio),sr
         word_limit=25
     else:raise RuntimeError('Unsupported Kaggle voice model.')
@@ -245,7 +261,6 @@ def run(request):
     audio=np.concatenate(pieces) if pieces else np.empty(0)
     if not len(audio):raise RuntimeError('No spoken narration was generated.')
     if float(np.max(np.abs(audio)))<.0001:raise RuntimeError('Voice model returned silent audio.')
-    sf.write('/kaggle/working/narration.wav',np.clip(audio,-.99,.99),sample_rate,subtype='PCM_16')
     result={'signature':hashlib.sha256(json.dumps(request,sort_keys=True).encode()).hexdigest(),
         'model':model,'duration':len(audio)/sample_rate,'sampleRate':sample_rate,'sentences':timings,
         'provider':'kaggle','voiceConsistency':'generated-anchor' if model in ('dia-1.6b','fish-s2-pro') else 'built-in preset',
@@ -254,9 +269,23 @@ def run(request):
         speechGenerationSeconds=time.monotonic()-model_ready,
         hardware={'gpuCount':torch.cuda.device_count(),'gpu':torch.cuda.get_device_name(0),
                   'torch':torch.__version__,'python':sys.version.split()[0]})
+    if request['parts'][0].get('chapterId'):
+        groups=[]
+        for index,part in enumerate(request['parts']):
+            if not groups or groups[-1]['id']!=part['chapterId']:
+                groups.append({'id':part['chapterId'],'first':index,'last':index+1})
+            else:groups[-1]['last']=index+1
+        result['chapterAudio']=[]
+        for index,group in enumerate(groups):
+            begin=round(timings[group['first']]['start']*sample_rate)
+            end=round(timings[group['last']-1]['end']*sample_rate)
+            filename=f'chapter-{index:03d}.opus'
+            save_opus(Path('/kaggle/working')/filename,audio[begin:end],sample_rate)
+            result['chapterAudio'].append(group|{'path':filename})
+    else:save_opus('/kaggle/working/narration.opus',audio,sample_rate)
+    result.update(audioCodec='opus',audioBitrate=128000)
     if model in ('dia-1.6b','fish-s2-pro') and anchor is not None:
-        anchor_audio,anchor_sr=sf.read(anchor,dtype='float32')
-        sf.write('/kaggle/working/voice-anchor.wav',anchor_audio,anchor_sr,subtype='PCM_16')
+        shutil.copyfile(anchor,'/kaggle/working/voice-anchor.opus')
         result['voiceAnchor']={'text':anchor_text,'generated':True}
     Path('/kaggle/working/result.json').write_text(json.dumps(result),encoding='utf-8')
 

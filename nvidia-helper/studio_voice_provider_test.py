@@ -64,7 +64,7 @@ class VoiceProviderTest(unittest.TestCase):
             with patch.object(KaggleVoice,'health',return_value={'reason':''}),patch.object(provider,'_run',side_effect=KaggleQuotaExhausted('quota')):
                 with self.assertRaises(KaggleQuotaExhausted):
                     provider.generate('A quiet gate.',target,{'voiceEngine':'dia-1.6b'},lambda *_:None,preview=True)
-            self.assertEqual(json.loads(target.with_suffix('.kaggle.json').read_text())['state'],'REJECTED')
+            self.assertEqual(json.loads(target.with_name(target.name+'.kaggle.json').read_text())['state'],'REJECTED')
             self.assertFalse(target.exists())
 
     def test_local_fallback_cannot_train_kaggle_speed_estimates(self):
@@ -171,19 +171,19 @@ class VoiceProviderTest(unittest.TestCase):
             with patch.object(service.renderer,'run',side_effect=encode):
                 service.voice_preview(p,options)
                 saved=service.store.load(p['id']);first=saved['voicePreviews'][-1]
-                service.voice_preview(saved,options|{'audioFormat':'mp3'})
+                service.voice_preview(saved,options|{'audioBitrate':64})
             final=service.store.load(p['id'])
             self.assertEqual(service.create_selected_audio.call_count,1)
             self.assertEqual(final['chapters'],chapters)
             self.assertEqual(first['exportCodec'],'Opus')
-            self.assertEqual(final['voicePreviews'][-1]['exportCodec'],'MP3')
+            self.assertEqual(final['voicePreviews'][-1]['exportCodec'],'Opus')
             self.assertEqual(first['path'],final['voicePreviews'][-1]['path'])
 
     def test_invalid_download_or_missing_encoder_cannot_start_kaggle_work(self):
         from unittest.mock import Mock
         service=StudioService.__new__(StudioService)
         service.create_selected_audio=Mock()
-        for options in ({'audioFormat':'exe'},{'audioFormat':'opus','audioBitrate':True},{'audioFormat':'opus'}):
+        for options in ({'audioFormat':'wav'},{'audioFormat':'mp3'},{'audioFormat':'exe'},{'audioFormat':'opus','audioBitrate':True},{'audioFormat':'opus'}):
             with self.assertRaises(ValueError):service.voice_preview(new_project(),{'text':'A gate.'}|options)
         service.create_selected_audio.assert_not_called()
 

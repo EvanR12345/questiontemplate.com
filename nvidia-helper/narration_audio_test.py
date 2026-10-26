@@ -72,7 +72,7 @@ class NarrationDeliveryTest(unittest.TestCase):
         self.assertLessEqual(float(np.sqrt(np.mean(pcm**2))), .0061)
         self.assertLessEqual(float(np.abs(pcm).max()), .081)
 
-    def test_preview_streams_one_wav_without_synthesizing_cries_or_touching_chapter(self):
+    def test_preview_streams_one_opus_without_synthesizing_cries_or_touching_chapter(self):
         import copy, tempfile, wave
         from pathlib import Path
         from unittest.mock import Mock, patch
@@ -82,6 +82,10 @@ class NarrationDeliveryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             service = object.__new__(StudioService)
             service.store = ProjectStore(folder)
+            from studio_render import VideoRenderer
+            import shutil
+            service.config={'ffmpeg':shutil.which('ffmpeg')}
+            service.renderer=VideoRenderer(service.store,service.config)
             service.audio = Mock()
             service.audio.model.vocab = {'a':1}
             service.audio.synthesize.return_value = np.full(2400,.02,dtype='<f4').tobytes()
@@ -90,16 +94,20 @@ class NarrationDeliveryTest(unittest.TestCase):
             before = copy.deepcopy(p['chapters'])
             with patch('kokoro.KPipeline') as pipeline:
                 pipeline.return_value.side_effect = lambda text:[Mock(phonemes='a')]
-                service.voice_preview(p, {'text':"Ahhh!\nThud.\nI can't leave.", 'voice':'am_michael', 'speed':1})
+                service.voice_preview(p, {'text':"Ahhh!\nThud.\nI can't leave.", 'voice':'am_michael', 'speed':1,
+                                          'voiceEngine':'kokoro-82m','voiceCompute':'local'})
                 spoken = [call.args[0] for call in pipeline.return_value.call_args_list]
                 self.assertEqual(spoken, ["I can't leave."])
             saved = service.store.load(p['id'])
             self.assertEqual(saved['chapters'], before)
             self.assertEqual(len(saved['voicePreviews']), 1)
             preview = saved['voicePreviews'][0]
-            with wave.open(str(service.store.asset(p['id'],preview['path']))) as wav:
-                self.assertGreater(wav.getnframes(),2400)
-                self.assertEqual(wav.getframerate(),24000)
+            from studio_audio import probe
+            info=probe(service.store.asset(p['id'],preview['path']))
+            self.assertGreater(info['duration'],.1)
+            self.assertEqual(info['codec'],'opus')
+            self.assertFalse(list(Path(folder).rglob('*.wav')))
+
 
     def test_distinct_auditions_queue_while_duplicate_clicks_do_not(self):
         import tempfile, threading
@@ -133,13 +141,14 @@ class ConnectedDeliveryTest(unittest.TestCase):
                 return np.full(24000,.02,dtype='<f4').tobytes(),[4 if c=='b' else 1 for c in ps]
         with tempfile.TemporaryDirectory() as folder:
             result=create_connected_audio('a. b.',['a.','b.'],lambda t:[SimpleNamespace(phonemes=t)],
-                Engine(),lambda *_:None,Path(folder)/'voice.wav','am_michael',1,'subtle',[])
+                Engine(),lambda *_:None,Path(folder)/'voice.opus','am_michael',1,'subtle',[])
             self.assertEqual(calls,[('a. b.','am_michael',1)])
             self.assertAlmostEqual(result['sentences'][0]['end'],3/8)
             self.assertAlmostEqual(result['sentences'][1]['start'],3/8)
             self.assertAlmostEqual(result['duration'],1)
             self.assertFalse(result['wordTimingAvailable'])
-            with wave.open(result['path']) as wav:self.assertEqual(wav.getnframes(),24000)
+            from studio_audio import probe
+            self.assertAlmostEqual(probe(result['path'])['duration'],1,places=4)
 
     def test_cues_limits_and_emphasis(self):
         from types import SimpleNamespace

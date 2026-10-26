@@ -113,7 +113,7 @@ def card(p, target, outro=False):
         y += line_h
     image.save(target, 'PNG')
 
-def ding(target, volume=.12):
+def ding(target, volume=.12, ffmpeg=None):
     """Quiet two-tone bell with attack/release; never synthesized as speech."""
     rate = 24000; duration = .6; samples = array('h')
     for i in range(round(rate*duration)):
@@ -121,5 +121,6 @@ def ding(target, volume=.12):
         x = (math.sin(2*math.pi*880*t) + .35*math.sin(2*math.pi*1320*t))/1.35
         samples.append(round(32767*volume*envelope*x))
     if __import__('sys').byteorder != 'little': samples.byteswap()
-    with wave.open(str(target), 'wb') as wav:
+    from studio_audio import OpusWriter
+    with OpusWriter(target, ffmpeg) as wav:
         wav.setparams((1,2,rate,0,'NONE','not compressed')); wav.writeframes(samples.tobytes())

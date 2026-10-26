@@ -519,7 +519,7 @@ class StudioService:
         expected=audio_signature(p)
         if s['outroAudioSignature']==expected and s['outroAudioPath'] and self.store.asset(p['id'],s['outroAudioPath']).is_file(): return p
         if voice_location(p['settings'])=='local':self.before_audio()
-        name=f'outro-narration-{expected[:20]}.wav'
+        name=f'outro-narration-{expected[:20]}.opus'
         result=self.create_selected_audio(spoken_text(s),p['settings']['voice'],p['settings']['speed'],
             self.store.folder(p['id'])/name,'off',p['settings'].get('narrationDelivery','standard'),settings=p['settings'],project=p)
         metadata={'outroAudioPath':name,'outroAudioSignature':expected,
@@ -2406,7 +2406,7 @@ class StudioService:
             text,
             p["settings"]["voice"],
             p["settings"]["speed"],
-            folder / f"chapter-{ch['number']:03d}-{signature[:12]}.wav",
+            folder / f"chapter-{ch['number']:03d}-{signature[:12]}.opus",
             p['settings'].get('soundEffects', 'subtle'),
             p['settings'].get('narrationDelivery', 'standard'),
             p['settings'].get('emphasisPhrases', []),
@@ -2421,7 +2421,7 @@ class StudioService:
             path=str(
                 Path(result["path"]).relative_to(self.store.folder(p["id"]))
             ).replace("\\", "/"),
-            downloadName=f"chapter-{ch['number']:03d}.wav",
+            downloadName=f"chapter-{ch['number']:03d}.opus",
         )
 
         def audio_saved(q):
@@ -2446,13 +2446,13 @@ class StudioService:
         text = str(options.get('text', '')).strip()
         if not text or len(text) > 1800:
             raise ValueError('Voice preview needs 1–1800 characters.')
-        export_format = options.get('audioFormat', 'aac')
+        export_format = options.get('audioFormat', 'opus')
         export_bitrate = options.get('audioBitrate', 128)
-        if export_format not in ('opus', 'mp3', 'wav', 'aac') or type(export_bitrate) is not int or export_bitrate not in (64, 128, 256):
+        if export_format != 'opus' or type(export_bitrate) is not int or export_bitrate not in (64, 128, 256):
             raise ValueError('Choose a supported audition download format and bitrate.')
         renderer = getattr(self, 'renderer', None)
-        if export_format in ('opus', 'mp3') and not (renderer and renderer.config.get('ffmpeg')):
-            raise ValueError('Configure FFmpeg before requesting an Opus or MP3 audition download. No new audition was started.')
+        if not (renderer and renderer.config.get('ffmpeg')):
+            raise ValueError('Configure FFmpeg before generating Opus audio. No new audition was started.')
         voice = options.get('voice', p['settings']['voice'])
         speed = options.get('speed', p['settings']['speed'])
         effects = options.get('soundEffects', p['settings'].get('soundEffects', 'subtle'))
@@ -2465,16 +2465,22 @@ class StudioService:
         signature = digest({'text':text, 'voice':voice, 'speed':speed, **voice_identity(voice_settings),
                             'effects':effects, 'delivery':AUDIO_DELIVERY_VERSION,
                             'narrationDelivery':delivery, 'emphasisPhrases':emphasis, 'flowVersion':FLOW_VERSION})
-        name = f'voice-preview-{signature[:16]}.wav'
-        existing = next((v for v in p.get('voicePreviews', []) if v.get('path') == name), None)
-        if existing and self.store.asset(p['id'], name).is_file():
+        name = f'voice-preview-opus-{signature[:16]}.opus'
+        legacy = f'voice-preview-{signature[:16]}.wav'
+        existing = next((v for candidate in (name, legacy) for v in p.get('voicePreviews', [])
+                         if v.get('path') == candidate and self.store.asset(p['id'],candidate).is_file()), None)
+        if existing and self.store.asset(p['id'], existing['path']).is_file():
             preview = dict(existing)
+            if existing['path'] != name:
+                from studio_audio import transcode
+                transcode(self.store.asset(p['id'],existing['path']), self.store.folder(p['id'])/name, renderer.config['ffmpeg'])
+                preview.update(path=name, audioCodec='opus', audioBitrate=128000)
         else:
             result = self.create_selected_audio(text, voice, speed, self.store.folder(p['id']) / name, effects, delivery, emphasis,
                 settings=voice_settings,preview=True,project=p)
             preview = {**result, 'path':name, 'text':text, 'voice':voice_settings.get('qwenSpeaker','Ryan') if voice_engine(voice_settings)=='qwen3-tts-1.7b' else voice, 'speed':speed,
                        'soundEffects':result.get('soundEffects',effects)}
-        preview.update(exportPath=name, exportCodec='WAV', exportBitrate=None)
+        preview.update(exportPath=name, exportCodec='Opus', exportBitrate=128000)
         if renderer and renderer.config.get('ffmpeg'):
             preview.update(renderer.audio_preview(p['id'], name, self.gate, export_format, export_bitrate))
         def saved(q):
@@ -2570,7 +2576,7 @@ class StudioService:
         if delivery == 'cinematic':
             if not callable(getattr(self.audio, 'synthesize_timed', None)):
                 raise ValueError('Connected narration needs the updated local helper. Existing audio is preserved.')
-            result = create_connected_audio(text,sections,pipeline,self.audio,self.gate,target,voice,speed,effects,emphasis)
+            result = create_connected_audio(text,sections,pipeline,self.audio,self.gate,target,voice,speed,effects,emphasis,self.config.get('ffmpeg'))
             cursor = 0
             for paragraph in re.split(r'\n\s*\n', text):
                 count = len(sentences(paragraph))
@@ -2582,8 +2588,9 @@ class StudioService:
         offset = 0
         timings = []
         narration_rms = .035
-        tmp = target.with_suffix(".partial.wav")
-        with wave.open(str(tmp), "wb") as wav:
+        from studio_audio import OpusWriter
+        tmp = target.with_suffix(".partial.opus")
+        with OpusWriter(tmp, getattr(self, 'config', {}).get('ffmpeg')) as wav:
             wav.setparams((1, 2, 24000, 0, "NONE", "not compressed"))
             for index, sentence in enumerate(sections):
                 self.gate(f"Narration sentence {index+1}/{len(sections)}")
@@ -2609,7 +2616,7 @@ class StudioService:
                         raise ValueError(
                             "Narration contains an unpronounceable sentence. Edit narration preview."
                         )
-                    # Small inference sections are streamed into ONE WAV; no truncation
+                    # Small inference sections are streamed into ONE Opus stream; no truncation
                     # and no separate sentence audio assets are created.
                     remaining = phonemes
                     while remaining:
@@ -2667,6 +2674,7 @@ class StudioService:
             "path": str(target),
             "duration": offset,
             "sampleRate": 24000,
+            "audioCodec": "opus", "audioBitrate": 128000,
             "sentences": timings,
             "paragraphs": paragraphs,
             "wordTimingAvailable": False,
@@ -2697,7 +2705,7 @@ class StudioService:
         if reuse and self.saved_intro_audio_ready(p):return
         # A regenerate action always creates a separate version; never overwrite
         # a master referenced by an earlier render or a newer manual selection.
-        name='intro-'+signature[:12]+'-'+uid()+'.wav'
+        name='intro-'+signature[:12]+'-'+uid()+'.opus'
         result=self.create_selected_audio(text,p['settings']['voice'],p['settings']['speed'],self.store.folder(p['id'])/name,
             p['settings'].get('soundEffects','subtle'),p['settings'].get('narrationDelivery','standard'),
             p['settings'].get('emphasisPhrases',[]),settings=p['settings'],project=p)

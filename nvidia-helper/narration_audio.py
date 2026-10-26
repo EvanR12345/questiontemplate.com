@@ -3,7 +3,7 @@
 Source narration is retained unchanged for the director. Standard mode records
 sentence durations; connected mode estimates boundaries from model durations.
 Only the text sent to the voice model is normalized. Recognized marked sound
-effects become PCM in the same chapter WAV instead of spoken letters.
+effects become PCM in the same Opus stream instead of spoken letters.
 """
 import hashlib
 import re
@@ -22,7 +22,7 @@ def speech_pcm(raw, sample_rate=24000):
     import numpy as np
     pcm = np.frombuffer(raw, dtype='<f4').copy()
     if not len(pcm) or not np.isfinite(pcm).all():
-        raise RuntimeError('Voice returned invalid audio; the previous WAV is preserved.')
+        raise RuntimeError('Voice returned invalid audio; the previous audio is preserved.')
     edge = min(round(sample_rate * .005), len(pcm) // 2)
     if edge > 1:
         ramp = np.linspace(0, 1, edge, dtype=np.float32)
@@ -85,9 +85,10 @@ def connected_units(sections, pipeline, vocab, effects, speed, emphasis=()):
         yield {'kind':'speech', 'pieces':pending, 'speed':rate}
 
 
-def create_connected_audio(text, sections, pipeline, engine, gate, target, voice, speed, effects, emphasis):
+def create_connected_audio(text, sections, pipeline, engine, gate, target, voice, speed, effects, emphasis, ffmpeg=None):
     import numpy as np
-    import time, wave
+    import time
+    from studio_audio import OpusWriter
     timings = [{'index':i,'text':s,'start':None,'end':None,
                 'timingSource':'model-phoneme-duration alignment', 'delivery':audio_segments(s,effects)}
                for i,s in enumerate(sections)]
@@ -96,8 +97,8 @@ def create_connected_audio(text, sections, pipeline, engine, gate, target, voice
         item = timings[index]
         if item['start'] is None: item['start'] = begin
         item['end'] = end
-    tmp = target.with_suffix('.partial.wav')
-    with wave.open(str(tmp), 'wb') as wav:
+    tmp = target.with_suffix('.partial.opus')
+    with OpusWriter(tmp, ffmpeg) as wav:
         wav.setparams((1,2,24000,0,'NONE','not compressed'))
         for unit in connected_units(sections,pipeline,engine.model.vocab,effects,speed,emphasis):
             gate('Connected narration')
@@ -108,7 +109,7 @@ def create_connected_audio(text, sections, pipeline, engine, gate, target, voice
                 pcm = speech_pcm(raw)
                 weights = np.asarray(weights,dtype=float)
                 if not len(pcm) or not np.isfinite(pcm).all() or weights.shape != (len(ps),) or not np.isfinite(weights).all() or (weights <= 0).any():
-                    raise RuntimeError('Connected voice returned invalid audio/timing; previous WAV preserved.')
+                    raise RuntimeError('Connected voice returned invalid audio/timing; previous audio preserved.')
                 elapsed = len(pcm)/24000
                 weights = weights/weights.sum()*elapsed
                 cursor, at = 0, offset
@@ -126,9 +127,9 @@ def create_connected_audio(text, sections, pipeline, engine, gate, target, voice
             wav.writeframes((np.clip(pcm,-1,1)*32767).astype('<i2').tobytes())
             offset += elapsed
     if not offset or any(t['start'] is None or t['end'] is None for t in timings):
-        raise RuntimeError('Narration timing is incomplete; previous WAV preserved.')
+        raise RuntimeError('Narration timing is incomplete; previous audio preserved.')
     tmp.replace(target)
-    return {'path':str(target),'duration':offset,'sampleRate':24000,'sentences':timings,'paragraphs':[],
+    return {'path':str(target),'duration':offset,'sampleRate':24000,'audioCodec':'opus','audioBitrate':128000,'sentences':timings,'paragraphs':[],
             'wordTimingAvailable':False,'timingSource':'model-phoneme-duration alignment; exact total PCM duration',
             'created':time.time(),'deliveryVersion':VERSION,'flowVersion':FLOW_VERSION,
             'soundEffects':effects,'narrationDelivery':'cinematic','inferenceCalls':calls,

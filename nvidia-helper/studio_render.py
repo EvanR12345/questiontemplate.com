@@ -6,6 +6,7 @@ from studio_qc import decision as qc_decision
 from studio_data import digest
 from studio_video_settings import capture as capture_video_settings
 from render_queue import render_unique_clips
+from studio_audio import probe as probe_audio
 
 SUPPORTED_MOTIONS = {'static','slow zoom in','slow zoom out','pan left','pan right','pan up','pan down'}
 
@@ -153,17 +154,15 @@ class VideoRenderer:
             )
         return str(path)
 
-    def audio_preview(self, project_id, source, gate, format='aac', bitrate=128):
-        """Export a selected download without synthesizing or replacing the WAV master."""
-        formats = {'aac':('aac', 'm4a', 'AAC'), 'opus':('libopus', 'opus', 'Opus'),
-                   'mp3':('libmp3lame', 'mp3', 'MP3')}
-        if format not in (*formats, 'wav'):
-            raise ValueError('Choose Opus, MP3 or WAV for the audition download.')
+    def audio_preview(self, project_id, source, gate, format='opus', bitrate=128):
+        """Opus downloads reuse the saved Opus; older input formats remain readable."""
+        if format != 'opus':
+            raise ValueError('New audio downloads use Opus only.')
         if type(bitrate) is not int or bitrate not in (64, 128, 256):
             raise ValueError('Choose a download bitrate of 64, 128 or 256 kbps.')
-        if format == 'wav':
-            return {'exportPath':source, 'exportCodec':'WAV', 'exportBitrate':None}
-        codec, suffix, label = formats[format]
+        if Path(source).suffix.lower() == '.opus' and bitrate == 128:
+            return {'exportPath':source, 'exportCodec':'Opus', 'exportBitrate':128000}
+        codec, suffix, label = 'libopus', 'opus', 'Opus'
         signature = digest({'audio':self.asset_identity(project_id, source),
                             'codec':format, 'bitrate':bitrate*1000, 'version':1})
         destination = self.store.folder(project_id) / f'audition-{signature[:24]}.{suffix}'
@@ -634,10 +633,10 @@ class VideoRenderer:
         folder = self.store.folder(p['id']) / ch['id']
         folder.mkdir(exist_ok=True)
         identity = digest({'audio': self.asset_identity(p['id'], audio['path']), 'start': start, 'end': end})
-        sliced = folder / ('preview-audio-' + identity[:20] + '.wav')
+        sliced = folder / ('preview-audio-opus-' + identity[:20] + '.opus')
         if not self.cached_asset(p['id'], sliced):
             self.run(['-ss', str(start), '-i', str(self.store.asset(p['id'], audio['path'])),
-                      '-t', str(end-start), '-vn', '-c:a', 'pcm_s16le', str(sliced)],
+                      '-t', str(end-start), '-vn', '-c:a', 'libopus', '-b:a', '128k', str(sliced)],
                      gate, sliced.with_suffix('.log'))
             self.completed_output(sliced)
         preview_p, preview_c = copy.deepcopy(p), copy.deepcopy(ch)
@@ -692,8 +691,7 @@ class VideoRenderer:
         text_digest = intro.get('audioTextDigest')
         if text_digest and text_digest != digest(intro.get('voiceText', '').strip()):
             raise ValueError('Intro narration text changed. Generate separate intro voice again before rendering; previous audio and video are retained.')
-        with wave.open(str(self.store.asset(p['id'], intro['audioPath'])), 'rb') as audio:
-            spoken = audio.getnframes() / audio.getframerate()
+        spoken = probe_audio(self.store.asset(p['id'],intro['audioPath']),self.config.get('ffmpeg'))['duration']
         if spoken > planned + .02:
             raise ValueError(f'Intro narration lasts {spoken:.1f}s, longer than the {planned:g}s intro. Shorten its text or regenerate at a faster speaking speed; narration will not be cut off.')
         if intro.get('endOnNarration', True) is False:
@@ -845,7 +843,7 @@ class VideoRenderer:
             files.append(visual)
             durations.append(intro_seconds)
             duration += intro_seconds
-            audio = visual.with_suffix(".wav")
+            audio = visual.with_suffix(".opus")
             if not audio.exists():
                 inputs = (
                     ["-i", str(self.store.asset(p["id"], p["intro"]["audioPath"]))]
@@ -860,7 +858,7 @@ class VideoRenderer:
                         "-t",
                         str(intro_seconds),
                         "-c:a",
-                        "pcm_s16le",
+                        "libopus", "-b:a", "128k",
                         "-ar",
                         "24000",
                         "-ac",
@@ -922,7 +920,7 @@ class VideoRenderer:
         )
         target = self.store.folder(p["id"]) / f"story-{signature[:12]}.mp4"
         if not self.cached_asset(p['id'], target):
-            # Join original WAV narration once. Copying separate chapter AAC tracks
+            # Join original chapter narration once. Copying separate chapter AAC tracks
             # can accumulate encoder padding at chapter boundaries.
             visual = target.with_name(target.stem + "-visual.mp4")
             log = self.store.folder(p["id"]) / "full-render.log"
@@ -1020,7 +1018,7 @@ class VideoRenderer:
                     filters.append(f'[reminded][2:v]overlay=x={bx}:y={by}:eof_action=repeat:format=auto[v]')
                 audio_map='0:a:0'
                 if s['dingEnabled'] and s['dingVolume']>0:
-                    bell=decorated.with_suffix('.wav'); ding(bell,s['dingVolume']); inputs+=['-i',str(bell)]
+                    bell=decorated.with_suffix('.opus'); ding(bell,s['dingVolume'],self.executable()); inputs+=['-i',str(bell)]
                     filters.append(f'[{next_input}:a]asplit='+str(len(events))+''.join(f'[bell{i}]' for i in range(len(events))))
                     segments=[]; cursor=0
                     for i,e in enumerate(events):
@@ -1043,7 +1041,7 @@ class VideoRenderer:
         target=decorated
         if s['outroEnabled']:
             outro=folder/f'outro-{signature[:20]}.mp4'
-            with wave.open(str(audio),'rb') as wav: spoken=wav.getnframes()/wav.getframerate()
+            spoken=probe_audio(audio,self.executable())['duration']
             outro_duration=max(s['outroDuration'],spoken+.5)
             if not self.cached_asset(p['id'], outro):
                 visual=outro.with_suffix('.png'); card(p,visual,outro=True)

@@ -38,14 +38,8 @@ test('full Opus export chains independent saved parts without missing or extra s
   const second = await exportTrack('opus', 64, signal(31003));
   assert.equal(decode(joinBytes([first,second]), 'opus').byteLength / 8, 55004);
 });
-test('MP3 really exports each requested bitrate, including MPEG-1 at 256 kbps', async () => {
-  for (const bitrate of [64,128,256]) {
-    const bytes = await exportTrack('mp3', bitrate, signal(24000));
-    const filename=path.join(directory,'rate-'+bitrate+'.mp3');fs.writeFileSync(filename,bytes);
-    const metadata=JSON.parse(execFileSync('ffprobe',['-v','error','-show_entries','stream=bit_rate,sample_rate,channels','-of','json',filename]));
-    assert.equal(Number(metadata.streams[0].bit_rate), bitrate * 1000);
-    assert.equal(metadata.streams[0].channels,1);
-    assert.equal(Number(metadata.streams[0].sample_rate),bitrate===256?48000:24000);
-    assert.ok(decode(bytes,'mp3').byteLength>=24000*4);
+test('new recordings reject WAV, MP3 and AAC before encoding', async () => {
+  for (const format of ['wav','mp3','aac']) {
+    await assert.rejects(createEncoder(format,128), /Opus only/);
   }
 });

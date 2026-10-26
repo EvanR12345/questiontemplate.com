@@ -24,10 +24,10 @@ def grouped_narration(service,project,chapter):
         signature=service.narration_signature(project,ch)
         folder=service.store.folder(project['id'])/ch['id'];folder.mkdir(exist_ok=True)
         items.append({'id':ch['id'],'signature':signature,'text':service.narration_text(project,ch),
-            'target':str(folder/f"chapter-{ch['number']:03d}-{signature[:12]}.wav")})
+            'target':str(folder/f"chapter-{ch['number']:03d}-{signature[:12]}.opus")})
     if not items or sum(len(i['text'].split()) for i in items)>4000:return None
     # Cloud-only completed group members are still completed work. Restore the
-    # small receipt first, then only the WAV/anchor it identifies. Asset restore
+    # small receipt first, then only the audio/anchor it identifies. Asset restore
     # verifies each immutable cloud checksum before the provider can reuse it.
     root=service.store.folder(project['id'])
     for item in items:
@@ -43,7 +43,7 @@ def grouped_narration(service,project,chapter):
             # the generated, content-addressed anchor filename is reusable.
             import re
             name=Path(anchor['path']).name
-            if not re.fullmatch(r'voice-anchor-[a-f0-9]{20}\.wav',name):
+            if not re.fullmatch(r'voice-anchor-[a-f0-9]{20}\.(?:opus|wav)',name):
                 raise ValueError('Invalid saved narrator reference.')
             restored=service.store.asset(project['id'],name)
             if not restored.is_file():raise ValueError('Saved narrator reference is unavailable; no duplicate voice job was submitted.')

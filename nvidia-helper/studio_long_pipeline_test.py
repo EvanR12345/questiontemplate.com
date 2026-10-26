@@ -53,16 +53,17 @@ class LongPipelineTest(unittest.TestCase):
     def test_one_voice_model_load_writes_separate_chapters_without_spoken_labels(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'ch1').mkdir();(root/'ch2').mkdir()
-            items=[{'id':'one','text':'The gate opened.','signature':'one','target':str(root/'ch1'/'a.wav')},
-                   {'id':'two','text':'He stepped inside.','signature':'two','target':str(root/'ch2'/'b.wav')}]
+            items=[{'id':'one','text':'The gate opened.','signature':'one','target':str(root/'ch1'/'a.opus')},
+                   {'id':'two','text':'He stepped inside.','signature':'two','target':str(root/'ch2'/'b.opus')}]
             provider=KaggleVoice({});calls=[]
             def generate(text,target,settings,gate,**kw):
                 calls.append(kw)
                 self.assertEqual([p['chapterId'] for p in kw['parts_override']],['one','two'])
-                with wave.open(str(target),'wb') as f:
-                    f.setnchannels(1);f.setsampwidth(2);f.setframerate(24000)
-                    f.writeframes(b'\x01\x00'*24000+b'\x02\x00'*48000)
-                return {'model':'qwen3-tts-1.7b','duration':3,'sentences':[
+                assets=[]
+                for i,payload in enumerate((b'first encoded opus',b'second encoded opus')):
+                    asset=target.parent/f'chapter-{i:03d}.opus';asset.write_bytes(payload)
+                    assets.append({'path':str(asset)})
+                return {'model':'qwen3-tts-1.7b','duration':3,'chapterAudio':assets,'sentences':[
                     {'index':0,'text':items[0]['text'],'start':0,'end':1},
                     {'index':1,'text':items[1]['text'],'start':1,'end':3}]}
             with patch.object(provider,'_generate',side_effect=generate):
@@ -73,8 +74,9 @@ class LongPipelineTest(unittest.TestCase):
             self.assertEqual(results[1]['sentences'][0]['start'],0)
             self.assertEqual(results[1]['sentences'][0]['index'],0)
             self.assertEqual(cached,results)
-            with wave.open(items[0]['target'],'rb') as f:self.assertEqual(f.readframes(1),b'\x01\x00')
-            with wave.open(items[1]['target'],'rb') as f:self.assertEqual(f.readframes(1),b'\x02\x00')
+            self.assertEqual(Path(items[0]['target']).read_bytes(),b'first encoded opus')
+            self.assertEqual(Path(items[1]['target']).read_bytes(),b'second encoded opus')
+
 
     def test_manual_chapter_regeneration_does_not_prefetch_other_chapters(self):
         from studio_voice_batches import grouped_narration
@@ -88,20 +90,20 @@ class LongPipelineTest(unittest.TestCase):
     def test_partial_voice_group_generates_only_missing_chapters_and_archives_anchor(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'ch1').mkdir();(root/'ch2').mkdir()
-            first=root/'ch1'/'a.wav';first.write_bytes(b'completed audio')
+            first=root/'ch1'/'a.opus';first.write_bytes(b'completed audio')
             result={'path':str(first),'duration':1,'sentences':[]}
             first.with_suffix('.voice-ready.json').write_text(json.dumps({'inputSignature':'one',
                 'sha256':hashlib.sha256(first.read_bytes()).hexdigest(),'result':result}))
             items=[{'id':'one','text':'The gate opened.','signature':'one','target':str(first)},
-                {'id':'two','text':'He stepped inside.','signature':'two','target':str(root/'ch2'/'b.wav')}]
+                {'id':'two','text':'He stepped inside.','signature':'two','target':str(root/'ch2'/'b.opus')}]
             provider=KaggleVoice({})
             def generate(text,target,*args,**kwargs):
                 self.assertEqual(text,items[1]['text'])
                 self.assertEqual(len(kwargs['parts_override']),1)
                 anchor=target.parent/('voice-anchor-'+'a'*20+'.wav');anchor.write_bytes(b'anchor')
-                with wave.open(str(target),'wb') as output:
-                    output.setnchannels(1);output.setsampwidth(2);output.setframerate(24000);output.writeframes(b'\0\0'*24000)
-                return {'duration':1,'sentences':[{'text':text,'start':0,'end':1}],
+                asset=target.parent/'chapter-000.opus';asset.write_bytes(b'encoded chapter')
+                return {'duration':1,'chapterAudio':[{'path':str(asset)}],
+                    'sentences':[{'text':text,'start':0,'end':1}],
                     'voiceAnchor':{'text':text,'path':str(anchor)}}
             with patch.object(provider,'_generate',side_effect=generate):
                 results=provider.generate_many(items,{'voiceEngine':'dia-1.6b'},lambda *_:None)
@@ -119,7 +121,7 @@ class LongPipelineTest(unittest.TestCase):
             p['settings']['voiceEngine']='qwen3-tts-1.7b';remote={}
             for ch in p['chapters']:
                 ch['sourceText']='The gate opened.'
-                name=f"{ch['id']}/chapter-{ch['number']:03d}-{'a'*12}.wav"
+                name=f"{ch['id']}/chapter-{ch['number']:03d}-{'a'*12}.opus"
                 remote[name]=b'completed narration'
                 remote[str(Path(name).with_suffix('.voice-ready.json')).replace('\\','/')]=json.dumps({
                     'inputSignature':'a'*64,'sha256':hashlib.sha256(remote[name]).hexdigest(),

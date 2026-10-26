@@ -97,7 +97,7 @@ def catalogue(config):
     remote=KaggleVoice(config).health()
     return [{'id':key,**model,'ready':key=='kokoro-82m' or key in config.get('kaggleVerifiedModels',[]),
              'status':'Existing local engine' if key=='kokoro-82m' else remote['reason'] or
-                 ('Short Kaggle WAV audition passed · long-form quality unverified' if key in config.get('kaggleVerifiedModels',[]) else 'Configured · audition not yet verified'),
+                 ('Short Kaggle audition passed · long-form quality unverified' if key in config.get('kaggleVerifiedModels',[]) else 'Configured · audition not yet verified'),
              'verified':key=='kokoro-82m' or key in config.get('kaggleVerifiedModels',[])} for key,model in MODELS.items()]
 
 class KaggleVoice:
@@ -152,7 +152,7 @@ class KaggleVoice:
         finally:_KAGGLE_ADMISSION.release()
 
     def generate_many(self,items,settings,gate,reference=None):
-        """One private notebook/model load, separate exact chapter WAVs.
+        """One private notebook/model load, separate chapter Opus assets.
 
         Only bounded same-model groups; no chapter labels enter the audio.
         Receipts publish independently so an interrupted split can recover.
@@ -190,7 +190,7 @@ class KaggleVoice:
                 ranges.append((start,len(parts)))
             fingerprint=hashlib.sha256(json.dumps([(i['id'],i['signature']) for i in items],sort_keys=True).encode()).hexdigest()
             folder=Path(items[0]['target']).parent.parent/'.voice-groups';folder.mkdir(exist_ok=True)
-            combined=folder/(fingerprint+'.wav')
+            combined=folder/(fingerprint+'.opus')
             result=self._generate('\n'.join(i['text'] for i in items),combined,settings,gate,
                 reference=reference,parts_override=parts)
             if result.get('voiceAnchor'):
@@ -201,39 +201,31 @@ class KaggleVoice:
                 if not anchor.exists():shutil.copyfile(source,anchor)
                 result['voiceAnchor']=dict(result['voiceAnchor'],path=str(anchor))
             results=[]
-            with wave.open(str(combined),'rb') as source:
-                rate=source.getframerate();width=source.getsampwidth();channels=source.getnchannels()
-                for item,(first,last) in zip(items,ranges):
-                    gate('Saving completed chapter narration from the shared voice job')
-                    timings=result['sentences'][first:last]
-                    begin=round(timings[0]['start']*rate);end=round(timings[-1]['end']*rate)
-                    target=Path(item['target']);target.parent.mkdir(exist_ok=True)
-                    temporary=target.with_suffix('.voice-partial.wav')
-                    try:
-                        source.setpos(begin)
-                        with wave.open(str(temporary),'wb') as output:
-                            output.setnchannels(channels);output.setsampwidth(width);output.setframerate(rate)
-                            remaining=end-begin
-                            while remaining:
-                                count=min(remaining,24000*10);data=source.readframes(count)
-                                if len(data)!=count*channels*width:raise ValueError('Incomplete grouped narration WAV.')
-                                output.writeframesraw(data);remaining-=count
-                        temporary.replace(target)
-                    finally:
-                        if temporary.is_file():temporary.unlink()
-                    chapter_result={k:v for k,v in result.items() if k not in ('setupAndModelLoadSeconds','speechGenerationSeconds','setupAndGenerationSeconds')} | {'path':str(target),'duration':(end-begin)/rate,
-                        'sentences':[dict(t,index=index,start=max(0,t['start']-begin/rate),end=t['end']-begin/rate)
-                            for index,t in enumerate(timings)],
-                        'voiceBatch':{'chapters':len(items),'group':fingerprint,'setupShared':True,
-                            'groupSetupSeconds':result.get('setupAndModelLoadSeconds'),
-                            'groupSpeechSeconds':result.get('speechGenerationSeconds')},
-                        'timingAllocation':'Shared notebook measurements; not isolated chapter throughput'}
-                    checksum=hashlib.sha256()
-                    with target.open('rb') as saved:
-                        for block in iter(lambda:saved.read(1024*1024),b''):checksum.update(block)
-                    self._write(target.with_suffix('.voice-ready.json'),{'inputSignature':item['signature'],
-                        'sha256':checksum.hexdigest(),'result':chapter_result})
-                    results.append(chapter_result)
+            chapter_audio=result.get('chapterAudio',[])
+            if len(chapter_audio)!=len(items):
+                raise ValueError('Kaggle did not return every separate chapter Opus.')
+            for item,(first,last),asset in zip(items,ranges,chapter_audio):
+                gate('Saving completed chapter narration from the shared voice job')
+                timings=result['sentences'][first:last]
+                begin=timings[0]['start'];end=timings[-1]['end']
+                target=Path(item['target']);target.parent.mkdir(exist_ok=True)
+                temporary=target.with_suffix('.voice-partial.opus')
+                try:
+                    shutil.copyfile(asset['path'],temporary)
+                    temporary.replace(target)
+                finally:
+                    temporary.unlink(missing_ok=True)
+                chapter_result={k:v for k,v in result.items() if k not in ('chapterAudio','setupAndModelLoadSeconds','speechGenerationSeconds','setupAndGenerationSeconds')} | {'path':str(target),'duration':end-begin,
+                    'sentences':[dict(t,index=index,start=max(0,t['start']-begin),end=t['end']-begin)
+                        for index,t in enumerate(timings)],
+                    'voiceBatch':{'chapters':len(items),'group':fingerprint,'setupShared':True,
+                        'groupSetupSeconds':result.get('setupAndModelLoadSeconds'),
+                        'groupSpeechSeconds':result.get('speechGenerationSeconds')},
+                    'timingAllocation':'Shared notebook measurements; not isolated chapter throughput'}
+                checksum=hashlib.sha256(target.read_bytes()).hexdigest()
+                self._write(target.with_suffix('.voice-ready.json'),{'inputSignature':item['signature'],
+                    'sha256':checksum,'result':chapter_result})
+                results.append(chapter_result)
             for index,result in zip(missing,results):cached[index]=result
             return cached
         finally:_KAGGLE_ADMISSION.release()
@@ -246,7 +238,7 @@ class KaggleVoice:
         if not re.fullmatch(r'[A-Za-z0-9_]{3,40}',username):raise ValueError('Invalid Kaggle username.')
         engine=selected(settings)
         request={'version':VERSION,'model':engine,'repo':MODELS[engine]['repo'],'text':text,
-            'runtimeVersion':12,'qwenSpeaker':settings.get('qwenSpeaker','Ryan'),
+            'runtimeVersion':14,'qwenSpeaker':settings.get('qwenSpeaker','Ryan'),
             'instruction':settings.get('voiceInstruction',NARRATOR),'seed':81273,'speed':settings.get('speed',1),
             'preview':preview,'effects':settings.get('soundEffects','subtle')}
         request['voice']=settings.get('voice','am_michael')
@@ -255,7 +247,7 @@ class KaggleVoice:
         from narration_audio import audio_segments
         request['parts']=[{'text':line,'segments':audio_segments(line,request['effects'])} for line in sentences(text)]
         if parts_override is not None:
-            request['parts']=parts_override;request['runtimeVersion']=13
+            request['parts']=parts_override
         if engine=='kokoro-82m':
             # Reuse the working phonemizer; Kaggle Python 3.13 cannot build its
             # older English G2P dependencies. Only inference runs on Kaggle.
@@ -271,7 +263,7 @@ class KaggleVoice:
                         phonemes[chunk]=[item.phonemes for item in pipeline(chunk)]
             request['phonemes']=phonemes
         signature=hashlib.sha256(json.dumps(request,sort_keys=True).encode()).hexdigest()
-        journal=target.with_suffix('.kaggle.json')
+        journal=target.with_name(target.name+'.kaggle.json')
         folder=target.parent/('.kaggle-'+signature[:16]);folder.mkdir(exist_ok=True)
         slug=f'{username}/studio-voice-{signature[:24]}'
         metadata={'id':slug,'title':'Studio voice '+signature[:24],'code_file':'voice_job.py',
@@ -322,16 +314,21 @@ class KaggleVoice:
             if self.clock()>=deadline:raise ValueError('Kaggle narration exceeded the four-hour wait. No duplicate was submitted.')
             self.sleep(8)
         gate('Downloading completed Kaggle narration')
-        self._run(['kernels','output',slug,'-p',str(folder),'--file-pattern',r'^(narration\.wav|voice-anchor\.wav|result\.json)$','-q','-o'],timeout=900)
+        self._run(['kernels','output',slug,'-p',str(folder),'--file-pattern',r'^(narration\.opus|chapter-[0-9]{3}\.opus|voice-anchor\.opus|result\.json)$','-q','-o'],timeout=900)
         result=json.loads((folder/'result.json').read_text(encoding='utf-8'))
         if result.get('signature')!=signature or result.get('model')!=engine:
             raise ValueError('Kaggle result does not match the selected narration inputs.')
-        source=folder/'narration.wav'
-        with wave.open(str(source),'rb') as audio:
-            duration=audio.getnframes()/audio.getframerate()
-            if audio.getnchannels()!=1 or audio.getsampwidth()!=2 or not math.isfinite(duration) or duration<=0:
-                raise ValueError('Kaggle returned an invalid narration WAV.')
-        if abs(duration-result.get('duration',0))>.1:raise ValueError('Kaggle audio duration does not match its timing receipt.')
+        from studio_audio import probe
+        duration=result.get('duration',0)
+        if type(duration) not in (int,float) or not math.isfinite(duration) or duration<=0:
+            raise ValueError('Kaggle returned an invalid narration duration.')
+        def check_audio(source,expected):
+            info=probe(source,self.config.get('ffmpeg'))
+            if info['codec']!='opus' or info['channels']!=1 or abs(info['duration']-expected)>.1:
+                raise ValueError('Kaggle Opus audio does not match its timing receipt.')
+        if parts_override is None:
+            source=folder/'narration.opus'
+            check_audio(source,duration)
         timings=result.get('sentences',[])
         if not isinstance(timings,list) or len(timings)!=len(request['parts']):raise ValueError('Kaggle returned incomplete narration timing.')
         previous_end=0
@@ -343,18 +340,35 @@ class KaggleVoice:
                 raise ValueError('Kaggle narration timing is invalid; earlier audio is preserved.')
             previous_end=end
         gate('Saving selected cloud narration')
-        temporary=target.with_suffix('.partial.wav');shutil.copyfile(source,temporary);temporary.replace(target)
-        saved['state']='COMPLETE';self._write(journal,saved)
+        if parts_override is None:
+            temporary=target.with_suffix('.partial.opus');shutil.copyfile(source,temporary);temporary.replace(target)
+        else:
+            groups=[]
+            for index,part in enumerate(request['parts']):
+                if not groups or groups[-1]['id']!=part['chapterId']:
+                    groups.append({'id':part['chapterId'],'first':index,'last':index+1})
+                else:groups[-1]['last']=index+1
+            assets=result.get('chapterAudio',[])
+            if not isinstance(assets,list) or len(assets)!=len(groups):
+                raise ValueError('Kaggle did not return every separate chapter Opus.')
+            for index,(group,asset) in enumerate(zip(groups,assets)):
+                filename=f'chapter-{index:03d}.opus'
+                if any(asset.get(k)!=group[k] for k in ('id','first','last')) or asset.get('path')!=filename:
+                    raise ValueError('Kaggle chapter audio does not match the requested chapters.')
+                expected=timings[group['last']-1]['end']-timings[group['first']]['start']
+                check_audio(folder/filename,expected)
+                asset['path']=str(folder/filename)
         if result.get('voiceAnchor'):
-            source=folder/'voice-anchor.wav'
-            with wave.open(str(source),'rb') as anchor:
-                if anchor.getnframes()<=0 or anchor.getnchannels()!=1 or anchor.getsampwidth()!=2:
-                    raise ValueError('Invalid generated voice reference.')
-            name='voice-anchor-'+hashlib.sha256(source.read_bytes()).hexdigest()[:20]+'.wav'
+            source=folder/'voice-anchor.opus'
+            info=probe(source,self.config.get('ffmpeg'))
+            if info['codec']!='opus' or info['channels']!=1:
+                raise ValueError('Invalid generated Opus voice reference.')
+            name='voice-anchor-'+hashlib.sha256(source.read_bytes()).hexdigest()[:20]+'.opus'
             path=target.parent/name
             if not path.exists():shutil.copyfile(source,path)
             result['voiceAnchor']['path']=str(path)
+        saved['state']='COMPLETE';self._write(journal,saved)
         # Only output media enters the project's normal verified cloud archive.
         result.update(path=str(target),provider='kaggle',kernel=slug,model=engine,qwenSpeaker=request.get('qwenSpeaker') if engine=='qwen3-tts-1.7b' else None,
-            timingSource='generated-passage-duration',words=[],paragraphs=[])
+            timingSource='generated-passage-duration',words=[],paragraphs=[],audioCodec='opus',audioBitrate=128000)
         return result
