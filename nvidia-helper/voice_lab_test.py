@@ -322,6 +322,26 @@ class VoiceLabTests(unittest.TestCase):
             self.lab.tick()
             self.assertEqual(self.lab.job(job['id'])['status'], 'COMPLETED')
 
+    def test_promotion_recovers_from_a_transient_windows_rename_sharing_collision(self):
+        import os
+        job, source = self.completed_design()
+        original = source.read_bytes()
+        real_replace = os.replace
+        calls = []
+        def replace(src, dst):
+            calls.append((src, dst))
+            if len(calls) == 1:
+                error = PermissionError('Synthetic Windows delete-sharing collision')
+                error.winerror = 32
+                raise error
+            return real_replace(src, dst)
+        with patch('cost_control.os.replace', side_effect=replace):
+            ref = self.lab.reference_from_job(dict(jobId=job['id'], name='Recovered voice', rightsConfirmed=True))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(self.lab.reference_audio(ref['id']).read_bytes(), original)
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(self.lab.db.execute('SELECT count(*) FROM refs WHERE source_job=?',(job['id'],)).fetchone()[0],1)
+
     def test_reference_promotion_rejects_missing_permission_incomplete_or_long_audio_without_trimming(self):
         job = self.lab.enqueue(self.body())
         for body in [dict(jobId=job['id'], rightsConfirmed=False), dict(jobId=job['id'], rightsConfirmed=True),

@@ -22,6 +22,7 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHand
 import uuid
 
 from studio_audio import probe, executable, OpusWriter, _flags
+from cost_control import atomic_replace
 
 MAX_REFERENCE_BYTES = 12 * 1024 * 1024
 MAX_OUTPUT_BYTES = 40 * 1024 * 1024
@@ -295,7 +296,7 @@ class VoiceLab:
                 # Preserve the entire generated recording and its exact script.
                 # It is not cropped, stretched, transcoded, or regenerated.
                 temporary.write_bytes(raw)
-                temporary.replace(target)
+                atomic_replace(temporary, target)
                 self.db.execute('''INSERT INTO refs(id,name,transcript,duration,created,
                     source_kind,source_job,source_model,source_mode,source_sha256)
                     VALUES(?,?,?,?,?,?,?,?,?,?)''', (id, name.strip(), payload['text'], info['duration'],
