@@ -19,9 +19,11 @@ HERE = Path(__file__).resolve().parent
 MANIFEST = json.loads((HERE / 'manifest.json').read_text())
 QUOTA_ROOT = None
 QUOTA_BYTES = 100_000_000_000
-RESERVE_BYTES = 2_000_000_000
+RESERVE_BYTES = 10_000_000_000
 QUOTA_RACE_BUFFER_BYTES = 64 * 1024 * 1024
-QUOTA_SCAN_ATTEMPTS = 8
+QUOTA_SCAN_ATTEMPTS = 3
+QUOTA_SCAN_TIMEOUT_SECONDS = 120
+QUOTA_SCAN_DEADLINE_SECONDS = 300
 
 
 class QuotaScanError(subprocess.CalledProcessError):
@@ -40,13 +42,26 @@ def quota_usage(root):
     command = ['du', '-s', '-B1', str(root)]
     observed = []
     incomplete_fts_scan = False
-    deadline = time.monotonic() + 45
+    deadline = time.monotonic() + QUOTA_SCAN_DEADLINE_SECONDS
+    result = None
+    last_timeout = None
     for attempt in range(QUOTA_SCAN_ATTEMPTS):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        result = subprocess.run(command, text=True, capture_output=True, timeout=min(15, remaining),
-                                env=dict(os.environ, LC_ALL='C', LANG='C'))
+        try:
+            result = subprocess.run(command, text=True, capture_output=True,
+                                    timeout=min(QUOTA_SCAN_TIMEOUT_SECONDS, remaining),
+                                    env=dict(os.environ, LC_ALL='C', LANG='C'))
+        except subprocess.TimeoutExpired as error:
+            # Large NFS package trees legitimately take longer than15 seconds.
+            # A timeout is not a measured quota total; retry only within this
+            # absolute deadline and fail closed if a complete scan never lands.
+            last_timeout = error
+            incomplete_fts_scan = True
+            if attempt < QUOTA_SCAN_ATTEMPTS - 1:
+                time.sleep(min(.2 * (attempt + 1), max(0, deadline - time.monotonic())))
+            continue
         lines = result.stdout.strip().splitlines()
         match = re.fullmatch(r'([0-9]+)\t(.+)', lines[0]) if len(lines) == 1 else None
         valid_total = match is not None and match[2] == str(root)
@@ -80,6 +95,17 @@ def quota_usage(root):
             time.sleep(min(.1 * (2 ** attempt), 2, max(0, deadline - time.monotonic())))
     # An FTS-aborted scan requires a later clean, complete numeric summary.
     # Even partial numeric observations do not establish a safe total here.
+    if last_timeout is not None:
+        output = last_timeout.stdout or ''
+        diagnostics = last_timeout.stderr or ''
+        if isinstance(output, bytes):
+            output = output.decode(errors='replace')
+        if isinstance(diagnostics, bytes):
+            diagnostics = diagnostics.decode(errors='replace')
+        raise QuotaScanError(124, command, output=output,
+                             stderr=diagnostics + '\nVolume usage scan timed out without a complete numeric total; preparation stopped.')
+    if result is None:
+        raise RuntimeError('Volume usage could not be measured before its deadline; preparation stopped.')
     raise QuotaScanError(result.returncode or 1, command, output=result.stdout, stderr=result.stderr)
 
 

@@ -73,8 +73,11 @@ the script's 100 GB default for this full installation.
 The setup script measures deduplicated allocated usage with GNU `du` against the
 explicit `--volume-gb` quota. A network mount's `df` free-space value can describe
 the shared storage system and does not establish this volume's remaining quota.
-Preparation reserves two decimal GB, checks known remaining checkpoint bytes,
-and monitors child installs/downloads at ten-second intervals. It stops setup
+Preparation reserves ten decimal GB and checks known remaining checkpoint bytes.
+It polls child installs/downloads between usage scans. A large NFS usage scan
+may take up to 120 seconds; at most three attempts fit within an absolute
+300-second scan deadline. Exact disappearing-file races and timeouts are retried,
+but preparation stops if a complete usable numeric total never arrives. It stops setup
 when the watermark is reached. This reduces quota-related partial writes;
 transient peak writes can still cause an individual command to fail. Stop and
 review rebuildable caches or approve a resize explicitly if installation does

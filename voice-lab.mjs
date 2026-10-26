@@ -5,7 +5,7 @@ import {REFERENCE_SCRIPT,VOICE_DESIGNS,QWEN_PRESETS,INCLUDED_VOICES,preferredRef
 const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
-const referenceURLs=new Map();let libraryFingerprint='';
+const referenceURLs=new Map();let libraryFingerprint='',referenceOptionsFingerprint='';
 const DRAFT_KEY='qt-voice-lab-draft-v1';
 const json=(path,body)=>helperJson('/studio/voice-lab'+path,key,body);
 const notice=message=>{$('notice').textContent=message||'';};
@@ -96,6 +96,8 @@ $('qwenPresets').querySelectorAll('[data-preset]').forEach(button=>button.addEve
   saveDraft();modelId='qwen3';parameterDrafts.qwen3={...parameterDrafts.qwen3,speaker:button.dataset.preset};draft={mode:'preset',language:'English'};$('script').value=REFERENCE_SCRIPT;$('description').value='';modelView();words();$('create').scrollIntoView({behavior:'smooth',block:'start'});notice('Qwen preset selected. Generate an audition, then save it as a reference to clone its voice with any model.');
 }));
 function referencesView(){
+  const fingerprint=JSON.stringify((snapshot.references||[]).map(ref=>[ref.id,ref.name,ref.durationSeconds]));
+  if(fingerprint===referenceOptionsFingerprint)return;referenceOptionsFingerprint=fingerprint;
   const selected=$('reference').value||draft.referenceId;
   $('reference').innerHTML='<option value="">Choose a reference</option>'+(snapshot.references||[]).map(ref=>`<option value="${esc(ref.id)}">${esc(ref.name)} · ${Number(ref.durationSeconds).toFixed(1)}s</option>`).join('');
   if((snapshot.references||[]).some(ref=>ref.id===selected))$('reference').value=selected;
@@ -176,6 +178,7 @@ $('example').addEventListener('click',()=>{$('script').value=SAMPLE_SCRIPT;words
 $('script').addEventListener('input',words);$('description').addEventListener('input',saveDraft);$('mode').addEventListener('change',modeView);$('language').addEventListener('change',saveDraft);$('reference').addEventListener('change',saveDraft);
 $('refresh').addEventListener('click',()=>act(refresh));
 $('historyModel').addEventListener('change',()=>{for(const article of $('jobs').querySelectorAll('[data-job]')){const job=snapshot.jobs.find(item=>item.id===article.dataset.job);article.hidden=$('historyModel').value!==''&&job.model!==$('historyModel').value;}});
+document.addEventListener('play',event=>{if(event.target.tagName==='AUDIO')for(const audio of document.querySelectorAll('audio'))if(audio!==event.target&&!audio.paused)audio.pause();},true);
 $('openReferenceUpload').addEventListener('click',()=>{draft={mode:'clone',language:$('language').value};modelView();$('referenceField').querySelector('details').open=true;$('referenceField').scrollIntoView({behavior:'smooth',block:'start'});});
 $('resetParameters').addEventListener('click',()=>{delete parameterDrafts[modelId];draft={mode:$('mode').value,language:$('language').value};$('parameters').dataset.model='';modelView();saveDraft();notice('This model’s settings were reset to their defaults.');});
 $('saveReference').addEventListener('click',()=>act(async()=>{

@@ -215,6 +215,24 @@ class GenerationLimits(unittest.TestCase):
 
 
 class PreparationQuota(unittest.TestCase):
+    def test_slow_nfs_scan_retries_with_practical_bounded_timeout_then_uses_real_total(self):
+        timeout = prepare.subprocess.TimeoutExpired('du', 120)
+        stable = types.SimpleNamespace(returncode=0, stdout='105000000000\t/unused\n', stderr='')
+        with patch.object(prepare.subprocess, 'run', side_effect=[timeout, stable]) as scan, \
+                patch.object(prepare.time, 'sleep'):
+            self.assertEqual(prepare.quota_usage(PurePosixPath('/unused')), 105000000000)
+            self.assertEqual(scan.call_args_list[0].kwargs['timeout'], 120)
+            self.assertEqual(scan.call_count, 2)
+
+    def test_repeated_nfs_timeouts_fail_closed_with_diagnostics(self):
+        with patch.object(prepare.subprocess, 'run', side_effect=prepare.subprocess.TimeoutExpired('du', 120)) as scan, \
+                patch.object(prepare.time, 'sleep'):
+            with self.assertRaises(prepare.QuotaScanError) as error:
+                prepare.quota_usage(PurePosixPath('/unused'))
+            self.assertEqual(scan.call_count, prepare.QUOTA_SCAN_ATTEMPTS)
+            self.assertEqual(error.exception.returncode, 124)
+            self.assertIn('timed out without a complete numeric total', str(error.exception))
+
     def test_fts_enoent_without_total_retries_until_a_complete_numeric_scan(self):
         race = types.SimpleNamespace(returncode=1, stdout='',
                                       stderr='du: fts_read failed: /unused/cache/uv/.tmp123: No such file or directory\n')
