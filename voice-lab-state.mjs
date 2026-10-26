@@ -23,7 +23,13 @@ export function auditionRequest(model, values) {
     const value=parameterValue(control,values.parameters?.[control.id]??control.default);
     parameters[control.id]=value;
   }
-  return {model:model.id,mode:values.mode,text,language:values.language,description:String(values.description||'').trim(),...(values.referenceId?{referenceId:values.referenceId}:{}),parameters};
+  let character;
+  if(model.id==='drama3'&&values.mode==='design'){
+    const name=String(values.character?.name||'Narrator').trim(),scene=String(values.character?.scene||'').trim();
+    if(!name||name.length>80||/[\r\n:<>]/.test(name)||scene.length>500)throw Error('Check the Drama character name and scene.');
+    character={name,scene};
+  }
+  return {model:model.id,mode:values.mode,text,language:values.language,description:String(values.description||'').trim(),...(values.referenceId?{referenceId:values.referenceId}:{}),...(character?{character}:{}),parameters};
 }
 export function parameterValue(control,raw) {
   if(control.type==='boolean'){

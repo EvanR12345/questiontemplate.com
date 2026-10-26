@@ -40,9 +40,10 @@ def _parameter(id, label, low, high, step, default):
 
 MODELS = [
     dict(id='drama3', name='Fish Audio Drama 3', checkpoint='fishaudio/drama-3',
-         modes=[_mode('default', 'Unconditioned voice'), _mode('clone', 'Reference voice', True, True)],
+         modes=[_mode('default', 'Unconditioned voice'), _mode('clone', 'Reference voice', True, True),
+                _mode('design', 'Describe a voice', description=True)],
          languages=['Auto'], parameters=[_parameter('temperature', 'Temperature', .1, 2, .05, 1),
-             _parameter('top_p', 'Top P', .1, 1, .05, .9), _parameter('top_k', 'Top K', 1, 100, 1, 30)],
+             _parameter('top_p', 'Top P', .1, 1, .05, .9), _parameter('top_k', 'Top K (0 = all candidates)', 0, 4097, 1, 0)],
          notes='Language follows the script. Controls use bounded audition ranges. Voice reference permissions are required.'),
     dict(id='voxcpm2', name='VoxCPM2', checkpoint='openbmb/VoxCPM2',
          modes=[_mode('default', 'Unconditioned voice'), _mode('design', 'Describe a voice', description=True),
@@ -200,6 +201,7 @@ class VoiceLab:
         payload = json.loads(row['payload'])
         return dict(id=row['id'], status=row['status'], model=payload['model'], mode=payload['mode'],
                     text=payload['text'], language=payload['language'], description=payload['description'],
+                    character=payload.get('character'),
                     referenceId=payload.get('referenceId'), parameters=payload['parameters'],
                     createdAt=row['created'], updatedAt=row['updated'], metrics=json.loads(row['metrics']),
                     error=row['error'], audioReady=row['status'] == 'COMPLETED' and (self.root / (row['id'] + '.opus')).is_file())
@@ -407,6 +409,20 @@ class VoiceLab:
             parameters[p['id']] = value
         payload = dict(model=model['id'], mode=mode['id'], text=text.strip(), language=language,
                        description=description.strip(), parameters=parameters)
+        if model['id'] == 'drama3' and mode['id'] == 'design':
+            value = body.get('character', {})
+            if not isinstance(value, dict) or set(value) - {'name', 'scene'}:
+                raise ValueError('Character must contain only a name and optional scene.')
+            name, scene = value.get('name', 'Narrator'), value.get('scene')
+            if (not isinstance(name, str) or not 1 <= len(name.strip()) <= 80 or ':' in name
+                    or any(mark in name for mark in ('\n', '\r', '<|', '@@drama3-space@@'))):
+                raise ValueError('Character name must be one line, 1 to 80 characters, without structural markers or a colon.')
+            if scene is not None and (not isinstance(scene, str) or len(scene) > 500
+                    or any(mark in scene for mark in ('\n', '\r', '<|', '@@drama3-space@@'))):
+                raise ValueError('Scene must be one line of at most 500 characters without structural markers.')
+            payload['character'] = dict(name=name.strip(), scene=scene.strip() or None if scene is not None else None)
+        elif body.get('character') is not None:
+            raise ValueError('Character name and scene apply only to Drama 3 voice design.')
         if mode['requiresReference']:
             ref_id = self._id(body.get('referenceId'))
             with self.lock:

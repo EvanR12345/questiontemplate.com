@@ -28,9 +28,9 @@ MANIFEST = json.loads((HERE / 'manifest.json').read_text())
 MAX_BODY = 16 * 1024 * 1024
 ID = re.compile(r'[A-Za-z0-9_-]{8,80}')
 FINAL = {'completed', 'failed', 'cancelled'}
-MODES = {'drama3': {'default', 'clone'}, 'voxcpm2': {'default', 'design', 'clone'}, 'qwen3': {'design', 'clone', 'preset'}}
+MODES = {'drama3': {'default', 'clone', 'design'}, 'voxcpm2': {'default', 'design', 'clone'}, 'qwen3': {'design', 'clone', 'preset'}}
 LANGUAGES = {'english', 'chinese', 'japanese', 'korean', 'german', 'french', 'russian', 'portuguese', 'spanish', 'italian', 'auto'}
-CONTROLS = {'drama3': {'temperature': (0.1, 2, 1), 'top_p': (0.1, 1, .9), 'top_k': (1, 100, 30)},
+CONTROLS = {'drama3': {'temperature': (0.1, 2, 1), 'top_p': (0.1, 1, .9), 'top_k': (0, 4097, 0)},
             'voxcpm2': {'cfg_value': (.1, 10, 2), 'inference_timesteps': (1, 50, 10), 'seed': (0, 2147483647, 42)},
             'qwen3': {'seed': (0, 2147483647, 42), 'temperature': (.1, 2, .9),
                       'top_p': (.1, 1, 1), 'top_k': (1, 100, 50), 'repetition_penalty': (.8, 2, 1.05),
@@ -73,6 +73,21 @@ def validate(body):
         raise ValueError('Voice description exceeds the audition limit.')
     if body['mode'] == 'design' and not description.strip():
         raise ValueError('Voice design needs a description.')
+    character = None
+    if model == 'drama3' and body['mode'] == 'design':
+        value = body.get('character', {})
+        if not isinstance(value, dict) or set(value) - {'name', 'scene'}:
+            raise ValueError('Character must contain only a name and optional scene.')
+        name, scene = value.get('name', 'Narrator'), value.get('scene')
+        if (not isinstance(name, str) or not 1 <= len(name.strip()) <= 80 or ':' in name
+                or any(mark in name for mark in ('\n', '\r', '<|', '@@drama3-space@@'))):
+            raise ValueError('Invalid Drama character name.')
+        if scene is not None and (not isinstance(scene, str) or len(scene) > 500
+                or any(mark in scene for mark in ('\n', '\r', '<|', '@@drama3-space@@'))):
+            raise ValueError('Invalid Drama scene.')
+        character = dict(name=name.strip(), scene=scene.strip() or None if scene is not None else None)
+    elif body.get('character') is not None:
+        raise ValueError('Character name and scene apply only to Drama voice design.')
     language = body.get('language', 'auto')
     if not isinstance(language, str) or language.lower() not in LANGUAGES:
         raise ValueError('Unsupported language selection.')
@@ -124,7 +139,7 @@ def validate(body):
         reference = {'audioBase64': ref['audioBase64'], 'transcript': transcript, 'mime': 'application/octet-stream'}
     return {'id': job_id, 'model': model, 'mode': body['mode'], 'text': text.strip(),
             'language': language.lower(), 'description': description.strip(),
-            'parameters': clean_params, 'reference': reference}
+            'parameters': clean_params, 'reference': reference, 'character': character}
 
 
 class Store:

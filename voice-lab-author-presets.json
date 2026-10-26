@@ -1,0 +1,146 @@
+{
+  "drama3": [
+    {
+      "id": "drama-sea-captain",
+      "name": "🏴‍☠️ Sea captain",
+      "description": "gravelly old male voice, about seventy, weathered and slow, salt in every word",
+      "characterName": "Captain",
+      "scene": "a storm-battered tavern at the edge of the harbor",
+      "kind": "author-design-template",
+      "mode": "design",
+      "sourceURL": "https://huggingface.co/spaces/fishaudio/Drama-3/raw/c368729ab9347dda6635c5272ad31e6521114b79/studio_content.json",
+      "sourceRevision": "c368729ab9347dda6635c5272ad31e6521114b79",
+      "implementation": "Pinned author Space design preprocessor packaged; source and CPU prompt-layout fixtures verified; live inference not yet verified."
+    },
+    {
+      "id": "drama-night-radio",
+      "name": "📻 Night radio",
+      "description": "smooth warm baritone, a late-night radio host, relaxed and intimate, close to the mic",
+      "characterName": "Night Owl",
+      "scene": "",
+      "kind": "author-design-template",
+      "mode": "design",
+      "sourceURL": "https://huggingface.co/spaces/fishaudio/Drama-3/raw/c368729ab9347dda6635c5272ad31e6521114b79/studio_content.json",
+      "sourceRevision": "c368729ab9347dda6635c5272ad31e6521114b79",
+      "implementation": "Pinned author Space design preprocessor packaged; source and CPU prompt-layout fixtures verified; live inference not yet verified."
+    },
+    {
+      "id": "drama-hyper-kid",
+      "name": "🧒 Hyper kid",
+      "description": "excited little girl, about seven, talks fast, giggly and breathless",
+      "characterName": "Mia",
+      "scene": "",
+      "kind": "author-design-template",
+      "mode": "design",
+      "sourceURL": "https://huggingface.co/spaces/fishaudio/Drama-3/raw/c368729ab9347dda6635c5272ad31e6521114b79/studio_content.json",
+      "sourceRevision": "c368729ab9347dda6635c5272ad31e6521114b79",
+      "implementation": "Pinned author Space design preprocessor packaged; source and CPU prompt-layout fixtures verified; live inference not yet verified."
+    },
+    {
+      "id": "drama-noir-detective",
+      "name": "🕵️ Noir detective",
+      "description": "world-weary man in his forties, low smoky voice, clipped and dry",
+      "characterName": "Detective",
+      "scene": "a rain-soaked office, one desk lamp still on",
+      "kind": "author-design-template",
+      "mode": "design",
+      "sourceURL": "https://huggingface.co/spaces/fishaudio/Drama-3/raw/c368729ab9347dda6635c5272ad31e6521114b79/studio_content.json",
+      "sourceRevision": "c368729ab9347dda6635c5272ad31e6521114b79",
+      "implementation": "Pinned author Space design preprocessor packaged; source and CPU prompt-layout fixtures verified; live inference not yet verified."
+    },
+    {
+      "id": "drama-royal-herald",
+      "name": "📯 Royal herald",
+      "description": "booming, pompous royal herald, theatrical and grandly formal",
+      "characterName": "Herald",
+      "scene": "",
+      "kind": "author-design-template",
+      "mode": "design",
+      "sourceURL": "https://huggingface.co/spaces/fishaudio/Drama-3/raw/c368729ab9347dda6635c5272ad31e6521114b79/studio_content.json",
+      "sourceRevision": "c368729ab9347dda6635c5272ad31e6521114b79",
+      "implementation": "Pinned author Space design preprocessor packaged; source and CPU prompt-layout fixtures verified; live inference not yet verified."
+    },
+    {
+      "id": "drama-sleepy-intern",
+      "name": "😴 Sleepy intern",
+      "description": "young female voice, sleepy, half talking to herself",
+      "characterName": "Emma",
+      "scene": "a small office on a Monday morning; the weekly meeting is about to start",
+      "kind": "author-design-template",
+      "mode": "design",
+      "sourceURL": "https://huggingface.co/spaces/fishaudio/Drama-3/raw/c368729ab9347dda6635c5272ad31e6521114b79/studio_content.json",
+      "sourceRevision": "c368729ab9347dda6635c5272ad31e6521114b79",
+      "implementation": "Pinned author Space design preprocessor packaged; source and CPU prompt-layout fixtures verified; live inference not yet verified."
+    },
+    {
+      "id": "drama-villain",
+      "name": "🦹 Villain",
+      "description": "silky, theatrical villain with a rich low voice, amused and unhurried",
+      "characterName": "The Duke",
+      "scene": "",
+      "kind": "author-design-template",
+      "mode": "design",
+      "sourceURL": "https://huggingface.co/spaces/fishaudio/Drama-3/raw/c368729ab9347dda6635c5272ad31e6521114b79/studio_content.json",
+      "sourceRevision": "c368729ab9347dda6635c5272ad31e6521114b79",
+      "implementation": "Pinned author Space design preprocessor packaged; source and CPU prompt-layout fixtures verified; live inference not yet verified."
+    },
+    {
+      "id": "drama-nana",
+      "name": "👵 Nana",
+      "description": "warm elderly woman, soft and slightly shaky, a gentle storyteller",
+      "characterName": "Nana",
+      "scene": "a quiet bedroom, the lights already dimmed",
+      "kind": "author-design-template",
+      "mode": "design",
+      "sourceURL": "https://huggingface.co/spaces/fishaudio/Drama-3/raw/c368729ab9347dda6635c5272ad31e6521114b79/studio_content.json",
+      "sourceRevision": "c368729ab9347dda6635c5272ad31e6521114b79",
+      "implementation": "Pinned author Space design preprocessor packaged; source and CPU prompt-layout fixtures verified; live inference not yet verified."
+    }
+  ],
+  "voxcpm2": [
+    {
+      "id": "vox-gentle-melancholic-girl",
+      "name": "Gentle & Melancholic Girl",
+      "description": "A young girl with a soft, sweet voice. Speaks slowly with a melancholic, slightly tsundere tone.",
+      "kind": "author-design-template",
+      "mode": "design",
+      "descriptionLanguage": "English",
+      "sourceURL": "https://huggingface.co/spaces/OpenBMB/VoxCPM-Demo/raw/5b015bfaa16e8a6a35bb1eefb093787c7e3f0352/app.py",
+      "sourceRevision": "5b015bfaa16e8a6a35bb1eefb093787c7e3f0352",
+      "implementation": "Native documented (description)text voice conditioning; a recipe, not a stable built-in speaker identity."
+    },
+    {
+      "id": "vox-laid-back-surfer",
+      "name": "Laid-Back Surfer Dude",
+      "description": "Relaxed young male voice, slightly nasal, lazy drawl, very casual and chill.",
+      "kind": "author-design-template",
+      "mode": "design",
+      "descriptionLanguage": "English",
+      "sourceURL": "https://huggingface.co/spaces/OpenBMB/VoxCPM-Demo/raw/5b015bfaa16e8a6a35bb1eefb093787c7e3f0352/app.py",
+      "sourceRevision": "5b015bfaa16e8a6a35bb1eefb093787c7e3f0352",
+      "implementation": "Native documented (description)text voice conditioning; a recipe, not a stable built-in speaker identity."
+    },
+    {
+      "id": "vox-palace-empress",
+      "name": "深宫太后",
+      "description": "中老年女性，声音低沉阴冷，语速缓慢而有力，字字深思熟虑，带有深不可测的城府与威慑感。",
+      "kind": "author-design-template",
+      "mode": "design",
+      "descriptionLanguage": "Chinese",
+      "sourceURL": "https://huggingface.co/spaces/OpenBMB/VoxCPM-Demo/raw/5b015bfaa16e8a6a35bb1eefb093787c7e3f0352/app.py",
+      "sourceRevision": "5b015bfaa16e8a6a35bb1eefb093787c7e3f0352",
+      "implementation": "Native documented (description)text voice conditioning; a recipe, not a stable built-in speaker identity."
+    },
+    {
+      "id": "vox-driving-instructor",
+      "name": "暴躁驾校教练",
+      "description": "暴躁的中年男声，语速快，充满无奈和愤怒",
+      "kind": "author-design-template",
+      "mode": "design",
+      "descriptionLanguage": "Chinese",
+      "sourceURL": "https://huggingface.co/spaces/OpenBMB/VoxCPM-Demo/raw/5b015bfaa16e8a6a35bb1eefb093787c7e3f0352/app.py",
+      "sourceRevision": "5b015bfaa16e8a6a35bb1eefb093787c7e3f0352",
+      "implementation": "Native documented (description)text voice conditioning; a recipe, not a stable built-in speaker identity."
+    }
+  ]
+}

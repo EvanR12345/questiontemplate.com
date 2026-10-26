@@ -236,6 +236,36 @@ separately. A measured rate-normalized 30-second audio estimate is
 
 ## Verification
 
+Drama character design uses the official Fish Audio Space's pinned
+`drama3_space_ext.py`, vendored unchanged as `drama_space_ext.py` from revision
+`c368729ab9347dda6635c5272ad31e6521114b79` (upstream SHA256
+`df7e7c1e497b4488b69eef6b35c62370d3281277a2b8cd1c7423de8341947aa7`).
+The reviewed extension builds the model's Figure 13 scene/character prompt and
+performs no external I/O or secret reads. Before launching SGLang, the adapter
+uses the author's Dockerfile technique to rebind the installed preprocessing
+factory. The module is replaced atomically to preserve uv wheel-cache hardlinks;
+the worker directory is placed on `PYTHONPATH` for spawned pipeline stages.
+The hook is idempotent and rejects an unrecognized factory interface.
+It supports both installed `site-packages` and the preparation script's owned
+editable checkout at `sources/drama3`; ambiguous or out-of-root paths fail closed.
+
+Design requests send the author's `@@drama3-space@@` JSON envelope with the
+original script and `{name, description, scene}` character. Optional top-level
+`character: {name, scene}` preserves the author's eight named templates;
+generic designs default to `Narrator` with no scene. Clone and plain TTS take
+the extension's unchanged stock path. Source/CPU fixture validation does not
+establish GPU generation quality or a stable identity across unseeded designs.
+Drama's author-default UI top-k 0 means all main-token candidates: the adapter
+sends 4097 to the native API while codebook heads keep their internal cap 30.
+An explicitly saved top-k 30 still sends 30. The official cookbook warns that
+capping the main token at 30 can make a performance fall silent after its first
+phrase; this default follows the author's current Space behavior.
+
+Primary design sources:
+[author extension](https://huggingface.co/spaces/fishaudio/Drama-3/blob/c368729ab9347dda6635c5272ad31e6521114b79/drama3_space_ext.py),
+[factory hook](https://huggingface.co/spaces/fishaudio/Drama-3/blob/c368729ab9347dda6635c5272ad31e6521114b79/Dockerfile.engine),
+[eight templates](https://huggingface.co/spaces/fishaudio/Drama-3/blob/c368729ab9347dda6635c5272ad31e6521114b79/studio_content.json).
+
 CPU-only tests use fake inference while exercising real HTTP authentication,
 persistent job recovery, duplicate protection, cancellation races and accounting:
 

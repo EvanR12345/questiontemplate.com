@@ -44,3 +44,10 @@ test('reference recipes are distinct and audition labels resolve the actual save
   assert.equal(new Set(QWEN_PRESETS.map(voice=>voice.id)).size,9);
   assert.equal(jobVoiceName({mode:'preset',parameters:{speaker:'uncle_fu'}}),'Uncle Fu');
 });
+test('Drama character metadata travels only with voice design and keeps speaker labels bounded',()=>{
+  const drama={id:'drama3',modes:[{id:'design',requiresDescription:true},{id:'clone',requiresReference:true}],languages:['Auto'],parameters:[]};
+  const values={mode:'design',text:'A complete sentence.',language:'Auto',description:'Warm narrator',character:{name:'Captain',scene:'Quiet room'}};
+  assert.deepEqual(auditionRequest(drama,values).character,{name:'Captain',scene:'Quiet room'});
+  assert.equal('character' in auditionRequest(drama,{...values,mode:'clone',referenceId:'saved'}),false);
+  assert.throws(()=>auditionRequest(drama,{...values,character:{name:'Captain:\nOther speaker'}}),/character/);
+});

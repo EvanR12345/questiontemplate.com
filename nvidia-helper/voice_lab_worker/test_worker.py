@@ -1,9 +1,12 @@
 """CPU-only worker contract tests. No model download, paid requests or GPU import."""
 import base64
+import dataclasses
+import importlib.util
 import io
 import json
 from pathlib import Path, PurePosixPath
 import tempfile
+import sys
 import threading
 import types
 import unittest
@@ -454,6 +457,137 @@ class ModelControlForwarding(unittest.TestCase):
         for params in [{'do_sample': 'false'}, {'temperature': True}, {'subtalker_top_k': 2.5}]:
             with self.assertRaises(ValueError):
                 service.validate(qwen | {'parameters': params})
+
+
+class AuthorDramaDesign(unittest.TestCase):
+    def test_hook_supports_pinned_owned_editable_source_install(self):
+        with tempfile.TemporaryDirectory() as temp:
+            stages = Path(temp) / 'sources/drama3/sglang_omni/models/fishaudio_drama3/stages.py'
+            stages.parent.mkdir(parents=True)
+            original = 'def create_preprocessing_executor():\n    preprocessor = Drama3SpeechPreprocessor()\n'
+            stages.write_text(original, encoding='utf-8')
+            self.assertEqual(adapter.install_drama_design_hook(temp), stages)
+            self.assertEqual(stages.read_text(encoding='utf-8'), original + adapter.DRAMA_DESIGN_HOOK)
+
+    def test_hook_refuses_an_editable_checkout_resolving_outside_runtime(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source_root = Path(temp) / 'sources/drama3'
+            stages = source_root / 'sglang_omni/models/fishaudio_drama3/stages.py'
+            stages.parent.mkdir(parents=True)
+            original = 'def create_preprocessing_executor():\n    preprocessor = Drama3SpeechPreprocessor()\n'
+            stages.write_text(original, encoding='utf-8')
+            real_resolve = Path.resolve
+            def redirected(path, *args, **kwargs):
+                if path == source_root or path == stages:
+                    return Path(temp).parent / 'outside-owned-runtime' / path.name
+                return real_resolve(path, *args, **kwargs)
+            with patch.object(Path, 'resolve', redirected), self.assertRaises(RuntimeError):
+                adapter.install_drama_design_hook(temp)
+            self.assertEqual(stages.read_text(encoding='utf-8'), original)
+
+    def test_hook_is_idempotent_and_rejects_changed_factory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            stages = Path(temp) / 'envs/drama3/lib/python3.11/site-packages/sglang_omni/models/fishaudio_drama3/stages.py'
+            stages.parent.mkdir(parents=True)
+            original = 'def create_preprocessing_executor():\n    preprocessor = Drama3SpeechPreprocessor()\n'
+            stages.write_text(original, encoding='utf-8')
+            cache_alias = Path(temp) / 'original-wheel-cache-module.py'
+            __import__('os').link(stages, cache_alias)
+            adapter.install_drama_design_hook(temp)
+            adapter.install_drama_design_hook(temp)
+            self.assertEqual(stages.read_text(encoding='utf-8'), original + adapter.DRAMA_DESIGN_HOOK)
+            self.assertEqual(cache_alias.read_text(encoding='utf-8'), original)
+            stages.write_text('def a_different_factory(): pass\n', encoding='utf-8')
+            with self.assertRaises(RuntimeError):
+                adapter.install_drama_design_hook(temp)
+
+    def test_author_envelope_preserves_script_name_scene_and_stock_clone(self):
+        design = body(model='drama3', mode='design', description='weathered and slow',
+                      character={'name': 'Captain', 'scene': 'a harbor tavern'},
+                      parameters={'temperature': 1, 'top_p': .9, 'top_k': 30})
+        payload = adapter.drama_generation_payload(design, None)
+        envelope = json.loads(payload['input'][len(adapter.DRAMA_ENVELOPE_MARKER):])
+        self.assertEqual(envelope, {'text': design['text'], 'voice_references': 0, 'history': [],
+                                   'character': {'name': 'Captain', 'description': 'weathered and slow', 'scene': 'a harbor tavern'}})
+        clone = dict(design, mode='clone', reference={'transcript': 'Exact original words.'})
+        payload = adapter.drama_generation_payload(clone, Path('/private/reference.wav'))
+        self.assertEqual(payload['input'], clone['text'])
+        self.assertEqual(payload['references'][0]['text'], 'Exact original words.')
+        with self.assertRaises(ValueError):
+            adapter.drama_generation_payload(design, Path('/private/reference.wav'))
+
+    def test_drama_author_zero_means_all_candidates_not_literal_native_zero(self):
+        value = body(model='drama3', parameters={'temperature': 1, 'top_p': .9, 'top_k': 0})
+        self.assertEqual(adapter.drama_generation_payload(value, None)['top_k'], 4097)
+        value['parameters']['top_k'] = 30
+        self.assertEqual(adapter.drama_generation_payload(value, None)['top_k'], 30)
+
+    def test_vendored_preprocessor_builds_figure13_and_preserves_stock_path(self):
+        # Execute the actual vendored subclass with CPU-only protocol fixtures.
+        # The override captures segment boundaries before tensor tokenization;
+        # no torch/CUDA package, checkpoint or paid resource is imported.
+        modules = {}
+        for name in ['sglang_omni', 'sglang_omni.models', 'sglang_omni.models.fishaudio_drama3', 'sglang_omni.proto']:
+            modules[name] = types.ModuleType(name)
+            modules[name].__path__ = []
+        prompt = types.ModuleType('sglang_omni.models.fishaudio_drama3.prompt')
+        for name, value in {'GENERATION_START': '<|im_start|>assistant\n', 'MESSAGE_END': '<|im_end|>\n',
+                            'REFERENCE_INSTRUCTION': 'Reference instruction', 'SEMANTIC_BEGIN_TOKEN': '<|semantic|>',
+                            'SPEAKER_TAG_PATTERN': __import__('re').compile(r'<\|speaker:\d+\|>'),
+                            'TTS_INSTRUCTION': 'Speak the text', 'UNICODE_WHITE_SPACE': ' \n\r\t'}.items():
+            setattr(prompt, name, value)
+        def validate(text, name):
+            if '<|' in text:
+                raise ValueError('Structural token in caller text')
+        prompt.validate_caller_text = validate
+        prompt.with_speaker_tag = lambda text, index: '<|speaker:0|>' + text
+        modules[prompt.__name__] = prompt
+        request = types.ModuleType('sglang_omni.proto.request')
+        request.OmniRequest = dataclasses.make_dataclass('OmniRequest', [('inputs', object), ('params', object), ('metadata', object)])
+        request.StagePayload = dataclasses.make_dataclass('StagePayload', [('request_id', str), ('request', object), ('data', object)])
+        modules[request.__name__] = request
+        builders = types.ModuleType('sglang_omni.models.fishaudio_drama3.request_builders')
+        builders.REQUEST_ERROR_PREFIX = 'Drama 3 request:'
+        modules[builders.__name__] = builders
+        prepared = dataclasses.make_dataclass('Prepared', [('prompt_rows', object)])
+        speech = types.ModuleType('sglang_omni.models.fishaudio_drama3.speech_request')
+        class Stock:
+            def __init__(self, **kwargs):
+                self.max_prompt_rows = 8192
+            def __call__(self, payload):
+                self.stock_inputs = payload.request.inputs
+                return request.StagePayload(payload.request_id, payload.request, prepared('stock'))
+        speech.Drama3SpeechPreprocessor = Stock
+        speech.speech_inputs = lambda inputs: (inputs, [])
+        modules[speech.__name__] = speech
+        modules['torch'] = types.ModuleType('torch')
+        modules['torch'].Tensor = object
+        location = Path(adapter.__file__).with_name('drama_space_ext.py')
+        spec = importlib.util.spec_from_file_location('tested_author_drama_space_ext', location)
+        extension = importlib.util.module_from_spec(spec)
+        modules[spec.name] = extension
+        with patch.dict(sys.modules, modules):
+            spec.loader.exec_module(extension)
+            class Capture(extension.Drama3SpacePreprocessor):
+                def segment_rows(self, segments):
+                    self.segments = segments
+                    return types.SimpleNamespace(shape=(sum(len(s) for s in segments), 11))
+            processor = Capture()
+            envelope = {'text': 'The tide is turning.', 'voice_references': 0, 'history': [],
+                        'character': {'name': 'Captain', 'description': 'old gravelly voice', 'scene': 'a harbor tavern'}}
+            payload = request.StagePayload('fixture-123', request.OmniRequest(extension.ENVELOPE_MARKER + json.dumps(envelope), {}, {}), None)
+            result = processor(payload)
+            self.assertEqual(processor.segments, ['<|im_start|>system\n',
+                'Scene: a harbor tavern\nCharacters:\n- Captain: old gravelly voice\nVoice every line of the script in order, with <|audio_separator|> between consecutive lines.',
+                '<|im_end|>\n', '<|im_start|>user\n', 'Captain: The tide is turning.', '<|im_end|>\n', '<|im_start|>assistant\n'])
+            self.assertEqual(processor.stock_inputs, 'Captain: The tide is turning.')
+            self.assertIs(result.request, payload.request)
+            stock_payload = request.StagePayload('fixture-124', request.OmniRequest('Plain narration.', {}, {}), None)
+            self.assertEqual(processor(stock_payload).data.prompt_rows, 'stock')
+            self.assertEqual(processor.stock_inputs, 'Plain narration.')
+            envelope['character']['name'] = 'Captain: attacker'
+            with self.assertRaises(ValueError):
+                extension.parse_envelope(json.dumps(envelope), 0)
 
 
 if __name__ == '__main__':

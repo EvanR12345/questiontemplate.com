@@ -22,6 +22,69 @@ QWEN_SAMPLER_DEFAULTS = {
     'subtalker_dosample': True, 'subtalker_temperature': .9, 'subtalker_top_p': 1.0, 'subtalker_top_k': 50,
 }
 QWEN_VARIANTS = {'clone': 'base', 'design': 'design', 'preset': 'preset'}
+DRAMA_ENVELOPE_MARKER = '@@drama3-space@@'
+DRAMA_DESIGN_HOOK = ('\n\n# QuestionTemplate: pinned Fish Audio Space described-character preprocessor.\n'
+                     'from drama_space_ext import Drama3SpacePreprocessor as Drama3SpeechPreprocessor  # noqa: E402\n')
+
+
+def install_drama_design_hook(root):
+    """Use the author's Dockerfile rebind so spawned stages receive the hook too.
+
+    Only the owned installed Drama stages module is modified, before starting
+    sgl-omni. Importing the custom class in this controller would not propagate
+    to multiprocessing spawn workers. No model or precision is changed.
+    """
+    candidates = list((Path(root) / 'envs' / 'drama3' / 'lib').glob(
+        'python*/site-packages/sglang_omni/models/fishaudio_drama3/stages.py'))
+    editable_root = Path(root) / 'sources' / 'drama3'
+    editable_stages = editable_root / 'sglang_omni/models/fishaudio_drama3/stages.py'
+    if editable_stages.is_file():
+        candidates.append(editable_stages)
+    if len(candidates) != 1:
+        raise RuntimeError('The owned Drama runtime has no unique preprocessing factory module.')
+    stages = candidates[0]
+    owned_roots = [(Path(root) / 'envs' / 'drama3').resolve(), editable_root.resolve()]
+    resolved_stages = stages.resolve()
+    if (not resolved_stages.is_relative_to(Path(root).resolve())
+            or not any(resolved_stages.is_relative_to(owned) for owned in owned_roots)):
+        raise RuntimeError('The Drama preprocessing factory is outside its owned environment.')
+    source = stages.read_text(encoding='utf-8')
+    if 'def create_preprocessing_executor' not in source or 'preprocessor = Drama3SpeechPreprocessor(' not in source:
+        raise RuntimeError('The installed Drama factory differs from the reviewed author hook interface.')
+    if DRAMA_DESIGN_HOOK not in source:
+        # uv can hard-link installed modules to its wheel cache. Replace this
+        # owned module atomically rather than changing a shared cache inode.
+        pending = stages.with_name(stages.name + '.qt-design.pending')
+        try:
+            pending.write_text(source + DRAMA_DESIGN_HOOK, encoding='utf-8')
+            os.chmod(pending, stages.stat().st_mode)
+            os.replace(pending, stages)
+        finally:
+            pending.unlink(missing_ok=True)
+    return stages
+
+
+def drama_generation_payload(body, reference):
+    """Exact author Space envelope for design; plain/clone retain stock input."""
+    text = body['text']
+    parameters = body['parameters']
+    if body['mode'] == 'design':
+        if reference:
+            raise ValueError('Drama character design cannot also use reference audio.')
+        character = body.get('character') or {}
+        text = DRAMA_ENVELOPE_MARKER + json.dumps({
+            'text': text, 'voice_references': 0, 'history': [],
+            'character': {'name': character.get('name', 'Narrator'),
+                          'description': body['description'], 'scene': character.get('scene') or None},
+        }, ensure_ascii=False)
+    payload = {'input': text, 'response_format': 'wav', 'stream': False,
+               'temperature': parameters['temperature'], 'top_p': parameters['top_p'],
+               # Author Space UI uses 0 for all 4097 main-token candidates;
+               # the native API receives 4097; codebook heads keep their cap 30.
+               'top_k': int(parameters['top_k']) or 4097, 'max_new_tokens': 1300}
+    if reference:
+        payload['references'] = [{'audio_path': str(reference), 'text': body['reference']['transcript']}]
+    return payload
 
 
 def qwen_variant(mode):
@@ -142,6 +205,7 @@ def drama_cuda_environment(root, inherited=None):
     environment.update(CUDA_HOME=str(toolkit), CUDA_PATH=str(toolkit), CUDACXX=str(toolkit / 'bin' / 'nvcc'))
     environment['PATH'] = str(toolkit / 'bin') + os.pathsep + str(Path(root) / 'envs' / 'drama3' / 'bin') + os.pathsep + environment.get('PATH', '')
     environment['LD_LIBRARY_PATH'] = str(toolkit / 'lib') + os.pathsep + environment.get('LD_LIBRARY_PATH', '')
+    environment['PYTHONPATH'] = str(Path(__file__).resolve().parent) + os.pathsep + environment.get('PYTHONPATH', '')
     cache = Path(root) / 'cache'
     environment.update(SGLANG_CACHE_DIR=str(cache / 'sglang'), SGLANG_JIT_CACHE_DIR=str(cache / 'sglang-jit'),
                        SGLANG_DG_CACHE_DIR=str(cache / 'deep-gemm'), DG_JIT_CACHE_DIR=str(cache / 'deep-gemm'),
@@ -234,6 +298,7 @@ class Runtime:
     def start_drama(self):
         # Current official default is the full FP8-expert/BF16 checkpoint. Int4 is
         # a different checkpoint and is deliberately not substituted here.
+        install_drama_design_hook(ROOT)
         command = [str(ROOT / 'envs' / 'drama3' / 'bin' / 'sgl-omni'), 'serve',
                    '--model-path', str(ROOT / 'models' / 'drama3'), '--host', '127.0.0.1', '--port', '18767',
                    '--tts_engine.factory.max_running_requests', '1',
@@ -270,11 +335,7 @@ class Runtime:
         parameters = body['parameters']
         output = directory / 'audio.wav'
         if self.kind == 'drama3':
-            payload = {'input': body['text'], 'response_format': 'wav', 'stream': False,
-                       'temperature': parameters['temperature'], 'top_p': parameters['top_p'],
-                       'top_k': int(parameters['top_k']), 'max_new_tokens': 1300}
-            if reference:
-                payload['references'] = [{'audio_path': str(reference), 'text': body['reference']['transcript']}]
+            payload = drama_generation_payload(body, reference)
             request = urllib.request.Request('http://127.0.0.1:18767/v1/audio/speech',
                                              json.dumps(payload).encode(), {'Content-Type': 'application/json'}, method='POST')
             with urllib.request.urlopen(request, timeout=180) as response:

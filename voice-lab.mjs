@@ -6,21 +6,24 @@ const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
 const referenceURLs=new Map();let libraryFingerprint='',referenceOptionsFingerprint='';
+let authorPresets={};
 const DRAFT_KEY='qt-voice-lab-draft-v1';
 const json=(path,body)=>helperJson('/studio/voice-lab'+path,key,body);
 const notice=message=>{$('notice').textContent=message||'';};
 function selectedModel(){return snapshot?.models?.find(model=>model.id===modelId);}
 function formParameters(){const parameters={};document.querySelectorAll('[data-parameter]').forEach(input=>parameters[input.dataset.parameter]=input.type==='checkbox'?input.checked:input.value);return parameters;}
-function saveDraft(){try{if(modelId&&$('parameters').dataset.model===modelId)parameterDrafts[modelId]=formParameters();sessionStorage.setItem(DRAFT_KEY,JSON.stringify({model:modelId,mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,parameterDrafts}));}catch{}}
+function saveDraft(){try{if(modelId&&$('parameters').dataset.model===modelId)parameterDrafts[modelId]=formParameters();sessionStorage.setItem(DRAFT_KEY,JSON.stringify({model:modelId,mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,character:{name:$('characterName').value,scene:$('characterScene').value},parameterDrafts}));}catch{}}
 let draft={};try{draft=JSON.parse(sessionStorage.getItem(DRAFT_KEY)||'{}');}catch{}
 const parameterDrafts=draft.parameterDrafts||{};
 $('script').value=draft.text||'';$('description').value=draft.description||'';modelId=draft.model||'';
+$('characterName').value=draft.character?.name||'Narrator';$('characterScene').value=draft.character?.scene||'';
 function words(){const n=$('script').value.trim().split(/\s+/).filter(Boolean).length;$('wordCount').textContent=n+' words';saveDraft();}
 function modeView(){
   const model=selectedModel(),mode=model?.modes?.find(mode=>(typeof mode==='string'?mode:mode.id)===$('mode').value);
   const descriptor=typeof mode==='string'?{id:mode}:mode||{};
   $('descriptionField').hidden=!(descriptor.requiresDescription||descriptor.allowsDescription||descriptor.id==='design');
   $('referenceField').hidden=!(descriptor.requiresReference||descriptor.id==='clone');
+  $('characterField').hidden=!(modelId==='drama3'&&descriptor.id==='design');
   $('referenceHint').textContent=descriptor.requiresTranscript?'This model requires an exact transcript of the reference.':'Use a clear reference of a voice you are authorized to use.';
   for(const label of $('parameters').querySelectorAll('[data-parameter-modes]'))if(label.dataset.parameterModes)label.hidden=!label.dataset.parameterModes.split(',').includes(descriptor.id);
   saveDraft();if(snapshot)workerView();
@@ -60,7 +63,8 @@ async function loadReference(id,element){
   }catch(error){notice(error.message);return false;}
 }
 function libraryView(){
-  const references=snapshot.references||[],completed=(snapshot.jobs||[]).filter(job=>job.status==='COMPLETED'&&job.audioReady),fingerprint=JSON.stringify([references,completed.map(job=>job.id)]);
+  const priority=ref=>ref.source?.model==='qwen3'&&ref.source?.mode==='design'?0:ref.source?.kind==='audition'?1:2;
+  const references=[...(snapshot.references||[])].sort((a,b)=>priority(a)-priority(b)||(b.createdAt||0)-(a.createdAt||0)),completed=(snapshot.jobs||[]).filter(job=>job.status==='COMPLETED'&&job.audioReady),fingerprint=JSON.stringify([references,completed.map(job=>job.id)]);
   if(libraryFingerprint===fingerprint)return;libraryFingerprint=fingerprint;
   const host=$('referenceLibrary'),ids=new Set(references.map(ref=>ref.id));
   for(const element of host.querySelectorAll('[data-library-reference]'))if(!ids.has(element.dataset.libraryReference))element.remove();
@@ -84,7 +88,23 @@ function libraryView(){
       target.append(row);row.querySelector('button').addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;const success=await loadAudio(job.id,row.querySelector('audio'));button.disabled=false;button.hidden=success;if(!success)button.textContent='Retry clone audition';});
     }
   }
+  let cursor=host.firstElementChild;
+  for(const ref of references){const node=[...host.children].find(node=>node.dataset.libraryReference===ref.id);if(node===cursor)cursor=cursor.nextElementSibling;else if(node)host.insertBefore(node,cursor);}
 }
+function voiceLabel(job){return authorPresets[job.model]?.find(preset=>preset.description===job.description)?.name||jobVoiceName(job,snapshot.references);}
+async function authorPresetView(){
+  try{
+    const response=await fetch('./voice-lab-author-presets.json?v=authors-20261026',{credentials:'omit'});if(!response.ok)throw Error('Cannot load the author preset catalog.');
+    const value=await response.json();if(!Array.isArray(value.drama3)||!Array.isArray(value.voxcpm2))throw Error('Invalid author preset catalog.');authorPresets=value;
+    $('authorPresets').innerHTML=['drama3','voxcpm2'].map(model=>`<section class="author-preset-group"><h4>${model==='drama3'?'Drama 3 · eight cast templates':'VoxCPM2 · four voice styles'}</h4><div class="preset-voices">${authorPresets[model].map(preset=>`<button class="secondary" type="button" data-author-model="${esc(model)}" data-author-preset="${esc(preset.id)}">${esc(preset.name)}</button>`).join('')}</div></section>`).join('');
+    $('authorPresets').querySelectorAll('[data-author-preset]').forEach(button=>button.addEventListener('click',()=>{
+      const model=button.dataset.authorModel,preset=authorPresets[model].find(item=>item.id===button.dataset.authorPreset);
+      if(!snapshot?.models.find(item=>item.id===model)?.modes.some(mode=>mode.id==='design')){notice('Update the helper to generate this author voice template.');return;}
+      saveDraft();modelId=model;draft={mode:'design',language:'Auto'};$('script').value=REFERENCE_SCRIPT;$('description').value=preset.description;$('characterName').value=preset.characterName||'Narrator';$('characterScene').value=preset.scene||'';modelView();words();$('create').scrollIntoView({behavior:'smooth',block:'start'});notice(`${preset.name} is set up. Review the script and settings before generating.`);
+    }));
+  }catch(error){$('authorPresets').textContent=error.message;}
+}
+authorPresetView();
 $('voiceDesigns').innerHTML=VOICE_DESIGNS.map(voice=>`<article class="voice-design"><h4>${esc(voice.name)}</h4><p class="muted">${esc(voice.description)}</p><button class="secondary" data-design="${esc(voice.id)}" type="button">Set up this voice</button></article>`).join('');
 $('voiceDesigns').querySelectorAll('[data-design]').forEach(button=>button.addEventListener('click',()=>{
   const voice=VOICE_DESIGNS.find(item=>item.id===button.dataset.design);saveDraft();modelId='qwen3';draft={mode:'design',language:'English'};$('script').value=REFERENCE_SCRIPT;$('description').value=voice.description;modelView();words();$('create').scrollIntoView({behavior:'smooth',block:'start'});notice('Voice recipe is ready. Generate, listen, then save a clean take as a clone reference.');
@@ -135,13 +155,13 @@ function jobsView(){
   if(!jobs.length){host.innerHTML='<p class="muted" id="emptyHistory">Your first preview will appear here.</p>';return;}
   $('emptyHistory')?.remove();
   for(const job of [...jobs].sort((a,b)=>b.createdAt-a.createdAt)){
-    const fingerprint=JSON.stringify([job,jobVoiceName(job,snapshot.references)]),existing=[...host.children].find(node=>node.dataset.job===job.id);
+    const fingerprint=JSON.stringify([job,voiceLabel(job)]),existing=[...host.children].find(node=>node.dataset.job===job.id);
     if(existing&&jobFingerprints.get(job.id)===fingerprint)continue;
     const status=String(job.status||'UNKNOWN').toLowerCase(),complete=status==='completed',active=['queued','submitting','running','unknown','cancel_requested'].includes(status);
     const article=document.createElement('article');article.className='audition';article.dataset.job=job.id;
     article.hidden=$('historyModel').value!==''&&job.model!==$('historyModel').value;
     const model=snapshot.models.find(model=>model.id===job.model);
-    article.innerHTML=`<div class="audition-head"><h3>${esc(model?.name||job.model)} · ${esc(job.mode)}</h3><span class="status ${esc(status)}">${esc(status.replaceAll('_',' '))}</span></div><p class="voice-name">${esc(jobVoiceName(job,snapshot.references))}</p><p>${esc(job.text||'')}</p><div class="metrics">${jobMetrics(job.metrics)}</div>${job.error?`<p class="job-error">${esc(job.error)}</p>`:''}${job.audioReady?'<audio hidden controls preload="none" aria-label="Audition preview"></audio>':''}<div class="job-actions">${complete&&job.audioReady?'<button class="secondary" data-load type="button">Load preview</button><button class="secondary" data-promote type="button">Save as clone reference</button><button class="secondary" data-pick type="button">Save this pick</button><a data-download download="audition.opus" hidden>Download Opus</a>':''}${active?'<button class="secondary" data-cancel type="button">Cancel job</button>':''}<span class="muted">${esc(new Date(job.createdAt*1000).toLocaleString())}</span></div>`;
+    article.innerHTML=`<div class="audition-head"><h3>${esc(model?.name||job.model)} · ${esc(job.mode)}</h3><span class="status ${esc(status)}">${esc(status.replaceAll('_',' '))}</span></div><p class="voice-name">${esc(voiceLabel(job))}</p><p>${esc(job.text||'')}</p><div class="metrics">${jobMetrics(job.metrics)}</div>${job.error?`<p class="job-error">${esc(job.error)}</p>`:''}${job.audioReady?'<audio hidden controls preload="none" aria-label="Audition preview"></audio>':''}<div class="job-actions">${complete&&job.audioReady?'<button class="secondary" data-load type="button">Load preview</button><button class="secondary" data-promote type="button">Save as clone reference</button><button class="secondary" data-pick type="button">Save this pick</button><a data-download download="audition.opus" hidden>Download Opus</a>':''}${active?'<button class="secondary" data-cancel type="button">Cancel job</button>':''}<span class="muted">${esc(new Date(job.createdAt*1000).toLocaleString())}</span></div>`;
     if(existing){const oldAudio=existing.querySelector('audio'),newAudio=article.querySelector('audio');if(oldAudio&&newAudio)newAudio.replaceWith(oldAudio);existing.replaceWith(article);}else host.append(article);
     jobFingerprints.set(job.id,fingerprint);
     const audio=article.querySelector('audio'),load=article.querySelector('[data-load]'),download=article.querySelector('[data-download]');
@@ -176,6 +196,7 @@ $('pair').addEventListener('click',()=>$('pairFile').click());
 $('pairFile').addEventListener('change',()=>act(async()=>{const file=$('pairFile').files[0];if(!file)return;if(file.size>1024)throw Error('Choose the helper’s small pairing text file.');importHelperPairing(await file.text());await connect();}));
 $('example').addEventListener('click',()=>{$('script').value=SAMPLE_SCRIPT;words();});
 $('script').addEventListener('input',words);$('description').addEventListener('input',saveDraft);$('mode').addEventListener('change',modeView);$('language').addEventListener('change',saveDraft);$('reference').addEventListener('change',saveDraft);
+$('characterName').addEventListener('input',saveDraft);$('characterScene').addEventListener('input',saveDraft);
 $('refresh').addEventListener('click',()=>act(refresh));
 $('historyModel').addEventListener('change',()=>{for(const article of $('jobs').querySelectorAll('[data-job]')){const job=snapshot.jobs.find(item=>item.id===article.dataset.job);article.hidden=$('historyModel').value!==''&&job.model!==$('historyModel').value;}});
 document.addEventListener('play',event=>{if(event.target.tagName==='AUDIO')for(const audio of document.querySelectorAll('audio'))if(audio!==event.target&&!audio.paused)audio.pause();},true);
@@ -191,7 +212,7 @@ $('saveReference').addEventListener('click',()=>act(async()=>{
 }));
 $('generate').addEventListener('click',()=>act(async()=>{
   const parameters=formParameters();
-  const body=auditionRequest(selectedModel(),{mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,parameters});
+  const body=auditionRequest(selectedModel(),{mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,character:{name:$('characterName').value,scene:$('characterScene').value},parameters});
   await json('/jobs',body);saveDraft();await refresh();notice('Audition queued. You can leave this page while the helper runs.');
 }));
 window.addEventListener('pagehide',event=>{clearInterval(timer);if(!event.persisted){for(const url of [...objectURLs.values(),...referenceURLs.values()])URL.revokeObjectURL(url);objectURLs.clear();referenceURLs.clear();}});

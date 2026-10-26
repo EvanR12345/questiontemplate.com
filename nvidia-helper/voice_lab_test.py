@@ -201,6 +201,47 @@ class VoiceLabTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 service.checkpoint_for('qwen3', 'unsupported')
 
+    def test_drama_design_character_defaults_and_author_names_survive_helper_worker_contract(self):
+        from voice_lab_worker.service import validate
+        job = self.lab.enqueue(self.body(model='drama3', mode='design', description='A warm storyteller.'))
+        self.assertEqual(job['character'], {'name': 'Narrator', 'scene': None})
+        self.lab.tick()
+        sent = self.worker.submits[-1]
+        self.assertEqual(validate(sent)['character'], job['character'])
+        self.complete(job['id'])
+        self.lab.tick()
+        metadata = json.loads((Path(__file__).resolve().parent.parent / 'voice-lab-author-presets.json').read_text('utf-8'))
+        self.assertEqual(len(metadata['drama3']), 8)
+        for preset in metadata['drama3']:
+            character = dict(name=preset['characterName'], scene=preset.get('scene') or None)
+            author = self.lab.enqueue(self.body(model='drama3', mode='design', description=preset['description'], character=character))
+            self.assertEqual(author['character'], character)
+            self.lab.tick()
+            self.assertEqual(validate(self.worker.submits[-1])['character'], character)
+            self.complete(author['id'])
+            self.lab.tick()
+
+    def test_drama_top_k_default_includes_all_candidates_and_preserves_explicit_historical_values(self):
+        from voice_lab_worker.service import validate
+        for value in (None, 30, 4097):
+            job = self.lab.enqueue(self.body(model='drama3', parameters={} if value is None else {'top_k': value}))
+            self.assertEqual(job['parameters']['top_k'], 0 if value is None else value)
+            self.lab.tick()
+            self.assertEqual(validate(self.worker.submits[-1])['parameters']['top_k'], 0 if value is None else value)
+            self.complete(job['id'])
+            self.lab.tick()
+
+    def test_drama_design_rejects_structural_character_fields_and_ignored_fields_on_other_modes(self):
+        bad = [{'name': 'A:B'}, {'name': 'A\nB'}, {'name': '<|speaker|>'}, {'name': '@@drama3-space@@'},
+               {'name': 'x'*81}, {'name': 'Narrator', 'scene': 'x'*501},
+               {'name': 'Narrator', 'scene': 'A\nB'}, {'name': 'Narrator', 'scene': '<|speaker|>'},
+               {'name': 'Narrator', 'unknown': 'extra'}, []]
+        for character in bad:
+            with self.subTest(character=character), self.assertRaises(ValueError):
+                self.lab.enqueue(self.body(model='drama3', mode='design', description='A warm voice.', character=character))
+        with self.assertRaises(ValueError):
+            self.lab.enqueue(self.body(model='qwen3', mode='preset', language='English', character={'name': 'Narrator'}))
+
     def test_vox_clone_strategy_validates_transcript_and_style_without_silently_ignoring_it(self):
         ref = self.reference()
         no_transcript = self.reference(transcript='')
