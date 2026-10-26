@@ -1,4 +1,4 @@
-import {setupAudioModels} from './audio-model-picker.mjs?v=voice-picker-20261015b';
+import {setupAudioModels} from './audio-model-picker.mjs?v=voice-downloads-20261026';
 import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=speech-3';
 import { speechText } from './pronunciation.mjs?v=speech-3';
 import { GenerationEstimate, measuredPace, narrationEstimate } from './speech-progress.mjs?v=speech-3';

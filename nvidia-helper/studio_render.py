@@ -153,16 +153,26 @@ class VideoRenderer:
             )
         return str(path)
 
-    def audio_preview(self, project_id, source, gate):
-        """Cache a 128 kbps audition; retain its lossless synthesis master."""
+    def audio_preview(self, project_id, source, gate, format='aac', bitrate=128):
+        """Export a selected download without synthesizing or replacing the WAV master."""
+        formats = {'aac':('aac', 'm4a', 'AAC'), 'opus':('libopus', 'opus', 'Opus'),
+                   'mp3':('libmp3lame', 'mp3', 'MP3')}
+        if format not in (*formats, 'wav'):
+            raise ValueError('Choose Opus, MP3 or WAV for the audition download.')
+        if type(bitrate) is not int or bitrate not in (64, 128, 256):
+            raise ValueError('Choose a download bitrate of 64, 128 or 256 kbps.')
+        if format == 'wav':
+            return {'exportPath':source, 'exportCodec':'WAV', 'exportBitrate':None}
+        codec, suffix, label = formats[format]
         signature = digest({'audio':self.asset_identity(project_id, source),
-                            'codec':'aac', 'bitrate':128000, 'version':1})
-        destination = self.store.folder(project_id) / f'audition-{signature[:24]}.m4a'
+                            'codec':format, 'bitrate':bitrate*1000, 'version':1})
+        destination = self.store.folder(project_id) / f'audition-{signature[:24]}.{suffix}'
         if not destination.is_file() or destination.stat().st_size == 0:
             self.run(['-i', str(self.store.asset(project_id, source)), '-vn',
-                      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', str(destination)],
+                      '-c:a', codec, '-b:a', f'{bitrate}k',
+                      *(['-movflags', '+faststart'] if format == 'aac' else []), str(destination)],
                      gate, self.store.folder(project_id) / 'audition-export.log')
-        return {'exportPath':destination.name, 'exportCodec':'AAC', 'exportBitrate':128000}
+        return {'exportPath':destination.name, 'exportCodec':label, 'exportBitrate':bitrate*1000}
 
     def run(self, args, gate, log, multiple_outputs=False):
         # Cache names become visible only after FFmpeg succeeds. A cancelled

@@ -42,6 +42,14 @@ MODELS = {
 
 QWEN_SPEAKERS = ('Ryan','Aiden','Vivian','Serena','Uncle_Fu','Dylan','Eric','Ono_Anna','Sohee')
 
+class KaggleQuotaExhausted(ValueError):
+    """Confirmed rejection for exhausted GPU quota, before notebook admission."""
+
+def gpu_quota_exhausted(message):
+    # Authentication, stock, concurrency and unknown submissions are not quota
+    # exhaustion. Never turn an ambiguous failure into a different narrator.
+    return bool(re.search(r'(?:not enough|insufficient)\s+(?:remaining\s+)?gpu\s+(?:time\s+)?quota|gpu\s+(?:time\s+)?quota[^.\n]{0,70}(?:exhausted|exceeded|used up)|(?:exhausted|exceeded)\s+(?:your\s+)?(?:weekly\s+)?gpu\s+(?:time\s+)?quota',str(message),re.I))
+
 def selected(settings):
     value=settings.get('voiceEngine','kokoro-82m')
     if value not in MODELS: raise ValueError('Choose a supported narration model.')
@@ -63,6 +71,8 @@ def validate(settings):
         raise ValueError('Narrator instructions must be at most 1200 characters.')
     if type(settings.get('fishCommercialLicense',False)) is not bool:
         raise ValueError('Fish commercial-license confirmation must be on or off.')
+    if type(settings.get('voiceLocalFallback',False)) is not bool:
+        raise ValueError('Local voice fallback must be on or off.')
 
 def identity(settings):
     """Keep existing Kokoro cache signatures unchanged; remote voices separate."""
@@ -125,6 +135,8 @@ class KaggleVoice:
             raise ValueError('Kaggle request timed out. Submission state is uncertain; do not submit a duplicate notebook.') from None
         if result.returncode:
             # Do not emit raw CLI errors, tokens, signed download URLs or story text.
+            if args[:2]==['kernels','push'] and gpu_quota_exhausted(result.stdout+'\n'+result.stderr):
+                raise KaggleQuotaExhausted('Kaggle rejected this notebook because GPU quota is exhausted.')
             code='Authentication, phone verification, GPU quota, or notebook setup may need attention.'
             raise ValueError('Kaggle operation failed. '+code)
         return result.stdout
@@ -275,10 +287,16 @@ class KaggleVoice:
             # Durable uncertainty marker first: never blindly re-submit a timed-out push.
             saved={'signature':signature,'kernel':slug,'state':'SUBMITTING','created':time.time()}
             self._write(journal,saved)
-            pushed=self._run(['kernels','push','-p',str(folder),'--accelerator','NvidiaTeslaT4','--timeout','14400'])
+            try:
+                pushed=self._run(['kernels','push','-p',str(folder),'--accelerator','NvidiaTeslaT4','--timeout','14400'])
+            except KaggleQuotaExhausted:
+                saved['state']='REJECTED';saved['reason']='gpu-quota-exhausted';self._write(journal,saved)
+                raise
             if 'successfully pushed' not in pushed.lower():
                 if 'kernel push error:' in pushed.lower():
                     saved['state']='REJECTED';self._write(journal,saved)
+                    if gpu_quota_exhausted(pushed):
+                        raise KaggleQuotaExhausted('Kaggle rejected this notebook because GPU quota is exhausted.')
                     raise ValueError('Kaggle rejected notebook admission. Check GPU quota/concurrent sessions, then retry; no generation was confirmed.')
                 raise ValueError('Kaggle did not confirm notebook submission. Reconcile this request before retrying; no duplicate was submitted.')
             saved['state']='SUBMITTED';self._write(journal,saved)

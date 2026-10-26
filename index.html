@@ -80,7 +80,8 @@
             <button class="preset" data-voice="af_nicole" aria-pressed="false"><span class="rank">#6</span><strong>Nicole</strong><span>American female</span><span class="reason">Another female voice to compare</span></button>
             <button class="preset" data-voice="bm_george" aria-pressed="false"><span class="rank">#7</span><strong>George</strong><span>British male</span><span class="reason">Try if you prefer a British accent</span></button>
           </div>
-          <details id="audioRemoteOptions" hidden><summary>Voice settings &amp; Kaggle details</summary><p class="note" id="audioRuntimeNotice"></p><label class="label" for="audioVoiceProject">Save auditions in project</label><select id="audioVoiceProject"></select><label class="label" id="audioInstructionLabel" for="audioVoiceInstruction">Narrator instructions<textarea id="audioVoiceInstruction" maxlength="1200" rows="3" style="min-height:110px"></textarea></label><p class="note">Kaggle auditions: up to 1800 characters, WAV and AAC 128 kbps. Use Studio for full chapter narration. Startup and GPU quota apply; scripts are sent to your private Kaggle notebook.</p></details>
+          <details id="audioRemoteOptions" hidden><summary>Voice settings &amp; Kaggle details</summary><p class="note" id="audioRuntimeNotice"></p><label class="label" for="audioVoiceProject">Save auditions in project</label><select id="audioVoiceProject"></select><label class="label" id="audioInstructionLabel" for="audioVoiceInstruction">Narrator instructions<textarea id="audioVoiceInstruction" maxlength="1200" rows="3" style="min-height:110px"></textarea></label><p class="note">Kaggle auditions: up to 1800 characters. Choose Opus, MP3 or WAV below. WAV is the lossless editing master, not a GPU requirement. Use Studio for full chapter narration. Startup and GPU quota apply; scripts are sent to your private Kaggle notebook.</p></details>
+          <p class="note"><a href="https://huggingface.co/spaces/ResembleAI/Dramabox" target="_blank" rel="noopener">Try DramaBox’s official free voice demo ↗</a> · No laptop model download. Its default workflow needs about 24 GB VRAM; Studio’s Kaggle integration is not yet verified.</p>
 <button class="btn" id="audioVoiceCancel" hidden>Cancel this audition</button><div id="audioModelResults"></div><div class="range"><label for="rate">Speed</label><input id="rate" type="range" min="0.5" max="2" step="0.05" value="1"><output id="rateOut">1.00×</output></div>
           <p class="note">Opus · 64 kbps by default · approximately 43–58 MB for 90–120 minutes.</p>
           <details><summary class="label">More settings</summary>
@@ -101,7 +102,7 @@
             <textarea id="pronunciation" style="min-height:110px;font-size:.85rem;margin:5px 0" placeholder="Maya = My uh&#10;API = A P I"></textarea>
             <p class="note">English pronunciation is improved automatically for all voices. Optional corrections for names take priority without changing your script. Preview a short sample before a long recording.</p>
           </details>
-          <p class="note">Runs locally in English, without an API key. First use downloads the selected voice model and runtime. After that, the engine stays ready for your next recording.</p>
+          <p class="note" id="audioRunLocationNote">Kokoro runs locally without an API key. Kaggle voices need the shared helper running to submit and recover their private notebook jobs.</p>
           <div class="range"><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step="0.05" value="1"><output id="volumeOut">100%</output></div>
           <details><summary class="label">Instant device preview</summary><p class="note">Uses your device's own voice. This preview cannot be downloaded and sounds different from the selected studio voice.</p><label class="label" for="voice">Device voice</label><select id="voice"><option>Loading voices…</option></select>
           <div class="range"><label for="pitch">Pitch</label><input id="pitch" type="range" min="0.1" max="2" step="0.05" value="1"><output id="pitchOut">1.00</output></div>
@@ -113,6 +114,6 @@
     </section>
     <footer class="footer"><span>No fixed word cap. Available memory and processing time still depend on your device.</span><span>Local speech powered by Kokoro · Opus + MP3 + WAV · Best on desktop.</span></footer>
   </main>
-  <script type="module" src="./studio.js?v=voice-picker-20261015b"></script>
+  <script type="module" src="./studio.js?v=voice-downloads-20261026"></script>
 <script type="module" src="./studio-guide-entry.mjs?v=tools-20261016"></script></body>
 </html>

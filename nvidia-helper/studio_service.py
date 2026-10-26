@@ -1,6 +1,7 @@
 """Persistent production jobs: audio, directing, shot generation, QC and renders."""
 
 import base64, copy, hashlib, io, json, math, os, re, secrets, sqlite3, threading, time, traceback, wave
+from contextlib import nullcontext
 from pathlib import Path
 from studio_data import *
 from studio_image_workers import make_comfy_provider
@@ -27,7 +28,7 @@ from prompt_preflight import require_shot
 from queue_estimates import remaining_time, timing_profile
 from studio_performance import PerformanceStore,profile_for,observation_units,signature as performance_signature,host_execution_gaps,host_interruption_details
 from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, FLOW_VERSION, audio_segments, effect_pcm, create_connected_audio, speech_pcm
-from studio_voice_provider import identity as voice_identity, selected as voice_engine, location as voice_location, catalogue as voice_catalogue, KaggleVoice
+from studio_voice_provider import identity as voice_identity, selected as voice_engine, location as voice_location, catalogue as voice_catalogue, KaggleVoice, KaggleQuotaExhausted
 
 
 class JobCancelled(Exception):
@@ -517,15 +518,17 @@ class StudioService:
         if not s['outroEnabled']: return p
         expected=audio_signature(p)
         if s['outroAudioSignature']==expected and s['outroAudioPath'] and self.store.asset(p['id'],s['outroAudioPath']).is_file(): return p
-        self.before_audio()
+        if voice_location(p['settings'])=='local':self.before_audio()
         name=f'outro-narration-{expected[:20]}.wav'
-        self.create_selected_audio(spoken_text(s),p['settings']['voice'],p['settings']['speed'],
+        result=self.create_selected_audio(spoken_text(s),p['settings']['voice'],p['settings']['speed'],
             self.store.folder(p['id'])/name,'off',p['settings'].get('narrationDelivery','standard'),settings=p['settings'],project=p)
+        metadata={'outroAudioPath':name,'outroAudioSignature':expected,
+                  'outroVoice':{key:result[key] for key in ('provider','model','voiceFallback') if key in result}}
         def saved(q):
             if audio_signature(q)!=expected: raise ValueError('Outro changed while its narration was prepared. Prior audio retained.')
-            q['settings'].setdefault('engagement',{}).update(outroAudioPath=name,outroAudioSignature=expected)
+            q['settings'].setdefault('engagement',{}).update(metadata)
         self.store.mutate(p['id'],saved)
-        p['settings'].setdefault('engagement',{}).update(outroAudioPath=name,outroAudioSignature=expected)
+        p['settings'].setdefault('engagement',{}).update(metadata)
         return p
 
     def snapshot(self):
@@ -1515,6 +1518,8 @@ class StudioService:
             details['reused']=bool(old_audio_available and old_audio==current_audio)
             if current_audio.get('voiceBatch'):
                 details.update(voiceBatch=current_audio['voiceBatch'],timingScope='shared-voice-group',excludeFromLearning=True)
+            if current_audio.get('voiceFallback'):
+                details.update(voiceFallback=current_audio['voiceFallback'],excludeFromLearning=True)
         if stage=='AI directing':
             # A retry can use many paid replies from the durable cache. Its
             # shorter wall time must not train a fresh full-chapter forecast.
@@ -2441,6 +2446,13 @@ class StudioService:
         text = str(options.get('text', '')).strip()
         if not text or len(text) > 1800:
             raise ValueError('Voice preview needs 1–1800 characters.')
+        export_format = options.get('audioFormat', 'aac')
+        export_bitrate = options.get('audioBitrate', 128)
+        if export_format not in ('opus', 'mp3', 'wav', 'aac') or type(export_bitrate) is not int or export_bitrate not in (64, 128, 256):
+            raise ValueError('Choose a supported audition download format and bitrate.')
+        renderer = getattr(self, 'renderer', None)
+        if export_format in ('opus', 'mp3') and not (renderer and renderer.config.get('ffmpeg')):
+            raise ValueError('Configure FFmpeg before requesting an Opus or MP3 audition download. No new audition was started.')
         voice = options.get('voice', p['settings']['voice'])
         speed = options.get('speed', p['settings']['speed'])
         effects = options.get('soundEffects', p['settings'].get('soundEffects', 'subtle'))
@@ -2462,9 +2474,9 @@ class StudioService:
                 settings=voice_settings,preview=True,project=p)
             preview = {**result, 'path':name, 'text':text, 'voice':voice_settings.get('qwenSpeaker','Ryan') if voice_engine(voice_settings)=='qwen3-tts-1.7b' else voice, 'speed':speed,
                        'soundEffects':result.get('soundEffects',effects)}
-        renderer = getattr(self, 'renderer', None)
+        preview.update(exportPath=name, exportCodec='WAV', exportBitrate=None)
         if renderer and renderer.config.get('ffmpeg'):
-            preview.update(renderer.audio_preview(p['id'], name, self.gate))
+            preview.update(renderer.audio_preview(p['id'], name, self.gate, export_format, export_bitrate))
         def saved(q):
             previews = q.setdefault('voicePreviews', [])
             previews[:] = [item for item in previews if item['path'] != name]
@@ -2472,12 +2484,38 @@ class StudioService:
             previews[:] = previews[-12:]
         self.store.mutate(p['id'], saved)
 
+    def voice_quota_fallback_active(self, settings):
+        root=getattr(getattr(self,'_overlap',None),'root',self)
+        return bool(settings.get('voiceLocalFallback',False) and time.monotonic()<getattr(root,'_voice_quota_until',0))
+
+    def remember_voice_quota(self, settings):
+        if not settings.get('voiceLocalFallback',False):return False
+        root=getattr(getattr(self,'_overlap',None),'root',self)
+        root._voice_quota_until=time.monotonic()+1800
+        return True
+
     def create_selected_audio(self,text,voice,speed,target,effects='subtle',delivery='standard',emphasis=(),settings=None,preview=False,project=None):
         settings=dict(settings or {})
         if voice_location(settings)=='local':
             return self.create_audio(text,voice,speed,target,effects,delivery,emphasis)
         if type(speed) not in (int,float) or not math.isfinite(speed) or not .5<=speed<=2:
             raise ValueError('Voice speed must be 0.5–2.')
+        def local_fallback():
+            self.gate('Kaggle GPU quota exhausted · generating this entire narration with local Kokoro')
+            overlap=getattr(self,'_overlap',None)
+            # Remote lookahead normally needs no local GPU lane. A quota fallback
+            # must join that lane before touching the shared Kokoro model. The
+            # production worker already owns gpu_lock; reacquiring it deadlocks.
+            with (overlap.local_lane.acquire(self.gate,repair=True) if overlap else nullcontext()):
+                self.unload_models()
+                self.before_audio()
+                result=self.create_audio(text,voice,speed,target,effects,delivery,emphasis)
+            result.update(provider='local',model='kokoro-82m',voiceFallback={
+                'reason':'kaggle-gpu-quota-exhausted','requestedModel':voice_engine(settings),
+                'actualModel':'kokoro-82m','actualVoice':voice,'wholeNarration':True,
+                'voiceChanged':voice_engine(settings)!='kokoro-82m'})
+            return result
+        if not preview and self.voice_quota_fallback_active(settings):return local_fallback()
         settings.update(speed=speed,soundEffects=effects,voice=voice)
         reference=None;engine=voice_engine(settings)
         if project and engine in ('dia-1.6b','fish-s2-pro'):
@@ -2486,7 +2524,11 @@ class StudioService:
                 raw=self.store.asset(project['id'],anchor['path']).read_bytes()
                 if len(raw)>8*1024*1024:raise ValueError('Generated voice reference exceeds 8 MiB.')
                 reference={'audio':base64.b64encode(raw).decode(),'text':anchor['text']}
-        result=KaggleVoice(self.config).generate(text,target,settings,self.gate,preview=preview,reference=reference)
+        try:
+            result=KaggleVoice(self.config).generate(text,target,settings,self.gate,preview=preview,reference=reference)
+        except KaggleQuotaExhausted:
+            if preview or not self.remember_voice_quota(settings):raise
+            return local_fallback()
         if project and result.get('voiceAnchor'):
             anchor=dict(result['voiceAnchor']);anchor['path']=str(Path(anchor['path']).relative_to(self.store.folder(project['id']))).replace('\\','/')
             self.store.mutate(project['id'],lambda p:p.setdefault('voiceAnchors',{}).setdefault(engine,anchor))
@@ -2660,7 +2702,8 @@ class StudioService:
             p['settings'].get('soundEffects','subtle'),p['settings'].get('narrationDelivery','standard'),
             p['settings'].get('emphasisPhrases',[]),settings=p['settings'],project=p)
         saved={'audioPath':name,'audioDuration':result['duration'],'audioSentences':result['sentences'],
-               'audioTextDigest':digest(text),'audioSignature':signature}
+               'audioTextDigest':digest(text),'audioSignature':signature,
+               'audioVoice':{key:result[key] for key in ('provider','model','voiceFallback') if key in result}}
         def publish(q):
             intro=q['intro'];selected=intro.get('audioPath','')
             selected_hash=self.store.asset_digest(p['id'],selected) if selected else None

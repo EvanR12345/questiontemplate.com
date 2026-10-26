@@ -22,7 +22,7 @@ def located_files(store, pid, rows, storage_enabled=False, sync_status=None):
                         continue
                     if not local.exists():
                         result[child] = {'path': child, 'bytes': 0, 'cloud': False, 'category':
-                            'Video' if local.suffix == '.mp4' else 'Audio' if local.suffix in ('.wav','.flac','.m4a') else 'Images'}
+                            'Video' if local.suffix == '.mp4' else 'Audio' if local.suffix in ('.wav','.flac','.m4a','.opus','.mp3') else 'Images'}
                 elif isinstance(child, (dict, list)):
                     visit(child)
         elif isinstance(value, list):

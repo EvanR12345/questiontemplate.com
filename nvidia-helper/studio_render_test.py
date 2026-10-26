@@ -432,6 +432,36 @@ class RenderReuseTest(unittest.TestCase):
                 self.assertNotEqual(first['exportPath'],third['exportPath'])
                 self.assertEqual(run.call_count,2)
 
+    def test_audition_download_formats_do_not_replace_or_reencode_the_master(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store, p, ch = self.setup_project(folder)
+            renderer = VideoRenderer(store,{})
+            original = (store.folder(p['id'])/'chapter.wav').read_bytes()
+            with patch.object(renderer,'run',side_effect=self.save_output) as run:
+                opus = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,'opus',64)
+                again = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,'opus',64)
+                self.assertEqual(opus,again)
+                self.assertEqual(run.call_count,1)
+                self.assertIn('libopus',run.call_args.args[0])
+                self.assertNotIn('-movflags',run.call_args.args[0])
+                high = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,'opus',128)
+                mp3 = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,'mp3',128)
+                self.assertIn('libmp3lame',run.call_args.args[0])
+                self.assertNotEqual(opus['exportPath'],high['exportPath'])
+                self.assertTrue(mp3['exportPath'].endswith('.mp3'))
+                wav = renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,'wav',128)
+                self.assertEqual(wav,{'exportPath':'chapter.wav','exportCodec':'WAV','exportBitrate':None})
+                self.assertEqual(run.call_count,3)
+                self.assertEqual((store.folder(p['id'])/'chapter.wav').read_bytes(),original)
+                from studio_storage import local_media
+                for exported in (opus, high, mp3):
+                    self.assertTrue(store.asset(p['id'], exported['exportPath']).is_file())
+                archived = {file.name for file in local_media(store.folder(p['id']))}
+                self.assertTrue({opus['exportPath'],high['exportPath'],mp3['exportPath']} <= archived)
+                for fmt,rate in [('invalid',128),('opus',True),('opus',999)]:
+                    with self.assertRaises(ValueError):
+                        renderer.audio_preview(p['id'],'chapter.wav',lambda *_:None,fmt,rate)
+
     def test_old_cache_is_adopted_without_reencoding(self):
         with tempfile.TemporaryDirectory() as folder:
             store, p, ch = self.setup_project(folder)

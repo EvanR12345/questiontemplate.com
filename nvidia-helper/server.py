@@ -347,6 +347,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             if path=='/studio/create':
                 p=new_project(str(body.get('name','My story'))[:200]);legacy=body.get('legacy')
                 p['settings']['video'].update(width=1280,height=720,fps=30)
+                p['settings'].update(voiceCompute='kaggle',voiceLocalFallback=True)
                 p['settings']['engagement'].update(popupEnabled=True,outroEnabled=True)
                 if studio.config.get('fluxValidated') and not legacy:
                     p['settings']['image'].update(studio.providers['native-flux'].getRecommendedSettings(),provider='native-flux',model='flux2-klein-4b-q4',workflow='text-to-image')
@@ -356,7 +357,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     previous=source['settings']
                     # Reuse the chosen production profile without borrowing
                     # story facts or project-specific generated media paths.
-                    for key in ('style','layoutMode','generationMode','voice','voiceEngine','voiceCompute',
+                    for key in ('style','layoutMode','generationMode','voice','voiceEngine','voiceCompute','voiceLocalFallback','voiceChapterBatchSize',
                                 'voiceInstruction','qwenSpeaker','fishCommercialLicense','speed','narrationDelivery',
                                 'soundEffects','emphasisPhrases','director','video','customLayout','budget',
                                 'continuityStrictness','appearanceHandling','maxImageRetries','visionQC',

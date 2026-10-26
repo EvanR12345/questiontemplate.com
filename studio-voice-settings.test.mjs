@@ -14,3 +14,11 @@ test('unknown model and oversized instruction are rejected',()=>{
   assert.throws(()=>voiceValues({querySelector:id=>id==='#settingVoiceEngine'?{value:'bad'}:null}));
   assert.throws(()=>voiceValues({querySelector:id=>id==='#settingVoiceInstruction'?{value:'a'.repeat(1201)}:null}));
 });
+test('Kaggle primary and quota-only local backup are explicit saved controls',()=>{
+  const fields={'#settingVoiceEngine':{value:'kokoro-82m'},'#settingKokoroKaggle':{checked:true},'#settingVoiceLocalFallback':{checked:true}};
+  const root={querySelector:id=>fields[id]};
+  assert.equal(voiceValues(root).voiceCompute,'kaggle');
+  assert.equal(voiceValues(root).voiceLocalFallback,true);
+  fields['#settingVoiceLocalFallback'].checked=false;
+  assert.equal(voiceValues(root).voiceLocalFallback,false);
+});

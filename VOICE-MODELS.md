@@ -92,3 +92,68 @@ chapter narration stays in Studio; the Audio audition limit is 1800 characters.
 The common default script retains the user’s narrator description, cries,
 sound cues, dialogue, and emphasis examples. Instructions remain a separate
 Qwen control; the text in the script field is the actual audition source.
+
+## Download formats and actual model storage
+
+The Audio page sends its selected Opus/MP3/WAV format and 64/128/256 kbps
+bitrate to the helper. Synthesis keeps a lossless WAV master; changing the
+download format reuses that master and does not submit another Kaggle notebook.
+Older Studio audition calls retain their AAC 128 kbps default. Export labels
+describe the actual saved codec, not just the selected control. Opus and MP3
+are included in authenticated asset delivery and normal cloud archiving.
+
+Qwen, Dia and remote Kokoro weights use `/kaggle/tmp/studio-voice/models/hub`;
+Fish uses `/kaggle/tmp/studio-voice/s2-pro`. These are temporary notebook caches,
+not persistent Kaggle Models/Datasets. Notebook outputs retain `narration.wav`
+and `result.json`; the helper validates and saves the WAV with project assets.
+Local Kokoro uses the laptop's Hugging Face cache. No new local voice weights
+are installed by this update.
+
+## DramaBox evaluation (October 26, 2026)
+
+Official sources: https://github.com/resemble-ai/DramaBox and
+https://huggingface.co/ResembleAI/Dramabox . This is **DramaBox**, an expressive
+audio model with optional voice references, distinct from the four enabled models.
+
+The documented warm workflow peaks around 24 GB VRAM. Its audio transformer
+is 3.3B and its separate Gemma 3 text encoder is 12B (4-bit); downloads total
+roughly 16.5 GB. Upstream warm-server code places the encoder, transformer,
+conditioner and decoder on the same selected device. Two T4s do not automatically
+pool their 16 GB memories. Its default dtype is BF16, another setting requiring
+care on a T4. The upstream requirements pin Torch/torchaudio 2.8; installing them
+blindly would replace Kaggle's current stack. Do not download these weights on
+the laptop or mark DramaBox T4-compatible without a separately measured adapter.
+
+DramaBox supports delivery directions and non-verbal vocalizations. This may
+help the requested cries, but it does not prove reliable pronunciation or
+generate arbitrary sound effects from words like Slash. Long-form generation
+uses bounded chunks and an optional reusable reference. The reported H100 warm
+timing is upstream evidence, not a Studio/Kaggle benchmark.
+
+The model uses LTX-2 Community License, with its commercial threshold and
+use restrictions; it is not Apache-2.0. Optional RE-USE denoising is separately
+non-commercial and should remain off for monetized work unless licensed.
+Retain the default watermark. DramaBox is evaluated but **not enabled or
+downloaded** by this update; a successful memory/dependency/audio test is still
+required before it becomes a working selection.
+
+## Kaggle primary, local quota backup
+
+New Studio projects use Kaggle GPU narration, with quota backup enabled. Existing
+projects and explicit saved profiles retain their choices. In Settings → Voice,
+select Kaggle for Kokoro and enable local fallback to apply this routing to an
+existing project. Choose the local Kokoro / backup speaker separately.
+
+Fallback is allowed only when Kaggle explicitly rejects admission for exhausted
+GPU quota. Stock, authentication, privacy errors, timeouts and uncertain
+submissions do not substitute another voice. Auditions never fall back: a
+successful model comparison must actually use the selected model.
+
+A fallback produces the entire narration with local Kokoro; it does not splice
+two engines into a chapter. Qwen/Dia/Fish will sound different. Saved chapter
+metadata and the narration panel identify the actual fallback. Intro/outro
+records retain actual voice metadata too. A 30-minute quota circuit avoids
+repeated rejected notebooks; it resets on helper restart and never bypasses
+account/model validation. Fallback serializes against local narration/rendering
+and its timing is excluded from Kaggle ETA learning. Completed audio is reused
+normally, without an automatic re-generation when quota later returns.

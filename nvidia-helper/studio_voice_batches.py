@@ -1,12 +1,13 @@
 """Bounded whole-production narration reuse; manual chapter jobs stay isolated."""
 import base64,copy,json,time
 from pathlib import Path
-from studio_voice_provider import KaggleVoice,location,selected
+from studio_voice_provider import KaggleVoice,KaggleQuotaExhausted,location,selected
 
 
 def grouped_narration(service,project,chapter):
     settings=project['settings']
     if location(settings)!='kaggle':return None
+    if service.voice_quota_fallback_active(settings):return None
     size=settings.get('voiceChapterBatchSize',2)
     if size==1:return None
     if type(size) is not int or not 1<=size<=4:raise ValueError('Choose 1–4 chapters per voice job.')
@@ -54,7 +55,13 @@ def grouped_narration(service,project,chapter):
         if len(raw)>8*1024*1024:raise ValueError('Generated voice reference exceeds 8 MiB.')
         reference={'audio':base64.b64encode(raw).decode(),'text':anchor['text']}
     began=time.monotonic()
-    results=KaggleVoice(service.config).generate_many(items,settings,service.gate,reference=reference)
+    try:
+        results=KaggleVoice(service.config).generate_many(items,settings,service.gate,reference=reference)
+    except KaggleQuotaExhausted:
+        if not service.remember_voice_quota(settings):raise
+        # Only the current complete chapter falls back; saved group members and
+        # their receipts stay untouched. Subsequent chapters use the same route.
+        return None
     # Keep real group measurements, and do not pretend the first chapter's wait
     # or the next cached chapter's near-zero time is isolated TTS throughput.
     service._last_voice_group={'chapters':len(items),'seconds':time.monotonic()-began,

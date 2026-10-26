@@ -80,7 +80,7 @@ class LongPipelineTest(unittest.TestCase):
         from studio_voice_batches import grouped_narration
         from types import SimpleNamespace
         import threading
-        service=SimpleNamespace(cv=threading.Condition(),current=None)
+        service=SimpleNamespace(cv=threading.Condition(),current=None,voice_quota_fallback_active=lambda *_:False)
         p=new_project();p['settings']['voiceEngine']='qwen3-tts-1.7b'
         with patch.object(KaggleVoice,'generate_many',side_effect=AssertionError('Unexpected notebook')):
             self.assertIsNone(grouped_narration(service,p,p['chapters'][0]))
@@ -131,7 +131,7 @@ class LongPipelineTest(unittest.TestCase):
             store.archive=SimpleNamespace(fetch_asset=fetch)
             db=sqlite3.connect(':memory:');db.row_factory=sqlite3.Row
             db.executescript("CREATE TABLE jobs(id TEXT,kind TEXT);INSERT INTO jobs VALUES('job','produce-story');")
-            service=SimpleNamespace(store=store,config={},cv=threading.Condition(),current='job',db=db,
+            service=SimpleNamespace(store=store,config={},cv=threading.Condition(),current='job',db=db,voice_quota_fallback_active=lambda *_:False,
                 saved_narration_ready=lambda *_:False,narration_signature=lambda *_:'a'*64,
                 narration_text=lambda *_:'The gate opened.',gate=lambda *_:None)
             with patch.object(KaggleVoice,'_generate',side_effect=AssertionError('Duplicate notebook')):

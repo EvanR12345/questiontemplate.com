@@ -3,7 +3,7 @@ import copy
 import time
 from studio_data import digest, get_chapter, get_shot
 
-SCALARS = ('style', 'layoutMode', 'generationMode', 'voice', 'voiceEngine', 'voiceCompute',
+SCALARS = ('style', 'layoutMode', 'generationMode', 'voice', 'voiceEngine', 'voiceCompute', 'voiceLocalFallback', 'voiceChapterBatchSize',
            'voiceInstruction', 'qwenSpeaker', 'speed', 'narrationDelivery', 'soundEffects',
            'emphasisPhrases', 'continuityStrictness', 'appearanceHandling', 'maxImageRetries',
            'visionQC', 'qcSampleEvery', 'qcCheckLevel', 'automaticRepair', 'qcPolicy',

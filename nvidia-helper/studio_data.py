@@ -709,6 +709,8 @@ class ProjectStore:
             ".webp",
             ".wav",
             ".m4a",
+            ".opus",
+            ".mp3",
             ".mp4",
             ".json",
             ".flac",

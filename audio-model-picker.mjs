@@ -1,4 +1,4 @@
-import {VOICE_MODELS, voiceNotice} from './studio-voice-settings.mjs?v=voice-picker-20261015b';
+import {VOICE_MODELS, voiceNotice} from './studio-voice-settings.mjs?v=kaggle-fallback-20261026';
 import {DEFAULT_VOICE_SCRIPT,NARRATOR,mountVoicePicker} from './voice-catalogue.mjs?v=voice-picker-20261015b';
 import {helperJson,pairingKey} from './helper-connection.mjs?v=connection-20261009';
 
@@ -20,11 +20,16 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
     $('audioModelNotice').textContent=model.value==='qwen3-tts-1.7b'?'Nine preset voices. Ryan and Aiden are native English speakers.':remote()?'Uses this project’s saved synthetic narrator; no named voice bank.':'Eight English voices. Pick a card, then preview your script.';
     $('audioRuntimeNotice').textContent=voiceNotice(model.value,{});
     $('audioRemoteOptions').hidden=!remote();
+    if($('audioRunLocationNote'))$('audioRunLocationNote').textContent=remote()
+      ?'The helper must stay running to submit and recover your private Kaggle audition. Voice weights download into Kaggle’s temporary session storage, not onto this laptop. WAV masters are saved with your project; downloads use the format selected below.'
+      :'Kokoro runs locally without an API key. First use downloads its voice model and runtime; later recordings reuse them.';
     $('sizeEstimate').hidden=remote();
     $('audioInstructionLabel').hidden=model.value!=='qwen3-tts-1.7b';
     $('sample').textContent=remote()?'▶ Preview selected voice':'▶ Preview voice';
     $('generate').textContent=remote()?'↓ Generate audition':'↓ Generate audio';
-    for(const id of ['engine','format','bitrate']) $(id).disabled=remote()||isBusy();
+    $('engine').disabled=remote()||isBusy();
+    $('format').disabled=isBusy();
+    $('bitrate').disabled=isBusy()||$('format').value==='wav';
     if(remote()) void loadProjects().catch(error=>status(error.message));
   }
   model.onchange=load;
@@ -45,7 +50,7 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
     const title=doc.createElement('h3');title.textContent=`${VOICE_MODELS.find(([id])=>id===preview.model)?.[1]||preview.model||model.value} · ${preview.voice||selections[model.value]} · ${Number(preview.duration).toFixed(1)}s`;
     const player=doc.createElement('audio');player.controls=true;player.preload='metadata';player.src=ticket.url;
     player.onerror=async()=>{player.onerror=null;try{player.src=(await call('media-link',{project,path})).url;}catch(error){status(error.message);}};
-    const link=doc.createElement('a');link.href=ticket.url;link.textContent=preview.exportPath?'Download AAC · 128 kbps':'Download WAV';link.download=path;
+    const link=doc.createElement('a');link.href=ticket.url;link.textContent=downloadLabel(preview);link.download=path;
     section.append(title,player,link);$('audioModelResults').prepend(section);
   }
   async function generate() {
@@ -62,6 +67,7 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
       if(!projectId)throw Error('Create a project in Studio first, then return here to save voice auditions in it.');
       const settings={text,voiceEngine:model.value,voiceCompute:'kaggle',voiceInstruction:$('audioVoiceInstruction').value,
         voice:model.value==='kokoro-82m'?$('studioVoice').value:'am_michael',audioRequestId:crypto.randomUUID(),qwenSpeaker:model.value==='qwen3-tts-1.7b'?$('studioVoice').value:'Ryan',
+        audioFormat:$('format').value,audioBitrate:Number($('bitrate').value),
         speed:Number($('rate').value),soundEffects:'subtle',narrationDelivery:'cinematic',emphasisPhrases:['already gone','only twelve days']};
       status('Submitting a private Kaggle audition…');
       const previous=await call('queue'),known=new Set(previous.jobs.map(j=>j.id));
@@ -80,7 +86,7 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
       const queue=await call('queue'),job=queue.jobs.find(j=>j.id===jobId);
       if(!job)throw Error('Saved audition job is no longer visible. Check Studio’s saved auditions.');
       status(`${job.status} · ${job.message||'Kaggle voice audition'} · cold startup and quota can add time`);
-      if(['COMPLETE','FAILED','CANCELLED'].includes(job.status)) {
+      if(['COMPLETE','FAILED','CANCELLED','INTERRUPTED'].includes(job.status)) {
         try{sessionStorage.removeItem('qt-audio-voice-job');}catch{}
         if(job.status!=='COMPLETE')throw Error(job.message||job.status);
         const project=await call('project?id='+encodeURIComponent(projectId));
@@ -94,6 +100,8 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
   function setBusy(value) {
     for(const id of ['audioVoiceModel','studioVoice','audioVoiceProject','audioVoiceInstruction','sample','generate','text','rate','clear','importScript'])$(id).disabled=value;
     for(const button of $('presets').querySelectorAll('button'))button.disabled=value;
+    $('engine').disabled=value||remote();$('format').disabled=value;
+    $('bitrate').disabled=value||$('format').value==='wav';
     $('audioVoiceCancel').hidden=!value;
   }
   $('audioVoiceCancel').onclick=async()=>{try{await call('control',{action:'cancel-job',job:jobId,project:projectId});status('Cancellation requested. Admitted Kaggle work may continue remotely until timeout.');}catch(error){status(error.message);}};
@@ -104,4 +112,9 @@ export function setupAudioModels({document:doc,status,onChange,isBusy}) {
     if(saved?.jobId && saved.projectId && saved.text){jobId=saved.jobId;projectId=saved.projectId;polling=true;setBusy(true);void watch(saved.text,saved.model,saved.speaker).catch(e=>status(e.message)).finally(()=>{polling=false;setBusy(false);});}
   }catch{}
   return {generate,remote,defaultScript:DEFAULT_VOICE_SCRIPT,busy:()=>polling};
+}
+
+export function downloadLabel(preview) {
+  const codec=preview.exportCodec||(preview.exportPath?'AAC':'WAV');
+  return `Download ${codec}${preview.exportBitrate?` · ${preview.exportBitrate/1000} kbps`:''}`;
 }

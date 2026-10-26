@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
 
-MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.wav', '.m4a', '.mp4', '.json', '.flac'}
+MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.wav', '.m4a', '.opus', '.mp3', '.mp4', '.json', '.flac'}
 
 def local_media(folder):
     """Prune excluded working/private trees before visiting their contents."""
