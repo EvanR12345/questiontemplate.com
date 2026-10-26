@@ -158,10 +158,22 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
     media_by_path = {}
     media_lock = threading.RLock()
     next_media_cleanup = 0
+    voice_lab = None
+    voice_lab_lock = threading.Lock()
+
+    def get_voice_lab():
+        nonlocal voice_lab
+        with voice_lab_lock:
+            if voice_lab is None:
+                from voice_lab import VoiceLab
+                voice_lab = VoiceLab(studio.store.root, studio.config)
+                Handler.voice_lab_service = voice_lab
+            return voice_lab
 
     class Handler(BaseHTTPRequestHandler):
         image_queue = queue
         studio_service = studio
+        voice_lab_service = None
         def log_message(self, *_):
             pass
 
@@ -231,7 +243,10 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             if path.startswith('/studio/'):
                 try:
                     query=parse_qs(urlparse(self.path).query)
-                    if path=='/studio/health':self.reply(200,studio.health())
+                    if path=='/studio/voice-lab':self.reply(200,get_voice_lab().snapshot())
+                    elif path=='/studio/voice-lab/job':self.reply(200,get_voice_lab().job(query['id'][0]))
+                    elif path=='/studio/voice-lab/audio':self.send_asset(get_voice_lab().audio(query['id'][0]),query.get('download',[None])[0])
+                    elif path=='/studio/health':self.reply(200,studio.health())
                     elif path=='/studio/projects':self.reply(200,studio.store.list())
                     elif path=='/studio/project':
                         from studio_qc import project_view
@@ -259,7 +274,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/gpu-providers':
                         from studio_gpu_providers import provider_status
                         self.reply(200,provider_status(studio.config,refresh=query.get('refresh',['false'])[0]=='true'))
-                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey','runpodActionKeyFile','vastApiKey','liumApiKey','gpuProviderKeyFile','kaggleApiToken','kaggleKeyFile','vimeoApiToken','vimeoKeyFile')})
+                    elif path=='/studio/config':self.reply(200,{k:v for k,v in studio.config.items() if k not in ('apiKey','fluxValidated','openaiKeyFile','runpodKeyFile','openaiApiKey','runpodApiKey','runpodActionKeyFile','vastApiKey','liumApiKey','gpuProviderKeyFile','kaggleApiToken','kaggleKeyFile','vimeoApiToken','vimeoKeyFile','voiceLabWorkerURL','voiceLabWorkerTokenFile','voiceLabWorkerToken')})
                     elif path=='/studio/asset':self.send_asset(studio.store.asset(query['project'][0],query['path'][0]),query.get('download',[None])[0])
                     else:self.reply(404,{'error':'Unknown studio endpoint.'})
                 except FileNotFoundError as error:
@@ -315,6 +330,10 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
 
         def studio_post(self,path,body):
             nonlocal next_media_cleanup
+            if path=='/studio/voice-lab/reference':return get_voice_lab().reference(body)
+            if path=='/studio/voice-lab/jobs':return get_voice_lab().enqueue(body)
+            if path=='/studio/voice-lab/cancel':return get_voice_lab().cancel(body.get('id'))
+            if path=='/studio/voice-lab/select':return get_voice_lab().select(body)
             if path=='/studio/gpu-reconcile':
                 if studio.current:raise ValueError('Wait for the active production job before reconciling an interrupted rental.')
                 from studio_gpu_broker import reconcile

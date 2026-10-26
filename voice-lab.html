@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080a11">
+<title>Private Voice Lab · QuestionTemplate</title>
+<link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./voice-lab.css?v=lab-20261026">
+</head>
+<body><main class="shell">
+<header class="topbar"><a class="brand" href="./studio.html"><img src="./favicon.svg" width="34" height="34" alt="">QuestionTemplate <span>Voice Lab</span></a><nav aria-label="Main"><a href="./">Audio</a><a href="./studio.html">Studio</a><a href="./pipeline.html">Planner</a></nav></header>
+<section class="intro"><div class="eyebrow">Private auditions</div><h1>Find the voice for your story.</h1><p>Listen to Drama 3, VoxCPM 2 and Qwen3-TTS 1.7B. Save your pick before testing it further.</p></section>
+<section class="connection" aria-label="Private connection"><div><strong id="connectionTitle">Connect your shared helper</strong><p id="connectionDetail">Your pairing unlocks private scripts, references and previews.</p></div><div class="actions"><button id="connect" type="button">Connect</button><button id="pair" class="secondary" type="button">Import pairing file</button><input id="pairFile" type="file" accept=".txt,text/plain" hidden></div></section>
+<p id="notice" class="notice" role="status" aria-live="polite"></p>
+<div id="lab" hidden>
+<div class="workspace"><section class="editor" aria-label="Create an audition">
+<fieldset class="model-field"><legend>1. Choose a model</legend><div id="models" class="models"></div><p id="modelNote" class="muted"></p></fieldset>
+<div class="two"><label>Mode<select id="mode"></select></label><label>Language<select id="language"></select></label></div>
+<label class="script-label" for="script">2. Use the same script to compare voices <span id="wordCount"></span></label>
+<textarea id="script" maxlength="2500" rows="7" placeholder="Write the narration you want to audition…"></textarea>
+<div class="script-tools"><button id="example" type="button" class="text-button">Use a roughly 30-second sample</button><span class="muted">Actual duration depends on the voice.</span></div>
+<label id="descriptionField">Voice description<textarea id="description" rows="2" maxlength="1000" placeholder="Describe the voice and delivery, for example: a warm, clear adult narrator with calm, thoughtful pacing."></textarea></label>
+<div id="referenceField"><label>Saved reference<select id="reference"><option value="">Choose a reference</option></select></label><p id="referenceHint" class="muted"></p><details><summary>Add an authorized voice reference</summary><div class="reference-form"><label>Audio · up to 60 seconds<input id="referenceFile" type="file" accept="audio/*"></label><label>Name<input id="referenceName" maxlength="100" placeholder="My narrator"></label><label>Exact reference transcript<textarea id="transcript" rows="3" maxlength="4000" placeholder="The words spoken in this reference…"></textarea></label><label class="check"><input id="rights" type="checkbox">I have permission to use this voice for this audition.</label><button id="saveReference" type="button" class="secondary">Save reference privately</button><p class="muted">Stored by your helper. Sent to your RunPod worker only when needed for a requested audition.</p></div></details></div>
+<details id="advanced"><summary>Model controls</summary><div id="parameters" class="parameter-grid"></div><p class="muted">Controls apply only to this model and use its documented inference API.</p></details>
+<div class="generate-row"><button id="generate" type="button">Generate preview</button><p id="generationHint" class="muted"></p></div>
+</section><aside>
+<section class="worker-panel"><div class="eyebrow">RunPod worker</div><h2 id="workerTitle">Checking worker</h2><p id="workerDetail" class="muted"></p><p id="workerCost" class="cost-note"></p><p class="muted">The first request can include model loading. Keeping a worker warm reduces waiting and continues GPU billing.</p></section>
+<section class="pick-panel"><div class="eyebrow">Your choice</div><h2 id="pickTitle">Listen, then choose</h2><p id="pickDetail" class="muted">Use “Save this pick” on a completed preview. Your Studio production voice stays as configured.</p></section>
+<section class="cost-panel"><h2>What did 30 seconds cost?</h2><p class="muted">Completed previews show generation time and available startup time separately. Costs appear only when the worker has a verified hourly rate.</p><p class="muted">One-time setup and model downloads are separate from a warm preview. A 30-second estimate scales inference only; startup stays fixed.</p></section>
+</aside></div>
+<section class="history"><div class="history-head"><div><div class="eyebrow">Private history</div><h2>Your auditions</h2></div><button id="refresh" class="secondary" type="button">Refresh</button></div><p class="muted">Jobs stay with your helper if you close this page. Previews are saved as Opus 128 kbps.</p><div id="jobs"></div></section>
+</div><footer>QuestionTemplate · Private Voice Lab · Paired helper required</footer>
+</main><script type="module" src="./voice-lab.mjs?v=lab-20261026"></script></body></html>

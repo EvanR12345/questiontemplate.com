@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "verifiedAt": "2026-10-26",
+  "python": "3.11",
+  "sources": {
+    "drama3": {"url":"https://github.com/sgl-project/sglang-omni.git","revision":"65868af0592a852459aa31a6be7ae742c7756841","extra":"fishaudio"},
+    "voxcpm2": {"url":"https://github.com/OpenBMB/VoxCPM.git","revision":"cce58a5b59303c9bd63d12f23afe6a49a4a80c59"},
+    "qwen3": {"url":"https://github.com/QwenLM/Qwen3-TTS.git","revision":"022e286b98fbec7e1e916cb940cdf532cd9f488e"}
+  },
+  "models": {
+    "drama3": [{"repo":"fishaudio/drama-3","revision":"b2b5ee998034b2975720906c815e7fb0e9f007bd","folder":"drama3","bytes":41502594240}, {"repo":"fishaudio/s2-pro","revision":"1de9996b6be38b745688de084d87a5633f714e4e","folder":"drama3-codec","allow":["codec.pth","LICENSE"]}],
+    "voxcpm2": [{"repo":"openbmb/VoxCPM2","revision":"32279effe8c19989596f05d353d1447f51d9e915","folder":"voxcpm2","bytes":4960731866}],
+    "qwen3": [{"repo":"Qwen/Qwen3-TTS-12Hz-1.7B-Base","revision":"fd4b254389122332181a7c3db7f27e918eec64e3","folder":"qwen3-base","bytes":4544229700}, {"repo":"Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign","revision":"5ecdb67327fd37bb2e042aab12ff7391903235d3","folder":"qwen3-design","bytes":4520163832}]
+  }
+}
