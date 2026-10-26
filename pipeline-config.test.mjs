@@ -2,10 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {DEFAULTS,buildPlan,schedule} from './pipeline-engine.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed} from './pipeline-config.mjs';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs';
 const evidence=JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url)));
 evidence.concurrency=JSON.parse(fs.readFileSync(new URL('./pipeline-concurrency.json',import.meta.url)));
 const config={...DEFAULTS,resolution:'720p',encodingProfile:'fresh',executionMode:'hybrid',measurementAttempt:'5090-attempt-8'};
+
+test('exported source requires a successfully applied selected profile and preserves retry intent',()=>{
+  assert.deepEqual(plannerSourceState('kaggle-project',true,null),
+    {project:'kaggle-project',following:false,requestedFollowing:true,revision:null});
+  const applied={project:'local-project',revision:12};
+  assert.equal(plannerSourceState('kaggle-project',true,applied).following,false);
+  assert.deepEqual(plannerSourceState('local-project',true,applied),
+    {project:'local-project',following:true,requestedFollowing:true,revision:12});
+  assert.equal(plannerSourceState('local-project',false,applied).following,false);
+});
+
+test('installed scheduling explanation follows model copies and actual chapter-render dependencies',()=>{
+  for(const enabled of [true,false]){
+    const p=buildPlan({...config,policy:'current',imageWorkers:'4',productionModelCopies:2,
+      productionRequestSlots:4,productionRenderOverlap:enabled,productionAudioLookahead:enabled},evidence);
+    const note=productionModeNote(p.config);
+    assert.match(note,/Two independent model copies.*one GPU.*four bounded request slots/);
+    const chapter=p.tasks.find(t=>t.id==='c1-render');
+    const laterImages=p.tasks.filter(t=>t.chapter>1&&['save','delivered'].includes(t.kind)).map(t=>t.id);
+    assert.ok(laterImages.length>0);
+    if(enabled){
+      assert.match(note,/while later chapters continue/);
+      assert.ok(laterImages.every(id=>!chapter.deps.includes(id)));
+    }else{
+      assert.match(note,/rendering waits for all image work/);
+      assert.ok(laterImages.some(id=>chapter.deps.includes(id)));
+    }
+  }
+  assert.match(productionModeNote({...config,policy:'current',productionModelCopies:1}),/One model copy/);
+  assert.match(productionModeNote({...config,policy:'proposed'}),/Planning experiment/);
+});
 
 test('switching from 5090 hybrid to A6000 selects measured resident workers',()=>{
   const chosen=selectGPUConfig(config,evidence,'a6000'),p=buildPlan(chosen,evidence);

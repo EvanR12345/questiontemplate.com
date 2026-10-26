@@ -1,5 +1,17 @@
 import {describePlan} from './pipeline-engine.mjs?v=production-parallel-20261012';
 
+export function plannerSourceState(project, requestedFollowing, applied) {
+  const following=Boolean(requestedFollowing && applied?.project===project);
+  return {project,following,requestedFollowing,revision:following?applied.revision:null};
+}
+
+export function productionModeNote(config) {
+  if(config.policy==='proposed')return 'Planning experiment: separates GPU work from retrieval and overlaps chapter rendering. This is not deployed production behavior.';
+  if(config.policy!=='current')return 'Every task runs sequentially. This is the comparison baseline, not a speed recommendation.';
+  const copies=config.productionModelCopies===2?2:1;
+  return `Installed cloud overlap: Luna lookahead and QC share API slots. ${copies===2?'Two independent model copies share one GPU, with four bounded request slots.':'One model copy uses one image lane.'} Image work includes preparation through retrieval. ${config.productionRenderOverlap?'Each chapter can render after its required images and reviews finish while later chapters continue.':'Chapter rendering waits for all image work.'} ${config.productionAudioLookahead?'Narration lookahead is enabled.':'Narration waits for the preceding chapter handoff.'} Narration and native rendering share the local GPU lane; finish times remain projections.`;
+}
+
 export function gpuChoices(evidence) {
   const measured=(evidence.concurrency?.gpus||[]).filter(g=>
     ['profiles','productionProfiles','pipelineProfiles','hybridProfiles'].some(k=>g[k]?.length));

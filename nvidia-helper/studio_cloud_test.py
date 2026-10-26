@@ -311,9 +311,11 @@ class EngagementTests(unittest.TestCase):
         self.assertEqual(first,schedule(p,7200))
     def test_ding_volume_is_bounded(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target=Path(tmp)/'ding.wav';ding(target,.12)
-            with wave.open(str(target)) as wav:
-                self.assertEqual(wav.getframerate(),24000);x=array('h',wav.readframes(wav.getnframes()))
+            target=Path(tmp)/'ding.opus';ding(target,.12)
+            decoded=subprocess.run(['ffmpeg','-v','error','-i',str(target),'-f','s16le',
+                '-ac','1','-ar','24000','pipe:1'],capture_output=True,check=True).stdout
+            x=array('h',decoded)
+            self.assertEqual(len(x),14400)
             self.assertLessEqual(max(abs(v) for v in x),32767*.12)
 
 @unittest.skipUnless(os.environ.get('STUDIO_TEST_FFMPEG'),'Set STUDIO_TEST_FFMPEG for the real render test')

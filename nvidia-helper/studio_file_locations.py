@@ -2,6 +2,13 @@
 from pathlib import Path
 
 
+def media_category(name):
+    suffix=Path(name).suffix.lower()
+    if suffix=='.mp4':return 'Video'
+    if suffix in ('.wav','.flac','.m4a','.opus','.mp3'):return 'Audio'
+    return 'Project data' if suffix=='.json' else 'Images'
+
+
 def located_files(store, pid, rows, storage_enabled=False, sync_status=None):
     result = {r['path']: dict(r) for r in rows}
     inspected = set()
@@ -21,8 +28,7 @@ def located_files(store, pid, rows, storage_enabled=False, sync_status=None):
                     except ValueError:
                         continue
                     if not local.exists():
-                        result[child] = {'path': child, 'bytes': 0, 'cloud': False, 'category':
-                            'Video' if local.suffix == '.mp4' else 'Audio' if local.suffix in ('.wav','.flac','.m4a','.opus','.mp3') else 'Images'}
+                        result[child] = {'path': child, 'bytes': 0, 'cloud': False, 'category':media_category(child)}
                 elif isinstance(child, (dict, list)):
                     visit(child)
         elif isinstance(value, list):

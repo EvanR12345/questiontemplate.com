@@ -339,21 +339,21 @@ class R2Archive:
 
     def files(self, pid, refresh=False):
         """Credential-free dashboard data; URLs are created only on request."""
+        from studio_file_locations import located_files,media_category
         if not self.enabled:
             folder=self.store.folder(pid); rows=[]
             for path in local_media(folder):
                 name=path.relative_to(folder).as_posix()
                 self.store.asset_local(pid,name)
                 rows.append({'path':name,'bytes':path.stat().st_size,'cloud':False,
-                    'category':{'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(path.suffix[1:].lower(),'Images')})
-            from studio_file_locations import located_files
+                    'category':media_category(name)})
             return {'files':located_files(self.store,pid,rows), 'cloud':False}
         manifest,_=self.manifest(pid,refresh)
         rows={}
         for name,r in (manifest or {}).get('files',{}).items():
             self.store.asset_local(pid,name)
             rows[name]={'path':name,'bytes':r['bytes'],'sha256':r['sha256'],'cloud':True,
-                        'category': {'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(Path(name).suffix[1:].lower(),'Images')}
+                        'category':media_category(name)}
         # A cloud connection must not hide newly generated or edited files while
         # the immutable snapshot is still uploading. Show their local status.
         folder=self.store.folder(pid)
@@ -364,8 +364,7 @@ class R2Archive:
             record=(manifest or {}).get('files',{}).get(name,{})
             if record.get('stamp')==list(stable_file(path)):continue
             rows[name]={'path':name,'bytes':path.stat().st_size,'cloud':False,
-                        'category':{'mp4':'Video','wav':'Audio','m4a':'Audio','flac':'Audio','json':'Project data'}.get(path.suffix[1:].lower(),'Images')}
-        from studio_file_locations import located_files
+                        'category':media_category(name)}
         return {'files':located_files(self.store,pid,list(rows.values()),True,
                     self.states.get(pid,{}).get('status')),'cloud':True,'revision':(manifest or {}).get('project',{}).get('revision')}
 
