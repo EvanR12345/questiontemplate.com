@@ -1,3 +1,5 @@
+import {VOICE_COMPARISONS,PENDING_COMPARISONS,validateComparisons} from './voice-lab-comparisons.mjs?v=quote-compare-20261027';
+
 export const VOICE_BATCH = Object.freeze({
   id: 'anchored-coach-20261027',
   startedAt: 1793086776,
@@ -19,13 +21,25 @@ const referenceDisplay = Object.freeze({
 });
 
 // The helper retains the originals. This view shows only the new audition round.
-export function currentVoiceBatch(snapshot, batch = VOICE_BATCH) {
+export function currentVoiceBatch(snapshot, batch = VOICE_BATCH, manifest = VOICE_COMPARISONS, pendingManifest = PENDING_COMPARISONS) {
+  validateComparisons(manifest);
+  const comparisonIds = new Set(manifest.map(item => item.referenceId));
   const isCurrent = item => Number.isFinite(item?.createdAt) && item.createdAt >= batch.startedAt;
   const references = (snapshot.references || [])
-    .filter(item => isCurrent(item) && !supersededReferences.has(item.id))
+    .filter(item => isCurrent(item) && !supersededReferences.has(item.id) && !comparisonIds.has(item.id))
     .map(item => referenceDisplay[item.id] ? {...item,name:referenceDisplay[item.id].name} : item)
     .sort((a,b) => (referenceDisplay[a.id]?.priority??3)-(referenceDisplay[b.id]?.priority??3)||(b.createdAt||0)-(a.createdAt||0));
-  const jobs = (snapshot.jobs || []).filter(item => isCurrent(item) && !supersededReferences.has(item.referenceId));
+  const sourceIds = new Set(references.map(item => item.id));
+  const comparisons = manifest.flatMap(item => {
+    const reference = (snapshot.references || []).find(ref => ref.id===item.referenceId && isCurrent(ref));
+    return reference && sourceIds.has(item.sourceReferenceId) && !supersededReferences.has(item.referenceId) ? [{...item,reference}] : [];
+  });
+  const pendingComparisons = pendingManifest.flatMap(item => {
+    if (!sourceIds.has(item.sourceReferenceId)) return [];
+    const models = item.models.filter(model => !comparisons.some(result => result.sourceReferenceId===item.sourceReferenceId && result.model===model));
+    return models.length ? [{...item,models}] : [];
+  });
+  const jobs = (snapshot.jobs || []).filter(item => isCurrent(item) && !supersededReferences.has(item.referenceId) && !comparisonIds.has(item.referenceId));
   const selected = jobs.some(job => job.id === snapshot.selected?.jobId) ? snapshot.selected : null;
-  return {...snapshot, references, jobs, selected};
+  return {...snapshot, references, comparisons, pendingComparisons, jobs, selected};
 }
