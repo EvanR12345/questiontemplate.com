@@ -17,9 +17,26 @@ export const VOICE_COMPARISONS = Object.freeze([
     "canonicalAudioSHA256": "543254ae876d16e2e96b8e29f6cac580e3be0cad1d2f4bb92b95c044a6dd6357",
     "expectedDurationSeconds": 28.397333333333332,
     "processingReceiptSHA256": "2ce6a68e605246f371ca5f4104ce16587e2c3f4bd713b785a092f5b53673c27d"
+  },
+  {
+    "referenceId": "bcbfa799ea0b42bdb9120d2679f203e4",
+    "sourceReferenceId": "5efd23e2303043869f4f03fb0f625c33",
+    "model": "drama3",
+    "executionKind": "official-free-demo",
+    "executionLabel": "Official Hugging Face free demo - no provider charge",
+    "billingKind": "free-demo",
+    "checkpointRevision": null,
+    "backend": "Official Fish engine",
+    "delivery": "native-expression",
+    "gainDB": 0,
+    "qcStatus": "CONTENT_CHECKED_LISTENING_PENDING",
+    "qualityNote": "One native full performance, with a whisper control requested for the quotation and normal narration afterward. The original WAV is unchanged. Listen to judge quiet delivery, voice identity, breaths and other unwanted sounds.",
+    "canonicalAudioSHA256": "9d9bf84659305e7000a6e3208b3043c1a9df648e3be219f396707cf8d722c9a3",
+    "expectedDurationSeconds": 29.860875,
+    "processingReceiptSHA256": "c85a5b43999b61a12e6a6c54ca35a0ab06cab1545d60098f39fcbfbcebe9ccda"
   }
 ]);
-export const PENDING_COMPARISONS = Object.freeze([{sourceReferenceId:'5efd23e2303043869f4f03fb0f625c33',models:['drama3'],status:'waiting',note:'Waiting for official free demo quota/authentication. GPU attempt stopped within budget; no Drama audio generated.'}]);
+export const PENDING_COMPARISONS = Object.freeze([]);
 
 // Prior round recordings remain stored privately, outside the current comparison.
 export const ARCHIVED_COMPARISON_IDS = Object.freeze([
