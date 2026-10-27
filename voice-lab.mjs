@@ -2,8 +2,8 @@ import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
 import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=library-20261026';
 import {preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
-import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=native-quiet-final-20261027';
-import {comparisonDeliveryLabel} from './voice-lab-comparisons.mjs?v=native-quiet-final-20261027';
+import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=native-quiet-waiting-20261027';
+import {comparisonDeliveryLabel} from './voice-lab-comparisons.mjs?v=native-quiet-waiting-20261027';
 const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
@@ -85,7 +85,7 @@ function libraryView(){
     let pendingNote=target.querySelector('[data-pending-clones]');
     if(pending){
       if(!pendingNote){pendingNote=document.createElement('p');pendingNote.className='muted';pendingNote.dataset.pendingClones=ref.id;target.prepend(pendingNote);}
-      pendingNote.textContent=pending.status==='unavailable'?pending.note:`Pending: ${pending.models.map(model=>model==='qwen3'?'Qwen Base':model==='voxcpm2'?'VoxCPM2':'Drama 3').join(' and ')} clone tests. ${pending.note||'Not generated yet.'}`;
+      pendingNote.textContent=['unavailable','waiting'].includes(pending.status)?pending.note:`Pending: ${pending.models.map(model=>model==='qwen3'?'Qwen Base':model==='voxcpm2'?'VoxCPM2':'Drama 3').join(' and ')} clone tests. ${pending.note||'Not generated yet.'}`;
     }else pendingNote?.remove();
     const comparisons=(snapshot.comparisons||[]).filter(item=>item.sourceReferenceId===ref.id),comparisonIds=new Set(comparisons.map(item=>item.referenceId));
     for(const row of target.querySelectorAll('[data-clone-reference]'))if(!comparisonIds.has(row.dataset.cloneReference))row.remove();
