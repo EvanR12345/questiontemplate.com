@@ -8,13 +8,23 @@ export const SUPERSEDED_REFERENCE_IDS = Object.freeze([
   '769fcd0c075d4512b0506e7b9f5440bc',
   'ab9db48f6a95408bb477d1237cf2e0ed',
   '5083257979734b75a53b44b0687b15d3',
+  'aa99a22088684a8591f15540ed1002a7',
 ]);
 const supersededReferences = new Set(SUPERSEDED_REFERENCE_IDS);
+
+const referenceDisplay = Object.freeze({
+  '5efd23e2303043869f4f03fb0f625c33': {name:'Coach · Take A · Preferred',priority:0},
+  '5d7020c96f6244d4b47ed5b880bd40f0': {name:'Coach · Take B · Backup',priority:1},
+  'ad2888d8405c40f4a383404fb50a5f0f': {name:'Original coach · Clean reference',priority:2},
+});
 
 // The helper retains the originals. This view shows only the new audition round.
 export function currentVoiceBatch(snapshot, batch = VOICE_BATCH) {
   const isCurrent = item => Number.isFinite(item?.createdAt) && item.createdAt >= batch.startedAt;
-  const references = (snapshot.references || []).filter(item => isCurrent(item) && !supersededReferences.has(item.id));
+  const references = (snapshot.references || [])
+    .filter(item => isCurrent(item) && !supersededReferences.has(item.id))
+    .map(item => referenceDisplay[item.id] ? {...item,name:referenceDisplay[item.id].name} : item)
+    .sort((a,b) => (referenceDisplay[a.id]?.priority??3)-(referenceDisplay[b.id]?.priority??3)||(b.createdAt||0)-(a.createdAt||0));
   const jobs = (snapshot.jobs || []).filter(item => isCurrent(item) && !supersededReferences.has(item.referenceId));
   const selected = jobs.some(job => job.id === snapshot.selected?.jobId) ? snapshot.selected : null;
   return {...snapshot, references, jobs, selected};

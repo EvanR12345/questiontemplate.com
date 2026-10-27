@@ -2,7 +2,7 @@ import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
 import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=library-20261026';
 import {preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
-import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=anchored-direct-20261027';
+import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=coach-shortlist-20261027';
 const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
@@ -64,8 +64,7 @@ async function loadReference(id,element){
   }catch(error){notice(error.message);return false;}
 }
 function libraryView(){
-  const priority=ref=>/\b(?:original coach|clean original)\b/i.test(ref.name||'')?-1:ref.source?.model==='qwen3'&&ref.source?.mode==='design'?0:ref.source?.kind==='audition'?1:2;
-  const references=[...(snapshot.references||[])].sort((a,b)=>priority(a)-priority(b)||(b.createdAt||0)-(a.createdAt||0)),completed=(snapshot.jobs||[]).filter(job=>job.status==='COMPLETED'&&job.audioReady),fingerprint=JSON.stringify([references,completed.map(job=>job.id)]);
+  const references=snapshot.references||[],completed=(snapshot.jobs||[]).filter(job=>job.status==='COMPLETED'&&job.audioReady),fingerprint=JSON.stringify([references,completed.map(job=>job.id)]);
   if(libraryFingerprint===fingerprint)return;libraryFingerprint=fingerprint;
   const host=$('referenceLibrary'),ids=new Set(references.map(ref=>ref.id));
   for(const element of host.querySelectorAll('[data-library-reference]'))if(!ids.has(element.dataset.libraryReference))element.remove();
