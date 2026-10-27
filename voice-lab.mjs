@@ -2,7 +2,7 @@ import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
 import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=library-20261026';
 import {preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
-import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=clean-coach-20261027';
+import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=anchored-coach-20261027';
 const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
@@ -16,7 +16,7 @@ function saveDraft(){try{if(modelId&&$('parameters').dataset.model===modelId)par
 let draft={};try{draft=JSON.parse(sessionStorage.getItem(DRAFT_KEY)||'{}');}catch{}
 const parameterDrafts=draft.parameterDrafts||{};
 $('script').value=draft.text||'';$('description').value=draft.description||'';modelId=draft.model||'voxcpm2';
-if(!draft.mode)draft.mode='design';
+if(!draft.mode)draft.mode='clone';
 $('characterName').value=draft.character?.name||'Narrator';$('characterScene').value=draft.character?.scene||'';
 function words(){const n=$('script').value.trim().split(/\s+/).filter(Boolean).length;$('wordCount').textContent=n+' words';saveDraft();}
 function modeView(){
@@ -64,13 +64,13 @@ async function loadReference(id,element){
   }catch(error){notice(error.message);return false;}
 }
 function libraryView(){
-  const priority=ref=>ref.source?.model==='qwen3'&&ref.source?.mode==='design'?0:ref.source?.kind==='audition'?1:2;
+  const priority=ref=>/\b(?:original coach|clean original)\b/i.test(ref.name||'')?-1:ref.source?.model==='qwen3'&&ref.source?.mode==='design'?0:ref.source?.kind==='audition'?1:2;
   const references=[...(snapshot.references||[])].sort((a,b)=>priority(a)-priority(b)||(b.createdAt||0)-(a.createdAt||0)),completed=(snapshot.jobs||[]).filter(job=>job.status==='COMPLETED'&&job.audioReady),fingerprint=JSON.stringify([references,completed.map(job=>job.id)]);
   if(libraryFingerprint===fingerprint)return;libraryFingerprint=fingerprint;
   const host=$('referenceLibrary'),ids=new Set(references.map(ref=>ref.id));
   for(const element of host.querySelectorAll('[data-library-reference]'))if(!ids.has(element.dataset.libraryReference))element.remove();
   $('emptyReferences')?.remove();
-  if(!references.length){host.innerHTML='<p id="emptyReferences" class="muted">New voices will appear here. Previous auditions are saved outside this round.</p>';return;}
+  if(!references.length){host.innerHTML='<p id="emptyReferences" class="muted">The cleaned original and its related takes will appear here. Previous auditions are saved outside this round.</p>';return;}
   for(const ref of references){
     if([...host.children].some(node=>node.dataset.libraryReference===ref.id))continue;
     const article=document.createElement('article');article.className='reference-voice';article.dataset.libraryReference=ref.id;
@@ -160,7 +160,7 @@ async function refresh(){
     if(!Array.isArray(snapshot.models)||snapshot.models.length!==3)throw Error('Update the helper to use the three-model Voice Lab.');
     if(connectionFailure){notice('');connectionFailure=false;}
     if(!snapshot.models.some(model=>model.id===modelId))modelId=snapshot.models[0].id;
-    $('lab').hidden=false;$('connectionTitle').textContent='Private helper connected';$('connectionDetail').textContent='References and audition history are available through your pairing.';
+    $('lab').hidden=false;$('connectionTitle').textContent='Private helper connected';$('connectionDetail').textContent='The original coach voice and related takes are available through your pairing.';
     if(first)modelView();referencesView();libraryView();workerView();jobsView();
   }finally{polling=false;}
 }

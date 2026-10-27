@@ -1,7 +1,7 @@
 export const VOICE_BATCH = Object.freeze({
-  id: 'clean-coach-20261027',
-  startedAt: 1793083800,
-  label: 'New narrator auditions',
+  id: 'anchored-coach-20261027',
+  startedAt: 1793086776,
+  label: 'Coach voice and related takes',
 });
 
 // The helper retains the originals. This view shows only the new audition round.
