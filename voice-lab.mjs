@@ -2,8 +2,8 @@ import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
 import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=library-20261026';
 import {preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
-import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=quote-compare-20261027';
-import {comparisonDeliveryLabel} from './voice-lab-comparisons.mjs?v=quote-compare-20261027';
+import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=quote-compare-source-20261027';
+import {comparisonDeliveryLabel} from './voice-lab-comparisons.mjs?v=quote-compare-source-20261027';
 const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
@@ -93,7 +93,7 @@ function libraryView(){
       if([...target.children].some(node=>node.dataset.cloneReference===comparison.referenceId))continue;
       const name=comparison.model==='qwen3'?'Qwen Base':'Drama 3',delivery=comparisonDeliveryLabel(comparison);
       const row=document.createElement('div');row.className='reference-audition';row.dataset.cloneReference=comparison.referenceId;row.dataset.cloneModel=comparison.model;
-      row.innerHTML=`<span><strong>${esc(name)} clone test</strong> · ${Number(comparison.reference.durationSeconds).toFixed(1)}s</span><p class="muted">${esc(delivery)}</p><button class="text-button" type="button">Load clone test</button><audio hidden controls preload="none" aria-label="${esc(ref.name)} · ${esc(name)} clone test"></audio><details><summary>Test script</summary><p class="muted">${esc(comparison.reference.transcript||'No transcript supplied.')}</p></details>`;
+      row.innerHTML=`<span><strong>${esc(name)} clone test</strong> · ${Number(comparison.reference.durationSeconds).toFixed(1)}s</span><p class="muted">${esc(delivery)}</p><button class="text-button" type="button">Load clone test</button><audio hidden controls preload="none" aria-label="${esc(ref.name)} · ${esc(name)} clone test"></audio><details><summary>Test script and source</summary><p class="muted">${esc(comparison.reference.transcript||'No transcript supplied.')}</p><p class="muted">Source: ${esc(comparison.executionLabel||'Recorded model test')}. Checkpoints and inference pipelines can differ across these tests; compare the voices by listening.</p></details>`;
       target.append(row);
       row.querySelector('button').addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;const success=await loadReference(comparison.referenceId,row.querySelector('audio'));button.disabled=false;button.hidden=success;if(!success)button.textContent='Retry clone test';});
     }

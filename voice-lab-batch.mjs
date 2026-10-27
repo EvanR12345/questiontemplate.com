@@ -1,4 +1,4 @@
-import {VOICE_COMPARISONS,PENDING_COMPARISONS,validateComparisons} from './voice-lab-comparisons.mjs?v=quote-compare-20261027';
+import {VOICE_COMPARISONS,PENDING_COMPARISONS,validateComparisons} from './voice-lab-comparisons.mjs?v=quote-compare-source-20261027';
 
 export const VOICE_BATCH = Object.freeze({
   id: 'anchored-coach-20261027',
