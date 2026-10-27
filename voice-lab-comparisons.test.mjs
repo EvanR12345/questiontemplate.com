@@ -77,3 +77,13 @@ test('prior six comparison recordings and linked jobs cannot repopulate the main
   assert.equal(source.references.length,9);
   assert.equal(source.jobs.length,6);
 });
+
+
+test('an unavailable model retains an honest status without an audio comparison',()=>{
+  const pending=[{sourceReferenceId:original,models:['drama3'],status:'unavailable',note:'Compatible GPU capacity unavailable; no audio generated.'}];
+  const source={references:[{id:original,createdAt:VOICE_BATCH.startedAt}],jobs:[]};
+  const view=currentVoiceBatch(source,VOICE_BATCH,[],pending);
+  assert.deepEqual(view.comparisons,[]);
+  assert.deepEqual(view.pendingComparisons,pending);
+  assert.deepEqual(view.jobs,[]);
+});

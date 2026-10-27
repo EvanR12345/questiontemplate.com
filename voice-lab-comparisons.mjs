@@ -19,7 +19,7 @@ export const VOICE_COMPARISONS = Object.freeze([
     "processingReceiptSHA256": "2ce6a68e605246f371ca5f4104ce16587e2c3f4bd713b785a092f5b53673c27d"
   }
 ]);
-export const PENDING_COMPARISONS = Object.freeze([{sourceReferenceId:'5efd23e2303043869f4f03fb0f625c33',models:['drama3'],note:'The native delivery test is still in progress under the approved budget.'}]);
+export const PENDING_COMPARISONS = Object.freeze([{sourceReferenceId:'5efd23e2303043869f4f03fb0f625c33',models:['drama3'],status:'unavailable',note:'Unavailable this round: compatible GPU capacity was unavailable after setup; no Drama audio generated.'}]);
 
 // Prior round recordings remain stored privately, outside the current comparison.
 export const ARCHIVED_COMPARISON_IDS = Object.freeze([

@@ -1,4 +1,4 @@
-import {VOICE_COMPARISONS,PENDING_COMPARISONS,ARCHIVED_COMPARISON_IDS,validateComparisons} from './voice-lab-comparisons.mjs?v=native-quiet-take-a-20261027';
+import {VOICE_COMPARISONS,PENDING_COMPARISONS,ARCHIVED_COMPARISON_IDS,validateComparisons} from './voice-lab-comparisons.mjs?v=native-quiet-final-20261027';
 
 export const VOICE_BATCH = Object.freeze({
   id: 'anchored-coach-20261027',
