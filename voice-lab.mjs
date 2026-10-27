@@ -1,13 +1,13 @@
 import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs?v=connection-20261009';
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
 import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=library-20261026';
-import {REFERENCE_SCRIPT,VOICE_DESIGNS,QWEN_PRESETS,INCLUDED_VOICES,preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
+import {preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
+import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=clean-coach-20261027';
 const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
 const referenceURLs=new Map();let libraryFingerprint='',referenceOptionsFingerprint='';
-let authorPresets={};
-const DRAFT_KEY='qt-voice-lab-draft-v1';
+const DRAFT_KEY='qt-voice-lab-draft-'+VOICE_BATCH.id;
 const json=(path,body)=>helperJson('/studio/voice-lab'+path,key,body);
 const notice=message=>{$('notice').textContent=message||'';};
 function selectedModel(){return snapshot?.models?.find(model=>model.id===modelId);}
@@ -15,7 +15,8 @@ function formParameters(){const parameters={};document.querySelectorAll('[data-p
 function saveDraft(){try{if(modelId&&$('parameters').dataset.model===modelId)parameterDrafts[modelId]=formParameters();sessionStorage.setItem(DRAFT_KEY,JSON.stringify({model:modelId,mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,character:{name:$('characterName').value,scene:$('characterScene').value},parameterDrafts}));}catch{}}
 let draft={};try{draft=JSON.parse(sessionStorage.getItem(DRAFT_KEY)||'{}');}catch{}
 const parameterDrafts=draft.parameterDrafts||{};
-$('script').value=draft.text||'';$('description').value=draft.description||'';modelId=draft.model||'';
+$('script').value=draft.text||'';$('description').value=draft.description||'';modelId=draft.model||'voxcpm2';
+if(!draft.mode)draft.mode='design';
 $('characterName').value=draft.character?.name||'Narrator';$('characterScene').value=draft.character?.scene||'';
 function words(){const n=$('script').value.trim().split(/\s+/).filter(Boolean).length;$('wordCount').textContent=n+' words';saveDraft();}
 function modeView(){
@@ -69,7 +70,7 @@ function libraryView(){
   const host=$('referenceLibrary'),ids=new Set(references.map(ref=>ref.id));
   for(const element of host.querySelectorAll('[data-library-reference]'))if(!ids.has(element.dataset.libraryReference))element.remove();
   $('emptyReferences')?.remove();
-  if(!references.length){host.innerHTML='<p id="emptyReferences" class="muted">No references saved yet. Add a recording in Reference voice mode, or save a completed audition below.</p>';return;}
+  if(!references.length){host.innerHTML='<p id="emptyReferences" class="muted">New voices will appear here. Previous auditions are saved outside this round.</p>';return;}
   for(const ref of references){
     if([...host.children].some(node=>node.dataset.libraryReference===ref.id))continue;
     const article=document.createElement('article');article.className='reference-voice';article.dataset.libraryReference=ref.id;
@@ -91,30 +92,7 @@ function libraryView(){
   let cursor=host.firstElementChild;
   for(const ref of references){const node=[...host.children].find(node=>node.dataset.libraryReference===ref.id);if(node===cursor)cursor=cursor.nextElementSibling;else if(node)host.insertBefore(node,cursor);}
 }
-function voiceLabel(job){return authorPresets[job.model]?.find(preset=>preset.description===job.description)?.name||jobVoiceName(job,snapshot.references);}
-async function authorPresetView(){
-  try{
-    const response=await fetch('./voice-lab-author-presets.json?v=authors-20261026',{credentials:'omit'});if(!response.ok)throw Error('Cannot load the author preset catalog.');
-    const value=await response.json();if(!Array.isArray(value.drama3)||!Array.isArray(value.voxcpm2))throw Error('Invalid author preset catalog.');authorPresets=value;
-    $('authorPresets').innerHTML=['drama3','voxcpm2'].map(model=>`<section class="author-preset-group"><h4>${model==='drama3'?'Drama 3 · eight cast templates':'VoxCPM2 · four voice styles'}</h4><div class="preset-voices">${authorPresets[model].map(preset=>`<button class="secondary" type="button" data-author-model="${esc(model)}" data-author-preset="${esc(preset.id)}">${esc(preset.name)}</button>`).join('')}</div></section>`).join('');
-    $('authorPresets').querySelectorAll('[data-author-preset]').forEach(button=>button.addEventListener('click',()=>{
-      const model=button.dataset.authorModel,preset=authorPresets[model].find(item=>item.id===button.dataset.authorPreset);
-      if(!snapshot?.models.find(item=>item.id===model)?.modes.some(mode=>mode.id==='design')){notice('Update the helper to generate this author voice template.');return;}
-      saveDraft();modelId=model;draft={mode:'design',language:'Auto'};$('script').value=REFERENCE_SCRIPT;$('description').value=preset.description;$('characterName').value=preset.characterName||'Narrator';$('characterScene').value=preset.scene||'';modelView();words();$('create').scrollIntoView({behavior:'smooth',block:'start'});notice(`${preset.name} is set up. Review the script and settings before generating.`);
-    }));
-  }catch(error){$('authorPresets').textContent=error.message;}
-}
-authorPresetView();
-$('voiceDesigns').innerHTML=VOICE_DESIGNS.map(voice=>`<article class="voice-design"><h4>${esc(voice.name)}</h4><p class="muted">${esc(voice.description)}</p><button class="secondary" data-design="${esc(voice.id)}" type="button">Set up this voice</button></article>`).join('');
-$('voiceDesigns').querySelectorAll('[data-design]').forEach(button=>button.addEventListener('click',()=>{
-  const voice=VOICE_DESIGNS.find(item=>item.id===button.dataset.design);saveDraft();modelId='qwen3';draft={mode:'design',language:'English'};$('script').value=REFERENCE_SCRIPT;$('description').value=voice.description;modelView();words();$('create').scrollIntoView({behavior:'smooth',block:'start'});notice('Voice recipe is ready. Generate, listen, then save a clean take as a clone reference.');
-}));
-$('includedVoices').innerHTML=INCLUDED_VOICES.map(item=>`<article class="included-voice"><h4>${esc(item.name)}</h4><p class="muted">${esc(item.summary)} <a href="${esc(item.url)}" target="_blank" rel="noopener">Official source</a></p></article>`).join('');
-$('qwenPresets').innerHTML=QWEN_PRESETS.map(voice=>`<button class="secondary" data-preset="${esc(voice.id)}" type="button">${esc(voice.name)}</button>`).join('');
-$('qwenPresets').querySelectorAll('[data-preset]').forEach(button=>button.addEventListener('click',()=>{
-  if(!snapshot.models.find(model=>model.id==='qwen3')?.modes.some(mode=>mode.id==='preset')){notice('Update your paired helper to use the named Qwen voices.');return;}
-  saveDraft();modelId='qwen3';parameterDrafts.qwen3={...parameterDrafts.qwen3,speaker:button.dataset.preset};draft={mode:'preset',language:'English'};$('script').value=REFERENCE_SCRIPT;$('description').value='';modelView();words();$('create').scrollIntoView({behavior:'smooth',block:'start'});notice('Qwen preset selected. Generate an audition, then save it as a reference to clone its voice with any model.');
-}));
+function voiceLabel(job){return jobVoiceName(job,snapshot.references);}
 function referencesView(){
   const fingerprint=JSON.stringify((snapshot.references||[]).map(ref=>[ref.id,ref.name,ref.durationSeconds]));
   if(fingerprint===referenceOptionsFingerprint)return;referenceOptionsFingerprint=fingerprint;
@@ -152,7 +130,7 @@ async function loadAudio(id,element){
 function jobsView(){
   const jobs=snapshot.jobs||[],host=$('jobs'),ids=new Set(jobs.map(job=>job.id));
   for(const element of host.querySelectorAll('[data-job]'))if(!ids.has(element.dataset.job)){element.remove();jobFingerprints.delete(element.dataset.job);}
-  if(!jobs.length){host.innerHTML='<p class="muted" id="emptyHistory">Your first preview will appear here.</p>';return;}
+  if(!jobs.length){host.innerHTML='<p class="muted" id="emptyHistory">The new round’s previews will appear here.</p>';return;}
   $('emptyHistory')?.remove();
   for(const job of [...jobs].sort((a,b)=>b.createdAt-a.createdAt)){
     const fingerprint=JSON.stringify([job,voiceLabel(job)]),existing=[...host.children].find(node=>node.dataset.job===job.id);
@@ -178,7 +156,7 @@ function jobsView(){
 async function refresh(){
   if(polling||!key)return;polling=true;
   try{
-    const first=!snapshot;snapshot=await json('');
+    const first=!snapshot;snapshot=currentVoiceBatch(await json(''));
     if(!Array.isArray(snapshot.models)||snapshot.models.length!==3)throw Error('Update the helper to use the three-model Voice Lab.');
     if(connectionFailure){notice('');connectionFailure=false;}
     if(!snapshot.models.some(model=>model.id===modelId))modelId=snapshot.models[0].id;
