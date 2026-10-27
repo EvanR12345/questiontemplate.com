@@ -2,7 +2,7 @@ import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
 import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=library-20261026';
 import {preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
-import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=anchored-coach-20261027';
+import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=anchored-direct-20261027';
 const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
