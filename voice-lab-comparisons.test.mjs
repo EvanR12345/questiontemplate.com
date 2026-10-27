@@ -50,3 +50,30 @@ test('quota notes list only missing model tests and do not invent playable compa
   assert.deepEqual(partial.pendingComparisons,[{...pending[0],models:['drama3']}]);
   assert.deepEqual(currentVoiceBatch({references:[]},VOICE_BATCH,manifest,pending).pendingComparisons,[]);
 });
+
+
+test('native expressive and assembled Vox speech require zero quote gain and honest labels',()=>{
+  const native={referenceId:clone,sourceReferenceId:original,model:'voxcpm2',delivery:'native-expression',gainDB:0};
+  assert.doesNotThrow(()=>validateComparisons([native]));
+  assert.equal(comparisonDeliveryLabel(native),'Native expressive delivery · no quote gain applied');
+  assert.throws(()=>validateComparisons([{...native,gainDB:-2}]),/cannot include quote gain/);
+  assert.throws(()=>validateComparisons([{...native,gainDB:undefined}]),/explicit zero/);
+  assert.throws(()=>validateComparisons([{...native,delivery:'native-expression-assembled'}]),/assembly/);
+  const joined={...native,delivery:'native-expression-assembled',assembly:'joined-native-sections'};
+  assert.doesNotThrow(()=>validateComparisons([joined]));
+  assert.equal(comparisonDeliveryLabel(joined),'Native speech sections joined · no quote gain applied');
+});
+
+test('prior six comparison recordings and linked jobs cannot repopulate the main shortlist',()=>{
+  const archived=['2325634ff6284116a74139d693be563d','2b68e64f687c40cdb5c3188b26e7e440','85df764347c04cb7952d0faef132e7cf','7426b12af810428f9f9d4700fb1cdc79','2b8866279ad7448992abb7bbc5fc6a52','8eefc34cfb7544cdba57b7fc1e1510ed'];
+  const refs=[original,'5efd23e2303043869f4f03fb0f625c33','5d7020c96f6244d4b47ed5b880bd40f0',...archived].map(id=>({id,createdAt:VOICE_BATCH.startedAt+1}));
+  const jobs=archived.map((referenceId,i)=>({id:'old-'+i,referenceId,createdAt:VOICE_BATCH.startedAt+1}));
+  const source={references:refs,jobs,selected:{jobId:'old-0'}};
+  const view=currentVoiceBatch(source,VOICE_BATCH,[]);
+  assert.deepEqual(view.references.map(x=>x.id),['5efd23e2303043869f4f03fb0f625c33','5d7020c96f6244d4b47ed5b880bd40f0',original]);
+  assert.deepEqual(view.comparisons,[]);
+  assert.deepEqual(view.jobs,[]);
+  assert.equal(view.selected,null);
+  assert.equal(source.references.length,9);
+  assert.equal(source.jobs.length,6);
+});

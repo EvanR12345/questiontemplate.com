@@ -1,4 +1,4 @@
-import {VOICE_COMPARISONS,PENDING_COMPARISONS,validateComparisons} from './voice-lab-comparisons.mjs?v=quote-compare-six-20261027';
+import {VOICE_COMPARISONS,PENDING_COMPARISONS,ARCHIVED_COMPARISON_IDS,validateComparisons} from './voice-lab-comparisons.mjs?v=native-quiet-take-a-20261027';
 
 export const VOICE_BATCH = Object.freeze({
   id: 'anchored-coach-20261027',
@@ -23,7 +23,7 @@ const referenceDisplay = Object.freeze({
 // The helper retains the originals. This view shows only the new audition round.
 export function currentVoiceBatch(snapshot, batch = VOICE_BATCH, manifest = VOICE_COMPARISONS, pendingManifest = PENDING_COMPARISONS) {
   validateComparisons(manifest);
-  const comparisonIds = new Set(manifest.map(item => item.referenceId));
+  const comparisonIds = new Set([...ARCHIVED_COMPARISON_IDS,...manifest.map(item => item.referenceId)]);
   const isCurrent = item => Number.isFinite(item?.createdAt) && item.createdAt >= batch.startedAt;
   const references = (snapshot.references || [])
     .filter(item => isCurrent(item) && !supersededReferences.has(item.id) && !comparisonIds.has(item.id))

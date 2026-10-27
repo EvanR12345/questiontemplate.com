@@ -2,8 +2,8 @@ import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
 import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=library-20261026';
 import {preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
-import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=quote-compare-six-20261027';
-import {comparisonDeliveryLabel} from './voice-lab-comparisons.mjs?v=quote-compare-six-20261027';
+import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=native-quiet-take-a-20261027';
+import {comparisonDeliveryLabel} from './voice-lab-comparisons.mjs?v=native-quiet-take-a-20261027';
 const $=id=>document.getElementById(id);
 let key='',snapshot=null,modelId='',busy=false,polling=false,timer=null,connectionFailure=false;
 const objectURLs=new Map(),jobFingerprints=new Map();
@@ -85,15 +85,15 @@ function libraryView(){
     let pendingNote=target.querySelector('[data-pending-clones]');
     if(pending){
       if(!pendingNote){pendingNote=document.createElement('p');pendingNote.className='muted';pendingNote.dataset.pendingClones=ref.id;target.prepend(pendingNote);}
-      pendingNote.textContent=`Pending: ${pending.models.map(model=>model==='qwen3'?'Qwen Base':'Drama 3').join(' and ')} clone tests. ${pending.note||'Not generated yet.'}`;
+      pendingNote.textContent=`Pending: ${pending.models.map(model=>model==='qwen3'?'Qwen Base':model==='voxcpm2'?'VoxCPM2':'Drama 3').join(' and ')} clone tests. ${pending.note||'Not generated yet.'}`;
     }else pendingNote?.remove();
     const comparisons=(snapshot.comparisons||[]).filter(item=>item.sourceReferenceId===ref.id),comparisonIds=new Set(comparisons.map(item=>item.referenceId));
     for(const row of target.querySelectorAll('[data-clone-reference]'))if(!comparisonIds.has(row.dataset.cloneReference))row.remove();
     for(const comparison of comparisons){
       if([...target.children].some(node=>node.dataset.cloneReference===comparison.referenceId))continue;
-      const name=comparison.model==='qwen3'?'Qwen Base':'Drama 3',delivery=comparisonDeliveryLabel(comparison);
+      const name=comparison.model==='qwen3'?'Qwen Base':comparison.model==='voxcpm2'?'VoxCPM2':'Drama 3',delivery=comparisonDeliveryLabel(comparison),qualityNote=comparison.qcStatus==='CONTENT_CHECKED_LISTENING_PENDING'?'Content checked; listen to judge expressive delivery, voice identity, breaths and other unwanted sounds.':comparison.qualityNote||'';
       const row=document.createElement('div');row.className='reference-audition';row.dataset.cloneReference=comparison.referenceId;row.dataset.cloneModel=comparison.model;
-      row.innerHTML=`<span><strong>${esc(name)} clone test</strong> · ${Number(comparison.reference.durationSeconds).toFixed(1)}s</span><p class="muted">${esc(delivery)}</p><button class="text-button" type="button">Load clone test</button><audio hidden controls preload="none" aria-label="${esc(ref.name)} · ${esc(name)} clone test"></audio><details><summary>Test script and source</summary><p class="muted">${esc(comparison.reference.transcript||'No transcript supplied.')}</p><p class="muted">Source: ${esc(comparison.executionLabel||'Recorded model test')}. Checkpoints and inference pipelines can differ across these tests; compare the voices by listening.</p></details>`;
+      row.innerHTML=`<span><strong>${esc(name)} clone test</strong> · ${Number(comparison.reference.durationSeconds).toFixed(1)}s</span><p class="muted">${esc(delivery)}</p>${qualityNote?`<p class="muted">${esc(qualityNote)}</p>`:''}<button class="text-button" type="button">Load clone test</button><audio hidden controls preload="none" aria-label="${esc(ref.name)} · ${esc(name)} clone test"></audio><details><summary>Test script and source</summary><p class="muted">${esc(comparison.reference.transcript||'No transcript supplied.')}</p>${comparison.qualityNote?`<p class="muted">${esc(comparison.qualityNote)}</p>`:''}<p class="muted">Source: ${esc(comparison.executionLabel||'Recorded model test')}. Using the same reference helps keep the voice consistent, but a clone can still sound different across models and runs. Native expressive delivery is judged by listening; lower volume alone does not establish whispered articulation.</p></details>`;
       target.append(row);
       row.querySelector('button').addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;const success=await loadReference(comparison.referenceId,row.querySelector('audio'));button.disabled=false;button.hidden=success;if(!success)button.textContent='Retry clone test';});
     }
