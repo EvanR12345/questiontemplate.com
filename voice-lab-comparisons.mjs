@@ -65,26 +65,43 @@ export const VOICE_COMPARISONS = Object.freeze([
     "canonicalAudioSHA256": "1f1e36d0047e8111055bd6f9b47489a1b73566699b10ad91bc6f1353fd60b327",
     "expectedDurationSeconds": 27.44,
     "processingReceiptSHA256": "3db08e4d33ed83a6fdd9c2ad790bce0dd03fbf55d93961cc778b87375c5bdd85"
-  }
-]);
-export const PENDING_COMPARISONS = Object.freeze([
-  {
-    "sourceReferenceId": "5efd23e2303043869f4f03fb0f625c33",
-    "models": [
-      "qwen3",
-      "drama3"
-    ],
-    "note": "RunPod tests in progress under approved budget."
   },
   {
+    "referenceId": "2b8866279ad7448992abb7bbc5fc6a52",
+    "sourceReferenceId": "5efd23e2303043869f4f03fb0f625c33",
+    "model": "drama3",
+    "executionKind": "private-native-worker",
+    "executionLabel": "RunPod private native worker - paid test",
+    "billingKind": "paid-runpod-test",
+    "checkpointRevision": "b2b5ee998034b2975720906c815e7fb0e9f007bd",
+    "backend": "SGLang-Omni",
+    "delivery": "quote-volume-adjusted",
+    "gainDB": -8.930520655585063,
+    "nativeContrastDB": 1.0694792949441994,
+    "finalContrastDB": 10.000000306722438,
+    "canonicalAudioSHA256": "c2be3af9225fedcfdb7f10fa928f7f58cae69eedd069b46b23b38348ee784c9e",
+    "expectedDurationSeconds": 29.210708333333333,
+    "processingReceiptSHA256": "5d5ee98fa6daaf018d9e505dba30052195da8078a6ae6748ac03ceb23df29aa3"
+  },
+  {
+    "referenceId": "8eefc34cfb7544cdba57b7fc1e1510ed",
     "sourceReferenceId": "5d7020c96f6244d4b47ed5b880bd40f0",
-    "models": [
-      "qwen3",
-      "drama3"
-    ],
-    "note": "RunPod tests in progress under approved budget."
+    "model": "drama3",
+    "executionKind": "private-native-worker",
+    "executionLabel": "RunPod private native worker - paid test",
+    "billingKind": "paid-runpod-test",
+    "checkpointRevision": "b2b5ee998034b2975720906c815e7fb0e9f007bd",
+    "backend": "SGLang-Omni",
+    "delivery": "quote-volume-adjusted",
+    "gainDB": -9.647574232306455,
+    "nativeContrastDB": 0.35242561641108144,
+    "finalContrastDB": 10.000000238457185,
+    "canonicalAudioSHA256": "7d2ada647fac0288dfd22bc97880c039a5fc0a54f50dd63c10a97f4e0af286bf",
+    "expectedDurationSeconds": 30.789666666666665,
+    "processingReceiptSHA256": "6ab0ca6f9899b310d6aeb203b648bc38608e67ac317c7ed2acb25082e0792652"
   }
 ]);
+export const PENDING_COMPARISONS = Object.freeze([]);
 
 export function validateComparisons(manifest) {
   const ids = new Set();
