@@ -12,6 +12,7 @@ import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionMode
 import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=fast-planner-20261028';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
 import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=fast-planner-20261028';
+import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=realistic-production-20261028';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -89,10 +90,10 @@ function readControls(){const next={};for(const k of keys){if(!$(k))continue;nex
 function getTask(id){return id===PREPARATION_GROUP?preparation:taskLookup.get(id);}
 function renderGenerationSpeed(){
   const speed=generationSpeed(plan,evidence);
-  $('generationRate').value=speed.highest===null?'Not measured':speed.highest.toFixed(1);
+  $('generationRate').value=speed.current===null?'Not measured':speed.current.toFixed(1);
   $('generationRateNote').textContent=speed.highest===null?'No completed generation-speed measurement for this timing profile. Choose a measured resolution.':
-    `Continuous warm throughput: ${speed.label}. No boot, download, model loading, Luna waiting, rental idle or rendering delays included. Per-image preparation, transfer and saving remain included in this measured sustained rate.`+
-    (speed.isFastest?'':` Current selected setup: ${speed.current.toFixed(1)} images/min; the schedule uses that rate. The displayed maximum is a benchmark comparison.`);
+    `Selected setup: ${executionLabel(plan)}. This measured warm rate includes preparation, transfer and saving once, but excludes startup, Luna/QC waiting and rendering. It is not measured full-production throughput.`+
+    (speed.isFastest?'':` Fastest benchmark comparison: ${speed.highest.toFixed(1)} images/min; it is not substituted into this schedule.`);
   $('fastestGPU').disabled=speed.highest===null||speed.isFastest;
 }
 function labelChapter(n){return n===0?'Project / intro':`Chapter ${String(n).padStart(2,'0')}`;}
@@ -119,6 +120,7 @@ async function rebuild(){
     renderGenerationSpeed();
     $('batch').nextElementSibling.textContent=plan.groupSize>config.batch?`Long timeline: ${plan.groupSize} images per display group (requested ${config.batch}). Actual image count, model and inference are unchanged.`:'Display grouping only; inference stays unchanged. Long timelines automatically use larger groups.';
     $('sampleField').hidden=config.qc!=='sampled';$('introFields').hidden=!config.intro;
+    $('qcPolicyNote').textContent=reviewPolicyNote(config,result,evidence);
     $('modeNote').textContent=productionModeNote(config);
     $('scheduleDescription').textContent=`${config.policy==='proposed'?'Proposed':config.policy==='current'?'Installed overlap model':'Sequential baseline'} · ${plan.director.label} · ${config.directorTier} · ${plan.imageCount} images · ${result.tasks.length} operations · ${Object.keys(preferences).length} manual moves`;
     $('metricTime').textContent=formatTime(result.end);
@@ -141,6 +143,8 @@ async function rebuild(){
     $('profileScope').textContent=(plan.measurement?`${config.resolution} image pipeline · ${plan.measurement.workers} workers${config.executionMode!=='resident'?' · '+plan.measurement.clientSlots+' request slots':''} · ${config.encodingProfile} conditioning`:'Historical 1344 × 768 images · one worker')+` · video ${config.videoResolution}/${config.videoFps}fps`;
     $('renderTimingNote').textContent=plan.renderScope;
     $('workerField').hidden=config.resolution==='legacy';
+    $('workerLabel').textContent=config.executionMode==='resident'?'Model copies on one GPU':'Request slots on one GPU';
+    $('workerNote').textContent=config.executionMode==='resident'?'Each worker is a separate model copy, not another GPU. Installed mode keeps the supported single-copy comparison.':`${plan.measurement?.workers||config.productionModelCopies} model copies serve ${plan.measurement?.clientSlots||config.productionRequestSlots} bounded request slots. Slots include queued/preparing requests; they do not mean that many simultaneous model copies or GPUs.`;
     if(plan.measurement)$('modeNote').textContent+=` Measured worker groups include image preparation through saving once. Internal stages cannot be moved separately from these aggregate measurements. ${plan.renderScope}`;
     const oldFocus=focus;
     $('chapterFocus').innerHTML='<option value="all">All chapters</option><option value="0">Project / intro</option>'+Array.from({length:config.chapters},(_,i)=>`<option value="${i+1}">Chapter ${String(i+1).padStart(2,'0')}</option>`).join('');
@@ -326,8 +330,8 @@ async function start(){
     }
     const choices=gpuChoices(evidence);
     $('gpu').innerHTML=choices.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
-    const measuredDefault={...DEFAULTS,directorProfile:evidence.directorCalibration?'lean-current-standard':'historical',directorCostMode:evidence.directorCalibration?'measured':'manual',gpu:'5090',resolution:'720p',encodingProfile:'fresh',executionMode:'hybrid',measurementAttempt:'5090-attempt-8'};
-    try{config=selectGPUConfig(measuredDefault,evidence,measuredDefault.gpu);}catch{config={...DEFAULTS};}
+    const measuredDefault={...DEFAULTS,directorProfile:evidence.directorCalibration?'lean-current-standard':'historical',directorCostMode:evidence.directorCalibration?'measured':'manual',gpu:'5090',resolution:'720p',encodingProfile:'fresh'};
+    try{config=realisticPlanningConfig(measuredDefault,evidence);}catch{config=realisticPlanningConfig({...measuredDefault,resolution:'legacy'},evidence);}
     const resetDefault={...config};
     try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved){saved.config=migrateDirectorForecast(saved.config,true,Boolean(Object.keys(saved.preferences||{}).length));if(!evidence.directorCalibration&&saved.config.directorProfile!=='historical')throw Error('Director calibration unavailable');const state=importSnapshot(saved,evidence);config=state.config;preferences=state.preferences;studioFollowing=saved.studioSource?.requestedFollowing??(saved.studioSource?.following!==false);studioProject=saved.studioSource?.project||'';uncertainty=Number.isFinite(saved.uncertainty)?Math.max(0,Math.min(100,saved.uncertainty)):20;}}catch{toast('Saved planner settings were invalid; using the default plan. Studio projects are unaffected.');}
     if(Object.keys(preferences).length)studioFollowing=false;
@@ -349,7 +353,7 @@ async function start(){
       if(k==='chapters'){next.readyChapters=Math.min(next.readyChapters,next.chapters);}
       if(k!=='gpuStartSeconds'&&k!=='uncertainty'&&next.gpuStartSeconds>0){next.gpuStartSeconds=0;toast('Timed GPU startup cleared after settings changed. Recalculate using Spend less on rented waiting.');}
       // Never silently change the user's check level to satisfy installed overlap.
-      try{if(['gpu','resolution','encodingProfile'].includes(k))next=selectGPUConfig(next,evidence,next.gpu);const nextPlan=buildPlan(next,evidence);const u=Number($('uncertainty').value);if(!Number.isFinite(u)||u<0||u>100)throw Error('Sensitivity must be 0–100%.');checkpoint();config=next;uncertainty=u;preferences={};selected=null;setControls();rebuild();if(['gpu','resolution','encodingProfile'].includes(k))toast('Automatically selected fastest tested settings: '+executionLabel(nextPlan));}catch(e){toast(e.message);setControls();}
+      try{if(['gpu','resolution','encodingProfile'].includes(k))next=selectScenarioGPUConfig(next,evidence,next.gpu);const nextPlan=buildPlan(next,evidence);const u=Number($('uncertainty').value);if(!Number.isFinite(u)||u<0||u>100)throw Error('Sensitivity must be 0–100%.');checkpoint();config=next;uncertainty=u;preferences={};selected=null;setControls();rebuild();if(['gpu','resolution','encodingProfile'].includes(k))toast('Measured setup applied: '+executionLabel(nextPlan));}catch(e){toast(e.message);setControls();}
       };
       $(k).addEventListener('change',()=>{clearTimeout(controlTimer);apply();});
       $(k).addEventListener('input',()=>{clearTimeout(controlTimer);controlTimer=setTimeout(apply,350);});
@@ -362,7 +366,7 @@ async function start(){
     $('processSearch').oninput=renderProcesses;$('pairA').onchange=pairResult;$('pairB').onchange=pairResult;
     $('undo').onclick=()=>{const last=history.pop();if(!last)return;config=last.config;preferences=last.preferences;uncertainty=last.uncertainty;setControls();rebuild();$('undo').disabled=!history.length;toast('Previous plan restored.');};
     $('optimize').onclick=()=>{checkpoint();preferences={};rebuild();$('moveFeedback').textContent='Tasks repacked at their earliest available dependency/resource slot. This is a feasible heuristic, not a proof of the global optimum.';};
-    $('reset').onclick=()=>{checkpoint();config={...resetDefault};preferences={};uncertainty=20;selected=null;setControls();rebuild();toast('Default planning scenario restored with fastest tested settings.');};
+    $('reset').onclick=()=>{checkpoint();config={...resetDefault};preferences={};uncertainty=20;selected=null;setControls();rebuild();toast('Conservative installed planning scenario restored. Follow saved setup to apply its actual topology.');};
     $('play').onclick=()=>{if(playing){stopPlay();return;}if(matchMedia('(prefers-reduced-motion: reduce)').matches){toast('Animation disabled by your reduced-motion setting. Task details remain available.');return;}playing=true;playStarted=performance.now();$('play').textContent='Stop simulation';playFrame=requestAnimationFrame(tick);};
     $('export').onclick=()=>{
       const controls=readControls();

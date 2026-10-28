@@ -1,7 +1,7 @@
 """Image backends are replaceable; no story facts or timeline logic lives here."""
 from prompt_quality import execution_evidence
 
-import base64, copy, hashlib, io, json, math, re, secrets, subprocess, time, urllib.error, urllib.request
+import base64, copy, hashlib, io, json, math, re, secrets, subprocess, sys, time, urllib.error, urllib.request
 from pathlib import Path
 from studio_data import shot_chapter
 from collections import OrderedDict
@@ -81,6 +81,40 @@ class ImageEncodingCache:
     """Bounded exact-byte preparation, invalidated by each local file revision."""
     def __init__(self,max_bytes=32*2**20):
         self.max_bytes=max_bytes;self.bytes=0;self.items=OrderedDict();self.lock=threading.RLock()
+        # Reuse the exact bytes/digest already read by encode(), or prepare an
+        # externally supplied immutable data URL once. This separate bounded
+        # LRU counts retained input keys, raw bytes, digest strings, tuples and
+        # incremental OrderedDict storage (fixed empty-cache overhead excluded).
+        self.decoded=OrderedDict();self.decoded_bytes=0;self._decoded_base=sys.getsizeof(self.decoded)
+    @property
+    def decoded_retained_bytes(self):
+        with self.lock:
+            return self.decoded_bytes+max(0,sys.getsizeof(self.decoded)-self._decoded_base)
+    @staticmethod
+    def _decoded_size(value,entry):
+        return sys.getsizeof(value)+sys.getsizeof(entry)+sum(sys.getsizeof(item) for item in entry)
+    def _remember_reference(self,value,raw,fingerprint):
+        # Caller holds the shared lock. Keys and values are immutable, so exact
+        # string equality is sufficient; no path/stat/worker assumptions apply.
+        old=self.decoded.get(value)
+        if old is not None:
+            self.decoded.move_to_end(value);return old
+        entry=(raw,fingerprint);size=self._decoded_size(value,entry)
+        if size>self.max_bytes:return entry
+        self.decoded[value]=entry;self.decoded_bytes+=size
+        while self.decoded and (self.decoded_retained_bytes>self.max_bytes or len(self.decoded)>128):
+            key,removed=self.decoded.popitem(last=False);self.decoded_bytes-=self._decoded_size(key,removed)
+        if not self.decoded:self.decoded=OrderedDict()
+        return entry
+    def reference_bytes(self,value):
+        with self.lock:
+            # Oversized inputs still follow the existing decode/hash path but
+            # are never retained as cache keys or values.
+            if sys.getsizeof(value)<=self.max_bytes:
+                old=self.decoded.get(value)
+                if old is not None:self.decoded.move_to_end(value);return old
+            raw=base64.b64decode(value.split(',',1)[-1])
+            return self._remember_reference(value,raw,hashlib.sha256(raw).hexdigest())
     @staticmethod
     def stamp(path):
         stat=path.stat();return (stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns)
@@ -93,13 +127,14 @@ class ImageEncodingCache:
             # cache expensive encoding, never infer identity from stat alone.
             raw=path.read_bytes();fingerprint=hashlib.sha256(raw).digest()
             if old and old[0]==before and old[2]==fingerprint:
-                self.items.move_to_end(key);return old[1]
+                self.items.move_to_end(key);self._remember_reference(old[1],raw,fingerprint.hex());return old[1]
             value='data:image/png;base64,'+base64.b64encode(raw).decode()
             if old:self.bytes-=len(self.items.pop(key)[1])
             if len(value)<=self.max_bytes and self.stamp(path)==before:
                 self.items[key]=(before,value,fingerprint);self.bytes+=len(value)
                 while self.bytes>self.max_bytes or len(self.items)>128:
                     _,entry=self.items.popitem(last=False);self.bytes-=len(entry[1])
+            self._remember_reference(value,raw,fingerprint.hex())
             return value
 
 
@@ -833,8 +868,7 @@ class ComfyImageProvider(ImageProvider):
         upload_hits = 0
         for index, ref in enumerate(refs):
             checkpoint(0, s["steps"], "Uploading character references")
-            raw = base64.b64decode(ref.split(",", 1)[-1])
-            fingerprint = hashlib.sha256(raw).hexdigest()
+            raw, fingerprint = _image_encoding_cache.reference_bytes(ref)
             uploaded_name = self._uploads.get(fingerprint)
             upload_hits += int(bool(uploaded_name))
             if not uploaded_name:
