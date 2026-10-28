@@ -166,6 +166,9 @@ def profile_for(stage, project, config, details=None):
         if backend=='native':
             from studio_gpu_render import ENGINE
             profile['renderEngine']=dict(ENGINE)
+            # The same encoded pixels now avoid per-frame progress commits.
+            # Old native timings must not teach the new display-write policy.
+            profile['frameProgressPolicy']='sampled-250ms-v1'
     elif stage=='Narration':
         from studio_voice_provider import identity
         profile.update(identity(settings))

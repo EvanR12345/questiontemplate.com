@@ -6,6 +6,7 @@ import hashlib
 import threading
 import time
 import contextvars
+from studio_shot_snapshot import shot_snapshot
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from openai_director import OpenAIDirector
@@ -13,6 +14,7 @@ from studio_data import digest, get_chapter, get_shot, uid
 from studio_qc import decision as qc_decision, automatic_repairs, check_level
 from studio_execution import (CommitCoordinator, CoordinatedStore, CoordinatedTrace,
     ExecutionJournal, ImageLane, LaneProvider, BoundedExecutions, UnresolvedExecution)
+from studio_render_progress import FrameProgress
 
 
 class LaneDirector(OpenAIDirector):
@@ -66,6 +68,7 @@ class CloudStoryOverlap:
             raise UnresolvedExecution('This run has unresolved remote executions; reconcile saved IDs before retrying.')
         self.contexts=[]
         self.progress_keys={}
+        self.frame_progress=FrameProgress()
         self.image_lane=ImageLane(getattr(service.providers['comfyui'],'client_capacity',1))
         self.local_lane=ImageLane(1,'local narration/render')
         self.api_lane=ImageLane(self.settings['director'].get('parallelism',1),'director')
@@ -126,7 +129,8 @@ class CloudStoryOverlap:
                 if self.root.yield_requested:raise AudioYield()
                 if not self.root.paused or not wait_paused:break
                 self.root.cv.wait(.1)
-        if message and self.progress_keys.get(context.identity)!=message:
+        if (message and self.progress_keys.get(context.identity)!=message
+                and self.frame_progress.allow(context.identity,message)):
             self.coordinator.call(self.journal.progress,context.identity,message)
             self.progress_keys[context.identity]=message
             if context.kind!='image-qc':
@@ -418,7 +422,7 @@ class CloudStoryOverlap:
         self.validate_settings()
         admitted_window=self.pool.limit
         admission_details={'imageTasks':admitted_window,**self.image_admission_details()}
-        snapshot=copy.deepcopy(project)
+        snapshot=shot_snapshot(project)
         signature=self.main.visual_spec_signature(snapshot,shot)
         context=self.admit(snapshot,chapter,shot['id'],'image-qc',signature,self.chapter_dependencies)
         clone=self.clone(context,snapshot=snapshot)

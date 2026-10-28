@@ -14,6 +14,7 @@
   <main>
     <div class="heading"><div><div class="eyebrow">PRODUCTION LAB <span class="badge">LOCAL SIMULATION</span></div><h1>Find the fastest path.</h1><p>Arrange the work. See what can overlap, what must wait, and what the GPU costs while it waits.</p></div><div class="saved"><span id="saved">Saved on this device</span><small>No paid jobs · no project changes</small></div></div>
     <div class="metrics" aria-live="polite"><div><span>Estimated finish</span><strong id="metricTime">—</strong><small id="metricRange">Building schedule…</small></div><div><span>Compared with serial</span><strong id="metricSaved">—</strong><small id="metricSerial">Same work, different order</small></div><div><span>Estimated total cost</span><strong id="metricCost">—</strong><small id="metricCostParts">GPU + API + storage allowance</small></div><div><span id="metricBusyLabel">GPU work / rented</span><strong id="metricBusy">—</strong><small id="metricImages">Preparing image count…</small></div></div>
+    <p class="inline-note" id="productionSpeedUpdate">Actual video generation: native rendering now avoids repeated frame-display database writes. Matched video outputs were identical. <a href="./pipeline-speed-20261028.html">Speed tests, check policies and costs</a>. The full-video forecast and voice estimate retain their existing calibration.</p>
     <div class="lab">
       <aside class="settings" aria-label="Production settings">
         <h2>Production setup</h2><p class="caption">Same model. Same image frequency.</p>
@@ -69,5 +70,5 @@
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script type="module" src="./pipeline-ui.mjs?v=measured-image-queue-20261028"></script>
+  <script type="module" src="./pipeline-ui.mjs?v=production-speed-20261028"></script>
 <script type="module" src="./studio-guide-entry.mjs?v=tools-20261016"></script></body></html>

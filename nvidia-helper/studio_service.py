@@ -20,6 +20,7 @@ from image_provider import (
 )
 from studio_render import VideoRenderer
 from studio_gpu_render import create_renderer
+from studio_render_progress import FrameProgress
 from studio_qc import decision as qc_decision, production_status, automatic_repairs, repair_budget_reason, check_level, should_check, policy as qc_policy, review_settings_signature, review_settings_stale
 from prompt_quality import generation_measurements
 from story_grounding import apply_environment_event, set_environment_location, visual_environment, require_owners
@@ -85,6 +86,7 @@ class StudioService:
         from studio_vimeo import VimeoPublisher
         self.vimeo=VimeoPublisher(self.store,self.storage,self.config)
         self.cv = threading.Condition(threading.RLock())
+        self._frame_progress = FrameProgress()
         self.current = None
         self.cancel = False
         self.yield_requested = False
@@ -1086,7 +1088,8 @@ class StudioService:
             if self.yield_requested:
                 raise AudioYield()
             progress_key = (self.current, message)
-            if message and self.current and getattr(self, '_progress_key', None) != progress_key:
+            if (message and self.current and getattr(self, '_progress_key', None) != progress_key
+                    and self._frame_progress.allow(self.current,message)):
                 self.db.execute(
                     "UPDATE jobs SET message=? WHERE id=?", (message, self.current)
                 )

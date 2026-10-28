@@ -113,6 +113,35 @@ class PerformanceTest(unittest.TestCase):
         self.assertNotEqual(old,profile_for('Render chapter',self.project,{'renderBackend':'cpu','renderWorkers':3}))
         self.project['settings']['watermark']={'enabled':True,'text':'Studio'}
         self.assertNotEqual(old,profile_for('Render chapter',self.project,{'renderBackend':'cpu','renderWorkers':1}))
+
+    def test_native_sampled_progress_does_not_inherit_per_frame_commit_timings(self):
+        units={'kind':'videoSeconds','value':120}
+        for stage in ('Render chapter','Assemble full video'):
+            with self.subTest(stage=stage):
+                current=profile_for(stage,self.project,{'renderBackend':'native'})
+                self.assertEqual(current['frameProgressPolicy'],'sampled-250ms-v1')
+                old=dict(current);old.pop('frameProgressPolicy')
+                self.store.record(stage+'-old','old-run',old,units,120,{})
+                self.assertIsNone(self.store.estimate(current,units)['seconds'])
+                self.store.record(stage+'-new','new-run',current,units,30,{})
+                self.assertEqual(self.store.estimate(current,units)['seconds'],30)
+                self.assertEqual(self.store.estimate(current,units)['samples'],1)
+                # Incompatible history remains available for diagnostics.
+                self.assertEqual(self.store.estimate(old,units)['seconds'],120)
+
+    def test_frame_progress_policy_does_not_change_cpu_fallback_or_voice_history(self):
+        for stage in ('Render chapter','Assemble full video'):
+            cpu=profile_for(stage,self.project,{'renderBackend':'cpu'})
+            fallback=profile_for(stage,self.project,{'renderBackend':'native'},{'renderBackend':'cpu'})
+            self.assertEqual(cpu,fallback)
+            self.assertNotIn('frameProgressPolicy',cpu)
+        cpu_voice=profile_for('Narration',self.project,{'renderBackend':'cpu'})
+        native_voice=profile_for('Narration',self.project,{'renderBackend':'native'})
+        self.assertEqual(cpu_voice,native_voice)
+        self.assertNotIn('frameProgressPolicy',native_voice)
+        units={'kind':'characters','value':100}
+        self.store.record('voice-unchanged','voice-run',cpu_voice,units,17,{})
+        self.assertEqual(self.store.estimate(native_voice,units)['seconds'],17)
     def test_deferred_repairs_have_separate_compatible_timing_history(self):
         old=profile_for('Image pipeline',self.project,{})
         self.project['settings'].update(unattendedProduction=True,qcRepairBudgetMode='project-cap')

@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "release": "production-speed-20261028",
+  "voiceEstimateUnchanged": true,
+  "fullVideoForecastUnchanged": true,
+  "installedChanges": [
+    "sampled-frame-display-writes",
+    "omit-durable-telemetry-from-shot-copies",
+    "native-timing-history-isolation"
+  ],
+  "keptDefaults": {
+    "imageTasks": 5,
+    "apiSlots": 4,
+    "modelCopies": 2,
+    "requestSlots": 4,
+    "visualChecks": "practical"
+  },
+  "nativeClip": {
+    "baseline": {
+      "seconds": [
+        4.095915999962017,
+        2.147505900124088
+      ],
+      "medianSeconds": 3.1217109500430524,
+      "progressWrites": [
+        360,
+        360
+      ]
+    },
+    "modified": {
+      "seconds": [
+        0.7994343000464141,
+        0.7664981000125408
+      ],
+      "medianSeconds": 0.7829662000294775,
+      "progressWrites": [
+        4,
+        4
+      ]
+    },
+    "videoSeconds": 12,
+    "frames": 360,
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "mp4BytesIdentical": true,
+    "decodedFramesIdentical": true,
+    "scope": "Warm local native clip stage, two alternating pairs. Excludes fitting, voice generation and chapter/full-story assembly."
+  },
+  "gpuComparison": [
+    {
+      "mode": "single1",
+      "copies": 1,
+      "requestSlots": 1,
+      "imagesPerArm": 24,
+      "seconds": [
+        130.09400000004098,
+        132.76599999982864
+      ],
+      "meanBatchSeconds": 131.4299999999348,
+      "meanFreshProcessSetupSeconds": 40.863404631614685
+    },
+    {
+      "mode": "single2",
+      "copies": 1,
+      "requestSlots": 2,
+      "imagesPerArm": 24,
+      "seconds": [
+        99.48399999993853,
+        99.31299999984913
+      ],
+      "meanBatchSeconds": 99.39849999989383,
+      "meanFreshProcessSetupSeconds": 43.06086719036102
+    },
+    {
+      "mode": "dual4",
+      "copies": 2,
+      "requestSlots": 4,
+      "imagesPerArm": 24,
+      "seconds": [
+        102.95299999997951,
+        105.56199999991804
+      ],
+      "meanBatchSeconds": 104.25749999994878,
+      "meanFreshProcessSetupSeconds": 65.46973073482513
+    }
+  ],
+  "qcComparison": [
+    {
+      "policy": "practical",
+      "slots": 4,
+      "checks": 24,
+      "seconds": [
+        47.29600000008941,
+        46.875
+      ],
+      "meanBatchSeconds": 47.0855000000447,
+      "measuredUsageCostUSD": 0.008132606999999998,
+      "meanIndividualCheckSeconds": 14.332541666692123,
+      "blocked": 5,
+      "repairEligible": 5,
+      "passed": 13
+    },
+    {
+      "policy": "practical",
+      "slots": 8,
+      "checks": 24,
+      "seconds": [
+        42.343000000109896,
+        48.46900000004098
+      ],
+      "meanBatchSeconds": 45.40600000007544,
+      "measuredUsageCostUSD": 0.008613607999999998,
+      "meanIndividualCheckSeconds": 25.135458333272254,
+      "blocked": 2,
+      "repairEligible": 2,
+      "passed": 10
+    },
+    {
+      "policy": "strict",
+      "slots": 4,
+      "checks": 24,
+      "seconds": [
+        47.32800000021234,
+        49.563000000081956
+      ],
+      "meanBatchSeconds": 48.44550000014715,
+      "measuredUsageCostUSD": 0.008681708,
+      "meanIndividualCheckSeconds": 14.456333333354754,
+      "blocked": 12,
+      "repairEligible": 1,
+      "passed": 12
+    },
+    {
+      "policy": "strict",
+      "slots": 8,
+      "checks": 24,
+      "seconds": [
+        46.5,
+        45.34400000004098
+      ],
+      "meanBatchSeconds": 45.92200000002049,
+      "measuredUsageCostUSD": 0.008749208000000001,
+      "meanIndividualCheckSeconds": 25.385999999998603,
+      "blocked": 14,
+      "repairEligible": 2,
+      "passed": 10
+    }
+  ],
+  "gpuQuality": {
+    "measuredImages": 144,
+    "warmupImages": 8,
+    "distinctSourcePrompts": 12,
+    "seedSets": 2,
+    "all24CasePixelHashesIdenticalAcrossSixArms": true,
+    "settings": "Exact RTX 5090; same pinned FLUX.2 Klein 4B weights, references, 1280x720, four steps, guidance1, seeds and kernels. Every measured image received fresh Practical QC. Five outer tasks/four API slots held constant."
+  },
+  "qcScope": {
+    "balancedChecks": 96,
+    "uniqueImages": 12,
+    "partialChecksExcluded": 6,
+    "networkDispatchesIncludingUncertain": 108,
+    "scope": "Two arms per policy/slot condition. Final two complete arms followed a time gap after a harness failure; six earlier partial findings excluded from timing. No automatic repair or human-review completion time measured. Model verdicts vary across repeats."
+  },
+  "snapshot": {
+    "savedSecondsPerCopy": 0.021474000066518784,
+    "copyWorkSecondsFor709Images": 15.225066047161818,
+    "identicalAuditedRequests": 12,
+    "scope": "Only already-durable production.timings omitted; full story, settings, references, rental, budget and scheduling guards preserved. CPU copy-work extrapolation, not measured full-video elapsed saving."
+  },
+  "cost": {
+    "approvedUSD": 2,
+    "gpuAndDiskUpperUSD": 0.45257615192731215,
+    "gpuTestQCUSD": 0.05107765,
+    "qcComparisonUSD": 0.060947559,
+    "uncertainRequestsMaxAccounted": 6,
+    "uncertainMaximumUSD": 0.024709625,
+    "totalConservativeUSD": 0.5646013609273122,
+    "scope": "GPU/disk uses the elapsed lease at a conservative hourly ceiling. API totals use recorded token pricing; six uncertain requests are charged at their full reserved maximum. This is conservative test accounting, not a settled provider invoice. Prior approved batches and existing storage are separate."
+  },
+  "cleanup": {
+    "testPodDeleted": true,
+    "newPersistentStorage": false,
+    "preExistingVolumeUntouched": true
+  },
+  "nativeChapter": {
+    "status": "NOT_RUN",
+    "reason": "Insufficient free physical RAM at the authorized pre-render guard; root ended this attempt without waiting or launching the renderer.",
+    "scope": "See private chapter validation receipt; no whole-video forecast recalibration."
+  }
+}

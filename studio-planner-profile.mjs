@@ -16,6 +16,8 @@ export function plannerSettings(config, profile, evidence) {
   if(['cpu','native'].includes(profile.renderExecution?.backend)){
     next.videoRenderer=profile.renderExecution.backend;
     warnings.push(`Following the actual local helper renderer: ${next.videoRenderer==='native'?'NVIDIA GPU photo motion':'CPU compatibility'}. Auto does not choose a different renderer for this production run; short export timings remain projections for long videos.`);
+    if(profile.renderExecution.frameProgressPolicy==='sampled-250ms-v1')
+      warnings.push('Installed native rendering samples frame-display updates while checking pause and cancellation on every frame. Matched clip tests produced identical MP4 bytes and frames. This improvement is not multiplied into the full-video forecast; narration timing is unchanged.');
   }
   next.intro=profile.intro?.enabled===true;
   if(next.intro){

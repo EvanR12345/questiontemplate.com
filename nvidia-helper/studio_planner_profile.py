@@ -91,6 +91,7 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
         'phaseOverlap':{'audioLookahead':(config or {}).get('studioAudioLookahead',True) is not False,
                         'chapterRender':(config or {}).get('studioRenderOverlap',True) is not False},
         'renderExecution':{'backend':render_backend,'location':'local-helper',
+                           'frameProgressPolicy':'sampled-250ms-v1' if render_backend=='native' else None,
                            'scope':'Currently selected helper renderer; project auto mode does not select another backend.'},
         'directorCalibrationProfile':profile_for('AI directing',project,config or {}),
         'directorObservation':director_observation,

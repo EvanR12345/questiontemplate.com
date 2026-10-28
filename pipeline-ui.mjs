@@ -11,7 +11,7 @@ import {matchedHTML} from './pipeline-matched.mjs?v=fast-planner-20261028';
 import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=fast-planner-20261028';
 import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=fast-planner-20261028';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=measured-image-queue-20261028';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=production-speed-20261028';
 import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=realistic-production-20261028';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
