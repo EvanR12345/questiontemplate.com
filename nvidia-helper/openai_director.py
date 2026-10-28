@@ -212,6 +212,9 @@ class OpenAIDirector(DirectorProvider):
             if getattr(self, "timing_callback", None):
                 self.timing_callback(role.split(":")[0].split(".")[0], 0, {"reused": True, "provider": "openai-luna"})
             return value
+        if vision and role.startswith('Visual quality reviewer:'):
+            from qc_image_transport import qc_image_urls
+            images=qc_image_urls(images)
         clean = compact_source_evidence({k: v for k, v in context.items() if not k.startswith("_")})
         codec = None
         if compact_wire:

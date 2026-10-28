@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {plannerSettings} from './studio-planner-profile.mjs';
 import {DEFAULTS,buildPlan,schedule} from './pipeline-engine.mjs';
-import {startupCandidates,startupSearch} from './pipeline-detail-ui.mjs';
+import {startupCandidates,startupSearch,startupPolicy,startupApplyConfig,mountStartupTradeoffs} from './pipeline-detail-ui.mjs';
 import {plannerSourceState} from './pipeline-config.mjs';
 import {profileSummary} from './studio-planner-profile.mjs';
 
@@ -84,26 +84,84 @@ test('automatic current-policy startup search reapplies exactly its advertised s
   assert.deepEqual(input,before);
 });
 
-test('manual startup comparison intentionally retains proposed policy',()=>{
+test('startup comparison defaults to the selected installed policy and permits an explicit proposed comparison',()=>{
   const input=plannerSettings(base,profile(),evidence).config;
-  assert.ok(startupCandidates(input,evidence).every(candidate=>candidate.plan.config.policy==='proposed'));
+  assert.ok(startupCandidates(input,evidence).every(candidate=>candidate.plan.config.policy==='current'));
+  assert.ok(startupCandidates(input,evidence,'proposed').every(candidate=>candidate.plan.config.policy==='proposed'));
 });
 
 test('unsupported startup-search policies fail before calculation',()=>{
   for(const value of ['serial','typo','',null])assert.throws(()=>startupSearch(base,evidence,false,value).next(),/requires current or proposed/);
 });
 
-test('production worker forwards current policy while preserving the manual default',async()=>{
+test('production startup worker preserves selected policy even when no explicit override is supplied',async()=>{
   let final;globalThis.self={postMessage:value=>{if(value.type!=='progress')final=value;}};
   try{
     await import('./pipeline-worker.mjs');
-    const config=plannerSettings({...base,minutes:5,chapters:1},profile(),evidence).config;
-    for(const searchPolicy of ['current',undefined]){
+    const input=plannerSettings({...base,minutes:5,chapters:1},profile(),evidence).config;
+    for(const policy of ['current','proposed','serial'])for(const searchPolicy of [startupPolicy({policy}),undefined]){
+      const config={...input,policy};
       final=null;self.onmessage({data:{type:'startup',config,evidence,...(searchPolicy?{searchPolicy}:{} )}});
       assert.equal(final.type,'complete');assert.ok(final.values.length>0);
-      assert.ok(final.values.every(value=>value.plan.config.policy===(searchPolicy??'proposed')));
+      assert.ok(final.values.every(value=>value.plan.config.policy===startupPolicy(config)));
     }
   }finally{delete globalThis.self;}
+});
+
+function startupHost(){
+  const host={buttons:[],status:{textContent:''},html:'',
+    querySelector(){return this.status;},querySelectorAll(){return this.buttons;}};
+  Object.defineProperty(host,'innerHTML',{get(){return this.html;},set(value){
+    this.html=value;this.buttons=[...value.matchAll(/data-start-index="(\d+)"/g)].map(match=>({dataset:{startIndex:match[1]}}));
+  }});
+  return host;
+}
+
+test('startup table forwards installed policy to its worker and Use preserves the advertised schedule',()=>{
+  const previous=globalThis.Worker,workers=[];
+  globalThis.Worker=class{constructor(){workers.push(this);}postMessage(data){this.request=data;}terminate(){this.terminated=true;}};
+  try{
+    const input=plannerSettings({...base,minutes:5,chapters:1},profile(),evidence).config;
+    for(const policy of ['current','proposed','serial']){
+      const config={...input,policy},before=structuredClone(config),host=startupHost();let settings;
+      mountStartupTradeoffs(host,config,evidence,value=>{settings=value;});
+      const worker=workers.at(-1);assert.equal(worker.request.searchPolicy,startupPolicy(config));
+      assert.equal(worker.request.config.policy,policy);
+      const values=startupCandidates(config,evidence,worker.request.searchPolicy);
+      worker.onmessage({data:{type:'complete',values}});
+      assert.ok(host.buttons.length);assert.match(host.html,policy==='current'?/Installed overlap model/:/Proposed scheduling comparison/);
+      assert.match(host.html,/data-start-limitations/);assert.match(host.html,/limit of five tasks across generation and QC/);
+      assert.match(host.html,/ends rental before pending QC or repairs finish/);assert.match(host.html,/Installed is a coarse forecast/);
+      if(policy==='serial')assert.match(host.html,/“Use” switches the planner to Proposed/);
+      host.buttons[0].onclick();
+      const applied=startupApplyConfig(config,settings),selected=values[Number(host.buttons[0].dataset.startIndex)];
+      assert.equal(applied.policy,startupPolicy(config));assert.equal(applied.earlyGpu,false);
+      near(schedule(buildPlan(applied,evidence)).end,selected.result.end);
+      assert.deepEqual(voice(buildPlan(applied,evidence)),voice(buildPlan({...config,policy:startupPolicy(config)},evidence)));
+      assert.deepEqual(config,before);
+    }
+  }finally{if(previous===undefined)delete globalThis.Worker;else globalThis.Worker=previous;}
+});
+
+test('startup table fallback retains selected policy and its Use settings',async()=>{
+  const previous=globalThis.Worker;delete globalThis.Worker;
+  try{
+    const input=plannerSettings({...base,minutes:5,chapters:1},profile(),evidence).config;
+    for(const policy of ['current','proposed','serial']){
+      const config={...input,policy},host=startupHost();let settings;
+      mountStartupTradeoffs(host,config,evidence,value=>{settings=value;});
+      await host._startupTask;
+      assert.ok(host._startupValues.length);
+      assert.ok(host._startupValues.every(value=>value.plan.config.policy===startupPolicy(config)));
+      host.buttons[0].onclick();assert.equal(startupApplyConfig(config,settings).policy,startupPolicy(config));
+    }
+  }finally{if(previous!==undefined)globalThis.Worker=previous;}
+});
+
+test('applying a mismatched startup result cannot silently switch Installed to Proposed',()=>{
+  const config={...base,policy:'current'},before=structuredClone(config);
+  assert.throws(()=>startupApplyConfig(config,{readyChapters:2,gpuStartSeconds:20,policy:'proposed'}),/different scheduling policy/);
+  assert.deepEqual(config,before);
 });
 
 test('automatic Follow loader sends the installed policy and applies the matching startup result',async()=>{

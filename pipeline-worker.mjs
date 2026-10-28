@@ -1,6 +1,6 @@
 import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=one-hour-speed-20261028';
 import {buildPlan,schedule} from './pipeline-engine.mjs?v=one-hour-speed-20261028';
-import {startupSearch} from './pipeline-detail-ui.mjs?v=one-hour-speed-20261028';
+import {startupSearch} from './pipeline-detail-ui.mjs?v=gpu-startup-policy-20261028';
 self.onmessage=({data})=>{
  try{
   if(data.type==='plan'){
@@ -10,7 +10,7 @@ self.onmessage=({data})=>{
   }else if(data.type==='gpu-comparison'){
    self.postMessage({type:'complete',...compareGPUPlans(data.config,data.evidence)});
   }else if(data.type==='startup'){
-   const search=startupSearch(data.config,data.evidence,true,data.searchPolicy??'proposed');
+   const search=startupSearch(data.config,data.evidence,true,data.searchPolicy);
    for(;;){const step=search.next();if(step.done){self.postMessage({type:'complete',values:step.value});break;}self.postMessage({type:'progress',message:step.value});}
   }else throw Error('Unknown planner computation');
  }catch(error){self.postMessage({type:'error',message:error.message});}

@@ -2,13 +2,23 @@ import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=one-hour-sp
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const seconds=n=>Number.isFinite(n)?n.toFixed(3)+'s':'Not measured',money=n=>'$'+n.toFixed(3);
 const phaseNames={preparationSeconds:'Build request',referenceUploadSeconds:'Reference upload/cache',submissionSeconds:'Submit operation',waitAndPollingSeconds:'Wait / poll (includes server)',retrievalAndValidationSeconds:'Retrieve / decode check',pngEncodeAndDurableSaveSeconds:'PNG encode / durable save',historyAndMetadataReceiptSeconds:'History / metadata receipt',provisionAndReadinessSeconds:'Provision / readiness',downloadAndHashSeconds:'Download / verify hashes',timedCohortWallSeconds:'Timed image cohorts',experimentalWarmupClientSeconds:'Experimental warmups'};
+const startupLimitations='<p class="caption" data-start-limitations>Proposed’s low idle rental estimate is experimental: it omits production’s limit of five tasks across generation and QC and ends rental before pending QC or repairs finish. Installed is a coarse forecast, not a measured full production run.</p>';
 export const ALIGNMENT_BUFFER_SECONDS=15;
+export function startupPolicy(config){
+ if(config.policy==='serial')return 'proposed';
+ if(['current','proposed'].includes(config.policy))return config.policy;
+ throw Error('Startup comparison requires installed, proposed or serial scheduling.');
+}
+export function startupApplyConfig(config,settings){
+ if(settings.policy!==startupPolicy(config))throw Error('Startup result belongs to a different scheduling policy. Recalculate the comparison.');
+ return {...config,readyChapters:settings.readyChapters,gpuStartSeconds:settings.gpuStartSeconds,earlyGpu:false,policy:settings.policy};
+}
 
 export function startupBoundaries(config){
  return config.chapters<=64?Array.from({length:config.chapters},(_,i)=>i+1):
   [...new Set([1,config.chapters,config.readyChapters,...Array.from({length:64},(_,i)=>1+Math.round(i*(config.chapters-1)/63))])].sort((a,b)=>a-b);
 }
-export function* startupSearch(config,evidence,compact=false,searchPolicy='proposed'){
+export function* startupSearch(config,evidence,compact=false,searchPolicy=startupPolicy(config)){
  if(!['current','proposed'].includes(searchPolicy))throw Error('Startup search requires current or proposed scheduling.');
  const evaluate=(n,gpuStartSeconds=0)=>{
   const p=buildPlan({...config,policy:searchPolicy,earlyGpu:false,readyChapters:n,gpuStartSeconds},evidence),r=schedule(p);
@@ -56,18 +66,20 @@ export function* startupSearch(config,evidence,compact=false,searchPolicy='propo
  values.push({...best,balanced:true,keepFastestVideo:false,bufferSeconds:ALIGNMENT_BUFFER_SECONDS,rentalReferenceSeconds:last.result.rentalSeconds,rentalExtraSeconds:Math.max(0,best.result.rentalSeconds-last.result.rentalSeconds)});
  return values.map(v=>({...v,pareto:!values.some(o=>o!==v&&o.result.end<=v.result.end+.01&&o.result.totalUSD<=v.result.totalUSD+.00001&&(o.result.end<v.result.end-.01||o.result.totalUSD<v.result.totalUSD-.00001))}));
 }
-export function startupCandidates(config,evidence,searchPolicy='proposed'){
+export function startupCandidates(config,evidence,searchPolicy=startupPolicy(config)){
  const search=startupSearch(config,evidence,false,searchPolicy);let step;do{step=search.next();}while(!step.done);return step.value;
 }
 export function mountStartupTradeoffs(host,config,evidence,onApply){
+ const searchPolicy=startupPolicy(config),policyLabel=searchPolicy==='current'?'Installed overlap model':'Proposed scheduling comparison';
+ const serialNote=config.policy==='serial'?' The selected schedule is Sequential; these startup alternatives compare Proposed scheduling. “Use” switches the planner to Proposed.':'';
  const cacheKey=JSON.stringify(config);
  if(host._startupKey!==cacheKey){
   host._startupKey=cacheKey;host._startupValues=null;
   const generation=(host._startupGeneration||0)+1;host._startupGeneration=generation;
   host._startupWorker?.terminate();
-  host.innerHTML='<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption" role="status" data-start-progress>Comparing startup timings… Controls remain available.</p>';
+  host.innerHTML=`<div class="section-head"><h3>Spend less on rented waiting</h3><span>${policyLabel} · same images · same model</span></div><p class="caption" role="status" data-start-progress>Comparing startup timings… Controls remain available.${serialNote}</p>`;
   if(typeof Worker!=='undefined'){
-   const worker=new Worker(new URL('./pipeline-worker.mjs?v=one-hour-speed-20261028',import.meta.url),{type:'module'});host._startupWorker=worker;
+   const worker=new Worker(new URL('./pipeline-worker.mjs?v=gpu-startup-policy-20261028',import.meta.url),{type:'module'});host._startupWorker=worker;
    worker.onmessage=({data})=>{
     if(host._startupGeneration!==generation)return;
     if(data.type==='progress')host.querySelector('[data-start-progress]').textContent=data.message+' · controls remain available.';
@@ -75,9 +87,9 @@ export function mountStartupTradeoffs(host,config,evidence,onApply){
     else{worker.terminate();host._startupWorker=null;host.innerHTML=`<p class="caption">Startup comparison unavailable: ${esc(data.message)}</p>`;}
    };
    worker.onerror=()=>{worker.terminate();if(host._startupGeneration===generation)host.innerHTML='<p class="caption">Background startup comparison could not load. The main schedule remains available.</p>';};
-   worker.postMessage({type:'startup',config,evidence});return;
+   worker.postMessage({type:'startup',config,evidence,searchPolicy});return;
   }
-  const search=startupSearch(config,evidence,true);
+  const search=startupSearch(config,evidence,true,searchPolicy);
   host._startupTask=(async()=>{
    try{for(;;){await new Promise(resolve=>setTimeout(resolve,0));if(host._startupGeneration!==generation)return;
     const step=search.next();if(step.done){host._startupValues=step.value;mountStartupTradeoffs(host,config,evidence,onApply);return;}
@@ -90,8 +102,8 @@ export function mountStartupTradeoffs(host,config,evidence,onApply){
  const values=host._startupValues,fastest=values.reduce((a,b)=>a.result.end<=b.result.end?a:b),cheapest=values.reduce((a,b)=>a.result.gpuUSD<=b.result.gpuUSD?a:b),balanced=values.find(v=>v.balanced);
  const aligned=values.find(v=>v.balanced&&!v.keepFastestVideo),featured=[...new Set([fastest,balanced,aligned,cheapest].filter(Boolean))];
  const table=list=>`<div class="evidence-table"><table><thead><tr><th>Start strategy</th><th>GPU boot</th><th>Luna done</th><th>Images done</th><th>Image tail</th><th title="Project start through final video checks, including audio, directing, images, rendering and assembly">Total time</th><th>GPU idle/setup</th><th>Rental</th><th>GPU $</th><th>Total cost</th><th></th></tr></thead><tbody>${list.map(v=>`<tr><td>${v.balanced?(v.keepFastestVideo?'Timed · keep fastest video':`Timed · align Luna + images · ${v.bufferSeconds}s buffer`):`After ${v.readyChapters} / ${config.chapters} chapter plans`}${v===fastest?' · fastest video':''}${v===cheapest?' · lowest rental':''}</td><td>${formatTime(v.bootStart)}</td><td>${formatTime(v.directorEnd)}</td><td>${formatTime(v.imageEnd)}</td><td>${v.gap<0?'−':''}${formatTime(Math.abs(v.gap))}</td><td>${formatTime(v.result.end)}</td><td>${formatTime(v.result.gpuIdleSeconds)}</td><td>${formatTime(v.result.rentalSeconds)}</td><td>${money(v.result.gpuUSD)}</td><td>${money(v.result.totalUSD)}</td><td><button class="button" data-ready="${v.readyChapters}" data-start-index="${values.indexOf(v)}">Use</button></td></tr>`).join('')}</tbody></table></div>`;
- host.innerHTML=`<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption">${config.chapters<=64?'Test every chapter boundary':'Compare 64 evenly spaced chapter boundaries plus your selected boundary'} plus timed startups between boundaries. “Keep fastest video” preserves the faster video finish. “Align Luna + images” targets the same billed rental duration as starting after the last chapter, plus at most ${ALIGNMENT_BUFFER_SECONDS}s of waiting buffer. It starts as early as this bounded search finds within that budget; rendering can finish later. Last shots still require the final chapter plan.</p>${table(featured)}<details><summary>${config.chapters<=64?'All '+config.chapters:values.filter(v=>!v.balanced).length+' sampled'} chapter-boundary options</summary>${table(values.filter(v=>!featured.includes(v)))}</details><p class="caption">“Total time” includes narration, directing, images, rendering, assembly and final checks from project start. Rental includes setup and transfers. The buffer is extra rented waiting, not free GPU time; actual calculated costs are shown. All values are projections without manual moves. “All chapters” waits for plans, not the finished video. This bounded scan is not a global optimum or measured production run. “Use” clears manual moves and can be undone.</p>`;
- host.querySelectorAll('[data-start-index]').forEach(b=>b.onclick=()=>{const v=values[Number(b.dataset.startIndex)];onApply({readyChapters:v.readyChapters,gpuStartSeconds:v.gpuStartSeconds});});
+ host.innerHTML=`<div class="section-head"><h3>Spend less on rented waiting</h3><span>${policyLabel} · same images · same model</span></div><p class="caption">${config.chapters<=64?'Test every chapter boundary':'Compare 64 evenly spaced chapter boundaries plus your selected boundary'} plus timed startups between boundaries.${serialNote} “Keep fastest video” preserves the faster video finish. “Align Luna + images” targets the same billed rental duration as starting after the last chapter, plus at most ${ALIGNMENT_BUFFER_SECONDS}s of waiting buffer. It starts as early as this bounded search finds within that budget; rendering can finish later. Last shots still require the final chapter plan.</p>${startupLimitations}${table(featured)}<details><summary>${config.chapters<=64?'All '+config.chapters:values.filter(v=>!v.balanced).length+' sampled'} chapter-boundary options</summary>${table(values.filter(v=>!featured.includes(v)))}</details><p class="caption">“Total time” includes narration, directing, images, rendering, assembly and final checks from project start. Rental includes setup and transfers. The buffer is extra rented waiting, not free GPU time; actual calculated costs are shown. All values are projections without manual moves. “All chapters” waits for plans, not the finished video. This bounded scan is not a global optimum or measured production run. “Use” clears manual moves and can be undone.</p>`;
+ host.querySelectorAll('[data-start-index]').forEach(b=>b.onclick=()=>{const v=values[Number(b.dataset.startIndex)];onApply({readyChapters:v.readyChapters,gpuStartSeconds:v.gpuStartSeconds,policy:v.plan.config.policy});});
 }
 
 export function imageAccountingHTML(profile,gpu,roundIndex=0){

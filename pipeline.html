@@ -14,7 +14,7 @@
   <main>
     <div class="heading"><div><div class="eyebrow">PRODUCTION LAB <span class="badge">LOCAL SIMULATION</span></div><h1>Find the fastest path.</h1><p>Arrange the work. See what can overlap, what must wait, and what the GPU costs while it waits.</p></div><div class="saved"><span id="saved">Saved on this device</span><small>No paid jobs · no project changes</small></div></div>
     <div class="metrics" aria-live="polite"><div><span>Estimated finish</span><strong id="metricTime">—</strong><small id="metricRange">Building schedule…</small></div><div><span>Compared with serial</span><strong id="metricSaved">—</strong><small id="metricSerial">Same work, different order</small></div><div><span>Estimated total cost</span><strong id="metricCost">—</strong><small id="metricCostParts">GPU + API + storage allowance</small></div><div><span id="metricBusyLabel">GPU work / rented</span><strong id="metricBusy">—</strong><small id="metricImages">Preparing image count…</small></div></div>
-    <p class="inline-note" id="productionSpeedUpdate">Director groups can review, repair and recheck independently after the full cadence check, while local preparation and saving leave the same four API slots available for network work. Practical checks still inspect every image. <a href="./pipeline-director-qc-20261028.html">Director/QC update and evidence</a> · <a href="./pipeline-speed-hour-20261028.html">Previous component measurements</a>. The production forecast and 12.3-minute voice estimate are unchanged; a fresh complete-story speedup remains unmeasured.</p>
+    <p class="inline-note" id="productionSpeedUpdate">In a 48-call Standard QC test, lossless uploads were 16.75% smaller and observed batch time was 15.7% shorter, including encoding. Pixels and dimensions were preserved. <a href="./pipeline-standard-upload-20261028.html">Standard QC upload results and limits</a> · <a href="./pipeline-director-qc-20261028.html">Earlier director/QC evidence</a> · <a href="./pipeline-speed-hour-20261028.html">Earlier component measurements</a>. The production forecast and 12.3-minute voice estimate are unchanged; full-story speedup remains unmeasured.</p>
     <div class="lab">
       <aside class="settings" aria-label="Production settings">
         <h2>Production setup</h2><p class="caption">Same model. Same image frequency.</p>
@@ -70,5 +70,5 @@
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script type="module" src="./pipeline-ui.mjs?v=one-hour-speed-20261028"></script>
+  <script type="module" src="./pipeline-ui.mjs?v=gpu-startup-policy-20261028"></script>
 <script type="module" src="./studio-guide-entry.mjs?v=tools-20261016"></script></body></html>

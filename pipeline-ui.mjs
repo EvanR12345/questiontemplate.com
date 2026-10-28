@@ -3,9 +3,9 @@ import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pipeline-admi
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
 import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=one-hour-speed-20261028';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex,startupApplyConfig} from './pipeline-detail-ui.mjs?v=gpu-startup-policy-20261028';
 import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=one-hour-speed-20261028';
-import {mountConcurrencyLab} from './pipeline-lab.mjs?v=one-hour-speed-20261028';
+import {mountConcurrencyLab} from './pipeline-lab.mjs?v=gpu-startup-policy-20261028';
 import {serverlessHTML} from './pipeline-serverless.mjs';
 import {matchedHTML} from './pipeline-matched.mjs?v=one-hour-speed-20261028';
 import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=one-hour-speed-20261028';
@@ -75,9 +75,9 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=one-hour-speed-20261028',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=one-hour-speed-20261028',import.meta.url),{type:'module'}));
-const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=one-hour-speed-20261028',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=gpu-startup-policy-20261028',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=gpu-startup-policy-20261028',import.meta.url),{type:'module'}));
+const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=gpu-startup-policy-20261028',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,renderedGeneration=-1,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -152,7 +152,7 @@ async function rebuild(){
     if(selected&&!getTask(selected))selected=null;
     renderTimeline();renderBreakdown();renderProcesses();renderPairs();renderEvidence();renderInspector();
     directorStudy?.update(config.minutes);
-    mountStartupTradeoffs($('startTradeoffs'),config,evidence,settings=>{checkpoint();config={...config,...settings,earlyGpu:false,policy:'proposed'};preferences={};setControls();rebuild();toast('GPU startup timing applied to the planner. Production settings remain unchanged.');});
+    mountStartupTradeoffs($('startTradeoffs'),config,evidence,settings=>{checkpoint();config=startupApplyConfig(config,settings);preferences={};setControls();rebuild();toast('GPU startup timing applied to the planner. Production settings remain unchanged.');});
     if(view==='gpus')renderGPUs();persist();
     renderedGeneration=generation;
     $('export').disabled=false;$('play').disabled=false;
