@@ -4,6 +4,18 @@
 from studio_qc import check_level
 
 
+ADAPTIVE_IMAGE_ADMISSION = 'verified-dual-qc-window-v1'
+
+
+def adaptive_image_window(settings, model_copies, request_slots):
+    """Configured eligibility only; admission also requires live proof and RAM."""
+    return (settings.get('image', {}).get('provider') == 'comfyui'
+            and check_level(settings) == 'practical'
+            and model_copies == 2 and request_slots == 4
+            and type(settings.get('director', {}).get('parallelism')) is int
+            and settings['director']['parallelism'] == 4)
+
+
 def shot_task_limit(project, options):
     """Keep one image lane supplied while bounded API reviews are in flight.
 

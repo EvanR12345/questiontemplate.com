@@ -1435,7 +1435,7 @@ class StudioService:
             overlap=getattr(self,'_overlap',None)
             if overlap and stage=='Image + quality checks':
                 pipeline_profile=profile_for('Image pipeline',p,self.config,
-                    (details or {}) | {'imageTasks':overlap.image_tasks})
+                    (details or {}) | {'imageTasks':(details or {}).get('imageTasks',overlap.image_tasks)})
                 with overlap.root.cv:overlap.pipeline_observations.append({
                     'start':observed_at-seconds,'end':observed_at,
                     'profile':performance_signature(pipeline_profile),'shot':(details or {}).get('shot'),

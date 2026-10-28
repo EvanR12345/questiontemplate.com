@@ -65,6 +65,8 @@ export function plannerSettings(config, profile, evidence) {
   }
   if(profile.imageTasks>3 && topology?.gpuLanes!==2)
     warnings.push(`Studio admits up to ${profile.imageTasks} image/check tasks while keeping one GPU image lane. Older three-task throughput does not measure this new pipeline; no speedup is assumed until matching production completes. A 28-call Luna QC-only pilot found no measured advantage for five tasks; complete image-generation throughput remains untested.`);
+  if(profile.imageAdmission?.maximumAfterVerification>profile.imageTasks)
+    warnings.push(`Actual generation can admit up to ${profile.imageAdmission.maximumAfterVerification} image/check tasks only after both workers are verified and RAM headroom passes. Image requests and API calls keep their existing limits. No speedup from this change is applied to the forecast until matching production timing exists.`);
   if(topology?.backend==='comfyui-api' && topology.gpuLanes===1 && !topology.multipleModelCopiesVerified)
     warnings.push('The current production connection uses one ComfyUI queue. Faster multi-copy or hybrid GPU benchmarks are comparison targets, not verified throughput for this running production backend.');
   next.directorCostMode='measured';
@@ -105,5 +107,6 @@ export function plannerSettings(config, profile, evidence) {
 export function profileSummary(p) {
   const s=p.settings,v=s.video,i=s.image,d=s.director;
   const copies=p.imageExecution?.modelCopies||p.imageExecution?.gpuLanes||1;
-  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · ${s.unattendedProduction?'automatic completion and bounded repairs':'manual review policy'} · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${p.imageTasks||3} image/check tasks, ${copies===1?'one GPU lane':copies+' independent model copies on one GPU'} · ${d.processingTier||'default'} processing`;
+  const window=p.imageAdmission?.maximumAfterVerification>p.imageTasks?`${p.imageTasks} image/check tasks; up to ${p.imageAdmission.maximumAfterVerification} after worker and RAM verification`:`${p.imageTasks||3} image/check tasks`;
+  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · ${s.unattendedProduction?'automatic completion and bounded repairs':'manual review policy'} · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${window}, ${copies===1?'one GPU lane':copies+' independent model copies on one GPU'} · ${d.processingTier||'default'} processing`;
 }

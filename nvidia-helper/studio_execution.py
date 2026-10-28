@@ -285,13 +285,23 @@ class LaneProvider:
 
 
 class BoundedExecutions:
-    def __init__(self, limit, gate):
+    def __init__(self, limit, gate, max_workers=None):
         if isinstance(limit,bool) or not isinstance(limit,int) or not 2<=limit<=5:
             raise ValueError('Choose two to five in-flight cloud shot tasks.')
-        self.pool=ThreadPoolExecutor(max_workers=limit,thread_name_prefix='studio-shot')
+        maximum=limit if max_workers is None else max_workers
+        if type(maximum) is not int or not limit<=maximum<=8:
+            raise ValueError('The bounded executor maximum must cover its limit and be at most eight.')
+        self.pool=ThreadPoolExecutor(max_workers=maximum,thread_name_prefix='studio-shot')
+        self.maximum=maximum
         self.limit,self.gate=limit,gate
         self.pending=set()
         self.all=[]
+
+    def set_limit(self, limit):
+        """Admission-owner only. Shrinking drains naturally; no future is dropped."""
+        if type(limit) is not int or not 2<=limit<=self.maximum:
+            raise ValueError('The admission limit must fit the bounded executor.')
+        self.limit=limit
 
     def drain_one(self):
         while True:

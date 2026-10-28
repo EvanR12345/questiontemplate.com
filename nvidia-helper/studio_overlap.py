@@ -1,5 +1,6 @@
 """Opt-in cloud overlap inside one authoritative full-story queue job."""
-from studio_director_limits import shot_task_limit, validate_overlap
+from studio_director_limits import (shot_task_limit, validate_overlap,
+    ADAPTIVE_IMAGE_ADMISSION, adaptive_image_window)
 import copy
 import hashlib
 import threading
@@ -71,11 +72,19 @@ class CloudStoryOverlap:
         self.main_context=self.admit(project,None,None,'story',digest({'sources':[c['sourceText'] for c in project['chapters']],
             'settings':self.settings}))
         self.main=self.clone(self.main_context,main=True)
-        self.pool=BoundedExecutions(shot_task_limit(project, options),self.main.gate)
+        from studio_image_workers import ComfyWorkerPool
+        provider=service.providers['comfyui']
+        self.base_image_tasks=shot_task_limit(project, options)
+        self.adaptive_image_admission=('overlapShots' not in options
+            and isinstance(provider,ComfyWorkerPool)
+            and adaptive_image_window(self.settings,provider.model_copies,provider.client_capacity))
+        self.pool=BoundedExecutions(self.base_image_tasks,self.main.gate,
+            max_workers=8 if self.adaptive_image_admission else self.base_image_tasks)
         self.chapter_dependencies=[]
         self.chapters=[chapter['id'] for chapter in project['chapters'] if chapter['sourceText'].strip()]
         self.chapter_futures={}
         self.image_tasks=self.pool.limit
+        self.admitted_image_windows=set()
         self.pipeline_observations=[]
         self.pipeline_recorded=False
         self.audio_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='studio-audio-lookahead')
@@ -361,10 +370,51 @@ class CloudStoryOverlap:
             if actual=='UNKNOWN' and status=='COMPLETE':
                 raise UnresolvedExecution('Stage '+context.identity+' has unresolved remote work; saved results retained.')
 
+    def image_admission_details(self, aggregate=False):
+        if not self.adaptive_image_admission:return {}
+        windows=self.admitted_image_windows if aggregate and self.admitted_image_windows else {self.pool.limit}
+        return {'imageAdmissionPolicy':ADAPTIVE_IMAGE_ADMISSION,
+                'imageTasks':max(windows),'imageWindowMin':min(windows),'imageWindowMax':max(windows)}
+
+    def update_image_window(self, project, review_only=False):
+        """Runtime proof is checked after GPU startup, before durable admission.
+
+        The provider and API lanes remain four slots. More lifecycle permits
+        allow existing image work to continue while other shots await QC.
+        """
+        allowed=False
+        if self.adaptive_image_admission and not review_only:
+            from studio_image_workers import ComfyWorkerPool
+            from studio_snapshot_budget import adaptive_snapshot_room
+            from studio_render import VideoRenderer
+            provider=self.root.providers['comfyui']
+            proof=getattr(provider,'confirmation',None)
+            rows=proof.get('workers',[]) if isinstance(proof,dict) else []
+            verified=(isinstance(provider,ComfyWorkerPool) and not getattr(provider,'quarantined',True)
+                and adaptive_image_window(self.settings,getattr(provider,'model_copies',None),
+                                          getattr(provider,'client_capacity',None))
+                and self.image_lane.capacity==4 and self.api_lane.capacity==4
+                and isinstance(proof,dict) and proof.get('gpu')=='NVIDIA GeForce RTX 5090'
+                and isinstance(rows,list) and len(rows)==2
+                and all(isinstance(row,dict) and type(row.get('pid')) is int and row['pid']>0
+                        and row.get('port')==8188+i for i,row in enumerate(rows))
+                and rows[0]['pid']!=rows[1]['pid'])
+            if verified:
+                allowed=adaptive_snapshot_room(project,VideoRenderer.available_memory_bytes())
+        self.pool.set_limit(8 if allowed else self.base_image_tasks)
+        self.image_tasks=self.pool.limit
+
     def submit_shot(self, project, chapter, shot, review_only=False):
         # Backpressure happens before durable admission, bounding the journal too.
-        self.pool.ready()
+        # Recheck after a blocking wait: a worker can be quarantined, or the
+        # host can lose memory while previously bought work is still finishing.
+        while True:
+            self.pool.ready()
+            self.update_image_window(project,review_only)
+            if len(self.pool.pending)<self.pool.limit:break
         self.validate_settings()
+        admitted_window=self.pool.limit
+        admission_details={'imageTasks':admitted_window,**self.image_admission_details()}
         snapshot=copy.deepcopy(project)
         signature=self.main.visual_spec_signature(snapshot,shot)
         context=self.admit(snapshot,chapter,shot['id'],'image-qc',signature,self.chapter_dependencies)
@@ -395,7 +445,8 @@ class CloudStoryOverlap:
                         snapshot,chapter,shot['id'],shot['generationSettings']['seed'],
                         {'_collectReview':clone.collect_production_reviews(snapshot),
                          'deferAutomaticRepair':snapshot['settings'].get('unattendedProduction',False)},
-                        chapter=get_chapter(snapshot,chapter)['number'],shot=shot['id'],executionId=context.identity)
+                        chapter=get_chapter(snapshot,chapter)['number'],shot=shot['id'],executionId=context.identity,
+                        **admission_details)
                 if isinstance(result,dict) and result.get('status')=='SUPERSEDED':
                     raise StaleExecution('Shot changed during generation or QC; current edits retained before rendering.')
                 return result
@@ -414,6 +465,7 @@ class CloudStoryOverlap:
                     raise UnresolvedExecution('Execution '+context.identity+' completed without confirmed remote usage; retained for reconciliation.')
         try:
             future=self.pool.submit(execute)
+            self.admitted_image_windows.add(admitted_window)
             self.chapter_futures.setdefault(chapter,[]).append(future)
             return future
         except BaseException:
@@ -434,10 +486,11 @@ class CloudStoryOverlap:
             if rows and all(r['eligible'] for r in rows) and len({r['profile'] for r in rows})==1:
                 from studio_performance import interval_union
                 seconds=interval_union([(r['start'],r['end']) for r in rows])
-                self.main.record_timing(self.project,'Image pipeline',seconds,
-                    {'status':'COMPLETE','images':len(rows),'shot':rows[0]['shot'],'detail':True,
-                        'imageTasks':self.image_tasks,'timingSource':'busy-interval-union',
-                        'note':'Delivered-image throughput includes selected reviews and waiting inside active tasks; nested shot latencies are not added.'})
+                details={'status':'COMPLETE','images':len(rows),'shot':rows[0]['shot'],'detail':True,
+                        'imageTasks':max(self.admitted_image_windows or {self.image_tasks}),
+                        'timingSource':'busy-interval-union',**self.image_admission_details(aggregate=True),
+                        'note':'Delivered-image throughput includes selected reviews and waiting inside active tasks; nested shot latencies are not added.'}
+                self.main.record_timing(self.project,'Image pipeline',seconds,details)
 
     def close(self, status, message=''):
         self._collecting_after_failure=status not in ('COMPLETE','CANCELLED') and not self.root.cancel

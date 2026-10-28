@@ -145,6 +145,14 @@ def profile_for(stage, project, config, details=None):
             from studio_overlap import shot_task_limit
             profile.update(imageTasks=details.get('imageTasks',shot_task_limit(project,{})),director=director.get('provider'),
                 directorParallelism=director.get('parallelism',1),reasoning=director.get('reasoning','Balanced'))
+        if stage in ('Image pipeline','Image + quality checks'):
+            from studio_director_limits import ADAPTIVE_IMAGE_ADMISSION,adaptive_image_window
+            eligible=adaptive_image_window(settings,copies,copies*2 if copies>1 else 1)
+            if eligible or details.get('imageAdmissionPolicy')==ADAPTIVE_IMAGE_ADMISSION:
+                window=details.get('imageTasks',5)
+                profile.update(imageAdmissionPolicy=ADAPTIVE_IMAGE_ADMISSION,
+                    imageWindowMin=details.get('imageWindowMin',window),
+                    imageWindowMax=details.get('imageWindowMax',window))
     elif stage in ('Render chapter','Assemble full video'):
         backend=details.get('renderBackend',config.get('performanceRenderBackend',config.get('renderBackend','cpu')))
         profile.update(width=video.get('width'),height=video.get('height'),fps=video.get('fps'),
