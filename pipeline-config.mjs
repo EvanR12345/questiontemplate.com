@@ -1,4 +1,4 @@
-import {describePlan} from './pipeline-engine.mjs?v=production-parallel-20261012';
+import {describePlan} from './pipeline-engine.mjs?v=fast-planner-20261028';
 
 export function plannerSourceState(project, requestedFollowing, applied) {
   const following=Boolean(requestedFollowing && applied?.project===project);

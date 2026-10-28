@@ -3,15 +3,15 @@ import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pipeline-admi
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
 import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=luna-standard-optimization-20261010';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=production-parallel-20261012';
-import {mountConcurrencyLab} from './pipeline-lab.mjs';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=fast-planner-20261028';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=fast-planner-20261028';
+import {mountConcurrencyLab} from './pipeline-lab.mjs?v=fast-planner-20261028';
 import {serverlessHTML} from './pipeline-serverless.mjs';
-import {matchedHTML} from './pipeline-matched.mjs';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=readiness-20261026';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=luna-standard-optimization-20261010';
+import {matchedHTML} from './pipeline-matched.mjs?v=fast-planner-20261028';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=fast-planner-20261028';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=fast-planner-20261028';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=voices-20261014';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=fast-planner-20261028';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -40,7 +40,7 @@ async function loadStudioSettings({refresh=false,initial=false}={}){
       let next=installedQueue ? {...mapped.config,gpuStartSeconds:0} : selectGPUConfig({...mapped.config,gpuStartSeconds:0},evidence,config.gpu);
       buildPlan(next,evidence);
       if(profile.generationStrategy==='align'&&profile.timedHistoryReady){
-        const search=await studioScheduleRequest.run({type:'startup',config:next,evidence});
+        const search=await studioScheduleRequest.run({type:'startup',config:next,evidence,searchPolicy:next.policy});
         if(!studioFollowing||requestedId!==studioProject||!search)return;
         const aligned=search.values.find(v=>v.balanced&&v.keepFastestVideo===false);
         if(aligned)next={...next,readyChapters:aligned.readyChapters,gpuStartSeconds:aligned.gpuStartSeconds};
@@ -74,9 +74,9 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-parallel-20261012',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-parallel-20261012',import.meta.url),{type:'module'}));
-const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-parallel-20261012',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=fast-planner-20261028',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=fast-planner-20261028',import.meta.url),{type:'module'}));
+const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=fast-planner-20261028',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,renderedGeneration=-1,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;

@@ -1,4 +1,5 @@
 // A local scheduling model. This module never calls a paid provider or changes Studio projects.
+import {scheduleTasksFast} from './pipeline-fast-scheduler.mjs?v=fast-planner-20261028';
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
 import {directorForecast} from './pipeline-director-calibration.mjs?v=production-parallel-20261012';
@@ -266,68 +267,10 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
     director,renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.backend==='native'?'local GTX 1650 GPU motion, one worker; shared narration GPU; full-story mux timed separately':renderProfile.mode==='chapter-export'?'fresh real-media CPU chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local CPU clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
 }
 
-function fits(task,start,allocations,capacities) {
-  let next=start;
-  for(const [pool,units] of Object.entries(task.resources)) {
-    if(units>capacities[pool]+1e-8)throw Error(`Task ${task.id} exceeds ${pool} capacity.`);
-    const relevant=(allocations[pool]||[]).filter(a=>a.end>start+1e-7&&a.start<start+task.duration-1e-7);
-    const points=[start,...relevant.map(a=>Math.max(start,a.start))];
-    for(const point of points) {
-      const active=relevant.filter(a=>a.start<=point+1e-7&&a.end>point+1e-7);
-      if(active.reduce((n,a)=>n+a.units,0)+units>capacities[pool]+1e-7)next=Math.max(next,Math.min(...active.map(a=>a.end)));
-    }
-  }
-  return next;
-}
-
 export function schedule(plan, preferences={}) {
-  const pending=new Set(plan.tasks),completed=new Map(),allocations={},out=[];
-  // A candidate's earliest slot remains valid until a newly allocated shared
-  // resource overlaps it. Avoid rescheduling every ready chapter after unrelated work.
-  const earliest=new Map();
-  const dirtySlots=new Set();
-  const ids=new Set(plan.tasks.map(t=>t.id));if(ids.size!==pending.size)throw Error('Duplicate task IDs.');
-  const ready=new Set(),remaining=new Map(),followers=new Map();
-  for(const task of plan.tasks){
-    remaining.set(task.id,task.deps.length);if(!task.deps.length)ready.add(task);
-    for(const dep of task.deps){if(!ids.has(dep))throw Error(`Missing dependency ${dep}.`);(followers.get(dep)||followers.set(dep,[]).get(dep)).push(task);}
-  }
-  while(pending.size) {
-    let choices=[];
-    for(const task of ready) {
-      let start=earliest.get(task);
-      if(start===undefined||dirtySlots.has(task)){
-        if(start===undefined){
-          const requested=Math.max(task.notBefore||0,preferences[task.id]?.notBefore||0);
-          start=Math.max(requested,0,...task.deps.map(d=>completed.get(d).end));
-        }
-        // Allocations are only added: an invalidated earliest slot cannot move
-        // earlier. Resume from that bound instead of replaying all past conflicts.
-        for(let guard=0;;guard++){
-          if(guard>plan.tasks.length*3+20)throw Error('Resource allocation failed.');
-          const next=fits(task,start,allocations,plan.capacities);if(next<=start+1e-7)break;start=next;
-        }
-        earliest.set(task,start);
-        dirtySlots.delete(task);
-      }
-      choices.push({task,start,priority:preferences[task.id]?.priority??task.priority});
-    }
-    if(!choices.length)throw Error('Cycle in task dependencies.');
-    choices.sort((a,b)=>a.start-b.start||a.priority-b.priority||a.task.priority-b.task.priority);
-    const {task,start}=choices[0],item={...task,start,end:start+task.duration,manual:Boolean(preferences[task.id])};
-    out.push(item);completed.set(item.id,item);pending.delete(task);ready.delete(task);
-    earliest.delete(task);
-    dirtySlots.delete(task);
-    for(const candidate of ready){
-      const at=earliest.get(candidate);
-      if(at!==undefined&&item.end>at+1e-7&&item.start<at+candidate.duration-1e-7&&
-          Object.keys(task.resources).some(pool=>task.resources[pool]&&candidate.resources[pool]))dirtySlots.add(candidate);
-    }
-    for(const follower of followers.get(item.id)||[]){const left=remaining.get(follower.id)-1;remaining.set(follower.id,left);if(left===0)ready.add(follower);}
-    for(const [pool,units] of Object.entries(task.resources))(allocations[pool]||=[]).push({id:item.id,start:item.start,end:item.end,units});
-  }
-  out.sort((a,b)=>a.start-b.start||a.priority-b.priority);
-  const end=Math.max(...out.map(t=>t.end)),boot=completed.get('boot'),stop=completed.get('stop');
+  const out=scheduleTasksFast(plan,preferences),completed=new Map(out.map(t=>[t.id,t]));
+  if(!completed.has('boot')||!completed.has('stop'))throw Error('Rental accounting requires boot and stop tasks.');
+  const end=out.reduce((at,t)=>Math.max(at,t.end),0),boot=completed.get('boot'),stop=completed.get('stop');
   const rentalSeconds=stop.end-boot.start,gpuWork=out.filter(t=>t.resources.remote).reduce((n,t)=>n+t.duration,0);
   const directorUSD=plan.director.costPerTwoHours*plan.storySeconds/7200;
   const qcCount=out.filter(t=>t.kind==='vision').reduce((n,t)=>n+(t.images||0),0);

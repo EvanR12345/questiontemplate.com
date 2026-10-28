@@ -1,5 +1,5 @@
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=production-parallel-20261012';
-import {gpuChoices,selectGPUConfig} from './pipeline-config.mjs?v=luna-flex-results-20261010';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=fast-planner-20261028';
+import {gpuChoices,selectGPUConfig} from './pipeline-config.mjs?v=fast-planner-20261028';
 // Run in a worker. Return only chart/card fields, not every alternative's
 // thousands of timeline operations and embedded calibration records.
 export function compareGPUPlans(config,evidence){

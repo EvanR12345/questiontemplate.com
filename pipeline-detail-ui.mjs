@@ -1,4 +1,4 @@
-import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=production-parallel-20261012';
+import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=fast-planner-20261028';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const seconds=n=>Number.isFinite(n)?n.toFixed(3)+'s':'Not measured',money=n=>'$'+n.toFixed(3);
 const phaseNames={preparationSeconds:'Build request',referenceUploadSeconds:'Reference upload/cache',submissionSeconds:'Submit operation',waitAndPollingSeconds:'Wait / poll (includes server)',retrievalAndValidationSeconds:'Retrieve / decode check',pngEncodeAndDurableSaveSeconds:'PNG encode / durable save',historyAndMetadataReceiptSeconds:'History / metadata receipt',provisionAndReadinessSeconds:'Provision / readiness',downloadAndHashSeconds:'Download / verify hashes',timedCohortWallSeconds:'Timed image cohorts',experimentalWarmupClientSeconds:'Experimental warmups'};
@@ -8,9 +8,10 @@ export function startupBoundaries(config){
  return config.chapters<=64?Array.from({length:config.chapters},(_,i)=>i+1):
   [...new Set([1,config.chapters,config.readyChapters,...Array.from({length:64},(_,i)=>1+Math.round(i*(config.chapters-1)/63))])].sort((a,b)=>a-b);
 }
-export function* startupSearch(config,evidence,compact=false){
+export function* startupSearch(config,evidence,compact=false,searchPolicy='proposed'){
+ if(!['current','proposed'].includes(searchPolicy))throw Error('Startup search requires current or proposed scheduling.');
  const evaluate=(n,gpuStartSeconds=0)=>{
-  const p=buildPlan({...config,policy:'proposed',earlyGpu:false,readyChapters:n,gpuStartSeconds},evidence),r=schedule(p);
+  const p=buildPlan({...config,policy:searchPolicy,earlyGpu:false,readyChapters:n,gpuStartSeconds},evidence),r=schedule(p);
   const directorEnd=Math.max(...r.tasks.filter(t=>t.kind==='handoff'||t.kind==='introPlan').map(t=>t.end));
   const imageEnd=Math.max(...r.tasks.filter(t=>['delivered','save'].includes(t.kind)).map(t=>t.end));
   const boot=r.tasks.find(t=>t.id==='boot');
@@ -55,8 +56,8 @@ export function* startupSearch(config,evidence,compact=false){
  values.push({...best,balanced:true,keepFastestVideo:false,bufferSeconds:ALIGNMENT_BUFFER_SECONDS,rentalReferenceSeconds:last.result.rentalSeconds,rentalExtraSeconds:Math.max(0,best.result.rentalSeconds-last.result.rentalSeconds)});
  return values.map(v=>({...v,pareto:!values.some(o=>o!==v&&o.result.end<=v.result.end+.01&&o.result.totalUSD<=v.result.totalUSD+.00001&&(o.result.end<v.result.end-.01||o.result.totalUSD<v.result.totalUSD-.00001))}));
 }
-export function startupCandidates(config,evidence){
- const search=startupSearch(config,evidence);let step;do{step=search.next();}while(!step.done);return step.value;
+export function startupCandidates(config,evidence,searchPolicy='proposed'){
+ const search=startupSearch(config,evidence,false,searchPolicy);let step;do{step=search.next();}while(!step.done);return step.value;
 }
 export function mountStartupTradeoffs(host,config,evidence,onApply){
  const cacheKey=JSON.stringify(config);
@@ -66,7 +67,7 @@ export function mountStartupTradeoffs(host,config,evidence,onApply){
   host._startupWorker?.terminate();
   host.innerHTML='<div class="section-head"><h3>Spend less on rented waiting</h3><span>Same images · same model</span></div><p class="caption" role="status" data-start-progress>Comparing startup timings… Controls remain available.</p>';
   if(typeof Worker!=='undefined'){
-   const worker=new Worker(new URL('./pipeline-worker.mjs?v=production-parallel-20261012',import.meta.url),{type:'module'});host._startupWorker=worker;
+   const worker=new Worker(new URL('./pipeline-worker.mjs?v=fast-planner-20261028',import.meta.url),{type:'module'});host._startupWorker=worker;
    worker.onmessage=({data})=>{
     if(host._startupGeneration!==generation)return;
     if(data.type==='progress')host.querySelector('[data-start-progress]').textContent=data.message+' · controls remain available.';

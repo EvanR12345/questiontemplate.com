@@ -42,21 +42,24 @@ export function plannerSettings(config, profile, evidence) {
     next.productionAudioLookahead=profile.phaseOverlap?.audioLookahead===true;
     next.productionRenderOverlap=profile.phaseOverlap?.chapterRender===true;
     next.policy='current';next.executionMode=topology.gpuLanes===2?'hybrid':'resident';next.imageWorkers=topology.gpuLanes===2?next.productionRequestSlots:1;next.measurementAttempt='latest';
+    let resolvedProductionGPU=null;
     const required=profile.imageExecution.requiredGPU;
     if(required){
       const normalize=name=>String(name).replace(/\b(?:NVIDIA|GeForce)\b/gi,'').replace(/\s+/g,'').toLowerCase();
       const choices=[...(evidence.gpus||[]),...(evidence.concurrency?.gpus||[])];
       const matches=choices.filter(g=>normalize(g.name)===normalize(required));
       const ids=[...new Set(matches.map(g=>g.id))];
-      if(ids.length===1)next.gpu=ids[0];
+      if(ids.length===1){next.gpu=ids[0];resolvedProductionGPU=ids[0];}
       else warnings.push('The required production GPU has no unique matched benchmark. This selected GPU remains a comparison reference; production does not switch GPUs.');
     }
     const quote=topology.computeQuote;
     if(Number.isFinite(quote?.hourlyUSD)&&quote.hourlyUSD>0&&Number.isFinite(quote.observedAt)){
-      next.pricingBasis='quote';next.quotedGPUHourly=quote.hourlyUSD;
-      if(quote.workingDiskIncluded)next.containerGB=0;
-      warnings.push(`Using ${quote.provider??'the configured 5090'}'s last observed compute quote: $${quote.hourlyUSD.toFixed(2)}/hour, recorded ${new Date(quote.observedAt*1000).toLocaleString()}. ${quote.workingDiskIncluded?'Working disk is already included; it is not added twice. Shared storage remains separate.':'Container/shared storage remain separate.'} This is not a new availability or price guarantee.`);
-      if(quote.provider&&quote.provider!=='runpod')warnings.push('The fallback marketplace can have different runtime and delivery speed. Until compatible production history is learned, Runpod benchmark timing remains a comparison reference, not measured fallback throughput.');
+      if(resolvedProductionGPU){
+        next.pricingBasis='quote';next.quotedGPUHourly=quote.hourlyUSD;next.quotedGPU=resolvedProductionGPU;
+        if(quote.workingDiskIncluded)next.containerGB=0;
+        warnings.push(`Using ${quote.provider??'the configured 5090'}'s last observed compute quote: $${quote.hourlyUSD.toFixed(2)}/hour, recorded ${new Date(quote.observedAt*1000).toLocaleString()}. ${quote.workingDiskIncluded?'Working disk is already included; it is not added twice. Shared storage remains separate.':'Container/shared storage remain separate.'} This is not a new availability or price guarantee.`);
+        if(quote.provider&&quote.provider!=='runpod')warnings.push('The fallback marketplace can have different runtime and delivery speed. Until compatible production history is learned, Runpod benchmark timing remains a comparison reference, not measured fallback throughput.');
+      }else warnings.push('The saved compute quote has no unique production GPU match; it was not applied. Existing explicit planning price assumptions remain.');
     }
     warnings.push(topology.gpuLanes===1?'Following production uses installed scheduling and one model-worker benchmark. It does not activate the proposed render overlap or multi-copy GPU experiment.':'Following production requests two independent model copies and four bounded request slots on one GPU. Startup must verify both private processes before any image is submitted; end-to-end speed remains a projection until a matching production run.');
   }
