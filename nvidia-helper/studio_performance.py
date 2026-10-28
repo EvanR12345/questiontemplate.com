@@ -147,7 +147,8 @@ def profile_for(stage, project, config, details=None):
                 directorParallelism=director.get('parallelism',1),reasoning=director.get('reasoning','Balanced'))
         if stage in ('Image pipeline','Image + quality checks'):
             from studio_director_limits import ADAPTIVE_IMAGE_ADMISSION,adaptive_image_window
-            eligible=adaptive_image_window(settings,copies,copies*2 if copies>1 else 1)
+            eligible=(config.get('experimentalAdaptiveImageAdmission') is True
+                      and adaptive_image_window(settings,copies,copies*2 if copies>1 else 1))
             if eligible or details.get('imageAdmissionPolicy')==ADAPTIVE_IMAGE_ADMISSION:
                 window=details.get('imageTasks',5)
                 profile.update(imageAdmissionPolicy=ADAPTIVE_IMAGE_ADMISSION,

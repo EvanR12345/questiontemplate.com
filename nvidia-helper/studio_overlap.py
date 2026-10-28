@@ -75,7 +75,10 @@ class CloudStoryOverlap:
         from studio_image_workers import ComfyWorkerPool
         provider=service.providers['comfyui']
         self.base_image_tasks=shot_task_limit(project, options)
-        self.adaptive_image_admission=('overlapShots' not in options
+        # Four real matched rounds found no repeatable gain at eight. Keep
+        # normal production at five; retain the guarded experiment explicitly.
+        self.adaptive_image_admission=(service.config.get('experimentalAdaptiveImageAdmission') is True
+            and 'overlapShots' not in options
             and isinstance(provider,ComfyWorkerPool)
             and adaptive_image_window(self.settings,provider.model_copies,provider.client_capacity))
         self.pool=BoundedExecutions(self.base_image_tasks,self.main.gate,

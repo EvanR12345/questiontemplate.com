@@ -67,6 +67,8 @@ export function plannerSettings(config, profile, evidence) {
     warnings.push(`Studio admits up to ${profile.imageTasks} image/check tasks while keeping one GPU image lane. Older three-task throughput does not measure this new pipeline; no speedup is assumed until matching production completes. A 28-call Luna QC-only pilot found no measured advantage for five tasks; complete image-generation throughput remains untested.`);
   if(profile.imageAdmission?.maximumAfterVerification>profile.imageTasks)
     warnings.push(`Actual generation can admit up to ${profile.imageAdmission.maximumAfterVerification} image/check tasks only after both workers are verified and RAM headroom passes. Image requests and API calls keep their existing limits. No speedup from this change is applied to the forecast until matching production timing exists.`);
+  else if(profile.imageAdmission?.benchmarkStatus==='no-reliable-eight-task-gain')
+    warnings.push('Production keeps five image/check tasks. Four matched 12-shot RTX 5090 rounds found no consistent speed gain at eight tasks (five averaged 56.6s; eight 57.6s). Generated images were identical and every image was checked. This short test does not recalibrate the full-video forecast.');
   if(topology?.backend==='comfyui-api' && topology.gpuLanes===1 && !topology.multipleModelCopiesVerified)
     warnings.push('The current production connection uses one ComfyUI queue. Faster multi-copy or hybrid GPU benchmarks are comparison targets, not verified throughput for this running production backend.');
   next.directorCostMode='measured';

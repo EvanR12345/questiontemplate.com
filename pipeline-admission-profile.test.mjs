@@ -20,3 +20,18 @@ test('adaptive worker metadata describes actual generation without crediting an 
  assert.match(after.warnings.join(' '),/No speedup from this change is applied to the forecast/);
  assert.match(profileSummary(p),/5 image\/check tasks; up to 8 after worker and RAM verification/);
 });
+
+test('the completed matched pilot retains five tasks without changing forecasts or voice',()=>{
+ const p={version:1,name:'Synthetic',revision:1,generationStrategy:'align',timedHistoryReady:false,
+ settings:{voice:'am_michael',voiceEngine:'kokoro-82m',qcCheckLevel:'practical',automaticRepair:true,
+ video:{width:1280,height:720,fps:30},image:{model:'flux2-klein-4b',width:1280,height:720,steps:4,guidance:1},
+ director:{provider:'openai-luna',executionMode:'staged-lean',parallelism:4,reasoning:'Balanced',processingTier:'default',visualPacking:'small'}},
+ intro:{enabled:true,duration:30,placement:'full_story_only'},introImages:5,imageTasks:5,
+ imageExecution:{backend:'comfyui-api',gpuLanes:2,modelCopies:2,requestSlots:4,requiredGPU:'NVIDIA GeForce RTX 5090'},estimates:{}};
+ const before=plannerSettings(DEFAULTS,p,evidence);
+ p.imageAdmission={policy:'fixed-v1',base:5,maximumAfterVerification:5,benchmarkStatus:'no-reliable-eight-task-gain',forecastSpeedupApplied:false};
+ const after=plannerSettings(DEFAULTS,p,evidence);
+ assert.deepEqual(after.config,before.config);
+ assert.match(after.warnings.join(' '),/no consistent speed gain at eight tasks/);
+ assert.doesNotMatch(profileSummary(p),/up to 8/);
+});

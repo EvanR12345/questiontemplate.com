@@ -21,8 +21,9 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
         from studio_automation import run_settings
         project = {**project, 'settings':run_settings(project['settings'])}
     source = project['settings']
-    adaptive=adaptive_image_window(source,copies,copies*2 if copies>1 else 1)
     config=config or {}
+    candidate=adaptive_image_window(source,copies,copies*2 if copies>1 else 1)
+    adaptive=config.get('experimentalAdaptiveImageAdmission') is True and candidate
     render_backend=renderer_backend if renderer_backend in ('cpu','native') else config.get('renderBackend','cpu')
     settings = {k: copy.deepcopy(source[k]) for k in FIELDS if k in source}
     for group, fields in GROUPS.items():
@@ -80,6 +81,7 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
                           'base':shot_task_limit(project,{}),
                           'maximumAfterVerification':8 if adaptive else shot_task_limit(project,{}),
                           'requiresVerifiedWorkers':adaptive,'requiresMemoryHeadroom':adaptive,
+                          'benchmarkStatus':'no-reliable-eight-task-gain' if candidate else None,
                           'forecastSpeedupApplied':False},
         'imageExecution':{'backend':'comfyui-api' if source.get('image',{}).get('provider')=='comfyui' else source.get('image',{}).get('provider'),
                           'gpuLanes':copies,'modelCopies':copies,'requestSlots':copies*2 if copies>1 else 1,

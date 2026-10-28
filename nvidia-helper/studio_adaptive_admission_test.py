@@ -188,7 +188,7 @@ class LearningIsolationTest(unittest.TestCase):
     def test_five_eight_and_mixed_image_history_are_distinct_without_voice_or_qc_changes(self):
         p=new_project();p['settings']['image']['provider']='comfyui'
         p['settings']['qcCheckLevel']='practical';p['settings']['director']['parallelism']=4
-        config={'comfyModelCopies':2}
+        config={'comfyModelCopies':2,'experimentalAdaptiveImageAdmission':True}
         five=profile_for('Image pipeline',p,config,{'imageTasks':5})
         eight=profile_for('Image pipeline',p,config,{'imageTasks':8})
         mixed=profile_for('Image pipeline',p,config,{'imageTasks':8,'imageWindowMin':5,'imageWindowMax':8})
@@ -214,6 +214,7 @@ class AdaptiveStoryTest(unittest.TestCase):
             'workers':[{'pid':100,'port':8188},{'pid':101,'port':8189}]})
         self.service.providers['comfyui']=self.provider
         self.service.config['comfyModelCopies']=2
+        self.service.config['experimentalAdaptiveImageAdmission']=True
         # The reusable classic fixture briefly writes its synthetic storyboard
         # as provider=existing before OverlapHarness normalizes it. A staged
         # project correctly rejects that intermediate fixture state. Normalize
@@ -288,6 +289,17 @@ class AdaptiveStoryTest(unittest.TestCase):
             self.assertEqual(row['imageTasks'],2)
             self.assertEqual((row['performanceProfile']['imageWindowMin'],
                               row['performanceProfile']['imageWindowMax']),(2,2))
+
+    def test_normal_production_keeps_five_even_with_verified_workers_and_ram(self):
+        self.service.config.pop('experimentalAdaptiveImageAdmission')
+        self.run_story()
+        self.assertNotIn(8,self.promotions)
+        p=self.service.store.load(self.project['id'])
+        rows=[row for row in p['production']['timings'] if row['stage']=='Image + quality checks']
+        self.assertEqual(len(rows),2)
+        for row in rows:
+            self.assertEqual(row['imageTasks'],5)
+            self.assertNotIn('imageAdmissionPolicy',row['performanceProfile'])
 
     def test_stale_manual_edit_is_retained_at_the_promoted_window(self):
         import studio_overlap_test as fixtures
