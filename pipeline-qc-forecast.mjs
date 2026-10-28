@@ -23,12 +23,22 @@ export function qualityConfig(config,evidence){
     &&config.resolution==='720p'&&row.checks>0&&row.uniqueImages>0
     &&Number.isFinite(row.secondsPerCheck)&&row.secondsPerCheck>0&&row.secondsPerCheck<=3600
     &&Number.isFinite(row.costUSDPerCheck)&&row.costUSDPerCheck>=0&&row.costUSDPerCheck<=1
-    &&Number.isFinite(row.observedAt)&&row.observedAt>Number(historyMatches?config.qcHistoryLatest||0:0));
-  const cohort=cohorts.sort((a,b)=>b.observedAt-a.observedAt)[0];
+    &&Number.isFinite(row.observedAt)&&row.observedAt>0);
+  const production=cohorts.filter(row=>row.workload==='image-qc-pipeline'
+    &&config.policy==='current'&&row.topology?.gpu===config.gpu
+    &&row.topology.modelCopies===config.productionModelCopies
+    &&row.topology.requestSlots===config.productionRequestSlots
+    &&row.topology.imageTasks===config.qcProductionTasks);
+  // Arrival patterns matter: prefer a matching image/QC pipeline over a
+  // saturated QC-only comparison, even if the latter ran a few minutes later.
+  const candidates=production.length?production:cohorts.filter(row=>!row.workload||row.workload==='qc-only');
+  const cohort=candidates.sort((a,b)=>b.observedAt-a.observedAt)[0];
   if(!cohort)return next;
+  if(historyMatches&&Number(config.qcHistoryLatest||0)>=cohort.observedAt)return next;
   next.qcSeconds=cohort.secondsPerCheck;
   if(!config.qcCostManual)next.qcCost=cohort.costUSDPerCheck;
   next.qcBenchmarkId=cohort.id;next.qcBenchmarkObservedAt=cohort.observedAt;
-  next.qcBenchmarkNote=`QC forecast updated from ${new Date(cohort.observedAt*1000).toISOString().slice(0,10)}: ${cohort.checks} checks of ${cohort.uniqueImages} unique images, ${cohort.apiSlots} actual API slots, ${cohort.referenceImages} reference image. Initial API-call time and usage cost only; repairs, manual waiting and full-video completion are unmeasured.`;
+  const workload=cohort.workload==='image-qc-pipeline'?'combined image-and-QC production pilot':'QC-only comparison';
+  next.qcBenchmarkNote=`QC forecast uses the ${workload} from ${new Date(cohort.observedAt*1000).toISOString().slice(0,10)}: ${cohort.checks} checks of ${cohort.uniqueImages} unique images, ${cohort.apiSlots} actual API slots, ${cohort.referenceImages} reference image. Initial API-call time and usage cost only; repairs, manual waiting and full-video completion are unmeasured.`;
   return next;
 }

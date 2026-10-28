@@ -1,4 +1,4 @@
-import {describePlan} from './pipeline-engine.mjs?v=qc-estimates-20261028';
+import {describePlan} from './pipeline-engine.mjs?v=qc-pipeline-20261028';
 
 export function plannerSourceState(project, requestedFollowing, applied) {
   const following=Boolean(requestedFollowing && applied?.project===project);

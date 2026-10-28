@@ -1,5 +1,5 @@
 // Shared settings projection. No story, references, budgets or keys are copied.
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=qc-estimates-20261028';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=qc-pipeline-20261028';
 export function plannerSettings(config, profile, evidence) {
   if(profile?.version!==1)throw Error('Update the helper to load saved production settings.');
   const s=profile.settings, v=s.video, d=s.director, i=s.image;

@@ -29,7 +29,8 @@
         "One reference image per check; other reference counts and story complexity may differ.",
         "The last two complete arms followed a time gap after a harness failure.",
         "Repair generation, rechecks and manual-review waiting are excluded."
-      ]
+      ],
+      "workload": "qc-only"
     },
     {
       "id": "qc-20261028-practical-8",
@@ -57,7 +58,8 @@
         "One reference image per check; other reference counts and story complexity may differ.",
         "The last two complete arms followed a time gap after a harness failure.",
         "Repair generation, rechecks and manual-review waiting are excluded."
-      ]
+      ],
+      "workload": "qc-only"
     },
     {
       "id": "qc-20261028-strict-4",
@@ -85,7 +87,8 @@
         "One reference image per check; other reference counts and story complexity may differ.",
         "The last two complete arms followed a time gap after a harness failure.",
         "Repair generation, rechecks and manual-review waiting are excluded."
-      ]
+      ],
+      "workload": "qc-only"
     },
     {
       "id": "qc-20261028-strict-8",
@@ -113,6 +116,48 @@
         "One reference image per check; other reference counts and story complexity may differ.",
         "The last two complete arms followed a time gap after a harness failure.",
         "Repair generation, rechecks and manual-review waiting are excluded."
+      ],
+      "workload": "qc-only"
+    },
+    {
+      "id": "qc-20261028-image-qc-pipeline-dual4",
+      "status": "COMPLETE",
+      "workload": "image-qc-pipeline",
+      "policy": "practical",
+      "apiSlots": 4,
+      "qcCompatibilityHash": "20fe8335e44e6f2587d7cbbde52c3dcecbc65cd3269db9c9c95e5482ef319410",
+      "processingTier": "default",
+      "timingScope": "api-call",
+      "topology": {
+        "gpu": "5090",
+        "modelCopies": 2,
+        "requestSlots": 4,
+        "imageTasks": 5
+      },
+      "secondsPerCheck": 11.376999999997983,
+      "costUSDPerCheck": 0.0003487648958333334,
+      "observedAt": 1793177583.6438942,
+      "checks": 48,
+      "uniqueImages": 24,
+      "distinctSourcePrompts": 12,
+      "batches": 2,
+      "referenceImages": 1,
+      "imagesPerBatch": 24,
+      "batchSeconds": [
+        102.95299999997951,
+        105.56199999991804
+      ],
+      "apiWorkSecondsPerBatch": [
+        271.81400000024587,
+        274.2819999996573
+      ],
+      "unknownRequests": 0,
+      "scope": "Mean initial Practical QC API-call work and usage-derived cost while image generation and review ran together in five bounded tasks, with two model copies, four image request slots and four API slots. Batch seconds include both image generation and QC; secondsPerCheck excludes image generation and is counted once per review.",
+      "limits": [
+        "Twenty-four distinct image outputs from twelve frozen prompts and two seed sets, repeated twice; not forty-eight independent quality samples.",
+        "One reference image per check; other reference counts and story complexity may differ.",
+        "No new full-video run, narration, rendering, automatic repair or human-review completion was measured.",
+        "Two short mirrored batches on one host; longer production and shared director contention remain projections."
       ]
     }
   ],

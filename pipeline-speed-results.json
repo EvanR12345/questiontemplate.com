@@ -190,8 +190,8 @@
     "scope": "See private chapter validation receipt; no whole-video forecast recalibration."
   },
   "forecastIntegration": {
-    "release": "qc-estimates-20261028",
-    "visualQC": "Latest compatible policy, slot and tier cohort updates QC time/cost and schedule; newer matching production history wins.",
+    "release": "qc-pipeline-20261028",
+    "visualQC": "Prefer compatible production-shaped image/QC observations as the central review estimate. QC-only measurements remain comparisons. Newer matching production history wins.",
     "voiceEstimateUnchanged": true,
     "renderCalibrationUnchanged": true,
     "fullVideoRunMeasured": false

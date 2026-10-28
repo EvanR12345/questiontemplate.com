@@ -3,7 +3,7 @@ import {scheduleTasksFast} from './pipeline-fast-scheduler.mjs?v=fast-planner-20
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
 import {directorForecast} from './pipeline-director-calibration.mjs?v=production-parallel-20261012';
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=qc-estimates-20261028';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=qc-pipeline-20261028';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'practical', sample:20,

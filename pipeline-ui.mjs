@@ -3,16 +3,16 @@ import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pipeline-admi
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
 import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=qc-estimates-20261028';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=qc-estimates-20261028';
-import {mountConcurrencyLab} from './pipeline-lab.mjs?v=qc-estimates-20261028';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex} from './pipeline-detail-ui.mjs?v=qc-pipeline-20261028';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=qc-pipeline-20261028';
+import {mountConcurrencyLab} from './pipeline-lab.mjs?v=qc-pipeline-20261028';
 import {serverlessHTML} from './pipeline-serverless.mjs';
-import {matchedHTML} from './pipeline-matched.mjs?v=qc-estimates-20261028';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=qc-estimates-20261028';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=qc-estimates-20261028';
+import {matchedHTML} from './pipeline-matched.mjs?v=qc-pipeline-20261028';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=qc-pipeline-20261028';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=qc-pipeline-20261028';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=qc-estimates-20261028';
-import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=qc-estimates-20261028';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=qc-pipeline-20261028';
+import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=qc-pipeline-20261028';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -75,9 +75,9 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=qc-estimates-20261028',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=qc-estimates-20261028',import.meta.url),{type:'module'}));
-const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=qc-estimates-20261028',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=qc-pipeline-20261028',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=qc-pipeline-20261028',import.meta.url),{type:'module'}));
+const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=qc-pipeline-20261028',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,renderedGeneration=-1,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -309,7 +309,7 @@ function download(name,value,type){const blob=new Blob([value],{type}),url=URL.c
 async function start(){
   try{
     const response=await fetch('./pipeline-evidence.json?v=luna-standard-optimization-20261010');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
-    try{const qcReply=await fetch('./pipeline-qc-calibration.json?v=qc-estimates-20261028');if(qcReply.ok)evidence.qcCalibration=await qcReply.json();}catch{ /* Retain prior history/assumptions if the optional study is unavailable. */ }
+    try{const qcReply=await fetch('./pipeline-qc-calibration.json?v=qc-pipeline-20261028');if(qcReply.ok)evidence.qcCalibration=await qcReply.json();}catch{ /* Retain prior history/assumptions if the optional study is unavailable. */ }
     const directorReply=await fetch('./pipeline-director-calibration.json?v=luna-standard-optimization-20261010');
     if(directorReply.ok)evidence.directorCalibration=await directorReply.json();
     $('directorProfile').innerHTML=directorProfileOptions(evidence);

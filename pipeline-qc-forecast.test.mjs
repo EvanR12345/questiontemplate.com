@@ -13,9 +13,9 @@ const config=()=>({...DEFAULTS,policy:'current',gpu:'5090',resolution:'720p',enc
 
 test('newer compatible settled cohort updates review work and cost without mutating inputs',()=>{
  const c=config(),before=structuredClone(c),data=structuredClone(evidence);
- const out=qualityConfig(c,evidence),row=calibration.cohorts.find(r=>r.policy==='practical'&&r.apiSlots===4);
+ const out=qualityConfig(c,evidence),row=calibration.cohorts.find(r=>r.workload==='image-qc-pipeline');
  assert.equal(out.qcSeconds,row.secondsPerCheck);assert.equal(out.qcCost,row.costUSDPerCheck);
- assert.equal(out.qcBenchmarkId,row.id);assert.match(out.qcBenchmarkNote,/24 checks of 12 unique images/);
+ assert.equal(out.qcBenchmarkId,row.id);assert.match(out.qcBenchmarkNote,/48 checks of 24 unique images/);
  assert.deepEqual(c,before);assert.deepEqual(evidence,data);assert.deepEqual(qualityConfig(out,evidence),out);
 });
 
@@ -47,14 +47,14 @@ test('schedule and accounting update together while narration, render work and i
  assert.equal(before.imageCount,after.imageCount);assert.equal(before.attemptCount,after.attemptCount);
  assert.deepEqual(a.diagnostics,[]);assert.deepEqual(b.diagnostics,[]);assert.notEqual(a.end,b.end);
  assert.equal(b.qcUSD,b.qcCount*after.config.qcCost);
- assert.equal(after.tasks.filter(t=>t.kind==='vision').reduce((sum,t)=>sum+t.duration,0),b.qcCount*after.config.qcSeconds);
+ assert.ok(Math.abs(after.tasks.filter(t=>t.kind==='vision').reduce((sum,t)=>sum+t.duration,0)-b.qcCount*after.config.qcSeconds)<1e-8);
  assert.notEqual(a.qcUSD,b.qcUSD);
  assert.equal(after.config.retries,c.retries);
 });
 
 test('manual QC pricing stays explicit while newer timing remains selected',()=>{
  const out=qualityConfig({...config(),qcCostManual:true,qcCost:.001},evidence);
- assert.ok(out.qcBenchmarkId);assert.equal(out.qcCost,.001);assert.ok(out.qcSeconds>14);
+ assert.ok(out.qcBenchmarkId);assert.equal(out.qcCost,.001);assert.ok(out.qcSeconds>11);
  const restored=qualityConfig({...out,qc:'strict'},evidence);assert.equal(restored.qcCost,.001);
 });
 
@@ -84,4 +84,17 @@ test('incomplete, uncertain or malformed evidence cannot change the existing est
   {...calibration,cohorts:calibration.cohorts.map(r=>({...r,status:'INCOMPLETE'}))}]){
   const out=qualityConfig(config(),{...evidence,qcCalibration});assert.equal(out.qcBenchmarkId,'');assert.equal(out.qcSeconds,config().qcSeconds);
  }
+});
+
+test('production-shaped QC takes precedence over the later saturated comparison',()=>{
+ const c=config(),prod=calibration.cohorts.find(r=>r.workload==='image-qc-pipeline');
+ const micro=calibration.cohorts.find(r=>r.workload==='qc-only'&&r.policy==='practical'&&r.apiSlots===4);
+ assert.ok(prod.observedAt<micro.observedAt);assert.ok(prod.secondsPerCheck<micro.secondsPerCheck);
+ assert.equal(qualityConfig(c,evidence).qcBenchmarkId,prod.id);
+ for(const patch of [{gpu:'4090'},{productionModelCopies:1},{productionRequestSlots:2},{qcProductionTasks:6},{policy:'proposed'}])
+  assert.equal(qualityConfig({...c,...patch},evidence).qcBenchmarkId,micro.id);
+ // A newer matching production observation wins even when it predates the
+ // separate QC-only benchmark; the comparison cannot veto actual history.
+ const history=qualityConfig({...c,qcHistoryLatest:prod.observedAt+1},evidence);
+ assert.equal(history.qcBenchmarkId,'');assert.equal(history.qcSeconds,c.qcHistorySeconds);
 });
