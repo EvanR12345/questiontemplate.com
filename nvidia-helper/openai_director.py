@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import uuid
+from contextlib import nullcontext
 from decimal import Decimal, ROUND_CEILING
 import urllib.error
 import urllib.request
@@ -116,6 +117,10 @@ class OpenAIDirector(DirectorProvider):
             self.response.close()
             self.response = None
 
+    def request_slot(self, gate):
+        """Optional shared wire capacity; cache/preparation never need a slot."""
+        return nullcontext()
+
     def call(self, role, context, schema, gate, vision=False):
         # Independent lanes each own an adapter and durable job context. Reject
         # simultaneous reuse of this mutable adapter, including its live stream.
@@ -123,6 +128,7 @@ class OpenAIDirector(DirectorProvider):
             raise RuntimeError('This Luna director already has an active request. Concurrent work needs independent request contexts.')
         self._failure_trace=None
         self._timing_reported=False
+        self.api_lane_wait_seconds=0
         try:
             return self._call(role, context, schema, gate, vision)
         except BaseException:
@@ -146,7 +152,8 @@ class OpenAIDirector(DirectorProvider):
                     'latency':{'apiLaneWaitSeconds':getattr(self,'api_lane_wait_seconds',0),
                         'attempts':report['attempts']},**report['usage']}
                 self._timing_reported=True
-                try:self.timing_callback(role.split(':')[0].split('.')[0],time.monotonic()-report['began'],details)
+                try:self.timing_callback(role.split(':')[0].split('.')[0],
+                    max(0,time.monotonic()-report['began']-self.api_lane_wait_seconds),details)
                 except Exception:pass # Retain the original error and durable spend ledger.
             raise
         finally:
@@ -279,86 +286,87 @@ class OpenAIDirector(DirectorProvider):
             request_timings.append(timing)
             dispatch_started=None
             try:
-                # Cancellation before dispatch releases only this held request.
-                gate('Luna: ' + role.split('.')[0])
-                text = []
-                completed = None
-                refused = False
-                if ledger:
-                    ledger.mark_submitted(request_id, owner=owner)
-                if observer:
-                    observer('submitting', {'operationId': request_id, 'provider': 'openai-luna'})
-                submitted = True
-                dispatch_started=time.monotonic()
-                # A bounded longer socket wait lets Standard reasoning/capacity
-                # spikes finish rather than abandoning an accepted receipt.
-                # Never resubmit or switch tiers on a timeout: the reservation
-                # remains UNKNOWN until its actual usage is reconciled.
-                with urllib.request.urlopen(req, timeout=900 if service_tier == 'flex' else 120) as response:
-                    limits=numeric_rate_limits(getattr(response,'headers',None))
-                    if limits:timing['rateLimits']=limits
-                    self.response = response
-                    timing['headersSeconds']=time.monotonic()-dispatch_started
-                    for line in response:
-                        # Pausing should not stall collection of an already
-                        # paid response. A caller can provide a receive gate
-                        # that still checks cancellation, but does not pause.
-                        # Dispatch and retries retain the ordinary pause gate.
-                        receive_gate("Luna: " + role.split(".")[0])
-                        if not line.startswith(b"data: ") or line.strip() == b"data: [DONE]":
-                            continue
-                        event = json.loads(line[6:])
-                        kind = event.get("type")
-                        if (ledger or observer) and kind in ('response.created', 'response.in_progress',
-                                'response.completed', 'response.incomplete', 'response.failed'):
-                            response_id = event.get('response', {}).get('id')
-                            if response_id:
-                                if ledger:
-                                    # Keep the actual receipt/output independently
-                                    # before a Windows snapshot publish can fail.
-                                    ledger.retain_response(request_id,event['response'],owner=owner)
-                                    ledger.bind_response(request_id, response_id, owner=owner)
-                                if observer:
-                                    observer('accepted', {'operationId': request_id, 'remoteId': response_id})
-                        if kind == "response.output_text.delta":
-                            if 'firstTextSeconds' not in timing:
-                                timing['firstTextSeconds']=time.monotonic()-dispatch_started
-                            text.append(event["delta"])
-                        elif kind in ('response.refusal.delta', 'response.refusal.done'):
-                            # A refusal can still have billed usage in the final
-                            # event. Collect its receipt without requesting or
-                            # accepting any further answer/retry.
-                            refused = True
-                        elif kind in ("response.completed", "response.incomplete", "response.failed"):
-                            completed = event["response"]
-                            timing['streamSeconds']=time.monotonic()-dispatch_started
-                            break
-                        elif kind == "error":
-                            raise RuntimeError("OpenAI streaming request failed. Check billing, availability and model settings.")
-                if not completed:
-                    suffix = (f' Request {request_id} remains reserved; reconcile its saved usage before resubmitting.'
-                              if ledger else ' Existing saved stages remain available.')
-                    raise RuntimeError('Luna connection ended before a complete response.' + suffix)
-                usage = completed.get('usage')
-                if ledger:
-                    ledger.retain_response(request_id,completed,owner=owner)
-                # A missing receipt tier must not turn requested premium
-                # processing into an artificially cheap estimate.
-                returned_tier = completed.get('service_tier') or service_tier
-                returned_tiers.append(returned_tier)
-                if ledger:
-                    estimated_cost += ledger.settle(usage, service_tier=returned_tier,
-                        request_id=request_id, owner=owner)
-                    if observer and ledger.request_state(request_id, owner=owner)['status']=='SETTLED':
-                        observer('completed', {'operationId': request_id})
-                else:
-                    try:
-                        if not isinstance(usage, dict) or not all(isinstance(usage.get(k), int)
-                                and not isinstance(usage[k], bool) for k in ('input_tokens', 'output_tokens')):
-                            raise ValueError('Missing usage')
-                        estimated_cost += luna_cost(usage, returned_tier)
-                    except (ValueError, TypeError, AttributeError):
-                        estimated_cost += SpendLedger.estimate(body)
+                with self.request_slot(gate):
+                    # Cancellation before dispatch releases only this held request.
+                    gate('Luna: ' + role.split('.')[0])
+                    text = []
+                    completed = None
+                    refused = False
+                    if ledger:
+                        ledger.mark_submitted(request_id, owner=owner)
+                    if observer:
+                        observer('submitting', {'operationId': request_id, 'provider': 'openai-luna'})
+                    submitted = True
+                    dispatch_started=time.monotonic()
+                    # A bounded longer socket wait lets Standard reasoning/capacity
+                    # spikes finish rather than abandoning an accepted receipt.
+                    # Never resubmit or switch tiers on a timeout: the reservation
+                    # remains UNKNOWN until its actual usage is reconciled.
+                    with urllib.request.urlopen(req, timeout=900 if service_tier == 'flex' else 120) as response:
+                        limits=numeric_rate_limits(getattr(response,'headers',None))
+                        if limits:timing['rateLimits']=limits
+                        self.response = response
+                        timing['headersSeconds']=time.monotonic()-dispatch_started
+                        for line in response:
+                            # Pausing should not stall collection of an already
+                            # paid response. A caller can provide a receive gate
+                            # that still checks cancellation, but does not pause.
+                            # Dispatch and retries retain the ordinary pause gate.
+                            receive_gate("Luna: " + role.split(".")[0])
+                            if not line.startswith(b"data: ") or line.strip() == b"data: [DONE]":
+                                continue
+                            event = json.loads(line[6:])
+                            kind = event.get("type")
+                            if (ledger or observer) and kind in ('response.created', 'response.in_progress',
+                                    'response.completed', 'response.incomplete', 'response.failed'):
+                                response_id = event.get('response', {}).get('id')
+                                if response_id:
+                                    if ledger:
+                                        # Keep the actual receipt/output independently
+                                        # before a Windows snapshot publish can fail.
+                                        ledger.retain_response(request_id,event['response'],owner=owner)
+                                        ledger.bind_response(request_id, response_id, owner=owner)
+                                    if observer:
+                                        observer('accepted', {'operationId': request_id, 'remoteId': response_id})
+                            if kind == "response.output_text.delta":
+                                if 'firstTextSeconds' not in timing:
+                                    timing['firstTextSeconds']=time.monotonic()-dispatch_started
+                                text.append(event["delta"])
+                            elif kind in ('response.refusal.delta', 'response.refusal.done'):
+                                # A refusal can still have billed usage in the final
+                                # event. Collect its receipt without requesting or
+                                # accepting any further answer/retry.
+                                refused = True
+                            elif kind in ("response.completed", "response.incomplete", "response.failed"):
+                                completed = event["response"]
+                                timing['streamSeconds']=time.monotonic()-dispatch_started
+                                break
+                            elif kind == "error":
+                                raise RuntimeError("OpenAI streaming request failed. Check billing, availability and model settings.")
+                    if not completed:
+                        suffix = (f' Request {request_id} remains reserved; reconcile its saved usage before resubmitting.'
+                                  if ledger else ' Existing saved stages remain available.')
+                        raise RuntimeError('Luna connection ended before a complete response.' + suffix)
+                    usage = completed.get('usage')
+                    if ledger:
+                        ledger.retain_response(request_id,completed,owner=owner)
+                    # A missing receipt tier must not turn requested premium
+                    # processing into an artificially cheap estimate.
+                    returned_tier = completed.get('service_tier') or service_tier
+                    returned_tiers.append(returned_tier)
+                    if ledger:
+                        estimated_cost += ledger.settle(usage, service_tier=returned_tier,
+                            request_id=request_id, owner=owner)
+                        if observer and ledger.request_state(request_id, owner=owner)['status']=='SETTLED':
+                            observer('completed', {'operationId': request_id})
+                    else:
+                        try:
+                            if not isinstance(usage, dict) or not all(isinstance(usage.get(k), int)
+                                    and not isinstance(usage[k], bool) for k in ('input_tokens', 'output_tokens')):
+                                raise ValueError('Missing usage')
+                            estimated_cost += luna_cost(usage, returned_tier)
+                        except (ValueError, TypeError, AttributeError):
+                            estimated_cost += SpendLedger.estimate(body)
                 # Malformed/missing usage must not erase a completed response or
                 # turn an unknown charge into free work in timing reports.
                 usage = usage if isinstance(usage, dict) else {}
@@ -423,7 +431,8 @@ class OpenAIDirector(DirectorProvider):
                            **total_usage}
                 if getattr(self, "timing_callback", None):
                     self._timing_reported=True
-                    self.timing_callback(role.split(":")[0].split(".")[0], time.monotonic() - began, details)
+                    self.timing_callback(role.split(":")[0].split(".")[0],
+                        max(0,time.monotonic()-began-self.api_lane_wait_seconds),details)
                 cache.parent.mkdir(parents=True, exist_ok=True)
                 temporary = None
                 try:

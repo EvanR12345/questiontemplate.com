@@ -1,0 +1,294 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "release": "director-qc-speed-20261028",
+  "status": "COMPLETE",
+  "scope": "Director review scheduling and shared API-slot ownership. No fresh complete-story benchmark; forecast inputs and cost calibrations unchanged.",
+  "publication": {
+    "ready": true,
+    "reviewedAtUTC": "2026-10-28T14:00:08.441044+00:00"
+  },
+  "design": {
+    "model": "Astra",
+    "reasoning": "Extra High"
+  },
+  "implementation": {
+    "model": "Sol",
+    "reasoning": "High"
+  },
+  "timelineURL": "./pipeline.html?release=director-qc-speed-20261028",
+  "previousMeasurementsURL": "./pipeline-speed-hour-20261028.html",
+  "voiceEstimateUnchanged": true,
+  "voiceEstimateMinutes": 12.3,
+  "forecastChanged": false,
+  "durationAndCostCalibrationsChanged": false,
+  "fullVideoSpeedupMeasured": false,
+  "productionDefaults": {
+    "visualChecks": "practical",
+    "everyImageReviewed": true,
+    "modelCopies": 2,
+    "imageRequestSlots": 4,
+    "outerImageAndCheckTasks": 5,
+    "sharedAPISlots": 4,
+    "requiredGPU": "NVIDIA GeForce RTX 5090",
+    "qcModel": "gpt-6-luna",
+    "effectiveQCSetting": "Fast",
+    "effectiveQCReasoning": "low",
+    "qcServiceTier": "default",
+    "productionSettingsChanged": false
+  },
+  "changes": {
+    "directorReview": "After complete storyboard assembly and full cadence validation, each independent factual group can proceed through full review, optional repair and exact recheck without waiting for unrelated groups. Ordered facts/state and whole-chapter acceptance remain required. Custom/serial providers retain their serial path.",
+    "apiSlots": "Each existing network attempt owns one of the same four shared slots through response collection and receipt retention/settlement. Cache lookup, preparation and budget wait happen outside the slot; validation, timing persistence and cache publication complete after release.",
+    "preserved": [
+      "Exact request bodies, models, reasoning, output limits, image/reference bytes, reference order and check/repair coverage.",
+      "Distinct request ownership, durable receipts, UNKNOWN liabilities, original retry eligibility, stale-source checks and atomic acceptance.",
+      "No slot increase, new automatic replay, reduced checks or new production GPU."
+    ]
+  },
+  "historicalReplay": {
+    "status": "HISTORICAL_REPLAY",
+    "scope": "Saved two-chapter current-calibration request durations, replayed without new inference or API contention. This is not a fresh performance measurement.",
+    "chainOnlySavedSeconds": 0,
+    "productionForecastUpdateSupported": false,
+    "limits": [
+      "The repaired group is already the slowest initial review, so independent chains remove no API-duration barrier in this trace.",
+      "The readiness project's earlier saved 61m02 reference used eight-slot history versus four saved slots and a different review version. Other selected projects/manual scenarios can display different estimates.",
+      "The earlier 52m31 theoretical floor is an aggregate planner abstraction, not a proven physical capacity floor."
+    ]
+  },
+  "benchmarks": {
+    "offline": {
+      "status": "MEASURED",
+      "scope": "48 completed-response replays over 12 frozen images in baseline/candidate/candidate/baseline order, with five outer workers and four shared API slots. Real private project/trace/performance/ledger/cache writes; no artificial delays or model/network latency.",
+      "checksCompleted": 48,
+      "uniqueImages": 12,
+      "arms": [
+        "baseline",
+        "candidate",
+        "candidate",
+        "baseline"
+      ],
+      "checksPerArm": 12,
+      "samplesPerVersion": 24,
+      "sourceProjectBytes": 5952053,
+      "baselineSeconds": 6.515500000095926,
+      "candidateSeconds": 6.679999999934807,
+      "elapsedScope": "Mean twelve-check arm wall time. The replay showed no overall batch-time gain.",
+      "overallBatchImprovementObserved": false,
+      "payloadIdentityPassed": true,
+      "identicalSerializedFirstWireCases": 12,
+      "referenceBytesIdentityPassed": true,
+      "fullQCReplayResultIdenticalCases": 12,
+      "resultComparisonExcludes": [
+        "seconds"
+      ],
+      "checkCoveragePassed": true,
+      "peakAPICalls": 4,
+      "meanPerCheckComponentsByKind": {
+        "baseline": {
+          "slotHeldSeconds": 1.934874999986884,
+          "slotBeforeWireSeconds": 0.5716250000017075,
+          "settlementToReleaseSeconds": 0.8014583333279006,
+          "recordTimingSeconds": 0.6498333333292976,
+          "wireSeconds": 0.2637083333393093
+        },
+        "candidate": {
+          "slotHeldSeconds": 0.8638750000003105,
+          "slotBeforeWireSeconds": 0.22904166666558012,
+          "settlementToReleaseSeconds": 0.0,
+          "recordTimingSeconds": 0.7063333333547538,
+          "wireSeconds": 0.2857916666738068
+        }
+      },
+      "settlementToReleaseByKind": {
+        "baseline": {
+          "count": 24,
+          "totalSeconds": 19.234999999869615,
+          "medianSeconds": 0.6874999998835847
+        },
+        "candidate": {
+          "count": 24,
+          "totalSeconds": 0.0,
+          "medianSeconds": 0.0
+        }
+      },
+      "candidateZeroTailInterpretation": "Settlement and release occurred in the same measured clock tick; zero recorded is not a claim of truly zero execution time.",
+      "paidDispatches": 0,
+      "actualAPISpendUSD": 0,
+      "rawEvidenceSHA256": "d861f7b304cf75dc4b2048b9ae1b38e6221e53417b657f271e27abd69cb6647a",
+      "requestParityEvidenceSHA256": "1815ebe86dcc498024418dc5af17a8a8a0743042706233fad0e29f087050a973",
+      "limits": [
+        "Offline replay has zero network/reasoning latency and cannot establish paid API throughput.",
+        "Twelve images from one source, two repeats per implementation; ABBA reduces drift but is not a statistical guarantee.",
+        "Project, trace, performance, cache and ledger durable writes are real private writes with no artificial sleeps.",
+        "API slot scope changes; external record_timing/store/performance implementation is held constant."
+      ]
+    },
+    "apiPilot": {
+      "status": "MEASURED",
+      "scope": "Twelve frozen images, QC adapter + real durable record_timing + cache writes only; excludes full video, image generation, repair, voice and render.",
+      "actualAPICalls": 48,
+      "checksCompleted": 48,
+      "uniqueImages": 12,
+      "checksPerArm": 12,
+      "samplesPerVersion": 24,
+      "outerWorkers": 5,
+      "apiSlots": 4,
+      "arms": [
+        {
+          "arm": 0,
+          "kind": "baseline",
+          "wallSeconds": 50.734999999869615,
+          "count": 12,
+          "dispatches": 12,
+          "peakAPICalls": 4
+        },
+        {
+          "arm": 1,
+          "kind": "candidate",
+          "wallSeconds": 46.375,
+          "count": 12,
+          "dispatches": 12,
+          "peakAPICalls": 4
+        },
+        {
+          "arm": 2,
+          "kind": "candidate",
+          "wallSeconds": 45.84400000004098,
+          "count": 12,
+          "dispatches": 12,
+          "peakAPICalls": 4
+        },
+        {
+          "arm": 3,
+          "kind": "baseline",
+          "wallSeconds": 62.57799999997951,
+          "count": 12,
+          "dispatches": 12,
+          "peakAPICalls": 4
+        }
+      ],
+      "totalExperimentSeconds": 206.48400000017136,
+      "baselineSeconds": 56.65649999992456,
+      "candidateSeconds": 46.10950000002049,
+      "elapsedScope": "Mean twelve-check arm wall time, two arms per version in ABBA order.",
+      "observedShorterBatchPercent": 18.615692815331197,
+      "causalBatchSpeedupEstablished": false,
+      "latencyAttributionLimit": "Baseline mean wire/response time was 16.5202 seconds per check versus 13.3666 seconds for the candidate. This accounts for most of the observed batch gap; the 18.6 percent shorter mean cannot be attributed to the slot change or extrapolated to complete production.",
+      "payloadIdentityPassed": true,
+      "serializedDispatchBodiesVerified": 48,
+      "referenceBytesIdentityPassed": true,
+      "checksAndModelSettingsUnchanged": true,
+      "meanPerCheckComponentsByKind": {
+        "baseline": {
+          "slotHeldSeconds": 17.148375000009157,
+          "slotBeforeWireSeconds": 0.25779166668265435,
+          "settlementToReleaseSeconds": 0.3619583333105159,
+          "recordTimingSeconds": 0.3378333333239425,
+          "wireSeconds": 16.52016666669321
+        },
+        "candidate": {
+          "slotHeldSeconds": 13.54999999999806,
+          "slotBeforeWireSeconds": 0.1620416666555684,
+          "settlementToReleaseSeconds": 0.0,
+          "recordTimingSeconds": 0.35883333334156003,
+          "wireSeconds": 13.366583333321614
+        }
+      },
+      "settlementToReleaseByKind": {
+        "baseline": {
+          "count": 24,
+          "totalSeconds": 8.686999999452382,
+          "medianSeconds": 0.3434999999590218
+        },
+        "candidate": {
+          "count": 24,
+          "totalSeconds": 0.0,
+          "medianSeconds": 0.0
+        }
+      },
+      "candidateZeroTailInterpretation": "Settlement and slot release occurred in the same measured clock tick, not truly zero execution time.",
+      "retries": 0,
+      "failures": 0,
+      "reservedUSD": 0.0,
+      "unknownLiabilityUSD": 0,
+      "unresolvedRequests": 0,
+      "actualAPISpendUSD": 0.01676422,
+      "qualityComparison": {
+        "baseline": {
+          "QCpass": 10,
+          "QCflagged": 14,
+          "checks": 24
+        },
+        "candidate": {
+          "QCpass": 9,
+          "QCflagged": 15,
+          "checks": 24
+        },
+        "interpretation": "Stochastic repeated reviews of the same 12 unique images, two repeats per version. Findings vary; these are not 48 independent quality cases and do not establish repair efficacy or equivalent returned findings."
+      },
+      "rawEvidenceSHA256": "7c0c533b35216c9534907f7ac55d6ff804688ddb44aa8541f228e7c8b221fa5b",
+      "limits": [
+        "Only twelve frozen images from one source and two repeats per version. ABBA reduces drift but supplies no causal speed guarantee.",
+        "QC adapter plus real durable private timing/cache work only; image generation, repair, voice, render and complete-story production were excluded.",
+        "No new automatic replay, model/reasoning/tier change, reference reduction or slot-cap increase."
+      ]
+    }
+  },
+  "validation": {
+    "status": "PASS",
+    "backend": {
+      "testsPassed": 335,
+      "scope": "Selected director, QC, overlap, budget, journal, store and profile integration. Synthetic API streams.",
+      "logSHA256": "c816abcbc9d21605fa65cfd665570ea9b1d5f8ded2811c1a25079ee54a31493d"
+    },
+    "frontend": {
+      "testsPassed": 206,
+      "scope": "Selected planner and Studio integration.",
+      "logSHA256": "19f2a0bb8ced0f7a94f8290eff0eda0ef759bc0e856cecb58a36e6adc1834b45"
+    },
+    "newDistinctTestsPassed": 24,
+    "staleSourceAndCancellation": "PASS",
+    "unknownLiabilityAndReceiptDrain": "PASS",
+    "finalQCReview": {
+      "status": "NO_BLOCKERS",
+      "mode": "read-only",
+      "model": "Astra",
+      "reasoning": "Extra High"
+    },
+    "sourceFrozenAtUTC": "2026-10-28T13:51:51.984513+00:00",
+    "sourceValidationSHA256": "b4916ebf85312da1af655b8a02d519dc20d42b41ca83988252f4d82fbc7651c5",
+    "sourceInstalledZIPManifest": null,
+    "protectedFilesAndVoice": {
+      "protectedFileCount": 18,
+      "protectedHashesUnchanged": true,
+      "mainProjectAndConfigUnchanged": true,
+      "voiceCalibrationUnchanged": true,
+      "unrelatedResearchFilesUnchanged": true
+    },
+    "scope": "Regression and source validation are complete. Installation/publication verification is separate; these tests do not measure full-story throughput."
+  },
+  "budget": {
+    "approvedSharedCapUSD": 2,
+    "priorConservativeSpendUSD": 0.8398630521002298,
+    "remainingAtStartUSD": 1.1601369478997703,
+    "apiPilotSubcapUSD": 0.15,
+    "newGPUAndStorageSpendUSD": 0,
+    "newAccountedSpendUSD": 0.01676422,
+    "unknownLiabilityUSD": 0,
+    "actualNewAPICalls": 48,
+    "sharedAccountedSpendUSD": 0.8566272721002298,
+    "basis": "48 paid API dispatches settled at $0.01676422, with zero retries, reserved balance or unresolved requests. This is within the existing $0.15 pilot subcap and shared $2 allowance. Prior conservative GPU/disk accounting includes setup/warmup and is counted once. No new GPU/storage spend.",
+    "status": "COMPLETE",
+    "reservedUSD": 0,
+    "unresolvedRequests": 0,
+    "remainingSharedAllowanceUSD": 1.1433727278997703
+  },
+  "interpretation": [
+    "The direct measured benefit is removal of post-settlement validation/persistence/cache work from scarce API-slot ownership; the work still completes before the caller returns.",
+    "The real pilot had an 18.6 percent shorter mean batch, but different wire/model latency explains most of the gap; no causal throughput or complete-story speedup is established.",
+    "The offline replay showed no batch-time gain, and the current historical director trace has zero chain-only saving.",
+    "All current forecast inputs, duration/cost calibrations and the 12.3-minute voice estimate stay unchanged."
+  ]
+}

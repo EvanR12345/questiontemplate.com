@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Director review scheduling and shared API slots, with the same requests, Practical checks and unchanged production forecast.">
+  <title>Director and QC scheduling · QuestionTemplate Studio</title>
+  <link rel="icon" href="./favicon.svg">
+  <link rel="stylesheet" href="./pipeline.css">
+  <style>
+    main{max-width:1120px}h1{font-size:clamp(32px,5.5vw,56px);max-width:19ch}
+    .summary{max-width:80ch;line-height:1.75}.report-section{margin:26px 0}.report-section>h2{font-size:19px;margin-bottom:12px}
+    .report-section p+p{margin-top:12px}.report-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:26px 0}
+    .report-grid strong{display:block;font-size:30px;line-height:1.2;margin:8px 0;letter-spacing:-.7px}.report-grid .caption{font-size:12px}
+    .table-scroll{overflow-x:auto;margin:16px 0}table{width:100%;border-collapse:collapse;min-width:650px;font-size:12px}
+    caption{text-align:left;font-size:12px;color:var(--muted);padding-bottom:10px}th,td{text-align:left;padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+    th{font-size:11px;font-weight:600;color:var(--muted)}td small{display:block;font:11px/1.6 "Segoe UI",sans-serif;color:var(--muted);margin-top:4px}
+    .report-section .caption{font-size:12px;line-height:1.75}.settings-line{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+    .settings-line span{padding:5px 8px;border:1px solid var(--line);background:var(--paper);border-radius:4px;font-size:11px}
+    .report-links{display:flex;gap:18px;flex-wrap:wrap;margin-top:20px}.appbar nav .button{display:inline-flex;align-items:center;margin:0}
+    .skip-report{position:absolute;top:8px;left:8px;z-index:50;padding:8px 12px;background:#fff;transform:translateY(-160%)}.skip-report:focus{transform:none}
+    @media(max-width:700px){.report-grid{grid-template-columns:1fr}.report-grid strong{font-size:27px}.appbar nav>a.button{display:inline-flex}h1{max-width:none}.report-section{padding:17px}}
+  </style>
+</head>
+<body>
+  <a class="skip-report" href="#report">Skip to report</a>
+  <header class="appbar">
+    <a class="brand" href="./studio.html"><img src="./favicon.svg" width="28" height="28" alt="">QuestionTemplate <span>Studio</span></a>
+    <span class="breadcrumb">/ &nbsp; Director and QC scheduling</span>
+    <nav><a class="button" href="./pipeline.html?release=director-qc-speed-20261028">Open timeline</a></nav>
+  </header>
+  <main id="report">
+    <div class="heading"><div>
+      <div class="eyebrow">DIRECTOR / QC · 28 OCT 2026</div>
+      <h1>Independent reviews. The same checks.</h1>
+      <p class="summary">Independent director groups can move from review to repair and recheck as soon as they are ready. Local preparation and saving run outside the four shared API slots. A 48-call pilot verified the earlier slot release while preserving every-image Practical checks and request content. Current production estimates and the 12.3-minute voice estimate are unchanged.</p>
+    </div></div>
+
+    <div class="report-grid">
+      <article class="panel"><h2>Shared API capacity</h2><strong>4 slots</strong><p class="caption">The same shared limit for director and image checks. Image workers and GPU capacity are unchanged.</p></article>
+      <article class="panel"><h2>Practical checks</h2><strong>Every image</strong><p class="caption">The same inputs, model, effective reasoning and repair rules. Full review coverage is retained.</p></article>
+      <article class="panel"><h2>Voice estimate</h2><strong>12.3 minutes</strong><p class="caption">Unchanged. No duration or cost calibration is revised for this update.</p></article>
+    </div>
+
+    <section class="report-section panel" aria-labelledby="changes-heading">
+      <h2 id="changes-heading">What changes</h2>
+      <div class="table-scroll"><table>
+        <caption>Scheduling changes preserve the work performed by each request.</caption>
+        <thead><tr><th scope="col">Stage</th><th scope="col">Updated behavior</th><th scope="col">Preserved checks</th></tr></thead>
+        <tbody>
+          <tr><td>Director groups</td><td>After the full storyboard and cadence check, each independent group can proceed from review to repair and exact recheck without waiting for unrelated groups.</td><td>Ordered facts and story state, full first review, repair coverage and whole-chapter acceptance. Custom providers retain the serial path.</td></tr>
+          <tr><td>Shared API slots</td><td>Each network attempt holds a slot through response collection and receipt settlement. Preparation, budget waiting and validated cache hits need no slot; validation and saving finish after release.</td><td>The same four-slot cap, distinct request ownership, durable receipts, stale-source checks and UNKNOWN charges. Retry eligibility is unchanged.</td></tr>
+        </tbody>
+      </table></div>
+      <p class="caption">Astra Extra High supplied the design; Sol High implemented it. Those are the engineering agents' settings. Production QC retains its effective Fast/low reasoning on Luna, default service tier, exact payloads, output limits, image/reference bytes and reference order. A group is never accepted with a failed final recheck.</p>
+    </section>
+
+    <section class="report-section panel" aria-labelledby="pilot-heading">
+      <h2 id="pilot-heading">Live pilot: release the slot before local saving</h2>
+      <p class="summary">The pilot completed <strong>48 checks over 12 frozen images</strong>, with two repeats per version, five outer workers and the same four shared API slots. All 48 dispatched request bodies were checked against their frozen exact-byte hashes. There were zero retries, failed calls or unresolved requests. Total experiment time was 206.484 seconds.</p>
+      <div class="table-scroll"><table>
+        <caption>Direct slot measurements, 24 checks per version. Durable timing-save work still ran before each caller returned.</caption>
+        <thead><tr><th scope="col">Measured component</th><th scope="col">Before</th><th scope="col">After</th></tr></thead>
+        <tbody>
+          <tr><td>Post-settlement time still holding a slot · total</td><td>8.687s</td><td>0 recorded</td></tr>
+          <tr><td>Post-settlement slot time · median per check</td><td>0.3435s</td><td>0 recorded</td></tr>
+          <tr><td>Mean API slot held per check</td><td>17.1484s</td><td>13.5500s</td></tr>
+          <tr><td>Mean wire/response interval per check</td><td>16.5202s</td><td>13.3666s</td></tr>
+          <tr><td>Mean durable timing-save work per check</td><td>0.3378s</td><td>0.3588s</td></tr>
+        </tbody>
+      </table></div>
+      <p class="caption">Zero recorded means settlement and slot release were observed in the same clock tick, not that execution took mathematically zero time. The measured change removes local work from scarce API-slot ownership. Validation, durable timing and cache publication still complete.</p>
+      <div class="table-scroll"><table>
+        <caption>Batch elapsed times in baseline/candidate/candidate/baseline order. Each batch reviewed the same 12 images.</caption>
+        <thead><tr><th scope="col">Version</th><th scope="col">First batch</th><th scope="col">Second batch</th><th scope="col">Mean</th></tr></thead>
+        <tbody><tr><td>Before</td><td>50.735s</td><td>62.578s</td><td>56.6565s</td></tr><tr><td>After</td><td>46.375s</td><td>45.844s</td><td>46.1095s</td></tr></tbody>
+      </table></div>
+      <p class="caption"><strong>The observed mean batch was 18.6% shorter, but this is not an attributable speedup.</strong> Mean wire/response latency also fell from 16.5202 to 13.3666 seconds per check, explaining most of the batch gap. This small repeated pilot cannot separate that variation from the code change or project the difference onto a two-hour production.</p>
+      <p class="caption">Baseline reviews passed 10 of 24 checks and flagged 14; updated reviews passed 9 and flagged 15. These are stochastic repeated findings on 12 unique images, not 48 independent quality samples. The pilot checked request and review coverage; it did not generate repairs, images, voice or a complete story.</p>
+    </section>
+
+    <section class="report-section panel" aria-labelledby="evidence-heading">
+      <h2 id="evidence-heading">Offline result: local work leaves the API slot</h2>
+      <p class="summary">The comparison completed <strong>48 response replays over 12 frozen images</strong> in baseline/candidate/candidate/baseline order. All 12 first-wire request bodies matched byte-for-byte, including image references; all 12 complete QC replay results matched across the four arms, excluding only timing. The replay used real private project, trace, ledger and cache writes.</p>
+      <div class="table-scroll"><table>
+        <caption>24 checks per version, five outer workers sharing four API slots. No network or model reasoning latency; no artificial delays.</caption>
+        <thead><tr><th scope="col">Measured component</th><th scope="col">Before</th><th scope="col">After</th></tr></thead>
+        <tbody>
+          <tr><td>Post-settlement time still holding a slot · total</td><td>19.235s</td><td>0 recorded</td></tr>
+          <tr><td>Post-settlement slot time · median per check</td><td>0.6875s</td><td>0 recorded</td></tr>
+          <tr><td>Mean API slot held per check</td><td>1.9349s</td><td>0.8639s</td></tr>
+          <tr><td>Mean durable timing-save work per check</td><td>0.6498s</td><td>0.7063s</td></tr>
+          <tr><td>Mean twelve-check batch elapsed</td><td>6.5155s</td><td>6.6800s</td></tr>
+        </tbody>
+      </table></div>
+      <p class="caption">Zero recorded means settlement and slot release were observed in the same clock tick. Validation and durable timing/cache writes still finish before the caller returns; the work was moved outside scarce API capacity. <strong>This replay showed no overall batch-time gain.</strong> It establishes the slot-release behavior, not live API or complete-story throughput.</p>
+    </section>
+
+    <section class="report-section panel" aria-labelledby="validation-heading">
+      <h2 id="validation-heading">Validation and forecast limits</h2>
+      <p class="summary"><strong>335 backend tests and 206 frontend tests passed</strong>, including 24 new distinct tests. Coverage includes stale-source rejection, cancellation, receipt draining and UNKNOWN liabilities. Astra's final read-only QC review found no blockers. The 18 protected helper files, project/configuration, unrelated documents and voice calibration matched their preservation records.</p>
+      <p class="caption">The saved two-chapter trace has zero chain-only saving: its repaired group is already the slowest initial review. Independent chains can help different multi-group workloads, but this trace does not show such a benefit. Deterministic scheduler tests establish scheduling behavior, not model throughput.</p>
+      <p class="caption">The readiness project's earlier saved 61m02 reference uses eight-slot history against four saved production slots and a different review version; other selected projects or manual scenarios can display different estimates. The earlier 52m31 theoretical floor is an aggregate planner abstraction, not a measured physical limit. Neither number establishes a new speedup. No fresh complete-story production or 2× result is claimed.</p>
+    </section>
+
+    <section class="report-section panel" aria-labelledby="settings-heading">
+      <h2 id="settings-heading">Same production settings</h2>
+      <p class="summary">Practical checks continue to inspect every image with the same repair rules. The update changes when eligible work can proceed and when it occupies an API slot. The timeline keeps its existing forecast, duration and cost inputs.</p>
+      <div class="settings-line" aria-label="Preserved production settings"><span>Practical · every image</span><span>2 model copies</span><span>4 image request slots</span><span>5 outer image/check tasks</span><span>4 shared API slots</span><span>Voice · 12.3 minutes</span></div>
+    </section>
+
+    <section class="report-section panel" aria-labelledby="cost-heading">
+      <h2 id="cost-heading">Within the existing $2 allowance</h2>
+      <p class="summary">The 48 paid API calls settled at <strong>$0.01676422</strong>, within the existing <strong>$0.15 pilot subcap</strong>. Added to earlier conservative spending of $0.83986305, the shared total is <strong>$0.85662727 of $2</strong>, leaving <strong>$1.14337273</strong>. This pilot added no GPU or storage spending.</p>
+      <p class="caption">The pilot ended with zero reserved balance and zero unresolved requests or UNKNOWN liabilities. Unknown outcomes still retain their liabilities and are never automatically replayed. Earlier lease accounting already includes setup and warmup and is counted once.</p>
+      <div class="report-links"><a href="./pipeline-director-qc-results.json">Download evidence summary</a><a href="./pipeline-speed-hour-20261028.html">Previous component measurements</a><a href="./pipeline-speed-20261028.html">Earlier generation and QC tests</a><a href="./pipeline.html?release=director-qc-speed-20261028">Return to timeline</a></div>
+    </section>
+    <footer><span>QuestionTemplate Studio · director/QC · 28 October 2026</span><span>Forecast and voice estimate unchanged</span></footer>
+  </main>
+</body>
+</html>

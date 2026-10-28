@@ -23,11 +23,17 @@ class LaneDirector(OpenAIDirector):
         super().__init__(config,root)
         self.lane=lane
 
-    def _call(self, role, context, schema, gate, vision=False):
+    @contextmanager
+    def request_slot(self, gate):
         waiting=time.monotonic()
-        with self.lane.acquire(gate):
-            self.api_lane_wait_seconds=time.monotonic()-waiting
-            return super()._call(role,context,schema,gate,vision)
+        recorded=False
+        try:
+            with self.lane.acquire(gate):
+                self.api_lane_wait_seconds+=time.monotonic()-waiting
+                recorded=True
+                yield
+        finally:
+            if not recorded:self.api_lane_wait_seconds+=time.monotonic()-waiting
 
 
 class NoLocalGeneration:
@@ -285,19 +291,35 @@ class CloudStoryOverlap:
 
     def director_calls(self, project, chapter, calls, expected=None):
         """Only independent finishing/prompt passes, with separate durable owners."""
-        from director_tasks import bounded_director_map,validate_director_result
-        from studio_service import JobCancelled
+        from director_tasks import bounded_director_map
         allowed={'planLayout','selectImageWorkflow','checkContinuity','writeImagePrompt','planStoryboard','checkStoryboard','repairStoryboard'}
         if any(method not in allowed for method, _ in calls):
             raise ValueError('This director pass requires ordered story state and cannot run here.')
+        return bounded_director_map(calls,self._director_executor(project,chapter,expected),self.main.gate,
+            self.settings['director'].get('parallelism',1))
+
+    def director_review_chains(self, project, chapter, chains, expected=None):
+        from director_tasks import bounded_director_chains
+        return bounded_director_chains(chains,self._director_executor(project,chapter,expected),self.main.gate,
+            self.settings['director'].get('parallelism',1))
+
+    def _director_executor(self, project, chapter, expected):
+        """One actual call owns a clone, receipt stream and immutable journal ID."""
+        from director_tasks import validate_director_result
+        from studio_service import JobCancelled
         snapshot=copy.deepcopy(project)
         expected=expected or self.main.analysis_input_signature(self.root.store.load(self.project),chapter)
         parent=self.main.execution_context
         def execute(item, stopped):
             method, payload=item
+            if method not in {'planLayout','selectImageWorkflow','checkContinuity','writeImagePrompt',
+                    'planStoryboard','checkStoryboard','repairStoryboard'}:
+                raise ValueError('This director pass requires ordered story state and cannot run here.')
+            if stopped.is_set():raise JobCancelled()
             current=self.validate_settings()
             if not self.analysis_inputs.matches(current,chapter,expected,self.main.analysis_input_signature):
                 raise StaleExecution('Chapter inputs changed before director dispatch; current edits retained.')
+            if stopped.is_set():raise JobCancelled()
             context=self.admit(snapshot,chapter,None,'director-pass',
                 digest({'method':method,'input':payload,'analysis':expected}),[parent.identity])
             clone=self.clone(context)
@@ -332,8 +354,7 @@ class CloudStoryOverlap:
                 with self.root.cv:self.root.active_executions.pop(context.identity,None)
                 if actual=='UNKNOWN' and status=='COMPLETE':
                     raise UnresolvedExecution('Director pass has unresolved remote usage; reconcile its saved ID before retrying.')
-        return bounded_director_map(calls,execute,self.main.gate,
-            self.settings['director'].get('parallelism',1))
+        return execute
 
     @contextmanager
     def stage(self, stage, args, details):

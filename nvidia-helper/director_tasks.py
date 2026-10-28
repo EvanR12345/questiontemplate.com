@@ -1,6 +1,7 @@
 """Bounded independent director work; chronological story state stays serial."""
 import contextvars
 import threading
+from collections import deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 
@@ -100,4 +101,84 @@ def bounded_director_map(items, execute, gate, limit=3):
                         failure = error
     if failure is not None:
         raise failure
+    return [results[index] for index in sorted(results)]
+
+
+def bounded_director_chains(chains, execute, gate, limit=3):
+    """Run independent request chains with one bounded shared admission window.
+
+    A generator yields one request and receives its result. A ready continuation
+    takes the next free slot before another root; it never occupies a worker
+    while waiting for its previous request. Every execute callback owns exactly
+    one durable request, using the same stop event for admission and retries.
+    """
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 8:
+        raise ValueError('Choose one through eight bounded parallel director calls.')
+    roots=iter(enumerate(chains));ready=deque();opened=[];pending={};results={}
+    stopped=threading.Event();failure=None;exhausted=False
+
+    def invoke(item):
+        try:
+            gate('Preparing independent director pass')
+            if stopped.is_set():return None
+            return execute(item,stopped)
+        except BaseException:
+            stopped.set()
+            raise
+
+    with ThreadPoolExecutor(max_workers=limit,thread_name_prefix='studio-director-review') as pool:
+        try:
+            while pending or ready or not exhausted:
+                completed=[]
+                # Observe every completed failure before advancing any chain.
+                for future in [f for f in pending if f.done()]:
+                    index,chain=pending.pop(future)
+                    try:completed.append((index,chain,future.result()))
+                    except BaseException as error:
+                        if failure is None:failure=error
+                        stopped.set()
+                if stopped.is_set():break
+                for index,chain,result in completed:
+                    try:ready.append((index,chain,chain.send(result)))
+                    except StopIteration as finished:results[index]=finished.value
+                while len(pending)<limit:
+                    gate('Preparing independent director pass')
+                    if stopped.is_set():break
+                    if ready:index,chain,item=ready.popleft()
+                    elif not exhausted:
+                        try:index,chain=next(roots)
+                        except StopIteration:
+                            exhausted=True
+                            break
+                        opened.append(chain)
+                        try:item=next(chain)
+                        except StopIteration as finished:
+                            results[index]=finished.value
+                            continue
+                    else:break
+                    if stopped.is_set():break
+                    future=pool.submit(contextvars.copy_context().run,invoke,item)
+                    pending[future]=(index,chain)
+                if stopped.is_set():break
+                if pending:
+                    wait(pending,timeout=.1,return_when=FIRST_COMPLETED)
+                    gate('Waiting for independent director passes')
+        except BaseException as error:
+            stopped.set()
+            if failure is None:failure=error
+        finally:
+            # Close generators only on this caller thread, after paid streams
+            # finish. Neither an abandoned chain nor cleanup can buy a stage.
+            stopped.set()
+            for future in pending:future.cancel()
+            for future in pending:
+                if future.cancelled():continue
+                try:future.result()
+                except BaseException as error:
+                    if failure is None:failure=error
+            for chain in opened:
+                try:chain.close()
+                except BaseException as error:
+                    if failure is None:failure=error
+    if failure is not None:raise failure
     return [results[index] for index in sorted(results)]

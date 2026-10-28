@@ -100,6 +100,52 @@ def repair_review_context(payload, output, indices):
         'cameras':[output['cameras'][n] for n in selected]}
 
 
+def storyboard_review_chain(index, item, payload, lean):
+    """One frozen group's existing checks, one repair and exact final recheck.
+
+    The caller starts these only after complete visual assembly and the global
+    cadence guard. Group-local edits remain provisional until every chain passes.
+    """
+    payload=copy.deepcopy(payload);output=item['storyboard']
+    review=yield ('checkStoryboard',{
+        **payload,'shots':output['detail']['shots'],'cameras':output['cameras'],
+        **({} if lean else {'visualDirection':output['prompts']})})
+    item['visualReview']=review
+    if not review['majorIssues']:return item
+    indices=sorted({issue['shotIndex'] for issue in review['majorIssues']})
+    repair_context={**payload,'shots':output['detail']['shots'],'cameras':output['cameras'],
+        'issues':review['majorIssues'],'repairIndices':indices}
+    if lean:
+        source=payload['sentences']
+        repair_context['repairSlots']=[{'shotIndex':n,
+            'startSentence':repair_context['shots'][n]['startSentence'],
+            'endSentence':repair_context['shots'][n]['endSentence'],
+            'ownNarration':source[repair_context['shots'][n]['startSentence']:repair_context['shots'][n]['endSentence']+1],
+            'originalDirection':repair_context['shots'][n],
+            'originalCamera':repair_context['cameras'][n]} for n in indices]
+        repair_context.pop('shots');repair_context.pop('cameras')
+    replacement=yield ('repairStoryboard',repair_context)
+    item['repairHistory']={'initialReview':item['visualReview'],'repairs':replacement}
+    for corrected in replacement['repairs']:
+        n=corrected['shotIndex'];shot=output['detail']['shots'][n]
+        shot.update({k:v for k,v in corrected.items() if k not in ('shotIndex','camera')})
+        output['cameras'][n]={'shotIndex':n,**corrected['camera']}
+        output['prompts'][n]={'shotIndex':n,'prompt':' '.join([corrected['action'],
+            corrected['camera']['composition'],corrected['expression'],corrected['pose'],corrected['lighting']]).strip()}
+    final_context=repair_review_context(payload,output,
+        [r['shotIndex'] for r in replacement['repairs']]) if lean else {
+        **payload,'shots':output['detail']['shots'],'cameras':output['cameras'],'visualDirection':output['prompts']}
+    review=yield ('checkStoryboard',final_context)
+    item['visualReview']=review;item['repairHistory']['finalReview']=review
+    if review['majorIssues']:
+        findings='; '.join(f"draft group {index+1}, shot {issue['shotIndex']+1}: {issue['issue']}"
+                          for issue in review['majorIssues'][:3])
+        raise ValueError('Staged storyboard still has source-fidelity issues after one targeted repair. '
+            'Existing chapter stays intact. '+findings+
+            ' Review the draft/source before retrying; this is not a passed plan.')
+    return item
+
+
 def prepare_staged(service, project, chapter, groups, cast, state, memory, expected):
     from director_pipeline import AcceptedVisualQueue,source_visual_overlap_enabled
     enabled=source_visual_overlap_enabled(service,project['settings']['director'])
@@ -273,57 +319,62 @@ def _prepare_staged(service, project, chapter, groups, cast, state, memory, expe
             if shots<math.ceil(target*.9) or shots>math.ceil(target*1.2)+len(groups):
                 raise ValueError('Lean storyboard differs too much from the selected picture cadence; existing chapter retained.')
     if project['settings']['director'].get('executionMode') in ('staged-review','staged-lean'):
-        reviews = service.director_calls(project,chapter['id'],[('checkStoryboard',{
-            **payload,'shots':output['detail']['shots'],'cameras':output['cameras'],
-            **({} if lean else {'visualDirection':output['prompts']})}) for payload,output in zip(review_inputs,[item['storyboard'] for item in prepared])],expected)
-        repair_calls=[];repair_owners=[]
-        for index,(item,review) in enumerate(zip(prepared,reviews)):
-            item['visualReview']=review
-            if review['majorIssues']:
-                indices=sorted({issue['shotIndex'] for issue in review['majorIssues']})
-                repair_context={**review_inputs[index],
-                    'shots':item['storyboard']['detail']['shots'],'cameras':item['storyboard']['cameras'],
-                    'issues':review['majorIssues'],'repairIndices':indices}
-                if lean:
-                    source=review_inputs[index]['sentences']
-                    repair_context['repairSlots']=[{'shotIndex':n,
-                        'startSentence':repair_context['shots'][n]['startSentence'],
-                        'endSentence':repair_context['shots'][n]['endSentence'],
-                        'ownNarration':source[repair_context['shots'][n]['startSentence']:repair_context['shots'][n]['endSentence']+1],
-                        'originalDirection':repair_context['shots'][n],
-                        'originalCamera':repair_context['cameras'][n]} for n in indices]
-                    # Only flagged directions need to be rewritten. Full source
-                    # and chronological state remain, but unrelated old shots
-                    # are not another large competing prompt.
-                    repair_context.pop('shots');repair_context.pop('cameras')
-                repair_calls.append(('repairStoryboard',repair_context))
-                repair_owners.append(index)
-        if repair_calls:
-            replacements=service.director_calls(project,chapter['id'],repair_calls,expected)
-            for index,replacement in zip(repair_owners,replacements):
-                item=prepared[index];output=item['storyboard']
-                item['repairHistory']={'initialReview':item['visualReview'],'repairs':replacement}
-                for corrected in replacement['repairs']:
-                    n=corrected['shotIndex'];shot=output['detail']['shots'][n]
-                    shot.update({k:v for k,v in corrected.items() if k not in ('shotIndex','camera')})
-                    output['cameras'][n]={'shotIndex':n,**corrected['camera']}
-                    output['prompts'][n]={'shotIndex':n,'prompt':' '.join([corrected['action'],
-                        corrected['camera']['composition'],corrected['expression'],corrected['pose'],corrected['lighting']]).strip()}
-            final_reviews=service.director_calls(project,chapter['id'],[('checkStoryboard',
-                repair_review_context(review_inputs[index],prepared[index]['storyboard'],
-                    [r['shotIndex'] for r in prepared[index]['repairHistory']['repairs']['repairs']]) if lean else {
-                **review_inputs[index],'shots':prepared[index]['storyboard']['detail']['shots'],
-                'cameras':prepared[index]['storyboard']['cameras'],'visualDirection':prepared[index]['storyboard']['prompts']})
-                for index in repair_owners],expected)
-            for index,review in zip(repair_owners,final_reviews):
-                prepared[index]['visualReview']=review
-                prepared[index]['repairHistory']['finalReview']=review
+        runner=getattr(service,'director_review_chains',None)
+        chained=callable(runner) and runner(project,chapter['id'],
+            (storyboard_review_chain(index,item,payload,lean)
+             for index,(item,payload) in enumerate(zip(prepared,review_inputs))),expected)
+        if not chained:
+            reviews = service.director_calls(project,chapter['id'],[('checkStoryboard',{
+                **payload,'shots':output['detail']['shots'],'cameras':output['cameras'],
+                **({} if lean else {'visualDirection':output['prompts']})}) for payload,output in zip(review_inputs,[item['storyboard'] for item in prepared])],expected)
+            repair_calls=[];repair_owners=[]
+            for index,(item,review) in enumerate(zip(prepared,reviews)):
+                item['visualReview']=review
                 if review['majorIssues']:
-                    findings='; '.join(f"draft group {index+1}, shot {issue['shotIndex']+1}: {issue['issue']}"
-                                      for issue in review['majorIssues'][:3])
-                    raise ValueError('Staged storyboard still has source-fidelity issues after one targeted repair. '
-                        'Existing chapter stays intact. '+findings+
-                        ' Review the draft/source before retrying; this is not a passed plan.')
+                    indices=sorted({issue['shotIndex'] for issue in review['majorIssues']})
+                    repair_context={**review_inputs[index],
+                        'shots':item['storyboard']['detail']['shots'],'cameras':item['storyboard']['cameras'],
+                        'issues':review['majorIssues'],'repairIndices':indices}
+                    if lean:
+                        source=review_inputs[index]['sentences']
+                        repair_context['repairSlots']=[{'shotIndex':n,
+                            'startSentence':repair_context['shots'][n]['startSentence'],
+                            'endSentence':repair_context['shots'][n]['endSentence'],
+                            'ownNarration':source[repair_context['shots'][n]['startSentence']:repair_context['shots'][n]['endSentence']+1],
+                            'originalDirection':repair_context['shots'][n],
+                            'originalCamera':repair_context['cameras'][n]} for n in indices]
+                        # Only flagged directions need to be rewritten. Full source
+                        # and chronological state remain, but unrelated old shots
+                        # are not another large competing prompt.
+                        repair_context.pop('shots');repair_context.pop('cameras')
+                    repair_calls.append(('repairStoryboard',repair_context))
+                    repair_owners.append(index)
+            if repair_calls:
+                replacements=service.director_calls(project,chapter['id'],repair_calls,expected)
+                for index,replacement in zip(repair_owners,replacements):
+                    item=prepared[index];output=item['storyboard']
+                    item['repairHistory']={'initialReview':item['visualReview'],'repairs':replacement}
+                    for corrected in replacement['repairs']:
+                        n=corrected['shotIndex'];shot=output['detail']['shots'][n]
+                        shot.update({k:v for k,v in corrected.items() if k not in ('shotIndex','camera')})
+                        output['cameras'][n]={'shotIndex':n,**corrected['camera']}
+                        output['prompts'][n]={'shotIndex':n,'prompt':' '.join([corrected['action'],
+                            corrected['camera']['composition'],corrected['expression'],corrected['pose'],corrected['lighting']]).strip()}
+                final_reviews=service.director_calls(project,chapter['id'],[('checkStoryboard',
+                    repair_review_context(review_inputs[index],prepared[index]['storyboard'],
+                        [r['shotIndex'] for r in prepared[index]['repairHistory']['repairs']['repairs']]) if lean else {
+                    **review_inputs[index],'shots':prepared[index]['storyboard']['detail']['shots'],
+                    'cameras':prepared[index]['storyboard']['cameras'],'visualDirection':prepared[index]['storyboard']['prompts']})
+                    for index in repair_owners],expected)
+                for index,review in zip(repair_owners,final_reviews):
+                    prepared[index]['visualReview']=review
+                    prepared[index]['repairHistory']['finalReview']=review
+                    if review['majorIssues']:
+                        findings='; '.join(f"draft group {index+1}, shot {issue['shotIndex']+1}: {issue['issue']}"
+                                          for issue in review['majorIssues'][:3])
+                        raise ValueError('Staged storyboard still has source-fidelity issues after one targeted repair. '
+                            'Existing chapter stays intact. '+findings+
+                            ' Review the draft/source before retrying; this is not a passed plan.')
     if lean and fact_beats_mode(project['settings']['director'])=='storyboard':
         for item in prepared:
             item['analysis']['beats']=[{'sentence':scene['startSentence'],

@@ -3334,6 +3334,15 @@ class StudioService:
         return [validate_director_result(method,context,getattr(self.director,method)(context,self.gate))
             for method,context in calls]
 
+    def director_review_chains(self, project, chapter, chains, expected=None):
+        """Use durable per-call chains only where real parallel overlap owns them."""
+        overlap=getattr(self,'_overlap',None)
+        if (overlap and self is overlap.main
+                and project['settings']['director'].get('parallelism',1)>1):
+            overlap.director_review_chains(project,chapter,chains,expected)
+            return True
+        return False
+
     def director_group_limits(self,remote):
         # Keep production context sizes unchanged. Private matched test services
         # can override this seam without changing installed project settings.

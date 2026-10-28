@@ -87,8 +87,15 @@ class DirectorParallelTest(unittest.TestCase):
                     overlap.main.director_calls(p,p['chapters'][0]['id'],self.requests(30))
             # Responses may finish before the failure is observed; the invariant
             # is bounded admission and no UNKNOWN/free charge after draining.
-            self.assertLess(len(seen),30);self.assertFalse(self.ledger(p)['requests'])
-            self.assertEqual(len(self.ledger(p)['receipts']),len(seen))
+            self.assertLess(len(seen),30);state=self.ledger(p);self.assertFalse(state['requests'])
+            # Preparation may reserve a HELD request while a sibling's paid
+            # reply is still being validated. A later stop cancels that held
+            # request before wire dispatch and records its explicit free receipt.
+            paid=[row for row in state['receipts'] if not row['uncharged']]
+            held=[row for row in state['receipts'] if row['uncharged']]
+            self.assertEqual(len(paid),len(seen))
+            self.assertTrue(all(row['usageConfirmed'] and row['estimatedUSD']>0 for row in paid))
+            self.assertTrue(all(row['estimatedUSD']==0 for row in held))
             self.assertEqual(overlap.api_lane.active,0)
             self.assertEqual(len(self.service.active_executions),1)
         finally:overlap.close('FAILED')
