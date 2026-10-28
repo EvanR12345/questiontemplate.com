@@ -3,7 +3,7 @@
   "date": "2026-10-28",
   "release": "production-speed-20261028",
   "voiceEstimateUnchanged": true,
-  "fullVideoForecastUnchanged": true,
+  "fullVideoForecastUnchanged": false,
   "installedChanges": [
     "sampled-frame-display-writes",
     "omit-durable-telemetry-from-shot-copies",
@@ -188,5 +188,12 @@
     "status": "NOT_RUN",
     "reason": "Insufficient free physical RAM at the authorized pre-render guard; root ended this attempt without waiting or launching the renderer.",
     "scope": "See private chapter validation receipt; no whole-video forecast recalibration."
+  },
+  "forecastIntegration": {
+    "release": "qc-estimates-20261028",
+    "visualQC": "Latest compatible policy, slot and tier cohort updates QC time/cost and schedule; newer matching production history wins.",
+    "voiceEstimateUnchanged": true,
+    "renderCalibrationUnchanged": true,
+    "fullVideoRunMeasured": false
   }
 }

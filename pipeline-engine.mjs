@@ -3,6 +3,7 @@ import {scheduleTasksFast} from './pipeline-fast-scheduler.mjs?v=fast-planner-20
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
 import {directorForecast} from './pipeline-director-calibration.mjs?v=production-parallel-20261012';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=qc-estimates-20261028';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'practical', sample:20,
@@ -117,8 +118,9 @@ export function validateConfig(input, evidence) {
 export function describePlan(input,evidence){return buildPlan(input,evidence,{metadataOnly:true});}
 
 export function buildPlan(input, evidence, {metadataOnly=false}={}) {
-  const c=validateConfig(input,evidence),cal=evidence.calibration;
-  const director=directorForecast(c,evidence);
+  const provisional=validateConfig(input,evidence),cal=evidence.calibration;
+  const director=directorForecast(provisional,evidence);
+  const c=validateConfig(qualityConfig({...provisional,qcEffectiveSlots:director.slots},evidence),evidence);
   const nativeProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&p.backend==='native');
   const cpuProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&(p.backend||'cpu')==='cpu')||cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
   const renderProfile=c.videoRenderer==='native'?nativeProfile:c.videoRenderer==='cpu'?cpuProfile:nativeProfile||cpuProfile;
@@ -222,7 +224,8 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       }
       finalSaves.push(save);allPackSaves.push(save);lastPack=save;packNumber++;
       const q=Math.min(size,Math.max(0,wanted-checked));checked+=q;
-      if(q)finalReviews.push(add(p+'vision','vision',i,q*(c.qcSeconds||cal.qcSeconds),[save],{api:1},{images:q}));
+      if(q)finalReviews.push(add(p+'vision','vision',i,q*(c.qcSeconds||cal.qcSeconds),[save],{api:1},{images:q,
+        basis:c.qcBenchmarkNote||(c.qcHistoryMatches?'Matching saved-production initial API review time/cost; repairs and human waiting excluded.':'Historical/reference review assumption; no matching policy/slot cohort selected. Repairs and human waiting excluded.')}));
       if(c.policy==='serial'&&q)lastPack=finalReviews.at(-1);
     }
     saves.push(...finalSaves);reviews.push(...finalReviews);

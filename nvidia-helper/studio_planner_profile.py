@@ -1,7 +1,7 @@
 """Read-only production setup for forecasts; never expose scripts or credentials."""
 import copy,math
 from studio_qc import check_level
-from studio_performance import profile_for
+from studio_performance import profile_for,signature
 
 FIELDS = ('unattendedProduction','qcRepairBudgetMode','style','generationMode','layoutMode','voice','voiceEngine','voiceCompute','qwenSpeaker','voiceInstruction','voiceChapterBatchSize','speed','narrationDelivery',
           'soundEffects','automaticRepair','maxImageRetries','cloudImagesOnly')
@@ -22,6 +22,12 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
         project = {**project, 'settings':run_settings(project['settings'])}
     source = project['settings']
     config=config or {}
+    qc_profile=profile_for('Visual QC',project,config)
+    # Policy and API concurrency select separate calibration cohorts. Keep all
+    # other review compatibility inputs private behind the existing digest.
+    qc_compatibility={key:value for key,value in qc_profile.items()
+                      if key not in ('policy','reviewAPISlots','processingTier')}
+    qc_history_identity=None
     candidate=adaptive_image_window(source,copies,copies*2 if copies>1 else 1)
     adaptive=config.get('experimentalAdaptiveImageAdmission') is True and candidate
     render_backend=renderer_backend if renderer_backend in ('cpu','native') else config.get('renderBackend','cpu')
@@ -59,10 +65,12 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
     if performance:
         # Exact profiles retain all failures and only teach from fresh successful
         # matching observations. No short-render cache is used to change throughput.
-        profile = profile_for('Visual QC', project, config or {})
-        result = performance.estimate(profile, {'kind':'images', 'value':1})
+        result = performance.estimate(qc_profile, {'kind':'images', 'value':1})
         estimates['visualQC'] = {k: result.get(k) for k in
             ('status','seconds','costUSD','samples','runs','retained','latest','rangeSeconds')}
+        if type(result.get('seconds')) in (int,float) and math.isfinite(result['seconds']) and result['seconds']>0:
+            qc_history_identity={'policy':qc_profile['policy'],'apiSlots':qc_profile['reviewAPISlots'],
+                'processingTier':qc_profile['processingTier'],'compatibilityHash':signature(qc_compatibility)}
         for stage, key, unit in (('AI directing','director','characters'),('Narration','narration','characters'),('Image pipeline','images','images')):
             result=performance.estimate(profile_for(stage,project,config or {}),{'kind':unit,'value':1})
             estimates[key]={k:result.get(k) for k in ('status','seconds','costUSD','samples','runs')}
@@ -75,6 +83,9 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
                 'status':row['status'],'scope':'Matching fresh production profile; character-normalized rate scaled by this project’s measured narration. Small-sample extrapolation, not a guarantee.'}
     return {'version':1, 'project':project['id'], 'name':project['name'],
         'revision':project.get('revision', 0), 'settings':settings,
+        'qcCompatibilityHash':signature(qc_compatibility),
+        'qcProcessingTier':source['director'].get('processingTier') or config.get('openaiServiceTier','default'),
+        'qcHistoryIdentity':qc_history_identity,
         'generationStrategy':project.get('generationStrategy', 'align'),
         'imageTasks':shot_task_limit(project,{}),
         'imageAdmission':{'policy':ADAPTIVE_IMAGE_ADMISSION if adaptive else 'fixed-v1',

@@ -87,6 +87,31 @@ class PerformanceTest(unittest.TestCase):
         self.assertEqual(self.store.estimate(api,{'kind':'images','value':1})['seconds'],6)
         self.assertEqual(self.store.estimate(whole,{'kind':'images','value':1})['seconds'],60)
 
+    def test_qc_slots_and_tiers_isolate_history_without_changing_voice_or_render(self):
+        p=self.project;d=p['settings']['director'];d.update(parallelism=4,processingTier='default')
+        current=profile_for('Visual QC',p,{})
+        voice=profile_for('Narration',p,{});render=profile_for('Render chapter',p,{})
+        legacy=dict(current);legacy.pop('reviewAPISlots');legacy.pop('processingTier')
+        self.store.record('legacy-qc','old',legacy,{'kind':'images','value':1},1,{})
+        self.assertIsNone(self.store.estimate(current,{'kind':'images','value':1})['seconds'])
+        self.store.record('current-qc','four',current,{'kind':'images','value':1},8,{})
+        d['parallelism']=8
+        eight=profile_for('Visual QC',p,{})
+        self.assertEqual(eight['reviewAPISlots'],8)
+        self.assertIsNone(self.store.estimate(eight,{'kind':'images','value':1})['seconds'])
+        d['parallelism']=4;d['processingTier']='flex'
+        flex=profile_for('Visual QC',p,{})
+        self.assertEqual(flex['processingTier'],'flex')
+        self.assertIsNone(self.store.estimate(flex,{'kind':'images','value':1})['seconds'])
+        explicit=profile_for('Visual QC',p,{}, {'reviewAPISlots':2})
+        self.assertEqual(explicit['reviewAPISlots'],2)
+        existing_override=profile_for('Visual QC',p,{}, {'directorTasks':3})
+        self.assertEqual(existing_override['reviewAPISlots'],3)
+        self.assertEqual(profile_for('Narration',p,{}),voice)
+        self.assertEqual(profile_for('Render chapter',p,{}),render)
+        self.assertEqual(self.store.estimate(legacy,{'kind':'images','value':1})['seconds'],1)
+        self.assertEqual(self.store.estimate(current,{'kind':'images','value':1})['seconds'],8)
+
     def test_private_keys_story_ids_and_endpoints_are_absent_from_profiles(self):
         config={'openaiApiKey':'SECRET','comfyEndpoint':'https://private-host.example','comfySshHost':'private-ip'}
         for stage in ('AI directing','Image generation','Narration','Render chapter'):

@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "timingScope": "api-call",
+  "cohorts": [
+    {
+      "id": "qc-20261028-practical-4",
+      "status": "COMPLETE",
+      "policy": "practical",
+      "apiSlots": 4,
+      "qcCompatibilityHash": "20fe8335e44e6f2587d7cbbde52c3dcecbc65cd3269db9c9c95e5482ef319410",
+      "processingTier": "default",
+      "timingScope": "api-call",
+      "secondsPerCheck": 14.216708333347924,
+      "costUSDPerCheck": 0.00033885862499999993,
+      "observedAt": 1793177701.9744015,
+      "checks": 24,
+      "uniqueImages": 12,
+      "batches": 2,
+      "referenceImages": 1,
+      "batchSeconds": [
+        47.29600000008941,
+        46.875
+      ],
+      "unknownRequests": 0,
+      "scope": "Mean API-call work and usage-derived cost per initial review; projected beyond the twelve measured images. Concurrent batch time is reported separately and is not divided into per-check work.",
+      "limits": [
+        "Twelve unique frozen images, repeated twice; not independent quality samples.",
+        "One reference image per check; other reference counts and story complexity may differ.",
+        "The last two complete arms followed a time gap after a harness failure.",
+        "Repair generation, rechecks and manual-review waiting are excluded."
+      ]
+    },
+    {
+      "id": "qc-20261028-practical-8",
+      "status": "COMPLETE",
+      "policy": "practical",
+      "apiSlots": 8,
+      "qcCompatibilityHash": "20fe8335e44e6f2587d7cbbde52c3dcecbc65cd3269db9c9c95e5482ef319410",
+      "processingTier": "default",
+      "timingScope": "api-call",
+      "secondsPerCheck": 24.851625000000542,
+      "costUSDPerCheck": 0.00035890033333333326,
+      "observedAt": 1793176222.159653,
+      "checks": 24,
+      "uniqueImages": 12,
+      "batches": 2,
+      "referenceImages": 1,
+      "batchSeconds": [
+        42.343000000109896,
+        48.46900000004098
+      ],
+      "unknownRequests": 0,
+      "scope": "Mean API-call work and usage-derived cost per initial review; projected beyond the twelve measured images. Concurrent batch time is reported separately and is not divided into per-check work.",
+      "limits": [
+        "Twelve unique frozen images, repeated twice; not independent quality samples.",
+        "One reference image per check; other reference counts and story complexity may differ.",
+        "The last two complete arms followed a time gap after a harness failure.",
+        "Repair generation, rechecks and manual-review waiting are excluded."
+      ]
+    },
+    {
+      "id": "qc-20261028-strict-4",
+      "status": "COMPLETE",
+      "policy": "strict",
+      "apiSlots": 4,
+      "qcCompatibilityHash": "20fe8335e44e6f2587d7cbbde52c3dcecbc65cd3269db9c9c95e5482ef319410",
+      "processingTier": "default",
+      "timingScope": "api-call",
+      "secondsPerCheck": 14.327499999975165,
+      "costUSDPerCheck": 0.0003617378333333333,
+      "observedAt": 1793176272.1586158,
+      "checks": 24,
+      "uniqueImages": 12,
+      "batches": 2,
+      "referenceImages": 1,
+      "batchSeconds": [
+        47.32800000021234,
+        49.563000000081956
+      ],
+      "unknownRequests": 0,
+      "scope": "Mean API-call work and usage-derived cost per initial review; projected beyond the twelve measured images. Concurrent batch time is reported separately and is not divided into per-check work.",
+      "limits": [
+        "Twelve unique frozen images, repeated twice; not independent quality samples.",
+        "One reference image per check; other reference counts and story complexity may differ.",
+        "The last two complete arms followed a time gap after a harness failure.",
+        "Repair generation, rechecks and manual-review waiting are excluded."
+      ]
+    },
+    {
+      "id": "qc-20261028-strict-8",
+      "status": "COMPLETE",
+      "policy": "strict",
+      "apiSlots": 8,
+      "qcCompatibilityHash": "20fe8335e44e6f2587d7cbbde52c3dcecbc65cd3269db9c9c95e5482ef319410",
+      "processingTier": "default",
+      "timingScope": "api-call",
+      "secondsPerCheck": 25.113208333331084,
+      "costUSDPerCheck": 0.00036455033333333337,
+      "observedAt": 1793177654.7005434,
+      "checks": 24,
+      "uniqueImages": 12,
+      "batches": 2,
+      "referenceImages": 1,
+      "batchSeconds": [
+        46.5,
+        45.34400000004098
+      ],
+      "unknownRequests": 0,
+      "scope": "Mean API-call work and usage-derived cost per initial review; projected beyond the twelve measured images. Concurrent batch time is reported separately and is not divided into per-check work.",
+      "limits": [
+        "Twelve unique frozen images, repeated twice; not independent quality samples.",
+        "One reference image per check; other reference counts and story complexity may differ.",
+        "The last two complete arms followed a time gap after a harness failure.",
+        "Repair generation, rechecks and manual-review waiting are excluded."
+      ]
+    }
+  ],
+  "scope": "Sanitized initial visual-review calibration from completed compatible cohorts. Apply only to matching review profile, policy, actual API-slot count and processing tier; prefer newer matching production history."
+}

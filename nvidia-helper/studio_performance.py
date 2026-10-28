@@ -110,6 +110,8 @@ def profile_for(stage, project, config, details=None):
         selected=details.get('_shotSpec') or next((s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots'] if s['id']==details.get('shot')), {})
         model=(config.get('openaiModel','gpt-6-luna') if director.get('provider')=='openai-luna' else director.get('model'))
         profile.update(reviewVersion=4,timingScope=details.get('reviewTimingScope','api-call'),provider=director.get('provider'),model=model,
+            reviewAPISlots=details.get('reviewAPISlots',details.get('directorTasks',director.get('parallelism',1))),
+            processingTier=director.get('processingTier') or config.get('openaiServiceTier','default'),
             reasoning=director.get('qcReasoning') or ('High' if settings.get('generationMode')=='MAX QUALITY' else 'Fast'),
             policy=policy(settings),continuity=settings.get('continuityStrictness'),style=settings.get('style'),
             constraints=signature(settings.get('imageVisualConstraints',settings.get('visualConstraints',''))),

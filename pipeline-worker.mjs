@@ -1,6 +1,6 @@
-import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=fast-planner-20261028';
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=fast-planner-20261028';
-import {startupSearch} from './pipeline-detail-ui.mjs?v=fast-planner-20261028';
+import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=qc-estimates-20261028';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=qc-estimates-20261028';
+import {startupSearch} from './pipeline-detail-ui.mjs?v=qc-estimates-20261028';
 self.onmessage=({data})=>{
  try{
   if(data.type==='plan'){

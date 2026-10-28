@@ -1,4 +1,5 @@
 // Shared settings projection. No story, references, budgets or keys are copied.
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=qc-estimates-20261028';
 export function plannerSettings(config, profile, evidence) {
   if(profile?.version!==1)throw Error('Update the helper to load saved production settings.');
   const s=profile.settings, v=s.video, d=s.director, i=s.image;
@@ -36,6 +37,7 @@ export function plannerSettings(config, profile, evidence) {
   if(id&&profiles.some(p=>p.id===id))next.directorProfile=id;
   else warnings.push('This director workflow has no matching measured profile. Existing timing is a comparison reference.');
   next.directorActualSlots=d.parallelism||1;next.apiSlots=next.directorActualSlots;
+  next.qcEffectiveSlots=next.apiSlots;
   const topology=profile.imageExecution;
   if(topology?.backend==='comfyui-api' && [1,2].includes(topology.gpuLanes)){
     next.productionModelCopies=topology.modelCopies||topology.gpuLanes;
@@ -100,12 +102,25 @@ export function plannerSettings(config, profile, evidence) {
   if(i.model!=='flux2-klein-4b'||i.steps!==4||i.guidance!==1)
     warnings.push('Image model/settings differ from the measured FLUX.2 Klein 4B / 4-step / guidance-1 benchmark. Its speed and rental cost are not calibrated for this setup.');
   const qc=profile.estimates?.visualQC;
+  let qcFallbackWarning='';
+  next.qcCompatibilityHash=profile.qcCompatibilityHash||'';
+  next.qcProcessingTier=profile.qcProcessingTier||'';
+  next.qcProductionTasks=profile.imageTasks||0;
+  next.qcHistoryLatest=Number.isFinite(qc?.latest)?qc.latest:0;
+  next.qcHistoryIdentity=profile.qcHistoryIdentity||null;
+  next.qcHistorySeconds=Number.isFinite(qc?.seconds)?qc.seconds:0;
+  next.qcHistoryCost=Number.isFinite(qc?.costUSD)?qc.costUSD:
+    config.qcBenchmarkId&&Number.isFinite(config.qcHistoryCost)?config.qcHistoryCost:config.qcCost;
+  next.qcCostManual=false;
   if(next.qc!=='off'&&Number.isFinite(qc?.seconds)&&qc.seconds>0){
     next.qcSeconds=qc.seconds;
     if(Number.isFinite(qc.costUSD)&&qc.costUSD>=0)next.qcCost=qc.costUSD;
-  }else{next.qcSeconds=0;warnings.push(next.qc==='off'?'Visual checks are explicitly Off in this saved project; file checks remain.':'No matching visual-check history yet; historical QC time and the displayed per-image cost are estimates.');}
+  }else{next.qcSeconds=0;qcFallbackWarning=next.qc==='off'?'Visual checks are explicitly Off in this saved project; file checks remain.':'No matching visual-check history yet; historical QC time and the displayed per-image cost are estimates.';}
   warnings.push('Voice delivery, motion, overlays, transfers and long exports can differ from short benchmark conditions; total finish time remains a projection.');
-  return {config:next,warnings};
+  const resolved=qualityConfig(next,evidence);
+  if(resolved.qcBenchmarkNote)warnings.push(resolved.qcBenchmarkNote);
+  else if(qcFallbackWarning)warnings.push(qcFallbackWarning);
+  return {config:resolved,warnings};
 }
 
 export function profileSummary(p) {
