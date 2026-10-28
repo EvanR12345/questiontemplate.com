@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "date": "2026-10-28",
+  "release": "one-hour-speed-20261028",
+  "scope": "Confirmed component measurements from the additional production-speed work. No fresh two-hour video was generated.",
+  "timelineURL": "./pipeline.html?release=one-hour-speed-20261028",
+  "voiceEstimateUnchanged": true,
+  "voiceEstimateMinutes": 12.3,
+  "fullVideoSpeedupMeasured": false,
+  "productionDefaults": {
+    "visualChecks": "practical",
+    "modelCopies": 2,
+    "imageRequestSlots": 4,
+    "outerImageAndCheckTasks": 5,
+    "sharedAPISlots": 4
+  },
+  "imageTransport": {
+    "scope": "Image-only same-worker ABBA comparison on an RTX 5090. Batch timing includes image requests, waiting, download and validation; fresh process startup and warmup are outside batch timing and included in test spending.",
+    "modelCopies": 2,
+    "imageRequestSlots": 4,
+    "outerTasks": 5,
+    "liveQC": false,
+    "apiCalls": 0,
+    "resolution": [
+      1280,
+      720
+    ],
+    "arms": 4,
+    "casesPerArm": 24,
+    "measuredImages": 96,
+    "matchedCases": 24,
+    "distinctSourcePrompts": 12,
+    "seedSets": 2,
+    "warmupImages": 8,
+    "baselineBatchSeconds": [
+      69.2180000001099,
+      69.35999999986961
+    ],
+    "persistentBatchSeconds": [
+      66.40599999995902,
+      66.625
+    ],
+    "baselineMeanBatchSeconds": 69.28899999998976,
+    "persistentMeanBatchSeconds": 66.51549999997951,
+    "shorterBatchPercent": 4.0027998672381715,
+    "allCorrespondingPixelsIdentical": true,
+    "frozenRequestsUnchanged": true,
+    "freshSamplingAndDecodeImages": 96,
+    "freshTextEncodingImages": 93,
+    "textEncoderCacheHits": {
+      "baseline": 1,
+      "persistent": 2
+    },
+    "limits": [
+      "Two batches per transport; 24 matched cases are based on 12 prompts and two seed sets.",
+      "Three text-encoder cache hits occurred: one with original connections and two with persistent connections. All sampling and decoding remained fresh; the small cache imbalance limits attribution of the observed batch difference.",
+      "The comparison measures transport within an image-only batch, not a GPU-kernel change.",
+      "QC, story planning, voice generation, video rendering and complete-video throughput were not measured by this comparison."
+    ]
+  },
+  "projectSaving": {
+    "scope": "Local durable mutations of a 5.95 MB saved project in isolated temporary stores, two alternating pairs.",
+    "sourceBytes": 5952053,
+    "mutationsPerArm": 10,
+    "arms": 4,
+    "totalMutations": 40,
+    "baselineMedianSeconds": 0.4568252000026405,
+    "modifiedMedianSeconds": 0.29425099992658943,
+    "shorterMedianPercent": 35.58783536352884,
+    "finalSnapshotsIdentical": true,
+    "finalBackupsIdentical": true,
+    "exactPreviousBackupPreserved": true,
+    "durableWritesAndArchiveEnqueuesPreserved": true,
+    "limits": [
+      "Local persistence overhead only; these times are not image generation or complete-video timing."
+    ]
+  },
+  "oversizedProjectSaving": {
+    "scope": "Local durable mutations of an 8.80 MB temporary fixture made from the current project plus inert padding, six alternating samples per version.",
+    "fixtureBytes": 8795947,
+    "samplesPerVersion": 6,
+    "baselineMedianSeconds": 0.52054749999661,
+    "modifiedMedianSeconds": 0.40921075001824647,
+    "shorterMedianPercent": 21.388393946582895,
+    "finalDocumentsEqualExceptUpdatedTimestamp": true,
+    "retainedFingerprintBytes": 32,
+    "retainedRawProjectBytes": 0,
+    "limits": [
+      "This padded fixture validates the large-file path; it is not a separately generated long production."
+    ]
+  },
+  "directorInputGuards": {
+    "scope": "CPU-only pre/post input-guard pairs, including two fresh complete project reads. Four alternating samples per variant and chapter.",
+    "samplesPerVariantAndChapter": 4,
+    "chapters": [
+      {
+        "chapter": 1,
+        "baselineMedianSeconds": 0.3774928499478847,
+        "modifiedMedianSeconds": 0.2992036499781534
+      },
+      {
+        "chapter": 2,
+        "baselineMedianSeconds": 0.5892845999915153,
+        "modifiedMedianSeconds": 0.35201375011820346
+      }
+    ],
+    "originalSignaturesPreserved": true,
+    "fullStoryContextPreserved": true,
+    "freshReadsPreserved": true,
+    "cacheMaximumBytes": 8388608,
+    "customSignatureAdaptersAlwaysUncached": true,
+    "limits": [
+      "Only identical previously verified inputs can reuse the guard result; edits still use the original signature check.",
+      "The first uncached pair can be slower. These local guard measurements are not a model inference speedup."
+    ]
+  },
+  "shortFinalAssembly": {
+    "scope": "One local pair per shape, joining existing 720p30 media. Video and audio synthesis are excluded.",
+    "cases": [
+      {
+        "shape": "Two whole chapter clips",
+        "mediaSeconds": 24,
+        "baselineSeconds": 0.5859024999663234,
+        "modifiedSeconds": 0.47908279998227954,
+        "avoidedIntermediateBytes": 10077270,
+        "containerBytesIdentical": true
+      },
+      {
+        "shape": "Two clips with fractional boundaries",
+        "requestedClipDurationsSeconds": [
+          12.017,
+          12.017
+        ],
+        "baselineSeconds": 0.5943543999455869,
+        "modifiedSeconds": 0.4169335998594761,
+        "avoidedIntermediateBytes": 10077286,
+        "containerBytesIdentical": false
+      },
+      {
+        "shape": "Intro plus two chapter clips",
+        "mediaSeconds": 24.5,
+        "baselineSeconds": 0.4807347997557372,
+        "modifiedSeconds": 0.27299870015121996,
+        "avoidedIntermediateBytes": 10343498,
+        "containerBytesIdentical": false
+      }
+    ],
+    "allDecodedVideoPixelsIdentical": true,
+    "allDecodedAudioSamplesIdentical": true,
+    "allVideoPacketTimingIdentical": true,
+    "limits": [
+      "Small assembly probes establish output parity in these shapes; they do not establish long-video or chapter-render throughput."
+    ]
+  },
+  "longFinalAssembly": {
+    "scope": "Final assembly of 7,200 seconds of existing 720p30 media: a 12-second chapter clip and its existing narration repeated 600 times. This is not fresh two-hour story generation.",
+    "pairs": 1,
+    "mediaSeconds": 7200,
+    "existingClipSeconds": 12,
+    "clipRepeats": 600,
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "frames": 216000,
+    "baselineSeconds": 165.05691779986955,
+    "modifiedSeconds": 114.76926449988969,
+    "savedSeconds": 50.287653299979866,
+    "shorterElapsedPercent": 30.466855900552638,
+    "baselinePhasesSeconds": {
+      "silentConcat": 50.400516599882394,
+      "narrationMux": 114.65640119998716
+    },
+    "completeOutputBytes": 3116431997,
+    "completeMP4BytesIdentical": true,
+    "avoidedIntermediateFileBytes": 3022908934,
+    "videoEncoding": "stream copy",
+    "audioEncoding": "selected AAC Fast 128k",
+    "benchmarkFFmpegThreads": 1,
+    "limits": [
+      "One baseline/direct pair, using repeated existing media rather than 600 independently generated clips.",
+      "Elapsed time includes FFmpeg subprocesses, file I/O and faststart; Python bookkeeping is excluded.",
+      "The avoided 3.02 GB intermediate would otherwise be written and then read again. It is not an additional saving to add to the measured elapsed result.",
+      "Native chapter rendering remains unmeasured here: its 120-second test did not launch because available physical memory was below its 1 GiB guard.",
+      "The one-pass path and its measured Join forecast require verified source format. Missing or unverified source audio retains the original assembly path and previous Join estimate."
+    ],
+    "fastPathEligibility": {
+      "width": 1280,
+      "height": 720,
+      "fps": 30,
+      "originalSourceAudio": "PCM WAV, 24000 Hz, mono, 16 bit",
+      "eachSegmentMinimumSeconds": 0.5,
+      "unknownOrUnsupportedUsesOriginalTwoPass": true
+    }
+  },
+  "budget": {
+    "approvedSharedCapUSD": 2,
+    "priorConservativeSpendUSD": 0.5646013609273122,
+    "additionalGPUAndDiskUpperUSD": 0.27526169117291766,
+    "sharedConservativeSpendUSD": 0.8398630521002298,
+    "remainingSharedAllowanceUSD": 1.1601369478997703,
+    "newAPICalls": 0,
+    "testGPUPodDeleted": true,
+    "basis": "Conservative GPU/disk lease accounting, including setup and warmup; not a settled provider invoice. Earlier approved benchmark spending is included once in the shared total."
+  },
+  "interpretation": [
+    "The percentages refer to their measured component only and must not be multiplied together or applied to a whole two-hour video.",
+    "Practical checks, production concurrency, source/reference inputs and the 12.3-minute voice estimate are preserved.",
+    "This hour made no new billable API calls, so it supplies no new Practical-versus-Strict or QC throughput comparison."
+  ]
+}

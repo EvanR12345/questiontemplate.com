@@ -14,7 +14,7 @@ class RecoveryTest(unittest.TestCase):
                 p.generateImage(self.request(),lambda *args:None)
 
     def provider(self):
-        p=ComfyImageProvider({})
+        p=ComfyImageProvider({'comfyPersistentHTTP':False})
         p.validateSettings=lambda s:s
         p.healthCheck=lambda **_:{'installed':True}
         p.template=lambda:{'model':'flux','name':'test','prompt':{'1':{'class_type':'Test','inputs':{}}},'bindings':{}}

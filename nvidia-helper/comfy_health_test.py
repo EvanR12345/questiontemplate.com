@@ -12,7 +12,7 @@ class SelectedWorkflowHealthTest(unittest.TestCase):
             'modelCapabilities':{'flux':{}},'automaticWorkflows':{'flux-auto':{'model':'flux'}},
             'variants':[variant('qwen-text','qwen','qwen-missing'),
                         variant('flux-text','flux','flux-present'),variant('flux-ref','flux','flux-present')]}))
-        self.provider=ComfyImageProvider({'comfyWorkflow':str(path)})
+        self.provider=ComfyImageProvider({'comfyWorkflow':str(path),'comfyPersistentHTTP':False})
         self.nodes={'Loader':{'input':{'required':{'unet_name':[['flux-present']]}}}}
     def tearDown(self):self.folder.cleanup()
     def test_removed_unused_qwen_does_not_block_selected_flux_or_ready_catalog(self):

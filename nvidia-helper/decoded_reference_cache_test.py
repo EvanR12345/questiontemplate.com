@@ -90,7 +90,7 @@ class DecodedReferenceCacheTest(unittest.TestCase):
     def fake_workflows(self,use_cache):
         cache=images.ImageEncodingCache()
         if not use_cache:cache.reference_bytes=legacy
-        provider=images.ComfyImageProvider({});settings=dict(model='unchanged',steps=4,seed=42,width=64,height=64)
+        provider=images.ComfyImageProvider({'comfyPersistentHTTP':False});settings=dict(model='unchanged',steps=4,seed=42,width=64,height=64)
         template=dict(model='unchanged',name='exact-edit',prompt={
             str(i):dict(class_type='LoadImage',inputs=dict(image='unset')) for i in range(3)},
             bindings={('reference'+str(i)):[[str(i),'image']] for i in range(3)})

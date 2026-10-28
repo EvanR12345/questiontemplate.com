@@ -12,7 +12,7 @@ GROUPS = {
                  'factGroupSentences','visualPacking','compactCuts','factBeatsMode','sourceVisualOverlap','cadencePerMinute'),
 }
 
-def planner_profile(project, performance=None, config=None, rental=None, renderer_backend=None):
+def planner_profile(project, performance=None, config=None, rental=None, renderer_backend=None, assembly=None):
     from studio_overlap import shot_task_limit
     from studio_director_limits import adaptive_image_window,ADAPTIVE_IMAGE_ADMISSION
     from studio_image_workers import model_copies
@@ -95,6 +95,8 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
                           'benchmarkStatus':'no-reliable-eight-task-gain' if candidate else None,
                           'forecastSpeedupApplied':False},
         'imageExecution':{'backend':'comfyui-api' if source.get('image',{}).get('provider')=='comfyui' else source.get('image',{}).get('provider'),
+                          'transport':('private-http-keepalive-v1' if (config or {}).get('comfyPersistentHTTP',True) is True
+                                       else 'urllib-close-v1') if source.get('image',{}).get('provider')=='comfyui' else None,
                           'gpuLanes':copies,'modelCopies':copies,'requestSlots':copies*2 if copies>1 else 1,
                           'multipleModelCopiesVerified':False,
                           'computeQuote':gpu_quote,
@@ -103,6 +105,10 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
                         'chapterRender':(config or {}).get('studioRenderOverlap',True) is not False},
         'renderExecution':{'backend':render_backend,'location':'local-helper',
                            'frameProgressPolicy':'sampled-250ms-v1' if render_backend=='native' else None,
+                           'fullAssemblyCapability':'direct-concat-original-audio-v1',
+                           'fullAssemblyPolicy':('direct-concat-original-audio-v1' if (assembly or {}).get('eligibility')=='verified'
+                                                 else 'legacy-two-pass-v1'),
+                           'fullAssemblyEligibility':(assembly or {}).get('eligibility','unknown'),
                            'scope':'Currently selected helper renderer; project auto mode does not select another backend.'},
         'directorCalibrationProfile':profile_for('AI directing',project,config or {}),
         'directorObservation':director_observation,

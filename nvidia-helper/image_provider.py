@@ -6,6 +6,7 @@ from pathlib import Path
 from studio_data import shot_chapter
 from collections import OrderedDict
 import threading
+import http.client
 from PIL import Image, ImageStat
 from director_provider import local_url, request_json
 
@@ -39,6 +40,86 @@ class RemoteGenerationUncertain(RuntimeError):
         super().__init__('Image request outcome is uncertain.' + detail +
             ' Check the existing ComfyUI queue/history before retrying; no automatic new generation was submitted.'
             ' Stop the rented GPU if you are finished: stopping this queue does not stop rental billing.')
+
+
+class ComfyHTTPPool:
+    """Bounded keepalive to one private Comfy endpoint; never retry a request.
+
+    A lost POST reply is still uncertain. Fully read responses are detached from
+    the connection before reuse, so concurrent image jobs never share a socket.
+    Worker resets invalidate idle connections and retire in-flight leases when
+    those replies finish. No API keys, cross-origin requests or redirects.
+    """
+    def __init__(self, endpoint, capacity=4, idle_seconds=15):
+        from urllib.parse import urlsplit
+        self.endpoint=local_url(endpoint)
+        parsed=urlsplit(self.endpoint)
+        self.origin=(parsed.scheme,parsed.hostname,parsed.port or 80)
+        self.capacity=capacity;self.idle_seconds=idle_seconds
+        self.cv=threading.Condition();self.idle=[];self.active=0;self.epoch=0
+
+    def invalidate(self):
+        with self.cv:
+            self.epoch+=1
+            for connection,_when,_epoch in self.idle:connection.close()
+            self.idle.clear();self.cv.notify_all()
+
+    def open(self, request, timeout=180):
+        from urllib.parse import urlsplit
+        if isinstance(request,str):request=urllib.request.Request(request)
+        parsed=urlsplit(request.full_url)
+        if ((parsed.scheme,parsed.hostname,parsed.port or 80)!=self.origin
+                or parsed.username or parsed.password or parsed.fragment):
+            raise ValueError('Persistent Comfy requests must remain on their private endpoint.')
+        deadline=time.monotonic()+timeout
+        with self.cv:
+            while self.active>=self.capacity:
+                remaining=deadline-time.monotonic()
+                if remaining<=0:raise TimeoutError('Private Comfy connection capacity wait timed out.')
+                self.cv.wait(remaining)
+            self.active+=1;epoch=self.epoch;connection=None
+            while self.idle:
+                candidate,when,saved_epoch=self.idle.pop()
+                if saved_epoch==epoch and time.monotonic()-when<self.idle_seconds:
+                    connection=candidate;break
+                candidate.close()
+        reusable=False
+        try:
+            remaining=deadline-time.monotonic()
+            if remaining<=0:raise TimeoutError('Private Comfy request timed out before dispatch.')
+            if connection is None:
+                connection=http.client.HTTPConnection(parsed.hostname,parsed.port or 80,timeout=remaining)
+            else:
+                connection.timeout=remaining
+                if connection.sock is not None:connection.sock.settimeout(remaining)
+            headers=dict(request.header_items())
+            headers.setdefault('User-agent','Python-urllib/'+urllib.request.__version__)
+            selector=parsed.path or '/'
+            if parsed.query:selector+='?'+parsed.query
+            # Exactly one dispatch. A disconnected reused socket must not cause
+            # an automatic replacement POST that could buy a duplicate image.
+            connection.request(request.get_method(),selector,body=request.data,headers=headers)
+            response=connection.getresponse()
+            data=response.read();status=response.status;reason=response.reason;response_headers=response.headers
+            reusable=not response.will_close
+            response.close()
+            if not 200<=status<300:
+                reusable=False
+                raise urllib.error.HTTPError(request.full_url,status,reason,response_headers,io.BytesIO(data))
+            return io.BytesIO(data)
+        except http.client.HTTPException as error:
+            raise OSError('Private Comfy HTTP reply was incomplete: '+type(error).__name__) from error
+        finally:
+            with self.cv:
+                if connection is not None:
+                    if reusable and epoch==self.epoch:self.idle.append((connection,time.monotonic(),epoch))
+                    else:connection.close()
+                self.active-=1;self.cv.notify_all()
+
+    def json(self,url,body=None,timeout=180):
+        request=urllib.request.Request(url,data=None if body is None else json.dumps(body).encode(),
+            headers={'Content-Type':'application/json'})
+        with self.open(request,timeout) as response:return json.load(response)
 BASE_CAPS.update(
     maxReferenceImages=0,
     maxResolution=512,
@@ -616,6 +697,10 @@ class ComfyImageProvider(ImageProvider):
     def __init__(self, config):
         self.config = config
         self.url = local_url(config.get("comfyEndpoint", "http://127.0.0.1:8188"))
+        # Matched real-worker ABBA kept all corresponding pixels identical.
+        # Explicit False retains the original transport without changing any
+        # saved image setting, workflow, kernel or reference bytes.
+        self._transport=ComfyHTTPPool(self.url) if config.get('comfyPersistentHTTP',True) is True else None
         self._server_memory = (0, None)
         self._health = (0, None)
         self._node_catalog = (0, None)
@@ -624,14 +709,24 @@ class ComfyImageProvider(ImageProvider):
     def invalidate_backend_cache(self):
         """Remote filenames and probes belong to one verified worker lifetime."""
         self._uploads.clear()
+        if self._transport:self._transport.invalidate()
         self._health=(0,None);self._server_memory=(0,None);self._node_catalog=(0,None)
+
+    def _request_json(self,url,body=None,timeout=180):
+        if self._transport:return self._transport.json(url,body,timeout)
+        if body is None:return request_json(url,timeout=timeout)
+        return request_json(url,body,timeout=timeout)
+
+    def _open(self,request,timeout):
+        if self._transport:return self._transport.open(request,timeout)
+        return urllib.request.urlopen(request,timeout=timeout)
 
     def available_vram_gb(self):
         # A localhost SSH tunnel can lead to a different computer's GPU.
         # Always inspect ComfyUI's device rather than the helper's laptop.
         if time.time() - self._server_memory[0] > 60:
             try:
-                stats = request_json(self.url + "/system_stats", timeout=3)
+                stats = self._request_json(self.url + "/system_stats", timeout=3)
                 devices = stats.get("devices", [])
                 memory = max(
                     (float(d.get("vram_total", 0)) / 2**30 for d in devices),
@@ -756,7 +851,7 @@ class ComfyImageProvider(ImageProvider):
             if self._node_catalog[1] and self._node_catalog[1][0]==catalog_stamp and time.time()-self._node_catalog[0]<30:
                 nodes=self._node_catalog[1][1]
             else:
-                nodes = request_json(self.url + "/object_info", timeout=10)
+                nodes = self._request_json(self.url + "/object_info", timeout=10)
                 self._node_catalog=(time.time(),(catalog_stamp,nodes))
             templates = template.get("variants", [template])
             selected=model or template.get('automaticWorkflows',{}).get(workflow,{}).get('model')
@@ -884,7 +979,7 @@ class ComfyImageProvider(ImageProvider):
                     data=body,
                     headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
                 )
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with self._open(req, timeout=30) as response:
                     uploaded = json.load(response)
                 uploaded_name = uploaded["name"]
                 self._uploads[fingerprint] = uploaded_name
@@ -898,7 +993,7 @@ class ComfyImageProvider(ImageProvider):
         if observer:
             observer('submitting', {'operationId': operation_id, 'provider': 'comfyui'})
         try:
-            job = request_json(
+            job = self._request_json(
                 self.url + "/prompt", {"prompt": prompt, "client_id": secrets.token_hex(16)}
             )
             id = job['prompt_id']
@@ -924,7 +1019,7 @@ class ComfyImageProvider(ImageProvider):
             while True:
                 checkpoint(0, s["steps"], "ComfyUI generation")
                 try:
-                    history = request_json(self.url + "/history/" + id, timeout=15)
+                    history = self._request_json(self.url + "/history/" + id, timeout=15)
                 except (OSError, ValueError) as error:
                     raise RemoteGenerationUncertain(id) from error
                 polls += 1
@@ -939,10 +1034,10 @@ class ComfyImageProvider(ImageProvider):
             # request alone for reconciliation; explicit cancel/timeout stops it.
             if not isinstance(error, RemoteGenerationUncertain) or error.timed_out:
                 try:
-                    request_json(self.url + "/queue", {"delete": [id]}, timeout=3)
-                    q = request_json(self.url + "/queue", timeout=3)
+                    self._request_json(self.url + "/queue", {"delete": [id]}, timeout=3)
+                    q = self._request_json(self.url + "/queue", timeout=3)
                     if any(v[1] == id for v in q.get("queue_running", [])):
-                        request_json(self.url + "/interrupt", {}, timeout=3)
+                        self._request_json(self.url + "/interrupt", {}, timeout=3)
                 except Exception:
                     pass
             raise
@@ -962,7 +1057,7 @@ class ComfyImageProvider(ImageProvider):
         from urllib.parse import urlencode
 
         try:
-            with urllib.request.urlopen(self.url + "/view?" + urlencode(image), timeout=30) as response:
+            with self._open(self.url + "/view?" + urlencode(image), timeout=30) as response:
                 raw = response.read()
         except OSError as error:
             raise RemoteGenerationUncertain(id) from error

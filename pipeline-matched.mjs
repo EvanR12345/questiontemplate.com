@@ -1,4 +1,4 @@
-import {buildPlan,schedule,DEFAULTS} from './pipeline-engine.mjs?v=qc-pipeline-20261028';
+import {buildPlan,schedule,DEFAULTS} from './pipeline-engine.mjs?v=one-hour-speed-20261028';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sec=v=>Number.isFinite(v)?`${v.toFixed(1)}s`:'Unmeasured';
 const min=v=>Number.isFinite(v)?`${(v/60).toFixed(1)} min`:'Unmeasured';

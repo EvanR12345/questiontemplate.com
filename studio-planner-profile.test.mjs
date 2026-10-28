@@ -17,6 +17,19 @@ test('production renderer uses the helper choice instead of auto picking a faste
  assert.equal(r.config.videoRenderer,'cpu');assert.match(r.warnings.join(' '),/actual local helper renderer/);
  p.renderExecution.backend='native';assert.equal(plannerSettings(DEFAULTS,p,evidence).config.videoRenderer,'native');
 });
+test('older helpers retain older Join timing while the new assembly policy uses its measured component',()=>{
+ const p=profile();p.renderExecution={backend:'native',location:'local-helper'};
+ const old=plannerSettings(DEFAULTS,p,evidence);
+ assert.equal(old.config.fullAssemblyPolicy,'legacy-two-pass-v1');
+ p.renderExecution.fullAssemblyPolicy='direct-concat-original-audio-v1';
+ p.renderExecution.fullAssemblyEligibility='verified';
+ const current=plannerSettings(DEFAULTS,p,evidence);
+ assert.equal(current.config.fullAssemblyPolicy,'direct-concat-original-audio-v1');
+ assert.deepEqual(old.config.voice,current.config.voice);
+ const before=buildPlan(old.config,evidence),after=buildPlan(current.config,evidence);
+ assert.notEqual(before.tasks.find(t=>t.kind==='join').duration,after.tasks.find(t=>t.kind==='join').duration);
+ assert.deepEqual(before.tasks.filter(t=>t.kind==='voice'),after.tasks.filter(t=>t.kind==='voice'));
+});
 test('following the configured verified 5090 uses its observed compute quote without renting',()=>{
  const p=profile();p.imageExecution={backend:'comfyui-api',gpuLanes:2,modelCopies:2,requestSlots:4,
   requiredGPU:'NVIDIA GeForce RTX 5090',computeQuote:{hourlyUSD:.69,observedAt:1791874064}};

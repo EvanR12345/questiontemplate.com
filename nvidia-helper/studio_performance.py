@@ -137,6 +137,8 @@ def profile_for(stage, project, config, details=None):
             sampleEvery=settings.get('qcSampleEvery',5),backend=backend,execution='single-image-lane',
             automaticRepair=settings.get('automaticRepair',False),maxRetries=settings.get('maxImageRetries',0),
             style=settings.get('style'))
+        if profile.get('provider')=='comfyui' and config.get('comfyPersistentHTTP',True) is True:
+            profile['imageTransport']='private-http-keepalive-v1'
         if stage in ('Image pipeline','Image generation','Character reference','Intro images','Automatic image repair'):
             rental=project.get('production',{}).get('gpuRental',{})
             if rental.get('provider') in ('vast','lium') and rental.get('project')==project['id']:
@@ -165,6 +167,8 @@ def profile_for(stage, project, config, details=None):
             watermark=signature(settings.get('watermark',{})),engagement=signature(settings.get('engagement',{})),
             machine=signature({'gpu':config.get('performanceGPU','local'),
                 'renderer':config.get('nativeRendererExecutable'), 'ffmpeg':config.get('ffmpeg')}))
+        if stage=='Assemble full video':
+            profile['fullAssemblyPolicy']=details.get('fullAssemblyPolicy','format-guarded-original-audio-v1')
         if backend=='native':
             from studio_gpu_render import ENGINE
             profile['renderEngine']=dict(ENGINE)

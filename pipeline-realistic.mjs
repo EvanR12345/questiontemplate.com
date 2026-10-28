@@ -1,5 +1,5 @@
-import {buildPlan} from './pipeline-engine.mjs?v=qc-pipeline-20261028';
-import {selectGPUConfig} from './pipeline-config.mjs?v=qc-pipeline-20261028';
+import {buildPlan} from './pipeline-engine.mjs?v=one-hour-speed-20261028';
+import {selectGPUConfig} from './pipeline-config.mjs?v=one-hour-speed-20261028';
 
 // An unmatched/unconnected saved project must not imply experimental overlap.
 // This is a conservative comparison until Follow applies an actual topology.

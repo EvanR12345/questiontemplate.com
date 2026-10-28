@@ -15,6 +15,7 @@ from studio_qc import decision as qc_decision, automatic_repairs, check_level
 from studio_execution import (CommitCoordinator, CoordinatedStore, CoordinatedTrace,
     ExecutionJournal, ImageLane, LaneProvider, BoundedExecutions, UnresolvedExecution)
 from studio_render_progress import FrameProgress
+from studio_analysis_inputs import ExactAnalysisInputs
 
 
 class LaneDirector(OpenAIDirector):
@@ -69,6 +70,7 @@ class CloudStoryOverlap:
         self.contexts=[]
         self.progress_keys={}
         self.frame_progress=FrameProgress()
+        self.analysis_inputs=ExactAnalysisInputs()
         self.image_lane=ImageLane(getattr(service.providers['comfyui'],'client_capacity',1))
         self.local_lane=ImageLane(1,'local narration/render')
         self.api_lane=ImageLane(self.settings['director'].get('parallelism',1),'director')
@@ -294,7 +296,7 @@ class CloudStoryOverlap:
         def execute(item, stopped):
             method, payload=item
             current=self.validate_settings()
-            if self.main.analysis_input_signature(current,chapter)!=expected:
+            if not self.analysis_inputs.matches(current,chapter,expected,self.main.analysis_input_signature):
                 raise StaleExecution('Chapter inputs changed before director dispatch; current edits retained.')
             context=self.admit(snapshot,chapter,None,'director-pass',
                 digest({'method':method,'input':payload,'analysis':expected}),[parent.identity])
@@ -317,7 +319,7 @@ class CloudStoryOverlap:
                 result=getattr(clone.director,method)(copy.deepcopy(payload),dispatch_gate)
                 validate_director_result(method,payload,result)
                 latest=self.validate_settings()
-                if self.main.analysis_input_signature(latest,chapter)!=expected:
+                if not self.analysis_inputs.matches(latest,chapter,expected,self.main.analysis_input_signature):
                     raise StaleExecution('Chapter changed during direction; earlier result cached and current edits retained.')
                 return result
             except BaseException as error:

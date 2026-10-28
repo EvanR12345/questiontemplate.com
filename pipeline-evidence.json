@@ -1,7 +1,7 @@
 {
   "version": 1,
   "model": "FLUX.2 Klein 4B",
-  "imageSettings": "FP8 diffusion, BF16 encoder, 4 steps, Euler/Flux2, CFG 1, 1344 \u00d7 768, character references",
+  "imageSettings": "FP8 diffusion, BF16 encoder, 4 steps, Euler/Flux2, CFG 1, 1344 × 768, character references",
   "gpus": [
     {
       "id": "5090",
@@ -120,7 +120,7 @@
     },
     {
       "id": "pro6000",
-      "name": "PRO 6000 \u00b7 original 96 GB",
+      "name": "PRO 6000 · original 96 GB",
       "vram": 96,
       "hourly": 2.111,
       "boot": 60,
@@ -346,7 +346,19 @@
         "crf": null,
         "hardwareCondition": "Current laptop, GTX 1650 4GB; warm helper. GPU path retains only current and next prepared photo and caches the compiled motion program.",
         "scope": "Actual fresh two-chapter/12-photo exports; original saved narration. Includes fit/upload/encoder and chapter assembly. Final original-WAV AAC128 mux counted once in Join. Cut transitions and smooth fractional-coordinate movement; no intro, watermark, reminder, cloud transfer or website startup. Different encoders are not bit-identical; separate geometry, reference-similarity and narration-sample checks passed. Longer production is extrapolated.",
-        "measurementDate": "2026-10-09"
+        "measurementDate": "2026-10-09",
+        "joinCalibration": {
+          "policy": "direct-concat-original-audio-v1",
+          "videoSeconds": 7200,
+          "wallSeconds": 114.76926449988969,
+          "baselineWallSeconds": 165.05691779986955,
+          "samples": 1,
+          "measurementDate": "2026-10-28",
+          "frames": 216000,
+          "containersIdentical": true,
+          "avoidedIntermediateBytes": 3022908934,
+          "scope": "One repeated-media two-hour assembly on the current laptop: 600 existing 12-second native chapters, original narration, AAC128 fast, stream-copied video and faststart. FFmpeg subprocess time includes file I/O; Python bookkeeping and fresh story generation are excluded. Thread limit 1; AAC encoder has no thread parallelism."
+        }
       }
     ],
     "historicalProductionRenderProfiles": [

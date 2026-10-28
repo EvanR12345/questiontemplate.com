@@ -830,9 +830,54 @@ class VideoRenderer:
         )
         return destination
 
+    @staticmethod
+    def direct_full_mux_supported(video, sources, durations):
+        """Only the media envelope with verified packet/pixel parity may skip remux.
+
+        AAC priming plus output clipping differs for lower-rate audio/high fps.
+        Unknown headers and other formats keep the original two-pass assembly.
+        Intro eligibility uses its original PCM source, before the Opus sidecar.
+        """
+        if (video.get('width'),video.get('height'),video.get('fps'))!=(1280,720,30):return False
+        if not sources or len(sources)!=len(durations):return False
+        for source,duration in zip(sources,durations):
+            if source is None or Path(source).suffix.lower()!='.wav' or duration<.5:return False
+            try:
+                with wave.open(str(source),'rb') as audio:
+                    if (audio.getframerate(),audio.getnchannels(),audio.getsampwidth(),audio.getcomptype())!=(24000,1,2,'NONE'):
+                        return False
+            except (OSError,ValueError,wave.Error,EOFError):return False
+        return True
+
+    def full_mux_forecast(self, project):
+        """Read local headers only; forecasting must never restore cloud assets."""
+        result={'installedCapability':'direct-concat-original-audio-v1','eligibility':'unknown',
+                'effectivePolicy':'legacy-two-pass-v1'}
+        video=project['settings']['video']
+        if (video.get('width'),video.get('height'),video.get('fps'))!=(1280,720,30):
+            return result | {'eligibility':'unsupported'}
+        entries=[(ch.get('audio',{}).get('path'),ch.get('audio',{}).get('duration'))
+                 for ch in project.get('chapters',[]) if ch.get('sourceText','').strip()]
+        if project.get('intro',{}).get('enabled'):
+            entries.append((project['intro'].get('audioPath'),project['intro'].get('duration')))
+        if not entries:return result
+        sources=[];durations=[];missing=False
+        for name,duration in entries:
+            if not name or type(duration) not in (int,float) or not math.isfinite(duration):return result
+            if Path(name).suffix.lower()!='.wav' or duration<.5:return result | {'eligibility':'unsupported'}
+            try:path=self.store.asset_local(project['id'],name)
+            except (ValueError,OSError):return result
+            if not path.is_file():missing=True
+            sources.append(path);durations.append(duration)
+        if missing:return result
+        if self.direct_full_mux_supported(video,sources,durations):
+            return result | {'eligibility':'verified','effectivePolicy':'direct-concat-original-audio-v1'}
+        return result | {'eligibility':'unsupported'}
+
     def full(self, p, gate, publication_project=None):
         files = []
         audios = []
+        audio_sources = []
         durations = []
         duration = 0
 
@@ -869,6 +914,7 @@ class VideoRenderer:
                     self.store.folder(p["id"]) / "intro-audio-render.log",
                 )
             audios.append(audio)
+            audio_sources.append(self.store.asset(p['id'],p['intro']['audioPath']) if p['intro'].get('audioPath') else None)
 
         if p["intro"]["enabled"] and p["intro"]["placement"] == "full_story_only":
             add_intro()
@@ -905,6 +951,7 @@ class VideoRenderer:
                 add_intro()
             files.append(self.store.asset(p["id"], result["path"]))
             audios.append(self.store.asset(p["id"], ch["audio"]["path"]))
+            audio_sources.append(audios[-1])
             durations.append(result["duration"])
             duration += result["duration"]
         if not files:
@@ -919,13 +966,35 @@ class VideoRenderer:
             }
         )
         target = self.store.folder(p["id"]) / f"story-{signature[:12]}.mp4"
-        if not self.cached_asset(p['id'], target):
+        reused_full = self.cached_asset(p['id'], target)
+        assembly_policy = 'format-guarded-original-audio-v1'
+        if not reused_full:
             # Join original chapter narration once. Copying separate chapter AAC tracks
             # can accumulate encoder padding at chapter boundaries.
             visual = target.with_name(target.stem + "-visual.mp4")
             log = self.store.folder(p["id"]) / "full-render.log"
-            if not self.cached_asset(p['id'], visual):
-                self.concat(files, visual, gate, log, durations, video_only=True)
+            reuse_visual = self.cached_asset(p['id'], visual)
+            if not reuse_visual and not self.direct_full_mux_supported(p['settings']['video'],audio_sources,durations):
+                self.concat(files,visual,gate,log,durations,video_only=True)
+                reuse_visual = True
+            if reuse_visual:
+                assembly_policy = 'legacy-two-pass-v1'
+                # Keep exact completed checkpoints from an interrupted older run.
+                visual_input = ['-i',str(visual)]
+                video_copy_options = []
+                visual_bytes = visual.stat().st_size
+            else:
+                assembly_policy = 'direct-concat-original-audio-v1'
+                # Copy chapter video packets and mux original narration together;
+                # a new export need not write/read a second full silent video.
+                video_listing = self.concat_listing(files,target.with_suffix('.video.txt'),durations)
+                visual_input = ['-f','concat','-safe','0','-i',str(video_listing)]
+                # Chapter AAC priming can shift concat's input start. The old
+                # silent remux normalized video to its first presentation time.
+                # Match that normalization without touching narration timing or
+                # the PTS/DTS distance used by reordered video frames.
+                video_copy_options = ['-bsf:v','setts=pts=PTS-STARTPTS:dts=DTS-STARTPTS']
+                visual_bytes = sum(path.stat().st_size for path in files)
             listing = target.with_suffix(".audio.txt")
             listing.write_text(
                 "\n".join(
@@ -937,11 +1006,10 @@ class VideoRenderer:
                 encoding="utf-8",
             )
             temporary = target.with_suffix(".partial.mp4")
-            self.require_output_space(temporary,visual.stat().st_size,duration)
+            self.require_output_space(temporary,visual_bytes,duration)
             self.run(
                 [
-                    "-i",
-                    str(visual),
+                    *visual_input,
                     "-f",
                     "concat",
                     "-safe",
@@ -954,6 +1022,7 @@ class VideoRenderer:
                     "1:a:0",
                     "-c:v",
                     "copy",
+                    *video_copy_options,
                     "-c:a",
                     "aac",
                     "-b:a",
@@ -978,6 +1047,8 @@ class VideoRenderer:
             "downloadName": p["name"] + ".mp4",
             "created": time.time(),
             "settingsSnapshot": capture_video_settings(p),
+            "fullAssemblyPolicy": assembly_policy,
+            "reused": reused_full,
         },gate)
 
     def engagement_export(self, p, result, gate, namespace='full'):

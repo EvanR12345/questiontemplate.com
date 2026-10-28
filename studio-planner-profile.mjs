@@ -1,5 +1,5 @@
 // Shared settings projection. No story, references, budgets or keys are copied.
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=qc-pipeline-20261028';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=one-hour-speed-20261028';
 export function plannerSettings(config, profile, evidence) {
   if(profile?.version!==1)throw Error('Update the helper to load saved production settings.');
   const s=profile.settings, v=s.video, d=s.director, i=s.image;
@@ -14,6 +14,9 @@ export function plannerSettings(config, profile, evidence) {
   next.resolution=resolution(i.width,i.height);
   if(!next.videoResolution||!next.resolution||![24,30,60].includes(v.fps))throw Error('This project format has no matched planner timing. Its settings were not replaced with another format.');
   next.videoFps=v.fps;next.videoRenderer=v.renderer||'auto';
+  next.fullAssemblyPolicy=profile.renderExecution?.fullAssemblyEligibility==='verified'&&profile.renderExecution?.fullAssemblyPolicy==='direct-concat-original-audio-v1'?'direct-concat-original-audio-v1':'legacy-two-pass-v1';
+  if(profile.renderExecution?.fullAssemblyCapability==='direct-concat-original-audio-v1'&&next.fullAssemblyPolicy==='legacy-two-pass-v1')
+    warnings.push('One-pass final assembly is installed. Its measured Join time requires verified local 720p30 and PCM 24 kHz mono sources; unknown or unsupported sources retain the previous Join estimate until their format is verified.');
   if(['cpu','native'].includes(profile.renderExecution?.backend)){
     next.videoRenderer=profile.renderExecution.backend;
     warnings.push(`Following the actual local helper renderer: ${next.videoRenderer==='native'?'NVIDIA GPU photo motion':'CPU compatibility'}. Auto does not choose a different renderer for this production run; short export timings remain projections for long videos.`);

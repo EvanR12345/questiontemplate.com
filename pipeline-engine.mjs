@@ -3,7 +3,7 @@ import {scheduleTasksFast} from './pipeline-fast-scheduler.mjs?v=fast-planner-20
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
 import {directorForecast} from './pipeline-director-calibration.mjs?v=production-parallel-20261012';
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=qc-pipeline-20261028';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=one-hour-speed-20261028';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'practical', sample:20,
@@ -12,7 +12,7 @@ export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intr
   directorProfile:'historical',directorTier:'default',directorCostMode:'manual',flexLatencyFactor:1,
   directorActualSlots:0,qcSeconds:0,
   pricingBasis:'published',containerGB:20,storageDays:1,quotedGPUHourly:0,quotedGPU:'',
-  resolution:'legacy', videoResolution:'720p', videoFps:30, videoRenderer:'auto', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0,
+  resolution:'legacy', videoResolution:'720p', videoFps:30, videoRenderer:'auto', fullAssemblyPolicy:'direct-concat-original-audio-v1', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0,
   productionModelCopies:1,productionRequestSlots:1,productionAudioLookahead:false,productionRenderOverlap:false,directorConditionsMatch:true,
   directorObservedSecondsPerStorySecond:0,directorObservedCostPerTwoHours:0,directorObservedSamples:0,directorObservedRuns:0 };
 
@@ -252,8 +252,10 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   // Keep long-video delivery allowances proportional rather than treating a
   // 24-hour output as the same 45-second join/probe as a two-hour output.
   const lengthScale=c.minutes/120;
-  const joinDuration=renderProfile.joinWallSeconds===undefined?45*lengthScale:renderProfile.joinWallSeconds/renderProfile.videoSeconds*c.minutes*60;
-  add('join','join',0,joinDuration,renders,{cpu:.3,disk:1},{basis:renderProfile.joinWallSeconds===undefined?'Allowance: 45 seconds per two output hours, scaled by length. Not a measured long-video join; filesystem and chapter count can change it.':`Instrumented full-story AAC128 mux: ${renderProfile.joinWallSeconds.toFixed(3)}s per ${renderProfile.videoSeconds}s output in the paired fresh export. Excluded from chapter Render, counted once here; long-video rate is extrapolated.`});
+  const candidateJoin=renderProfile.joinCalibration;
+  const measuredJoin=candidateJoin?.policy===c.fullAssemblyPolicy&&candidateJoin.wallSeconds>0&&Number.isFinite(candidateJoin.wallSeconds)&&candidateJoin.videoSeconds>0&&Number.isFinite(candidateJoin.videoSeconds)?candidateJoin:null;
+  const joinDuration=measuredJoin?measuredJoin.wallSeconds/measuredJoin.videoSeconds*c.minutes*60:renderProfile.joinWallSeconds===undefined?45*lengthScale:renderProfile.joinWallSeconds/renderProfile.videoSeconds*c.minutes*60;
+  add('join','join',0,joinDuration,renders,{cpu:.3,disk:1},{basis:measuredJoin?`Measured current assembly: ${measuredJoin.wallSeconds.toFixed(3)}s for ${measuredJoin.videoSeconds}s output. ${measuredJoin.scope} Counted once in Join; other video lengths are extrapolated.`:renderProfile.joinWallSeconds===undefined?'Allowance: 45 seconds per two output hours, scaled by length. Not a measured long-video join; filesystem and chapter count can change it.':`Instrumented full-story AAC128 mux: ${renderProfile.joinWallSeconds.toFixed(3)}s per ${renderProfile.videoSeconds}s output in the paired fresh export. Excluded from chapter Render, counted once here; long-video rate is extrapolated.`});
   add('probe','probe',0,45*lengthScale,['join','stop'],{cpu:.2,disk:1},{basis:'Allowance: 45 seconds per two output hours, scaled by length. Cloud upload and platform processing are separate and not timed.'});
   if(c.exhaustive)add('decode','decode',0,cal.exhaustiveDecodeSeconds*lengthScale*(c.videoFps/24)*(c.videoResolution==='1080p'?2.25:1),['probe'],{cpu:1,disk:1},{basis:'Estimate from a historical 720p24 full-decode sample, scaled by output frames and pixels. The selected-format full-decode rate is not measured.'});
   if(c.policy==='serial') {

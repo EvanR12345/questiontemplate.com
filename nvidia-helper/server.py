@@ -265,7 +265,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         try:rental=json.loads((studio.store.root/'.managed-rental.json').read_text())
                         except (OSError,ValueError):rental=None
                         backend='cpu' if studio.renderer.allow_legacy_render_reuse else 'native'
-                        self.reply(200,planner_profile(studio.store.load(query['project'][0]),studio.performance,studio.config,rental,backend))
+                        saved=studio.store.load(query['project'][0])
+                        assembly=studio.renderer.full_mux_forecast(saved)
+                        self.reply(200,planner_profile(saved,studio.performance,studio.config,rental,backend,assembly))
                     elif path=='/studio/storage':self.reply(200,studio.storage.status(query.get('project',[None])[0]))
                     elif path=='/studio/files':self.reply(200,studio.storage.files(query['project'][0],refresh=query.get('refresh',['false'])[0]=='true'))
                     elif path=='/studio/publisher':self.reply(200,studio.publisher.status())

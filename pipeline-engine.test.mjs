@@ -185,9 +185,22 @@ test('90 minute through 24 hour plans preserve 80 chapters, output work and dura
   const p=buildPlan({...DEFAULTS,minutes,chapters:80},evidence);
   assert.equal(p.tasks.filter(t=>t.kind==='handoff').length,80);
   assert.ok(Math.abs(p.tasks.filter(t=>t.kind==='render').reduce((n,t)=>n+t.videoSeconds,0)-minutes*60)<1e-6);
-  assert.ok(Math.abs(p.tasks.find(t=>t.kind==='join').duration-p.renderProfile.joinWallSeconds/p.renderProfile.videoSeconds*minutes*60)<1e-6);
+  const join=p.renderProfile.joinCalibration?.policy===p.config.fullAssemblyPolicy?p.renderProfile.joinCalibration:null;
+  assert.ok(Math.abs(p.tasks.find(t=>t.kind==='join').duration-(join?join.wallSeconds/join.videoSeconds:p.renderProfile.joinWallSeconds/p.renderProfile.videoSeconds)*minutes*60)<1e-6);
   assert.equal(p.tasks.find(t=>t.kind==='probe').duration,45*minutes/120);
  }
+});
+test('current assembly uses only matching measured Join data and preserves all narration/render work',()=>{
+ const current=buildPlan({...DEFAULTS,videoRenderer:'native'},evidence);
+ const legacy=buildPlan({...DEFAULTS,videoRenderer:'native',fullAssemblyPolicy:'legacy-two-pass-v1'},evidence);
+ const measurement=current.renderProfile.joinCalibration;
+ assert.equal(current.tasks.find(t=>t.kind==='join').duration,measurement.wallSeconds);
+ assert.match(current.tasks.find(t=>t.kind==='join').basis,/repeated-media two-hour/);
+ assert.equal(legacy.tasks.find(t=>t.kind==='join').duration,legacy.renderProfile.joinWallSeconds/legacy.renderProfile.videoSeconds*7200);
+ assert.deepEqual(current.tasks.filter(t=>t.kind==='voice'),legacy.tasks.filter(t=>t.kind==='voice'));
+ assert.deepEqual(current.tasks.filter(t=>t.kind==='render'),legacy.tasks.filter(t=>t.kind==='render'));
+ const invalid=structuredClone(evidence);invalid.calibration.productionRenderProfiles.find(p=>p.backend==='native').joinCalibration.wallSeconds=NaN;
+ assert.equal(buildPlan({...DEFAULTS,videoRenderer:'native'},invalid).tasks.find(t=>t.kind==='join').duration,legacy.tasks.find(t=>t.kind==='join').duration);
 });
 test('public evidence and export inputs contain no credentials and reject invalid times',()=>{
   assert.ok(!/sk-[a-zA-Z0-9]|rpa_|@gmail|promptSHA256|secretKey/i.test(JSON.stringify(evidence)));

@@ -21,6 +21,7 @@ from image_provider import (
 from studio_render import VideoRenderer
 from studio_gpu_render import create_renderer
 from studio_render_progress import FrameProgress
+from studio_analysis_inputs import analysis_input_signature as exact_analysis_input_signature
 from studio_qc import decision as qc_decision, production_status, automatic_repairs, repair_budget_reason, check_level, should_check, policy as qc_policy, review_settings_signature, review_settings_stale
 from prompt_quality import generation_measurements
 from story_grounding import apply_environment_event, set_environment_location, visual_environment, require_owners
@@ -1533,6 +1534,8 @@ class StudioService:
                       and t.get('chapter')==details.get('chapter') and t.get('finished',0)>=began_at]
             if receipts and all(type(t.get('estimatedUSD')) in (int,float) and not t.get('usagePending') for t in receipts):
                 details.update(estimatedUSD=sum(t['estimatedUSD'] for t in receipts),costRollup=True)
+        if stage=='Assemble full video' and isinstance(result,dict):
+            details['fullAssemblyPolicy']=result.get('fullAssemblyPolicy','format-guarded-original-audio-v1')
         status=result.get('status') if isinstance(result,dict) else None
         if isinstance(result,dict) and result.get('reused') is True:details['reused']=True
         self.record_timing(
@@ -4407,17 +4410,7 @@ class StudioService:
                     [s["id"] for scene in c["scenes"] for s in scene["shots"]],
                 )
 
-    @staticmethod
-    def analysis_input_signature(project,chid):
-        chapter=get_chapter(project,chid)
-        incoming_state,incoming_memory=state_before(project,chid)
-        fields=('sourceText','name','scenes','people','narrationMode','cleanNarrationText','includeChapterLabel')
-        return digest({'chapter':{key:chapter.get(key) for key in fields},
-            'audio':chapter.get('audio',{}).get('signature'),'settings':project['settings'],
-            'inputState':incoming_state,'inputMemory':incoming_memory,
-            'identities':[{key:person.get(key) for key in ('id','name','description','aliases',
-                'permanentIdentity','defaultAppearance','references')}
-                for person in project['characters']]})
+    analysis_input_signature=staticmethod(exact_analysis_input_signature)
 
     def validate_ranges(self, items, count, label):
         if not items:

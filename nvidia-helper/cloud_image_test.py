@@ -93,7 +93,7 @@ class CloudImageTest(unittest.TestCase):
                 provider.validateSettings(settings)
 
     def provider(self):
-        provider = ComfyImageProvider({})
+        provider = ComfyImageProvider({'comfyPersistentHTTP':False})
         provider.template = lambda: {'modelCapabilities': {}}
         provider.getCapabilities = lambda: {
             "hardwareRequirements": {"vramGB": 24},

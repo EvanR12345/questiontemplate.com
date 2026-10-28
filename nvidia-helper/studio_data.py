@@ -534,6 +534,11 @@ class ProjectStore:
         self.lock = threading.RLock()
         self.archive = None
         self._summaries = {}
+        # Retain at most one bounded immutable snapshot, never a caller's dict.
+        # mutate() reads this same file again for its exact backup; equal bytes
+        # let save() reuse only the revision instead of decoding a large history
+        # twice. Every save still reads current disk bytes and publishes atomically.
+        self._loaded_revision = None
 
     def folder(self, id):
         if not re.fullmatch(r"pr-[a-f0-9]{16}", str(id)):
@@ -548,9 +553,13 @@ class ProjectStore:
     def load_local(self, id):
         with self.lock:
             path=self.folder(id)/'project.json'
-            try:source=path.read_text(encoding='utf-8')
+            try:source=path.read_bytes()
             except FileNotFoundError:raise ProjectNotFound('Saved project not found.') from None
-            return json.loads(source)
+            result=json.loads(source.decode('utf-8'))
+            self._loaded_revision=((path,source,result['revision'],None) if len(source)<=8*1024*1024
+                else (path,None,result['revision'],hashlib.sha256(source).digest())) if (
+                isinstance(result,dict) and 'revision' in result) else None
+            return result
 
     def save(self, p, expected=None, *, _return_copy=True):
         validate_project(p)
@@ -560,12 +569,17 @@ class ProjectStore:
             path = folder / "project.json"
             if path.exists():
                 previous_bytes = path.read_bytes()
-                old = json.loads(previous_bytes)
-                if expected is not None and old["revision"] != expected:
+                cached=self._loaded_revision
+                # Very large projects retain just a SHA-256 fingerprint. Both
+                # paths still compare a fresh complete read of the current file.
+                matches=bool(cached and cached[0]==path and (cached[1]==previous_bytes if cached[1] is not None
+                             else cached[3]==hashlib.sha256(previous_bytes).digest()))
+                old_revision=cached[2] if matches else json.loads(previous_bytes)['revision']
+                if expected is not None and old_revision != expected:
                     raise ValueError(
                         "Project changed in another operation. Reload before saving."
                     )
-                p["revision"] = old["revision"] + 1
+                p["revision"] = old_revision + 1
                 # Preserve the exact previous JSON bytes without serializing
                 # the entire project a second time. Publish backup atomically.
                 backup = folder / "project.previous.tmp"
@@ -577,6 +591,7 @@ class ProjectStore:
                 json.dumps(p, ensure_ascii=False, separators=(',',':')), encoding="utf-8"
             )
             self.replace_snapshot(temp,path)
+            self._loaded_revision=None
             metadata = folder / "revision.tmp"
             stamp = path.stat()
             metadata.write_text(
