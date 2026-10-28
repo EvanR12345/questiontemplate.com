@@ -1,9 +1,13 @@
 // Shared settings projection. No story, references, budgets or keys are copied.
 import {qualityConfig} from './pipeline-qc-forecast.mjs?v=one-hour-speed-20261028';
+import {denseCapability} from './pipeline-dense.mjs?v=dense-image-phase-20261028';
 export function plannerSettings(config, profile, evidence) {
   if(profile?.version!==1)throw Error('Update the helper to load saved production settings.');
   const s=profile.settings, v=s.video, d=s.director, i=s.image;
   const warnings=[], next={...config};
+  next.productionGenerationStrategy=profile.generationStrategy||'align';
+  next.productionDenseVersion=0;next.productionDenseSupported=false;next.productionDenseEligible=false;
+  next.productionDenseQCSlots=0;next.productionDenseGenerationTasks=5;next.productionDenseDescriptorLimit=0;next.productionDenseMaxRepairRounds=0;
   if(s.voiceCompute==='kaggle' || s.voiceEngine && s.voiceEngine!=='kokoro-82m')
     throw Error('Kaggle narration has no matching full-production calibration yet. Local Kokoro timings cannot estimate this voice. Use an audition and retain the existing planner scenario.');
   if(!['off','sampled','practical','strict'].includes(s.qcCheckLevel))throw Error('Unsupported saved visual check level.');
@@ -70,17 +74,29 @@ export function plannerSettings(config, profile, evidence) {
     }
     warnings.push(topology.gpuLanes===1?'Following production uses installed scheduling and one model-worker benchmark. It does not activate the proposed render overlap or multi-copy GPU experiment.':'Following production requests two independent model copies and four bounded request slots on one GPU. Startup must verify both private processes before any image is submitted; end-to-end speed remains a projection until a matching production run.');
   }
-  if(profile.imageTasks>3 && topology?.gpuLanes!==2)
+  if(profile.generationStrategy!=='dense'&&profile.imageTasks>3 && topology?.gpuLanes!==2)
     warnings.push(`Studio admits up to ${profile.imageTasks} image/check tasks while keeping one GPU image lane. Older three-task throughput does not measure this new pipeline; no speedup is assumed until matching production completes. A 28-call Luna QC-only pilot found no measured advantage for five tasks; complete image-generation throughput remains untested.`);
-  if(profile.imageAdmission?.maximumAfterVerification>profile.imageTasks)
+  if(profile.generationStrategy!=='dense'&&profile.imageAdmission?.maximumAfterVerification>profile.imageTasks)
     warnings.push(`Actual generation can admit up to ${profile.imageAdmission.maximumAfterVerification} image/check tasks only after both workers are verified and RAM headroom passes. Image requests and API calls keep their existing limits. No speedup from this change is applied to the forecast until matching production timing exists.`);
-  else if(profile.imageAdmission?.benchmarkStatus==='no-reliable-eight-task-gain')
+  else if(profile.generationStrategy!=='dense'&&profile.imageAdmission?.benchmarkStatus==='no-reliable-eight-task-gain')
     warnings.push('Production keeps five image/check tasks. Four matched 12-shot RTX 5090 rounds found no consistent speed gain at eight tasks (five averaged 56.6s; eight 57.6s). Generated images were identical and every image was checked. This short test does not recalibrate the full-video forecast.');
   if(topology?.backend==='comfyui-api' && topology.gpuLanes===1 && !topology.multipleModelCopiesVerified)
     warnings.push('The current production connection uses one ComfyUI queue. Faster multi-copy or hybrid GPU benchmarks are comparison targets, not verified throughput for this running production backend.');
   next.directorCostMode='measured';
   next.earlyGpu=false;next.gpuStartSeconds=0;
-  if(profile.generationStrategy==='align'&&!profile.timedHistoryReady){
+  if(profile.generationStrategy==='dense'){
+    if(!denseCapability(profile)||topology?.backend!=='comfyui-api'||next.policy!=='current')
+      throw Error('This saved Dense strategy requires an eligible managed cloud setup and an updated helper with dense-image capability. The retained planner scenario was not replaced.');
+    const phase=profile.denseImagePhase;
+    next.productionDenseVersion=phase.version;next.productionDenseSupported=true;next.productionDenseEligible=true;
+    next.productionDenseQCSlots=phase.qcTaskSlots;next.productionDenseGenerationTasks=phase.generationTasks;
+    next.productionDenseDescriptorLimit=phase.descriptorLimit;next.productionDenseMaxRepairRounds=phase.maxRepairRounds;
+    next.readyChapters=next.chapters;
+    next.repairRounds=Math.min(config.repairRounds||1,Math.max(1,phase.maxRepairRounds));
+    warnings.push('Installed Dense plans every chapter and prepares intro/references before one initial GPU burst. Generation does not wait for QC; the GPU stops before its remaining QC tail. Startup, readiness, transfers and shutdown still bill, so image-pipeline coverage cannot be 100%. The new phase fingerprint has no matching complete-production timing; existing component rates remain reference projections.');
+    warnings.push(next.retries>0?`The ${next.retries}% extra-attempt allowance is spread across up to ${next.repairRounds} assumed repair rounds, not a measured defect rate. Each nonempty round pays its own startup and shutdown before rechecks. Runtime retains each shot's saved ceiling of ${phase.maxRepairRounds} retries.`:
+      `No repair rate is assumed. QC can require additional bounded repair bursts, each with paid startup and shutdown, up to the saved ${phase.maxRepairRounds} per-shot retry ceiling; their unknown work is excluded from this zero-extra-attempt scenario.`);
+  }else if(profile.generationStrategy==='align'&&!profile.timedHistoryReady){
     next.readyChapters=next.chapters;
     warnings.push('Timed align has no complete matching production history; like Studio, this setup waits for all chapter plans before image dispatch. The 15-second alignment target is not a guaranteed finish.');
   }else if(profile.generationStrategy==='fastest')next.readyChapters=1;
@@ -129,6 +145,7 @@ export function plannerSettings(config, profile, evidence) {
 export function profileSummary(p) {
   const s=p.settings,v=s.video,i=s.image,d=s.director;
   const copies=p.imageExecution?.modelCopies||p.imageExecution?.gpuLanes||1;
-  const window=p.imageAdmission?.maximumAfterVerification>p.imageTasks?`${p.imageTasks} image/check tasks; up to ${p.imageAdmission.maximumAfterVerification} after worker and RAM verification`:`${p.imageTasks||3} image/check tasks`;
+  const window=p.generationStrategy==='dense'?(denseCapability(p)?`${p.denseImagePhase.generationTasks} generation tasks; ${p.denseImagePhase.qcTaskSlots} independent QC slots; plan first, separate rental windows`:'Dense unavailable for this helper/setup'):
+    p.imageAdmission?.maximumAfterVerification>p.imageTasks?`${p.imageTasks} image/check tasks; up to ${p.imageAdmission.maximumAfterVerification} after worker and RAM verification`:`${p.imageTasks||3} image/check tasks`;
   return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · ${s.unattendedProduction?'automatic completion and bounded repairs':'manual review policy'} · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${window}, ${copies===1?'one GPU lane':copies+' independent model copies on one GPU'} · ${d.processingTier||'default'} processing`;
 }

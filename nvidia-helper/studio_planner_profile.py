@@ -22,6 +22,11 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
         project = {**project, 'settings':run_settings(project['settings'])}
     source = project['settings']
     config=config or {}
+    from studio_gpu_broker import gpu_configured
+    dense_eligible=bool(source.get('unattendedProduction') and source['image'].get('provider')=='comfyui'
+        and source['director'].get('provider')=='openai-luna' and not source.get('economyPanels') and gpu_configured(config))
+    selected_strategy=project.get('generationStrategy') or project.get('production',{}).get('generationStrategy') or 'align'
+    project={**project,'generationStrategy':selected_strategy}
     qc_profile=profile_for('Visual QC',project,config)
     # Policy and API concurrency select separate calibration cohorts. Keep all
     # other review compatibility inputs private behind the existing digest.
@@ -29,7 +34,7 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
                       if key not in ('policy','reviewAPISlots','processingTier')}
     qc_history_identity=None
     candidate=adaptive_image_window(source,copies,copies*2 if copies>1 else 1)
-    adaptive=config.get('experimentalAdaptiveImageAdmission') is True and candidate
+    adaptive=selected_strategy!='dense' and config.get('experimentalAdaptiveImageAdmission') is True and candidate
     render_backend=renderer_backend if renderer_backend in ('cpu','native') else config.get('renderBackend','cpu')
     settings = {k: copy.deepcopy(source[k]) for k in FIELDS if k in source}
     for group, fields in GROUPS.items():
@@ -86,7 +91,11 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
         'qcCompatibilityHash':signature(qc_compatibility),
         'qcProcessingTier':source['director'].get('processingTier') or config.get('openaiServiceTier','default'),
         'qcHistoryIdentity':qc_history_identity,
-        'generationStrategy':project.get('generationStrategy', 'align'),
+        'generationStrategy':selected_strategy,
+        'denseImagePhase':{'version':1,'supported':True,'generationTasks':5,
+            'qcTaskSlots':min(4,source['director'].get('parallelism',1)),
+            'descriptorLimit':8192,'maxRepairRounds':source.get('maxImageRetries',2),'allPlansFirst':True,
+            'eligible':dense_eligible},
         'imageTasks':shot_task_limit(project,{}),
         'imageAdmission':{'policy':ADAPTIVE_IMAGE_ADMISSION if adaptive else 'fixed-v1',
                           'base':shot_task_limit(project,{}),

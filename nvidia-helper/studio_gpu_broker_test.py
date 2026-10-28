@@ -1,4 +1,5 @@
 import json,tempfile,unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 from studio_gpu_broker import GPUReservation,provider_order,gpu_configured,reconcile
@@ -36,6 +37,48 @@ class BrokerTests(unittest.TestCase):
     def test_running_lease_is_reused(self):
         lease=self.fake('lium');reserve=self.reserve({'lium':lambda:lease})
         reserve.ensure();reserve.ensure();self.assertEqual(self.events,['lium ensure','lium ensure']);reserve.stop()
+    def test_dense_windows_use_fresh_controller_and_keep_carried_spend_and_cap(self):
+        made=[];receipt={'podId':'initial-owned-pod'}
+        reserve=GPUReservation({'gpuProviderOrder':['runpod']},self.path,'p',{'gpuBudgetUSD':1},None,
+            lambda *_:None,owned_startup=receipt)
+        class Controller:
+            def __init__(controller,config,path,project,budget,runner,gate,report,**options):
+                controller.path=Path(path);controller.project=project;controller.budget=dict(budget)
+                controller.state=json.loads(controller.path.read_text()) if controller.path.exists() else {'status':'STOPPED'}
+                controller.previous=controller.state.get('spentByProject',{}).get(project,0)
+                controller.options=options;controller.owned=False;controller.closed=False;controller.runner=None
+                made.append(controller)
+            def ensure(controller):controller.owned=True;controller.state['status']='RUNNING'
+            def save(controller,**values):controller.state.update(values)
+            def stop(controller,reason):
+                if not controller.owned:return
+                controller.owned=False;controller.closed=True
+                controller.state.update(status='STOPPED',spentByProject={controller.project:controller.previous+.2})
+                controller.path.write_text(json.dumps(controller.state))
+        with patch('studio_gpu_broker.workload_verified',return_value=True),patch('studio_gpu_broker.ProductionGPU',Controller):
+            reserve.ensure();reserve.stop('initial images finished')
+            reserve.ensure();reserve.stop('repair round finished')
+        self.assertEqual(len(made),2);self.assertIsNot(made[0],made[1])
+        self.assertEqual(made[0].options['owned_startup'],receipt)
+        self.assertNotIn('owned_startup',made[1].options)
+        self.assertEqual(made[1].previous,.2);self.assertEqual(made[1].budget,{'gpuBudgetUSD':1})
+        self.assertAlmostEqual(json.loads(self.path.read_text())['spentByProject']['p'],.4)
+        self.assertTrue(all(controller.closed for controller in made))
+    def test_unconfirmed_previous_window_cannot_allocate_another_controller(self):
+        made=[]
+        def factory():
+            lease=self.fake('lium');made.append(lease);return lease
+        reserve=self.reserve({'lium':factory});reserve.ensure();reserve.stop()
+        made[0].state['status']='STOP_UNKNOWN'
+        with self.assertRaises(GPURequestUncertain):reserve.ensure()
+        self.assertEqual(len(made),1)
+    def test_uncertain_first_start_does_not_consume_creator_handoff(self):
+        lease=self.fake('runpod',GPURequestUncertain('lost'))
+        reserve=GPUReservation({'gpuProviderOrder':['runpod']},self.path,'p',{'gpuBudgetUSD':1},None,
+            lambda *_:None,factories={'runpod':lambda:lease},owned_startup={'podId':'owned'})
+        with patch('studio_gpu_broker.workload_verified',return_value=True):
+            with self.assertRaises(GPURequestUncertain):reserve.ensure()
+        self.assertEqual(reserve.options['owned_startup'],{'podId':'owned'})
     def test_model_provider_order_accepts_all_three_without_substitution(self):
         self.assertEqual(provider_order({}),['runpod','vast','lium'])
         for order in (['lium','lium'],['a6000'],[],['lium',False]):

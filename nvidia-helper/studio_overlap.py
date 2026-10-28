@@ -55,6 +55,11 @@ class CloudStoryOverlap:
         validate_overlap(project,options)
         from studio_schedule import strategy
         self.strategy=strategy(options)
+        self.dense=self.strategy=='dense'
+        if self.dense and not project['settings'].get('unattendedProduction'):
+            raise ValueError('Dense images require the explicit unattended production policy.')
+        self.deferred_qc=None
+        self.dense_preflight_complete=False
         self.scheduler=None
         self.root=service
         self.project=project['id']
@@ -79,7 +84,8 @@ class CloudStoryOverlap:
         self.analysis_inputs=ExactAnalysisInputs()
         self.image_lane=ImageLane(getattr(service.providers['comfyui'],'client_capacity',1))
         self.local_lane=ImageLane(1,'local narration/render')
-        self.api_lane=ImageLane(self.settings['director'].get('parallelism',1),'director')
+        self.api_lane=ImageLane(min(4,self.settings['director'].get('parallelism',1)) if self.dense else
+            self.settings['director'].get('parallelism',1),'director')
         self.main_context=self.admit(project,None,None,'story',digest({'sources':[c['sourceText'] for c in project['chapters']],
             'settings':self.settings}))
         self.main=self.clone(self.main_context,main=True)
@@ -88,7 +94,7 @@ class CloudStoryOverlap:
         self.base_image_tasks=shot_task_limit(project, options)
         # Four real matched rounds found no repeatable gain at eight. Keep
         # normal production at five; retain the guarded experiment explicitly.
-        self.adaptive_image_admission=(service.config.get('experimentalAdaptiveImageAdmission') is True
+        self.adaptive_image_admission=(not self.dense and service.config.get('experimentalAdaptiveImageAdmission') is True
             and 'overlapShots' not in options
             and isinstance(provider,ComfyWorkerPool)
             and adaptive_image_window(self.settings,provider.model_copies,provider.client_capacity))
@@ -105,7 +111,8 @@ class CloudStoryOverlap:
         self.render_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='studio-chapter-render')
         self.audio_futures={}
         self.render_futures={}
-        if self.strategy!='legacy':
+        self.render_admission_lock=threading.RLock()
+        if self.strategy not in ('legacy','dense'):
             from studio_schedule import ChapterImageScheduler
             self.scheduler=ChapterImageScheduler(self,self.strategy)
 
@@ -130,6 +137,7 @@ class CloudStoryOverlap:
     def gate(self, context, message='', step=0,total=0,wait_paused=True):
         # No mutable current-job lookup: every callback owns this immutable ID.
         from studio_service import JobCancelled, AudioYield
+        if getattr(self,'deferred_qc',None):self.deferred_qc.check()
         if wait_paused and self.scheduler:self.scheduler.check()
         with self.root.cv:
             while True:
@@ -146,6 +154,14 @@ class CloudStoryOverlap:
                     self.root.db.execute('UPDATE jobs SET message=? WHERE id=?',(message,self.parent))
                     self.root.db.commit()
 
+    @staticmethod
+    def dense_plan_inputs(project):
+        intro=project['intro']
+        return {'chapters':[(c['id'],[(sc['id'],[s['id'] for s in sc['shots']]) for sc in c['scenes']])
+                    for c in project['chapters'] if c['sourceText'].strip()],
+            'intro':{**{k:intro.get(k) for k in ('enabled','voiceText','sourceBrief','duration')},
+                'shots':[s['id'] for s in intro.get('shots',[])]}}
+
     def validate_settings(self):
         for future in [*getattr(self,'audio_futures',{}).values(),*getattr(self,'render_futures',{}).values()]:
             if future.done() and not future.cancelled() and future.exception() is not None:
@@ -155,6 +171,8 @@ class CloudStoryOverlap:
             raise ValueError('Project settings changed during this run; saved work is retained. Start again with the current settings.')
         if self.source_inputs(current)!=self.sources:
             raise ValueError('Chapter source changed during this run; current text and saved assets retained.')
+        if self.dense_preflight_complete and self.dense_plan_inputs(current)!=self.dense_plans:
+            raise ValueError('Dense chapter or intro plan changed after preflight; saved work retained. Restart with the current plans.')
         return current
 
     def prefetch_audio(self, chapter):
@@ -187,9 +205,16 @@ class CloudStoryOverlap:
             future.result()
 
     def schedule_render(self, chapter, index, chapters):
+        with self.render_admission_lock:
+            return self._schedule_render(chapter,index,chapters)
+
+    def _schedule_render(self, chapter, index, chapters):
         if self.root.config.get('studioRenderOverlap',True) is False or chapter in self.render_futures:return
         current=self.validate_settings()
         if current['intro'].get('enabled') and current['intro'].get('placement')=='every_chapter':return
+        if self.dense and not self.deferred_qc.chapter_ready(chapter):return
+        if self.dense and any(not self.main.saved_image_ready(current,shot)
+                for scene in get_chapter(current,chapter)['scenes'] for shot in scene['shots']):return
         context=self.admit(current,chapter,None,'early-chapter-render',
             digest({'chapter':chapter,'revision':current['revision']}),[self.main_context.identity])
         clone=self.clone(context)
@@ -239,7 +264,21 @@ class CloudStoryOverlap:
         clone._timing_pause_epoch=self.root.pause_epoch
         clone.execution_context=context
         clone.gate=lambda *args,**kwargs:self.gate(context,*args,**kwargs)
-        clone.checkpoint=lambda step,total,message:clone.gate(message,step,total,wait_paused=False)
+        image_operations=set()
+        def image_observer(event,details):
+            self.observer(context)(event,details)
+            operation=details.get('operationId')
+            if event in ('submitting','accepted'):image_operations.add(operation)
+            elif event in ('completed','failed','rejected'):image_operations.discard(operation)
+        def checkpoint(step,total,message):
+            if self.dense and image_operations:
+                # A sibling QC error closes admission, never receipt collection
+                # for an already submitted image. Explicit cancel and rental
+                # hard caps retain authority over that collection.
+                self.receive_gate(context,message)
+                clone.check_cloud_budget(self.root.store.load(self.project),self.root.providers['comfyui'])
+            else:clone.gate(message,step,total,wait_paused=False)
+        clone.checkpoint=checkpoint
         clone.director=LaneDirector(clone.config,clone.store.root,self.api_lane)
         clone.director.execution_observer=self.observer(context)
         clone.director.receive_gate=lambda message:self.receive_gate(context,message)
@@ -267,7 +306,7 @@ class CloudStoryOverlap:
                 if actual!=expected:raise StaleExecution('Selected image bytes changed before dispatch; current asset retained.')
         clone.validate_execution=validate
         clone.providers['comfyui']=LaneProvider(self.root.providers['comfyui'],self.image_lane,clone.gate,
-            self.observer(context),validate,retry_priority=not main)
+            image_observer,validate,retry_priority=not main)
         return clone
 
     def before_chapter(self, chapter):
@@ -434,7 +473,11 @@ class CloudStoryOverlap:
         self.pool.set_limit(8 if allowed else self.base_image_tasks)
         self.image_tasks=self.pool.limit
 
-    def submit_shot(self, project, chapter, shot, review_only=False):
+    def submit_shot(self, project, chapter, shot, review_only=False, repair=False):
+        if self.dense and review_only:
+            if self.deferred_qc is None:raise RuntimeError('Dense QC admission requires completed global preflight')
+            self.deferred_qc.enqueue(project,chapter,shot,self.main_context.identity)
+            return
         # Backpressure happens before durable admission, bounding the journal too.
         # Recheck after a blocking wait: a worker can be quarantined, or the
         # host can lose memory while previously bought work is still finishing.
@@ -447,7 +490,7 @@ class CloudStoryOverlap:
         admission_details={'imageTasks':admitted_window,**self.image_admission_details()}
         snapshot=shot_snapshot(project)
         signature=self.main.visual_spec_signature(snapshot,shot)
-        context=self.admit(snapshot,chapter,shot['id'],'image-qc',signature,self.chapter_dependencies)
+        context=self.admit(snapshot,chapter,shot['id'],'image-generation' if self.dense else 'image-qc',signature,self.chapter_dependencies)
         clone=self.clone(context,snapshot=snapshot)
         def execute():
             status,message='COMPLETE','Image saved with the selected check policy'
@@ -471,10 +514,17 @@ class CloudStoryOverlap:
                         result=clone.generate(current,chapter,shot['id'],shot['generationSettings']['seed'],
                             {'operation':operation,'budgetedQCRepair':True,'_repairPrompt':qc.get('repairPrompt') or shot['prompt']})
                 else:
-                    result=clone.measured_stage(self.project,'Image + quality checks',clone.generate,
+                    generation_options={'_collectReview':clone.collect_production_reviews(snapshot),
+                        'deferAutomaticRepair':snapshot['settings'].get('unattendedProduction',False)}
+                    if self.dense:generation_options['deferQC']=True
+                    if repair:
+                        from studio_automation import repair_operation
+                        generation_options={'_collectReview':True,'deferQC':True,'budgetedQCRepair':True,
+                            'operation':repair_operation(snapshot,shot,clone.provider('comfyui')),
+                            '_repairPrompt':shot.get('qc',{}).get('repairPrompt') or shot['prompt']}
+                    result=clone.measured_stage(self.project,'Automatic image repair' if repair else 'Image generation' if self.dense else 'Image + quality checks',clone.generate,
                         snapshot,chapter,shot['id'],shot['generationSettings']['seed'],
-                        {'_collectReview':clone.collect_production_reviews(snapshot),
-                         'deferAutomaticRepair':snapshot['settings'].get('unattendedProduction',False)},
+                        generation_options,
                         chapter=get_chapter(snapshot,chapter)['number'],shot=shot['id'],executionId=context.identity,
                         **admission_details)
                 if isinstance(result,dict) and result.get('status')=='SUPERSEDED':
@@ -493,6 +543,9 @@ class CloudStoryOverlap:
                 with self.root.cv:self.root.active_executions.pop(context.identity,None)
                 if actual=='UNKNOWN' and status=='COMPLETE':
                     raise UnresolvedExecution('Execution '+context.identity+' completed without confirmed remote usage; retained for reconciliation.')
+                if self.dense and status=='COMPLETE' and actual!='UNKNOWN':
+                    current=self.validate_settings();selected=get_shot(current,chapter,shot['id'])
+                    self.deferred_qc.enqueue(current,chapter,selected,context.identity)
         try:
             future=self.pool.submit(execute)
             self.admitted_image_windows.add(admitted_window)
@@ -500,6 +553,33 @@ class CloudStoryOverlap:
             return future
         except BaseException:
             self.coordinator.call(self.journal.finish,context.identity,'CANCELLED','Cancelled before worker admission')
+            with self.root.cv:self.root.active_executions.pop(context.identity,None)
+            raise
+
+    def submit_dense_intro(self,project,shot,repair=False):
+        if not self.dense or self.deferred_qc is None:raise RuntimeError('Dense intro admission needs global preflight')
+        self.pool.ready();self.validate_settings()
+        snapshot=shot_snapshot(project);signature=self.main.visual_spec_signature(snapshot,shot)
+        context=self.admit(snapshot,None,shot['id'],'intro-generation',signature,[self.main_context.identity])
+        clone=self.clone(context)
+        def execute():
+            status,message='COMPLETE','Intro image saved for independent QC'
+            try:
+                clone.gate('Generating planned intro image')
+                clone.intro_image(snapshot,{'deferQC':True,'_collectReview':True,'onlyShot':shot['id'],
+                    **({'repairShot':shot['id']} if repair else {})})
+            except BaseException as error:
+                status='CANCELLED' if type(error).__name__=='JobCancelled' else 'FAILED';message=str(error)[:1800];raise
+            finally:
+                actual=self.coordinator.call(self.journal.finish,context.identity,status,message)
+                with self.root.cv:self.root.active_executions.pop(context.identity,None)
+                if actual=='UNKNOWN' and status=='COMPLETE':raise UnresolvedExecution('Intro generation remains unresolved; reconcile before retrying.')
+                if status=='COMPLETE' and actual!='UNKNOWN':
+                    current=self.validate_settings();selected=next(s for s in current['intro']['shots'] if s['id']==shot['id'])
+                    self.deferred_qc.enqueue(current,None,selected,context.identity)
+        try:return self.pool.submit(execute)
+        except BaseException:
+            self.coordinator.call(self.journal.finish,context.identity,'CANCELLED','Cancelled before intro admission')
             with self.root.cv:self.root.active_executions.pop(context.identity,None)
             raise
 
@@ -524,6 +604,7 @@ class CloudStoryOverlap:
 
     def close(self, status, message=''):
         self._collecting_after_failure=status not in ('COMPLETE','CANCELLED') and not self.root.cancel
+        if self.deferred_qc:self.deferred_qc.stop_admission()
         if status!='COMPLETE':
             for context in self.contexts:context.cancelled.set()
             with self.root.cv:self.root.cv.notify_all()
@@ -531,6 +612,7 @@ class CloudStoryOverlap:
         self.pool.close()
         self.audio_pool.shutdown(wait=True,cancel_futures=True)
         self.render_pool.shutdown(wait=True,cancel_futures=True)
+        if self.deferred_qc:self.deferred_qc.close()
         self.coordinator.call(self.journal.finish,self.main_context.identity,status,message)
         with self.root.cv:
             for context in self.contexts:self.root.active_executions.pop(context.identity,None)

@@ -309,6 +309,7 @@ class StudioService:
             "studioProtocol": 1,
             "cloudOverlapAvailable":True,
             "cloudSchedulingAvailable":True,
+            "denseImagePhaseAvailable":True,
             "unattendedProductionAvailable":True,
             "stagedDirectorAvailable":True,
             "leanDirectorAvailable":True,
@@ -1843,6 +1844,7 @@ class StudioService:
             raise ValueError('This project requires cloud images. Connect its ComfyUI worker; local image generation is disabled.')
         cloud_flow = (p['settings']['image']['provider'] == 'comfyui'
                       and not p['settings'].get('economyPanels'))
+        dense=bool(getattr(getattr(self,'_overlap',None),'dense',False))
         if cloud_flow and not getattr(self,'_overlap',None):
             # Offline planning uses declared workflow capabilities. The live
             # provider/VRAM/model checks still run before paid image generation.
@@ -1948,19 +1950,24 @@ class StudioService:
                 raise ValueError(
                     f"{ch['name']}: your appearance-change settings require review. Accept the changes and retry this run."
                 )
-            if getattr(getattr(self,'_overlap',None),'scheduler',None):
+            if dense:
+                self.store.mutate(pid,lambda q:q.setdefault('production',{}).setdefault('scheduling',{}).update(planningReady=index+1))
+            elif getattr(getattr(self,'_overlap',None),'scheduler',None):
                 self._overlap.publish_chapter(p,chid,index,chapters)
             else:
                 self.generate_production_chapter_images(pid,chid,index,chapters)
             if not cloud_flow:
                 self.render_production_chapter(pid, chid, index, chapters)
 
+        if dense:
+            self.run_dense_image_phase(pid,chapters)
         if getattr(self,'_overlap',None):
             self._overlap.drain()
             self._overlap.finish_local_work()
         p = self.store.load(pid)
+        if dense:self._overlap.validate_settings()
         if (
-            p["intro"]["enabled"]
+            not dense and p["intro"]["enabled"]
             and p["intro"].get("voiceText", "").strip()
             and not self.saved_intro_audio_ready(p)
         ):
@@ -1971,7 +1978,7 @@ class StudioService:
             self.intro_audio(p)
         p = self.store.load(pid)
         if (
-            p["intro"]["enabled"]
+            not dense and p["intro"]["enabled"]
             and (p['intro'].get('shots') or p['intro'].get('visualPrompt', '').strip())
             and (any(not s.get('imagePath') or not self.store.has_asset(pid,s['imagePath'])
                      for s in p['intro'].get('shots', []))
@@ -1983,7 +1990,9 @@ class StudioService:
             )
             self.intro_image(p, {'_collectReview':self.collect_production_reviews(p)})
         # Complete chapter AND intro images before local chapter rendering.
-        if p['settings'].get('unattendedProduction'):
+        if dense:
+            pass # run_dense_image_phase already completed the required barrier.
+        elif p['settings'].get('unattendedProduction'):
             self.complete_automatic_reviews(pid)
         rental=getattr(self,'_production_gpu',None)
         if rental:rental.stop('chapter and intro images finished')
@@ -2100,6 +2109,115 @@ class StudioService:
                 if qc_decision(latest,item,self.store)['blocking']:
                     raise RuntimeError('Automatic intro repair limit reached; original assets and findings retained.')
 
+    def prepare_dense_image_phase(self,pid):
+        """Finish intro preparation and bound the whole burst before GPU startup."""
+        from studio_deferred_qc import DenseReviews,capacity_preflight
+        p=self.store.load(pid)
+        for chapter in p['chapters']:
+            if not chapter['sourceText'].strip():continue
+            if (not chapter.get('scenes') or chapter.get('proposedPlan') or chapter.get('continuityNeedsReview')
+                    or chapter.get('handoff',{}).get('sourceSignature')!=digest(chapter['sourceText'])):
+                raise ValueError('Complete and accept every source-grounded chapter plan before dense GPU startup.')
+        if p['intro']['enabled']:
+            if p['intro'].get('voiceText','').strip() and not self.saved_intro_audio_ready(p):
+                self.before_audio();self.intro_audio(p);p=self.store.load(pid)
+            if not p['intro'].get('shots') and p['intro'].get('sourceBrief'):
+                self.plan_intro(p);p=self.store.load(pid)
+            if not p['intro'].get('shots') and p['intro'].get('visualPrompt','').strip():
+                raise ValueError('Prepare the complete intro shot plan before starting dense images.')
+        shots=[s for ch in p['chapters'] if ch['sourceText'].strip() for sc in ch['scenes'] for s in sc['shots']]
+        if p['intro']['enabled']:shots+=p['intro'].get('shots',[])
+        for shot in shots:
+            if shot.get('imageProvider')!='comfyui':raise ValueError('Dense images require the configured ComfyUI workflow for every shot.')
+            if not shot.get('imagePath') or shot.get('generationStale'):
+                require_shot(p,shot,new_image=True)
+            for person in shot.get('characters',[]):
+                if person.get('type')!='main':continue
+                known=next((c for c in p['characters'] if c['id']==person['id']),None)
+                if not known or not any(r.get('path') for r in known.get('references',[])) or any(not self.store.has_asset(pid,r['path']) for r in known['references'] if r.get('path')):
+                    raise ValueError('Prepare required canonical references before the dense GPU window; no portrait rental started.')
+            try:select_references(p,shot,self.store,self.provider('comfyui'))
+            except (OSError,ValueError,KeyError) as error:
+                raise ValueError('Prepare every selected identity, location, style and manual reference before the dense GPU window.') from error
+        proof=capacity_preflight(p,shots,self.store.folder(pid),p['settings']['maxImageRetries'])
+        self.store.mutate(pid,lambda q:q.setdefault('production',{}).update(denseImagePreflight=proof))
+        overlap=self._overlap
+        overlap.dense_plans=overlap.dense_plan_inputs(p)
+        overlap.deferred_qc=DenseReviews(overlap)
+        overlap.dense_preflight_complete=True
+        # Saved intro images may also need their selected checks; generation
+        # callbacks enqueue new intro images after their durable receipt closes.
+        for shot in p['intro'].get('shots',[]) if p['intro']['enabled'] else []:
+            if shot.get('imagePath') and (review_settings_stale(p,shot) or shot.get('qc',{}).get('status') in (None,'PENDING','UNREVIEWED')):
+                overlap.deferred_qc.enqueue(p,None,shot,overlap.main_context.identity)
+
+    def run_dense_image_phase(self,pid,chapters=None):
+        """Actual plan-ready image/QC phase, also used by isolated phase pilots."""
+        overlap=getattr(self,'_overlap',None)
+        if not overlap or not overlap.dense:raise ValueError('Dense phase needs its bounded cloud execution owner.')
+        self.store.mutate(pid,lambda q:q.setdefault('production',{}).update(generationStrategy='dense'))
+        self.prepare_dense_image_phase(pid)
+        p=self.store.load(pid)
+        chapters=chapters or [c['id'] for c in p['chapters'] if c['sourceText'].strip()]
+        self.store.mutate(pid,lambda q:q.setdefault('production',{}).setdefault('scheduling',{}).update(
+            imageDispatchStarted=True,dispatchReason='All chapter/intro plans, required references and full-burst capacity verified.'))
+        try:
+            for index,chapter in enumerate(chapters):
+                self.generate_production_chapter_images(pid,chapter,index,chapters)
+            if p['intro']['enabled']:
+                current=self.store.load(pid)
+                if any(not shot.get('imagePath') or not self.store.has_asset(pid,shot['imagePath']) for shot in current['intro'].get('shots',[])):
+                    self.ensure_production_gpu()
+                for shot in current['intro'].get('shots',[]):
+                    if not shot.get('imagePath') or not self.store.has_asset(pid,shot['imagePath']):
+                        overlap.submit_dense_intro(self.store.load(pid),shot)
+            overlap.pool.drain()
+        finally:self.stop_dense_image_window('Dense initial image window ended; quality tail continues without GPU')
+        overlap.deferred_qc.drain()
+        self.complete_dense_repairs(pid)
+
+    def stop_dense_image_window(self,reason):
+        # Ordinary gates can fail before drain completes. Collect every already
+        # submitted generation/remote receipt before shutting its GPU down.
+        overlap=self._overlap
+        for future in tuple(overlap.pool.all):
+            try:future.result()
+            except BaseException:pass
+            overlap.pool.pending.discard(future)
+        rental=getattr(self,'_production_gpu',None)
+        if rental:
+            rental.stop(reason)
+            if rental.state.get('status')!='STOPPED':raise RuntimeError('Dense image GPU shutdown is not confirmed; quality/render admission stopped.')
+
+    def complete_dense_repairs(self,pid):
+        """Batch each existing repair round; never hold GPU for the QC tail."""
+        overlap=self._overlap
+        for _round in range(self.store.load(pid)['settings']['maxImageRetries']):
+            p=self.store.load(pid);candidates=[]
+            for chapter in p['chapters']:
+                for scene in chapter['scenes']:
+                    for shot in scene['shots']:candidates.append((chapter['id'],shot))
+            if p['intro']['enabled']:candidates.extend((None,shot) for shot in p['intro'].get('shots',[]))
+            repairs=[]
+            for chapter,shot in candidates:
+                if not shot.get('imagePath') or not qc_decision(p,shot,self.store)['blocking']:continue
+                if shot.get('manual',{}).get('imagePath') or not automatic_repairs(p['settings'],shot.get('qc',{})):
+                    continue
+                signature=self.visual_spec_signature(p,shot)
+                used=shot.get('automaticRepairAttempts',0) if shot.get('automaticRepairSpec')==signature else 0
+                if used<p['settings']['maxImageRetries']:repairs.append((chapter,shot))
+            if not repairs:break
+            self.ensure_production_gpu()
+            try:
+                for chapter,shot in repairs:
+                    current=self.store.load(pid)
+                    selected=next(s for s in current['intro']['shots'] if s['id']==shot['id']) if chapter is None else get_shot(current,chapter,shot['id'])
+                    if chapter is None:overlap.submit_dense_intro(current,selected,repair=True)
+                    else:overlap.submit_shot(current,chapter,selected,repair=True)
+                overlap.pool.drain()
+            finally:self.stop_dense_image_window('Dense repair round finished; rechecks continue without GPU')
+            overlap.deferred_qc.drain()
+
     def reserve_automatic_repair(self,pid,chid,sid,signature,intro=False):
         """Consume a durable retry before dispatch, including uncertain attempts."""
         def reserve(project):
@@ -2145,7 +2263,9 @@ class StudioService:
     def generate_production_chapter_images(self,pid,chid,index,chapters):
         p=self.store.load(pid)
         ch=get_chapter(p,chid)
-        if any(not (self.saved_image_ready(p,s) or self.retained_production_image(p,s) or self.reviewable_saved_image(p,s)) for sc in ch['scenes'] for s in sc['shots']):
+        dense=bool(getattr(getattr(self,'_overlap',None),'dense',False))
+        def dense_saved(project,shot):return bool(dense and shot.get('imagePath') and not shot.get('generationStale') and self.store.has_asset(pid,shot['imagePath']))
+        if any(not (self.saved_image_ready(p,s) or self.retained_production_image(p,s) or self.reviewable_saved_image(p,s) or dense_saved(p,s)) for sc in ch['scenes'] for s in sc['shots']):
             self.ensure_production_gpu()
         active_characters = {
             c["id"]
@@ -2209,7 +2329,7 @@ class StudioService:
             # Cached shots need no per-shot progress writes to the entire
             # durable project. One chapter update below records completion.
             if (self.saved_image_ready(p, shot) or self.retained_production_image(p,shot)
-                    or self.reviewable_saved_image(p,shot)):
+                    or self.reviewable_saved_image(p,shot) or dense_saved(p,shot)):
                 if ((getattr(self,'_overlap',None) or p['settings'].get('unattendedProduction') or review_settings_stale(p,shot))
                         and should_check(p,shot) and qc_decision(p,shot,self.store)['disposition']!='accepted'):
                     qc=shot.get('qc',{})
@@ -2783,11 +2903,12 @@ class StudioService:
                     message=message, budgetBlocked=True, updated=time.time()))
                 raise CloudBudgetPaused(message)
 
-    def inspect_intro(self, p, sampled_only=False):
+    def inspect_intro(self, p, sampled_only=False, shot_id=None):
         if p['settings'].get('qcCheckLevel') == 'off':
             if sampled_only:return
             raise ValueError('Visual checks are Off. Enable checks in Settings first.')
         for shot in p['intro'].get('shots', []):
+            if shot_id is not None and shot['id']!=shot_id:continue
             if sampled_only and not should_check(p,shot):continue
             if not shot.get('imagePath'):
                 raise ValueError('Generate every intro shot before visual review.')
@@ -2841,6 +2962,7 @@ class StudioService:
             raise ValueError('Local image generation is disabled for this project.')
         if p['intro'].get('shots'):
             for shot in p['intro']['shots']:
+                if options.get('onlyShot') and shot['id']!=options['onlyShot']:continue
                 repair=options.get('repairShot')==shot['id']
                 if options.get('repairShot') and not repair:continue
                 if shot.get('imagePath') and self.store.has_asset(p['id'], shot['imagePath']) and not repair:

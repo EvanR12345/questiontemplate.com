@@ -89,6 +89,23 @@ test('selected fastest dispatch reaches the actual production job and is saved',
   assert.equal(f.calls.find(c=>c.path==='jobs').body.options.generationStrategy,'fastest');
 });
 
+test('Dense reaches the real job options only on the supported managed automatic setup',async()=>{
+ const f=fixture(async()=>({ready:true,revision:3,checks:[]}));
+ f.context.health.denseImagePhaseAvailable=true;f.context.health.managedGPU={configured:true};
+ f.get('#productionStrategy').value='dense';await f.get('#productionFullVideo').onclick();
+ assert.equal(f.calls.find(c=>c.path==='jobs').body.options.generationStrategy,'dense');
+ assert.equal(f.calls.find(c=>c.path==='jobs').body.options.overlap,true);
+});
+test('older, unmanaged or manual helpers cannot silently execute Dense as another strategy',async()=>{
+ for(const mode of ['old','unmanaged','manual']){
+  const f=fixture(async()=>({ready:true,revision:3,checks:[]}));f.get('#productionStrategy').value='dense';
+  f.context.health.denseImagePhaseAvailable=mode!=='old';f.context.health.managedGPU={configured:mode!=='unmanaged'};
+  if(mode==='manual')f.context.project.settings.unattendedProduction=false;
+  await f.get('#productionFullVideo').onclick();assert.equal(f.calls.filter(c=>c.path==='jobs').length,0);
+  assert.match(f.notes.at(-1),/Dense generation requires/);
+ }
+});
+
 test('an older helper cannot silently execute a timed strategy as the old workflow',async()=>{
   const f=fixture(async()=>({ready:true,revision:3,checks:[]}));f.context.health.cloudSchedulingAvailable=false;
   await f.get('#productionFullVideo').onclick();

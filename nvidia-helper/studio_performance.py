@@ -72,6 +72,9 @@ def profile_for(stage, project, config, details=None):
     details=details or {};settings=project['settings']
     image=settings['image'];director=settings['director'];video=settings['video']
     profile={'version':VERSION,'stage':stage}
+    if stage in ('Image pipeline','Image generation','Image + quality checks','Automatic image repair','Visual QC') and (
+            project.get('production',{}).get('generationStrategy')=='dense' or project.get('generationStrategy')=='dense'):
+        profile['imagePhasePolicy']='dense-generation-independent-qc-v1'
     from studio_image_workers import model_copies
     if stage in ('AI directing','Image pipeline','Image generation','Image + quality checks','Automatic image repair'):
         copies=model_copies(config) if image.get('provider')=='comfyui' else 1
@@ -110,7 +113,7 @@ def profile_for(stage, project, config, details=None):
         selected=details.get('_shotSpec') or next((s for c in project['chapters'] for sc in c['scenes'] for s in sc['shots'] if s['id']==details.get('shot')), {})
         model=(config.get('openaiModel','gpt-6-luna') if director.get('provider')=='openai-luna' else director.get('model'))
         profile.update(reviewVersion=4,timingScope=details.get('reviewTimingScope','api-call'),provider=director.get('provider'),model=model,
-            reviewAPISlots=details.get('reviewAPISlots',details.get('directorTasks',director.get('parallelism',1))),
+            reviewAPISlots=min(4,director.get('parallelism',1)) if profile.get('imagePhasePolicy') else details.get('reviewAPISlots',details.get('directorTasks',director.get('parallelism',1))),
             processingTier=director.get('processingTier') or config.get('openaiServiceTier','default'),
             reasoning=director.get('qcReasoning') or ('High' if settings.get('generationMode')=='MAX QUALITY' else 'Fast'),
             policy=policy(settings),continuity=settings.get('continuityStrictness'),style=settings.get('style'),

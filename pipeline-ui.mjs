@@ -3,16 +3,17 @@ import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pipeline-admi
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
 import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex,startupApplyConfig} from './pipeline-detail-ui.mjs?v=gpu-startup-policy-20261028';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=one-hour-speed-20261028';
-import {mountConcurrencyLab} from './pipeline-lab.mjs?v=gpu-startup-policy-20261028';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex,startupApplyConfig} from './pipeline-detail-ui.mjs?v=dense-image-phase-20261028';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=dense-image-phase-20261028';
+import {mountConcurrencyLab} from './pipeline-lab.mjs?v=dense-image-phase-20261028';
 import {serverlessHTML} from './pipeline-serverless.mjs';
-import {matchedHTML} from './pipeline-matched.mjs?v=one-hour-speed-20261028';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=one-hour-speed-20261028';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=one-hour-speed-20261028';
+import {matchedHTML} from './pipeline-matched.mjs?v=dense-image-phase-20261028';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=dense-image-phase-20261028';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=dense-image-phase-20261028';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=one-hour-speed-20261028';
-import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=one-hour-speed-20261028';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=dense-image-phase-20261028';
+import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=dense-image-phase-20261028';
+import {denseActive,imageRentalPercent} from './pipeline-dense.mjs?v=dense-image-phase-20261028';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -75,9 +76,9 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=gpu-startup-policy-20261028',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=gpu-startup-policy-20261028',import.meta.url),{type:'module'}));
-const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=gpu-startup-policy-20261028',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=dense-image-phase-20261028',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=dense-image-phase-20261028',import.meta.url),{type:'module'}));
+const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=dense-image-phase-20261028',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,renderedGeneration=-1,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -122,6 +123,10 @@ async function rebuild(){
     $('sampleField').hidden=config.qc!=='sampled';$('introFields').hidden=!config.intro;
     $('qcPolicyNote').textContent=reviewPolicyNote(config,result,evidence);
     $('modeNote').textContent=productionModeNote(config);
+    const dense=denseActive(config);
+    $('readyChapters').disabled=dense;$('earlyGpu').disabled=dense;
+    $('repairRoundsField').hidden=!dense||config.retries===0;
+    $('repairRounds').max=String(config.productionDenseMaxRepairRounds||1);
     $('scheduleDescription').textContent=`${config.policy==='proposed'?'Proposed':config.policy==='current'?'Installed overlap model':'Sequential baseline'} · ${plan.director.label} · ${config.directorTier} · ${plan.imageCount} images · ${result.tasks.length} operations · ${Object.keys(preferences).length} manual moves`;
     $('metricTime').textContent=formatTime(result.end);
     $('metricRange').textContent=(plan.director.timingMeasured?'':plan.director.conditionsMatch===false?'Unmeasured saved configuration · ':plan.director.slotsMatch===false?'Unmeasured API-slot timing · ':'Unmeasured tier timing · ')+`${formatTime(result.end*(1-uncertainty/100))}–${formatTime(result.end*(1+uncertainty/100))} assumed sensitivity`;
@@ -137,8 +142,9 @@ async function rebuild(){
     $('directorSlotsNote').textContent=plan.director.aggregated?`${plan.director.slots} API slots reserved. ${config.directorActualSlots?'Uses the saved production limit; timing at a different slot count is unmeasured.':'Tested concurrency is already included in the observed elapsed time.'} No extra speed multiplier.`:'Historical API pool; individual pass weights are assumptions.';
     if(config.directorCostMode==='measured')$('directorCost').value=plan.director.costPerTwoHours.toFixed(6);
     $('quotedGPUHourly').disabled=config.pricingBasis!=='quote';
-    $('metricBusyLabel').textContent=plan.measurement?'Image pipeline / rented':'GPU work / rented';$('metricBusy').textContent=`${Math.round(result.gpuWork/result.rentalSeconds*100)}%`;
-    $('metricImages').textContent=`${formatTime(result.rentalSeconds)} rented · ${plan.attemptCount} image attempts`;
+    $('metricBusyLabel').textContent=plan.measurement?'Image pipeline / rented':'GPU work / rented';$('metricBusy').textContent=imageRentalPercent(result);
+    $('metricImages').textContent=`${formatTime(result.rentalSeconds)} rented · ${plan.attemptCount} image attempts`+(dense?` · ${result.rentalWindows.length} assumed rental ${result.rentalWindows.length===1?'window':'windows'}`:'');
+    if(dense)$('modeNote').textContent+=config.retries>0?` Your ${config.retries}% extra-attempt allowance uses ${result.rentalWindows.length-1} assumed repair rounds, each including startup/stop. This is not a measured failure rate.`:' No extra-attempt rate is assumed; unknown repairs and their additional rentals remain conditional and are excluded from this scenario.';
     $('taskCount').textContent=`${result.tasks.length} tasks · ${plan.measurement?plan.measurement.workers+' measured workers on one GPU'+(config.executionMode!=='resident'?' · '+plan.measurement.clientSlots+' request slots':''):'one inference lane'}`;
     $('profileScope').textContent=(plan.measurement?`${config.resolution} image pipeline · ${plan.measurement.workers} workers${config.executionMode!=='resident'?' · '+plan.measurement.clientSlots+' request slots':''} · ${config.encodingProfile} conditioning`:'Historical 1344 × 768 images · one worker')+` · video ${config.videoResolution}/${config.videoFps}fps`;
     $('renderTimingNote').textContent=plan.renderScope;
@@ -167,7 +173,7 @@ function renderTimeline(){
   positions=new Map();let html='<div class="timeline-inner" style="width:'+width+'px"><div class="ruler"><span class="label">Elapsed production time</span>';
   for(let t=0;t<=result.end;t+=step)html+=`<span class="tick" style="left:${155+t*scale}px">${Math.round(t/60)}m</span>`;
   html+='</div>';let top=34;
-  const visible=result.tasks.filter(t=>focus==='all'||t.chapter===Number(focus)||['boot','models','health','cold','stop','join','probe','decode','preflight'].includes(t.id));
+  const visible=result.tasks.filter(t=>focus==='all'||t.chapter===Number(focus)||['boot','models','health','cold','stop','join','probe','decode','preflight'].includes(t.kind));
   preparation=preparationGroup(visible);
   const display=compactPreparation(visible,preparationCompact);
   const links=selected&&getTask(selected)?new Set([selected,...getTask(selected).deps,...result.tasks.filter(t=>t.deps.includes(selected)).map(t=>t.id)]):new Set();
@@ -223,7 +229,7 @@ function renderInspector(){
   const meta=CATALOG.find(m=>m.id===task.kind);
   $('inspectorLabel').textContent=task.manual?'MANUAL START':'SCHEDULED';
   const resources=Object.entries(task.resources).map(([r,n])=>`<span class="res-tag">${esc(r)} · ${n} / ${plan.capacities[r]}</span>`).join('')||'<span class="res-tag">No exclusive resource</span>';
-  $('taskInspector').innerHTML=`<h3 class="task-title">${esc(task.name)}</h3><div class="task-id">${esc(task.id)} · ${labelChapter(task.chapter)}</div><p class="task-desc">${esc(meta.description)}</p><div class="task-times"><div><span>Starts</span><strong>${formatTime(task.start)}</strong></div><div><span>Ends</span><strong>${formatTime(task.end)}</strong></div><div><span>Work</span><strong>${sec(task.duration)}</strong></div></div><div class="inspect-section"><h3>Resources reserved</h3>${resources}<p style="margin-top:7px">Units are scheduling constraints, not measured CPU utilization.</p></div><div class="inspect-section"><h3>Must finish first · ${task.deps.length}</h3>${task.deps.slice(0,12).map(id=>{const dep=getTask(id);return `<button class="dep" data-select="${esc(id)}">${esc(id)}<br>${esc(dep.name)} · ends ${formatTime(dep.end)}</button>`;}).join('')||'<p>No preceding task.</p>'}${task.deps.length>12?`<p>${task.deps.length-12} more dependencies are in the JSON below and exported plan.</p>`:''}</div><div class="inspect-section"><h3>Can run alongside</h3><p>${esc(meta.parallel)}</p></div><div class="inspect-section"><h3>Timing evidence</h3><p>${esc(task.basis||meta.basis)}</p>${task.images?`<p>${task.images} ${task.workers?task.workers+' worker':'sequential'} image${task.images===1?'':'s'} in this group.</p>`:''}<p>GPU rental bills continuously from Boot through Stop, including idle gaps.</p></div><div class="task-fields"><label>Requested start · seconds<input id="taskStart" type="number" min="0" step="1" value="${Math.round(task.start)}"></label><button class="button" id="applyMove">Move this task</button><label>Scheduling priority<input id="taskPriority" type="number" min="-1000000" max="1000000" step="1" value="${preferences[task.id]?.priority??task.priority}"><small>Lower values go first among equally ready work. Dependencies still apply.</small></label><button class="button" id="applyPriority">Set priority</button><button class="button" id="clearMove" ${task.manual?'':'disabled'}>Clear manual start</button></div><details class="inspect-section"><summary>All task data</summary><pre style="font:9px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(task,null,2))}</pre></details>`;
+  $('taskInspector').innerHTML=`<h3 class="task-title">${esc(task.name)}</h3><div class="task-id">${esc(task.id)} · ${labelChapter(task.chapter)}</div><p class="task-desc">${esc(meta.description)}</p><div class="task-times"><div><span>Starts</span><strong>${formatTime(task.start)}</strong></div><div><span>Ends</span><strong>${formatTime(task.end)}</strong></div><div><span>Work</span><strong>${sec(task.duration)}</strong></div></div><div class="inspect-section"><h3>Resources reserved</h3>${resources}<p style="margin-top:7px">Units are scheduling constraints, not measured CPU utilization.</p></div><div class="inspect-section"><h3>Must finish first · ${task.deps.length}</h3>${task.deps.slice(0,12).map(id=>{const dep=getTask(id);return `<button class="dep" data-select="${esc(id)}">${esc(id)}<br>${esc(dep.name)} · ends ${formatTime(dep.end)}</button>`;}).join('')||'<p>No preceding task.</p>'}${task.deps.length>12?`<p>${task.deps.length-12} more dependencies are in the JSON below and exported plan.</p>`:''}</div><div class="inspect-section"><h3>Can run alongside</h3><p>${esc(meta.parallel)}</p></div><div class="inspect-section"><h3>Timing evidence</h3><p>${esc(task.basis||meta.basis)}</p>${task.images?`<p>${task.images} ${task.workers?task.workers+' worker':'sequential'} image${task.images===1?'':'s'} in this group.</p>`:''}<p>${denseActive(config)?'Each Boot → Stop window bills continuously, including its setup and gaps. Confirmed powered-off QC gaps between dense windows are not rented.':'GPU rental bills continuously from Boot through Stop, including idle gaps.'}</p></div><div class="task-fields"><label>Requested start · seconds<input id="taskStart" type="number" min="0" step="1" value="${Math.round(task.start)}"></label><button class="button" id="applyMove">Move this task</button><label>Scheduling priority<input id="taskPriority" type="number" min="-1000000" max="1000000" step="1" value="${preferences[task.id]?.priority??task.priority}"><small>Lower values go first among equally ready work. Dependencies still apply.</small></label><button class="button" id="applyPriority">Set priority</button><button class="button" id="clearMove" ${task.manual?'':'disabled'}>Clear manual start</button></div><details class="inspect-section"><summary>All task data</summary><pre style="font:9px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(task,null,2))}</pre></details>`;
 
   if(task.includedStages?.length)$('taskInspector').insertAdjacentHTML('beforeend',`<details class="inspect-section"><summary>Included measured Luna passes</summary><p class="caption">These pass observations are already inside the chapter block. Call work overlaps; it is not added again or independently movable from this aggregate.</p>${task.includedStages.map(p=>`<p>${esc(p.name)} · ${p.calls} calls · ${sec(p.activeSeconds)} active · ${sec(p.callWorkSeconds)} call work · ${money(p.estimatedUSD)}</p>`).join('')}</details>`);
   $('applyMove').onclick=()=>moveTask(task.id,Number($('taskStart').value));
@@ -242,7 +248,8 @@ function renderBreakdown(){
   const groups=[['Directing',t=>t.lane==='director'],['Narration',t=>t.lane==='audio'],[plan.measurement?'Measured image pipeline':'Cloud GPU work',t=>t.resources.remote],['Preparation & transfer',t=>['prepare','transfer'].includes(t.lane)],['Vision QC',t=>t.lane==='qc'],['Save & state',t=>t.lane==='save'],['Rendering',t=>t.lane==='render'],['Setup & delivery',t=>['setup','finish'].includes(t.lane)]];
   const vals=groups.map(([label,predicate])=>({label,value:result.tasks.filter(predicate).reduce((n,t)=>n+t.duration,0)})),max=Math.max(...vals.map(v=>v.value));
   $('workBreakdown').innerHTML=vals.map(v=>`<div class="workrow"><span>${v.label}</span><div class="bar"><i style="width:${v.value/max*100}%"></i></div><span class="time">${sec(v.value)}</span></div>`).join('')+'<p class="caption">These are task work totals. Overlap makes their sum exceed elapsed production time. Cold loading belongs to image work. Measured worker groups also include transfer and saving; this is not GPU utilization.</p>';
-  $('costBreakdown').innerHTML=[['GPU + running container rental',money(result.gpuUSD)],['Rental time',formatTime(result.rentalSeconds)],['GPU idle/setup time',formatTime(result.gpuIdleSeconds)],['Luna / QC estimate',money(result.apiUSD)],['Run estimate · before shared storage',money(result.productionUSD)],[`Shared storage · ${config.storageDays} days`,money(result.storageUSD)],['Total with allocated storage',money(result.totalUSD)]].map(([k,v])=>`<div class="costrow"><span>${k}</span><strong>${v}</strong></div>`).join('');
+  const windows=denseActive(config)?result.rentalWindows.map(w=>[w.phase==='initial'?'Initial image rental':`Assumed repair rental ${w.round}`,`${formatTime(w.end-w.start)} · ${money((w.end-w.start)/3600*plan.gpu.hourly)}`]):[];
+  $('costBreakdown').innerHTML=[['GPU + running container rental',money(result.gpuUSD)],...windows,['Rental time',formatTime(result.rentalSeconds)],['GPU idle/setup time',formatTime(result.gpuIdleSeconds)],['Luna / QC estimate',money(result.apiUSD)],['Run estimate · before shared storage',money(result.productionUSD)],[`Shared storage · ${config.storageDays} days`,money(result.storageUSD)],['Total with allocated storage',money(result.totalUSD)]].map(([k,v])=>`<div class="costrow"><span>${k}</span><strong>${v}</strong></div>`).join('');
 }
 function renderProcesses(){
   $('processCount').textContent=CATALOG.length;const query=$('processSearch').value.toLowerCase();
@@ -374,7 +381,7 @@ async function start(){
       const controls=readControls();
       if(config.directorCostMode==='measured')controls.directorCost=config.directorCost;
       if(renderedGeneration!==computeGeneration||JSON.stringify(controls)!==JSON.stringify(config)||Number($('uncertainty').value)!==uncertainty){toast('Wait for the current settings to finish calculating before exporting.');return;}
-      const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,productionUSD:result.productionUSD,storageUSD:result.storageUSD,totalUSD:result.totalUSD,pricing:plan.gpu.pricing},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};
+      const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,rentalWindows:result.rentalWindows,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,productionUSD:result.productionUSD,storageUSD:result.storageUSD,totalUSD:result.totalUSD,pricing:plan.gpu.pricing},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};
       download(`studio-plan-${config.gpu}-${config.minutes}min.json`,JSON.stringify(value,null,2),'application/json');toast('Exported schedule, task IDs, dependencies, resource limits and evidence.');
     };
     $('import').onclick=()=>$('importFile').click();$('importFile').onchange=async()=>{const file=$('importFile').files[0];if(!file)return;try{if(file.size>16_000_000)throw Error('Plan export must be smaller than 16 MB.');const input=JSON.parse(await file.text()),state=importSnapshot(input,evidence);checkpoint();config=state.config;preferences=state.preferences;uncertainty=Number.isFinite(input.uncertainty)?Math.max(0,Math.min(100,input.uncertainty)):20;selected=null;setControls();rebuild();toast('Plan imported. Paid execution and Studio projects remain unchanged.');}catch(e){toast('Could not import: '+e.message);}finally{$('importFile').value='';}};

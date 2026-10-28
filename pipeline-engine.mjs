@@ -4,6 +4,7 @@ import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
 import {directorForecast} from './pipeline-director-calibration.mjs?v=production-parallel-20261012';
 import {qualityConfig} from './pipeline-qc-forecast.mjs?v=one-hour-speed-20261028';
+import {denseActive,denseRoundCounts} from './pipeline-dense.mjs?v=dense-image-phase-20261028';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'practical', sample:20,
@@ -14,6 +15,8 @@ export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intr
   pricingBasis:'published',containerGB:20,storageDays:1,quotedGPUHourly:0,quotedGPU:'',
   resolution:'legacy', videoResolution:'720p', videoFps:30, videoRenderer:'auto', fullAssemblyPolicy:'direct-concat-original-audio-v1', imageWorkers:'best', encodingProfile:'cached', executionMode:'resident', measurementAttempt:'latest', readyChapters:1, gpuStartSeconds:0,
   productionModelCopies:1,productionRequestSlots:1,productionAudioLookahead:false,productionRenderOverlap:false,directorConditionsMatch:true,
+  productionGenerationStrategy:'legacy',productionDenseVersion:0,productionDenseSupported:false,productionDenseEligible:false,
+  productionDenseQCSlots:0,productionDenseGenerationTasks:5,productionDenseDescriptorLimit:0,productionDenseMaxRepairRounds:0,repairRounds:1,
   directorObservedSecondsPerStorySecond:0,directorObservedCostPerTwoHours:0,directorObservedSamples:0,directorObservedRuns:0 };
 
 export const LANES = [
@@ -111,6 +114,14 @@ export function validateConfig(input, evidence) {
   if(c.readyChapters>c.chapters)throw Error('GPU readiness chapters cannot exceed chapter count.');
   if(!Number.isFinite(Number(c.gpuStartSeconds))||Number(c.gpuStartSeconds)<0)throw Error('GPU boot time must be a finite, nonnegative number of seconds from project start.');
   c.gpuStartSeconds=Number(c.gpuStartSeconds);
+  if(!['legacy','align','fastest','dense'].includes(c.productionGenerationStrategy))throw Error('Unknown production image phase.');
+  if(denseActive(c)){
+    if(c.productionDenseVersion!==1||c.productionDenseSupported!==true||c.productionDenseEligible!==true||c.resolution==='legacy')
+      throw Error('Dense scheduling requires a supported eligible managed-cloud helper profile and measured image format.');
+    for(const [key,lo,hi] of [['productionDenseQCSlots',1,4],['productionDenseGenerationTasks',2,5],['productionDenseDescriptorLimit',1,Infinity],['productionDenseMaxRepairRounds',0,100]])
+      if(!Number.isSafeInteger(c[key])||c[key]<lo||c[key]>hi)throw Error('Invalid dense capability: '+key+'.');
+    if(c.earlyGpu||c.readyChapters!==c.chapters)throw Error('Dense image generation requires every chapter plan before GPU boot.');
+  }
   if(c.intro && c.introSeconds>=c.minutes*60) throw Error('The intro must be shorter than the full video.');
   return c;
 }
@@ -121,6 +132,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   const provisional=validateConfig(input,evidence),cal=evidence.calibration;
   const director=directorForecast(provisional,evidence);
   const c=validateConfig(qualityConfig({...provisional,qcEffectiveSlots:director.slots},evidence),evidence);
+  const dense=denseActive(c);
   const nativeProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&p.backend==='native');
   const cpuProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&(p.backend||'cpu')==='cpu')||cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
   const renderProfile=c.videoRenderer==='native'?nativeProfile:c.videoRenderer==='cpu'?cpuProfile:nativeProfile||cpuProfile;
@@ -145,6 +157,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   if(!g)throw Error('This GPU has no legacy timing profile. Select a measured resolution.');
   g=priceGPU(g,c);
   const capacities={api:director.aggregated?director.slots:c.policy==='serial'?1:c.apiSlots, cloud:1, remote:1, network:1, disk:1, cpu:c.cpuOverlap?2:1, audioGPU:1, imagePipe:1};
+  if(dense)capacities.denseQC=c.productionDenseQCSlots;
   const story=c.minutes*60-(c.intro?c.introSeconds:0);
   const count=Math.ceil(story/60*c.cadence),chapterSec=story/c.chapters;
   if(!Number.isSafeInteger(count))throw Error('Image count exceeds numeric precision; use a smaller planning scenario.');
@@ -190,17 +203,22 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
     add('intro-plan','introPlan',0,8,['preflight'],{api:1});
     add('intro-voice','voice',0,c.introSeconds/cal.voiceSampleSeconds*cal.voiceWallSeconds,['intro-plan'],{cpu:.8,audioGPU:1});
   }
-  const startDeps=c.earlyGpu?['preflight']:c.policy==='serial'?[...handoffs.slice(1)]:[handoffs[c.readyChapters]];
+  if(dense)add('dense-ready','handoff',0,.3,[...handoffs.slice(1),...(c.intro?['intro-plan','intro-voice']:[])],{disk:1},
+    {name:'All plans, intro and references ready',basis:'Readiness commit allowance. Required canonical references must already be prepared before paid startup; missing-reference creation time is not measured by the image benchmark.'});
+  const startDeps=dense?['dense-ready']:c.earlyGpu?['preflight']:c.policy==='serial'?[...handoffs.slice(1)]:[handoffs[c.readyChapters]];
   add('boot','boot',0,g.boot,startDeps,{cloud:1},{notBefore:c.gpuStartSeconds});
   add('models','models',0,c.warmCache?1:g.download,['boot'],{cloud:1});
   add('health','health',0,3,['models'],{cloud:1});
   add('cold','cold',0,g.cold,['health'],{remote:1});
   const attemptCount=count+(c.intro?c.introImages:0)+Math.ceil(count*c.retries/100);
+  const initialCount=count+(c.intro?c.introImages:0);
+  if(dense&&initialCount*(1+c.productionDenseMaxRepairRounds)>c.productionDenseDescriptorLimit)
+    throw Error('The dense review descriptor limit cannot cover every initial image and its saved retry ceiling. Increase verified count/byte/disk headroom before GPU startup; no image or review is dropped.');
   let lastPack=null,allPackSaves=[],packNumber=0;
   const imageSources=c.intro?[0,...Array.from({length:c.chapters},(_,i)=>i+1)]:Array.from({length:c.chapters},(_,i)=>i+1);
   for(const i of imageSources){
     const n=i===0?c.introImages:Math.floor(count*i/c.chapters)-Math.floor(count*(i-1)/c.chapters);
-    const extras=i===0?0:Math.floor(Math.ceil(count*c.retries/100)*i/c.chapters)-Math.floor(Math.ceil(count*c.retries/100)*(i-1)/c.chapters);
+    const extras=dense||i===0?0:Math.floor(Math.ceil(count*c.retries/100)*i/c.chapters)-Math.floor(Math.ceil(count*c.retries/100)*(i-1)/c.chapters);
     const imageStart=i===0?'intro-plan':handoffs[i],finalSaves=[],finalReviews=[];
     let checked=0;
     const wanted=c.qc==='off'?0:c.qc==='sampled'?Math.ceil(n*c.sample/100):n;
@@ -224,8 +242,14 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       }
       finalSaves.push(save);allPackSaves.push(save);lastPack=save;packNumber++;
       const q=Math.min(size,Math.max(0,wanted-checked));checked+=q;
-      if(q)finalReviews.push(add(p+'vision','vision',i,q*(c.qcSeconds||cal.qcSeconds),[save],{api:1},{images:q,
-        basis:c.qcBenchmarkNote||(c.qcHistoryMatches?'Matching saved-production initial API review time/cost; repairs and human waiting excluded.':'Historical/reference review assumption; no matching policy/slot cohort selected. Repairs and human waiting excluded.')}));
+      if(q){
+       const slots=dense?Math.min(c.productionDenseQCSlots,director.slots,q):1;
+       for(let slot=0;slot<slots;slot++){
+        const checks=Math.floor(q*(slot+1)/slots)-Math.floor(q*slot/slots);
+        finalReviews.push(add(p+'vision'+(dense?'-'+(slot+1):''),'vision',i,checks*(c.qcSeconds||cal.qcSeconds),[save],dense?{api:1,denseQC:1}:{api:1},{images:checks,
+         basis:dense?'Dense phase fingerprint has no matched production timing. Existing per-image QC reference is retained, grouped across the supported shared API slots; no new speed factor.':c.qcBenchmarkNote||(c.qcHistoryMatches?'Matching saved-production initial API review time/cost; repairs and human waiting excluded.':'Historical/reference review assumption; no matching policy/slot cohort selected. Repairs and human waiting excluded.')}));
+       }
+      }
       if(c.policy==='serial'&&q)lastPack=finalReviews.at(-1);
     }
     saves.push(...finalSaves);reviews.push(...finalReviews);
@@ -236,17 +260,56 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       timingRange:{min:stageProfile.minWallSeconds/stageProfile.videoSeconds*videoSeconds,max:stageProfile.maxWallSeconds/stageProfile.videoSeconds*videoSeconds},
       basis:`${i===0&&renderProfile.backend==='native'?'Intro remains on the CPU compatibility path; its fades are not separately calibrated. ':''}${c.videoResolution}/${c.videoFps}fps, ${stageProfile.clips} fresh clips in ${stageProfile.rounds} rounds, one clip worker; reference ${stageProfile.wallSeconds.toFixed(2)}s per ${stageProfile.videoSeconds}s of ${stageProfile.mode==='chapter-export'?'motion and chapter assembly':'motion'}. ${stageProfile.scope} ${stageProfile.hardwareCondition||''} Two-worker speedup is not assumed.`}));
   }
-  if(c.policy!=='proposed' && !(c.policy==='current'&&c.productionRenderOverlap)) {
+  const rentalWindows=[{boot:'boot',stop:'stop',phase:'initial'}],repairEnds=[],chapterRepairEnds=new Map();
+  if(dense){
+    const roundCounts=denseRoundCounts(c,Math.ceil(count*c.retries/100));
+    let previousChecks=[...reviews],previousStop='stop';
+    for(const [index,images] of roundCounts.entries()){
+      const prefix='repair'+(index+1)+'-';
+      const boot=add(prefix+'boot','boot',0,g.boot,[previousStop,...previousChecks],{cloud:1},{name:'Repair round '+(index+1)+' · GPU boot'});
+      const models=add(prefix+'models','models',0,c.warmCache?1:g.download,[boot],{cloud:1});
+      const health=add(prefix+'health','health',0,3,[models],{cloud:1});
+      const cold=add(prefix+'cold','cold',0,g.cold,[health],{remote:1});
+      const image=add(prefix+'images','delivered',0,images/measurement.imagesPerSecond,[cold],{remote:1},
+       {name:'Repair round '+(index+1)+' · assumed images',images,attempts:images,workers:measurement.workers,
+        basis:'Explicit extra-attempt/round scenario, not a predicted defect rate. Same existing delivered-image reference rate; each round pays startup and shutdown.'});
+      const stop=add(prefix+'stop','stop',0,8,[image],{cloud:1},{name:'Repair round '+(index+1)+' · stop before rechecks',priority:-1});
+      const checks=[];
+      for(let chapter=1;chapter<=c.chapters;chapter++){
+        const before=Math.floor(count*(chapter-1)/c.chapters),after=Math.floor(count*chapter/c.chapters);
+        const chapterImages=Math.floor(images*after/count)-Math.floor(images*before/count);
+        if(!chapterImages)continue;
+        const own=[image,stop];
+        if(c.qc!=='off')for(let slot=0,slots=Math.min(c.productionDenseQCSlots,director.slots,chapterImages);slot<slots;slot++){
+          const n=Math.floor(chapterImages*(slot+1)/slots)-Math.floor(chapterImages*slot/slots);
+          const check=add(prefix+'c'+chapter+'-vision'+slot,'vision',chapter,n*(c.qcSeconds||cal.qcSeconds),[image,stop],{api:1,denseQC:1},{images:n,
+            basis:'Explicit assumed repair attempts are apportioned by chapter, not predicted defects. Each repaired image is rechecked after this rental stops; existing QC reference timing/cost remain unchanged.'});
+          checks.push(check);own.push(check);
+        }
+        chapterRepairEnds.set(chapter,[...(chapterRepairEnds.get(chapter)||[]),...own]);
+      }
+      rentalWindows.push({boot,stop,phase:'repair',round:index+1});repairEnds.push(image,stop,...checks);
+      previousChecks=checks;previousStop=stop;
+    }
+    // Preserve the configured chapter-ready rendering. Unrelated chapters' QC
+    // must not delay a ready chapter. Explicit repair allowances still gate
+    // affected chapters; rendering never bypasses their own required reviews.
+    for(const id of renders){
+      const task=tasks.find(t=>t.id===id);
+      task.deps.push(...(c.productionRenderOverlap?(chapterRepairEnds.get(task.chapter)||[]):[...saves,...reviews,...repairEnds]));
+    }
+  }
+  if(!dense&&c.policy!=='proposed' && !(c.policy==='current'&&c.productionRenderOverlap)) {
     for(const r of renders){const task=tasks.find(t=>t.id===r);task.deps.push(...saves,...reviews);}
   }
-  add('stop','stop',0,8,c.policy==='current'?[...saves,...reviews]:saves,{cloud:1});
+  add('stop','stop',0,8,c.policy==='current'&&!dense?[...saves,...reviews]:saves,{cloud:1});
   tasks.find(t=>t.id==='stop').priority=-1; // Stop compute before purely local rendering, including in the serial baseline.
   if(c.policy==='current') {
     for(let i=2;i<=c.chapters;i++) {
       if(!c.productionAudioLookahead)tasks.find(t=>t.id===`c${i}-voice`).deps.push(handoffs[i-1]);
       // Before GPU admission there are no earlier image futures to drain.
       // Waiting for them while boot waits for all plans creates a false cycle.
-      if(i>2 && i>c.readyChapters)tasks.find(t=>t.id===`c${i}-voice`).deps.push(...tasks.filter(t=>t.chapter===i-2&&['save','delivered','vision'].includes(t.kind)).map(t=>t.id));
+      if(!dense&&i>2 && i>c.readyChapters)tasks.find(t=>t.id===`c${i}-voice`).deps.push(...tasks.filter(t=>t.chapter===i-2&&['save','delivered','vision'].includes(t.kind)).map(t=>t.id));
     }
   }
   // Keep long-video delivery allowances proportional rather than treating a
@@ -256,7 +319,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   const measuredJoin=candidateJoin?.policy===c.fullAssemblyPolicy&&candidateJoin.wallSeconds>0&&Number.isFinite(candidateJoin.wallSeconds)&&candidateJoin.videoSeconds>0&&Number.isFinite(candidateJoin.videoSeconds)?candidateJoin:null;
   const joinDuration=measuredJoin?measuredJoin.wallSeconds/measuredJoin.videoSeconds*c.minutes*60:renderProfile.joinWallSeconds===undefined?45*lengthScale:renderProfile.joinWallSeconds/renderProfile.videoSeconds*c.minutes*60;
   add('join','join',0,joinDuration,renders,{cpu:.3,disk:1},{basis:measuredJoin?`Measured current assembly: ${measuredJoin.wallSeconds.toFixed(3)}s for ${measuredJoin.videoSeconds}s output. ${measuredJoin.scope} Counted once in Join; other video lengths are extrapolated.`:renderProfile.joinWallSeconds===undefined?'Allowance: 45 seconds per two output hours, scaled by length. Not a measured long-video join; filesystem and chapter count can change it.':`Instrumented full-story AAC128 mux: ${renderProfile.joinWallSeconds.toFixed(3)}s per ${renderProfile.videoSeconds}s output in the paired fresh export. Excluded from chapter Render, counted once here; long-video rate is extrapolated.`});
-  add('probe','probe',0,45*lengthScale,['join','stop'],{cpu:.2,disk:1},{basis:'Allowance: 45 seconds per two output hours, scaled by length. Cloud upload and platform processing are separate and not timed.'});
+  add('probe','probe',0,45*lengthScale,['join','stop',...rentalWindows.slice(1).map(w=>w.stop)],{cpu:.2,disk:1},{basis:'Allowance: 45 seconds per two output hours, scaled by length. Cloud upload and platform processing are separate and not timed.'});
   if(c.exhaustive)add('decode','decode',0,cal.exhaustiveDecodeSeconds*lengthScale*(c.videoFps/24)*(c.videoResolution==='1080p'?2.25:1),['probe'],{cpu:1,disk:1},{basis:'Estimate from a historical 720p24 full-decode sample, scaled by output frames and pixels. The selected-format full-decode rate is not measured.'});
   if(c.policy==='serial') {
     // Topological order first: renderer nodes also wait for later chapters' saves.
@@ -268,7 +331,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       done.add(task.id);previous=task.id;left.splice(left.indexOf(task),1);
     }
   }
-  return {version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
+  return {version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,rentalWindows,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
     director,renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.backend==='native'?'local GTX 1650 GPU motion, one worker; shared narration GPU; full-story mux timed separately':renderProfile.mode==='chapter-export'?'fresh real-media CPU chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local CPU clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
 }
 
@@ -276,11 +339,12 @@ export function schedule(plan, preferences={}) {
   const out=scheduleTasksFast(plan,preferences),completed=new Map(out.map(t=>[t.id,t]));
   if(!completed.has('boot')||!completed.has('stop'))throw Error('Rental accounting requires boot and stop tasks.');
   const end=out.reduce((at,t)=>Math.max(at,t.end),0),boot=completed.get('boot'),stop=completed.get('stop');
-  const rentalSeconds=stop.end-boot.start,gpuWork=out.filter(t=>t.resources.remote).reduce((n,t)=>n+t.duration,0);
+  const windows=(plan.rentalWindows||[{boot:'boot',stop:'stop',phase:'initial'}]).map(w=>({...w,start:completed.get(w.boot).start,end:completed.get(w.stop).end}));
+  const rentalSeconds=windows.reduce((n,w)=>n+w.end-w.start,0),gpuWork=out.filter(t=>denseActive(plan.config)?['delivered','infer'].includes(t.kind):t.resources.remote).reduce((n,t)=>n+t.duration,0);
   const directorUSD=plan.director.costPerTwoHours*plan.storySeconds/7200;
   const qcCount=out.filter(t=>t.kind==='vision').reduce((n,t)=>n+(t.images||0),0);
   const qcUSD=qcCount*plan.config.qcCost;
-  return {tasks:out,end,rentalSeconds,gpuWork,gpuIdleSeconds:Math.max(0,rentalSeconds-gpuWork),
+  return {tasks:out,end,rentalSeconds,rentalWindows:windows,gpuWork,gpuIdleSeconds:Math.max(0,rentalSeconds-gpuWork),
     ...costParts(rentalSeconds,plan.gpu.hourly,directorUSD,qcUSD,plan.config.storageDaily,plan.config.storageDays),
     directorUSD,qcUSD,qcCount,diagnostics:validateSchedule(plan,out)};
 }

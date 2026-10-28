@@ -18,7 +18,7 @@ import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=connection-20261009";
 import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
 import {rendererPlacement,chapterDisplayStatus} from './studio-render-status.mjs?v=grounding-20261011';
-import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=scheduling-20261013';
+import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=dense-image-phase-20261028';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
 import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=workspace-20261016-cloud-recovery-20261015';
 import {
@@ -943,6 +943,8 @@ function productionOptions(validate=true){
     connected && health?.cloudSchedulingAvailable && project.settings.image.provider==='comfyui' &&
     project.settings.director.provider==='openai-luna' && Number(project.settings.budget?.openaiUSD)>0 && !project.settings.economyPanels,
     !!$('#productionOverlap')?.checked),unattended:project.settings.unattendedProduction!==false};
+    if(validate&&planned.generationStrategy==='dense'&&(!health?.denseImagePhaseAvailable||!health?.managedGPU?.configured||!planned.unattended))
+      throw Error('Dense generation requires an updated helper, a managed cloud GPU and automatic full-video production. Choose an eligible setup or retain your existing strategy.');
     if(validate && planned.unattended && !health?.unattendedProductionAvailable)
       throw Error('Update the shared helper before automatic full-video production; this older helper cannot complete its repair and cloud-save stages automatically.');
     return planned;

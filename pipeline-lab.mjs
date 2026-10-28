@@ -1,4 +1,4 @@
-import {imageAccountingHTML} from './pipeline-detail-ui.mjs?v=gpu-startup-policy-20261028';
+import {imageAccountingHTML} from './pipeline-detail-ui.mjs?v=dense-image-phase-20261028';
 import {latestProfiles} from './pipeline-measurements.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function measuredRows(data,resolution,encodingProfile='cached',executionMode='resident'){

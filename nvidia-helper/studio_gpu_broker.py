@@ -94,6 +94,8 @@ class GPUReservation:
         return CloudGPULease(config,self.path,self.project,self.budget,self.runner,self.gate,self.report,**self.options)
     def ensure(self):
         if self.lease and self.lease.owned:self.lease.ensure();return
+        if self.lease and self.lease.state.get('status') not in (None,'STOPPED'):
+            raise GPURequestUncertain('The preceding GPU window is not confirmed stopped; reconcile its saved owner before another rental.')
         for name in provider_order(self.config):
             if not workload_verified(self.config,name,self.workload):
                 self.attempts.append({'provider':name,'status':'NOT_VERIFIED','paidRequest':False});continue
@@ -101,6 +103,10 @@ class GPUReservation:
             lease=(self.factories[name]() if self.factories else self.make(name));self.lease=lease
             try:
                 lease.ensure()
+                # A creator handoff proves ownership of its first running pod
+                # only. Later dense repair windows create a fresh controller
+                # from the stopped state, including the carried project spend.
+                self.options.pop('owned_startup',None)
                 lease.save(provider=name,providerAttempts=copy.deepcopy(self.attempts))
                 self.attempts.append({'provider':name,'status':'RUNNING'})
                 return

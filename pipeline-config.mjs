@@ -1,4 +1,5 @@
-import {describePlan} from './pipeline-engine.mjs?v=one-hour-speed-20261028';
+import {describePlan} from './pipeline-engine.mjs?v=dense-image-phase-20261028';
+import {denseActive} from './pipeline-dense.mjs?v=dense-image-phase-20261028';
 
 export function plannerSourceState(project, requestedFollowing, applied) {
   const following=Boolean(requestedFollowing && applied?.project===project);
@@ -6,6 +7,7 @@ export function plannerSourceState(project, requestedFollowing, applied) {
 }
 
 export function productionModeNote(config) {
+  if(denseActive(config))return `Installed Dense: all chapter plans, intro and references precede one initial image burst. ${config.productionDenseGenerationTasks} generation tasks supply the existing workers; up to ${config.productionDenseQCSlots} QC API slots run independently and may finish after GPU shutdown. ${config.productionRenderOverlap?'A chapter can render once all of its required QC and repairs pass, while unrelated chapters continue.':'Rendering waits for all required image work and reviews.'} Any assumed repair rounds pay separate startup and stop intervals; runtime keeps the saved per-shot retry ceilings. Setup/transfers/shutdown remain billed. Component timing is an unmatched reference for this new phase, not measured full-production throughput.`;
   if(config.policy==='proposed')return 'Planning experiment: separates GPU work from retrieval and overlaps chapter rendering. This is not deployed production behavior.';
   if(config.policy!=='current')return 'Every task runs sequentially. This is the comparison baseline, not a speed recommendation.';
   const copies=config.productionModelCopies===2?2:1;

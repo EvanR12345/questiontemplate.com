@@ -1,0 +1,63 @@
+{
+  "release": "dense-image-phase-20261028",
+  "date": "2026-10-28",
+  "measurementScope": "UNMEASURED_STOCK_UNAVAILABLE",
+  "runtime": "Explicit Dense strategy: all plans and required references first; independent durable QC; stop after each generation window; existing repair ceilings and chapter render gates.",
+  "measurements": null,
+  "availability": {
+    "status": "UNAVAILABLE",
+    "requiredGPU": "NVIDIA GeForce RTX 5090",
+    "available": false,
+    "ownedResourcesCreated": 0,
+    "paidDispatches": 0,
+    "stockReadAtUTC": "2026-10-28T16:00:25.338269+00:00",
+    "secureGPUHourlyQuoteUSD": 1.19,
+    "catalogAvailable": true,
+    "allocationIntentAbsent": false,
+    "accountPodCount": 0,
+    "verification": "HTTP400_CAPACITY_REJECTED_AND_EXACT_OWNER_ABSENT"
+  },
+  "budget": {
+    "status": "FINAL_CLOSED",
+    "newGPUAndDiskUpperUSD": 0,
+    "newAPISpentUSD": 0,
+    "newAPIReservedUSD": 0,
+    "ownedResourcesCreated": 0,
+    "ownedResourceDeletionConfirmed": false,
+    "unknownLiabilities": 0,
+    "approvedSharedCapUSD": 2,
+    "priorConservativeSpendUSD": 0.8739099891002298,
+    "totalConservativeCommittedUSD": 0.8739099891002298,
+    "remainingUSD": 1.1260900108997702
+  },
+  "verification": {
+    "backendTestsPassed": 215,
+    "denseTestsPassed": 20,
+    "frontendScopedTestsPassed": 216,
+    "knownPreexistingFailure": "One unrelated guide-help test failed in an earlier broader sweep and was independently reproduced from committed baseline source.",
+    "qcBodyAndWireParityCases": 12,
+    "visualSpecParityCases": 12,
+    "backendReceiptSHA256": "1a73d55029a659754990235c27aa06c5825774f7be515dff94aa21b45296e819",
+    "frontendReceiptSHA256": "a03810b6fc9b58b9b6b2caa642bf703a424341e5f5db516bff30aa65d7eb1ad0"
+  },
+  "freshInferenceEvidenceConfirmed": false,
+  "matchedPairComparisonVerified": false,
+  "unchanged": {
+    "voiceReferenceMinutes": 12.3,
+    "processingTier": "default",
+    "imageQualitySettings": true,
+    "referenceInputs": true,
+    "cadence": true,
+    "checkPolicy": true,
+    "reasoningEfforts": true,
+    "savedRetryCeilings": true
+  },
+  "limits": [
+    "The planned twelve-image live cohort was not run because the exact RTX5090 test allocation was unavailable; live GPU utilization and elapsed improvement remain unmeasured.",
+    "Client generation interval coverage is not GPU hardware utilization.",
+    "Production rental includes startup, loading, cold work and shutdown. Repairs have separate billed windows.",
+    "No images, QC calls or automatic repairs were purchased for the unavailable live cohort.",
+    "The timeline remains a forecast; no new full-video or voice calibration inferred.",
+    "Dense requires managed rental and prepared required references; explicit selection preserves unrelated projects."
+  ]
+}

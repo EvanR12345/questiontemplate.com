@@ -36,7 +36,9 @@ function fixture(){
     setControls=()=>{};
     globalThis.fixtureAPI={load:()=>loadStudioSettings({refresh:true}),snapshot,
       selected:id=>{studioProject=id;document.getElementById('studioProject').value=id;},
-      manual:studioManual};`,context);
+      manual:studioManual,
+      setManual:()=>{config.minutes=17;preferences={'c1-voice':{notBefore:21}};selected='c1-voice';studioManual();},
+      manualState:()=>({snapshot:snapshot(),selected})};`,context);
   return {api:context.fixtureAPI,profile,element};
 }
 
@@ -61,4 +63,16 @@ test('rejected Kaggle setup retains the scenario without exporting a false follo
   api.manual();
   assert.equal(api.snapshot().studioSource.following,false);
   assert.equal(api.snapshot().studioSource.requestedFollowing,false);
+});
+
+test('a newly available Dense saved profile cannot replace an active manual scenario',async()=>{
+  const {api,profile,element}=fixture();await api.load();api.setManual();const before=api.manualState();
+  profile.revision=2;profile.generationStrategy='dense';
+  profile.settings.director={parallelism:4,processingTier:'default',reasoning:'Balanced'};
+  profile.imageExecution={backend:'comfyui-api',gpuLanes:1,modelCopies:1,requestSlots:1};
+  profile.denseImagePhase={version:1,supported:true,eligible:true,generationTasks:5,qcTaskSlots:4,descriptorLimit:8192,maxRepairRounds:2,allPlansFirst:true};
+  await api.load();const after=api.manualState();
+  assert.deepEqual(after.snapshot.config,before.snapshot.config);assert.deepEqual(after.snapshot.preferences,before.snapshot.preferences);
+  assert.equal(after.selected,before.selected);assert.equal(after.snapshot.studioSource.following,false);
+  assert.match(element('studioProfileStatus').textContent,/manual scenario retained/);
 });

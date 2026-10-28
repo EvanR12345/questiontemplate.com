@@ -1,5 +1,5 @@
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=one-hour-speed-20261028';
-import {gpuChoices,selectGPUConfig} from './pipeline-config.mjs?v=one-hour-speed-20261028';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=dense-image-phase-20261028';
+import {gpuChoices,selectGPUConfig} from './pipeline-config.mjs?v=dense-image-phase-20261028';
 // Run in a worker. Return only chart/card fields, not every alternative's
 // thousands of timeline operations and embedded calibration records.
 export function compareGPUPlans(config,evidence){

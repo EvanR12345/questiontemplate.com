@@ -12,7 +12,8 @@ from studio_data import digest,get_chapter
 from studio_performance import host_execution_gaps
 
 LABELS={'align':'Timed · align Luna + images · 15s buffer',
-    'fastest':'Timed · keep fastest video','legacy':'Existing chapter-by-chapter workflow'}
+    'fastest':'Timed · keep fastest video','legacy':'Existing chapter-by-chapter workflow',
+    'dense':'Dense images · all plans first · independent quality checks'}
 
 
 def strategy(options):
@@ -24,6 +25,7 @@ def strategy(options):
 
 
 def start_decision(mode,remaining,backlog,finished=False):
+    if mode=='dense':return {'start':bool(finished),'reason':'All plans and global image preflight are ready; feed the complete image burst.' if finished else 'Preparing every plan before GPU startup.'}
     if mode=='fastest':return {'start':True,'reason':'Start the first accepted ready chapter; planning continues independently.'}
     if finished:return {'start':True,'reason':'All plans are ready; dispatch images now.'}
     if any(type(v) not in (int,float) or not math.isfinite(v) or v<0 for v in (remaining,backlog)):
@@ -95,6 +97,8 @@ class ChapterImageScheduler:
                     if not self.ready:
                         if self.finished:break
                         self.cv.wait(.1);continue
+                    if self.mode=='dense' and not getattr(self.overlap,'dense_preflight_complete',False):
+                        self.cv.wait(.1);continue
                     # Generating a missing canonical portrait while Luna is
                     # planning changes its reference inputs. Existing portraits
                     # can overlap; new portraits wait for ordered planning.
@@ -132,6 +136,8 @@ class ChapterImageScheduler:
         except BaseException as error:self.error=error
 
     def finish(self):
+        if self.mode=='dense' and not getattr(self.overlap,'dense_preflight_complete',False):
+            raise RuntimeError('Dense images require completed global preflight before GPU admission.')
         with self.cv:self.finished=True;self.cv.notify_all()
         while self.thread.is_alive():
             self.overlap.gate(self.overlap.main_context,'Waiting for accepted chapter images')

@@ -1,6 +1,6 @@
-import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=one-hour-speed-20261028';
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=one-hour-speed-20261028';
-import {startupSearch} from './pipeline-detail-ui.mjs?v=gpu-startup-policy-20261028';
+import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=dense-image-phase-20261028';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=dense-image-phase-20261028';
+import {startupSearch} from './pipeline-detail-ui.mjs?v=dense-image-phase-20261028';
 self.onmessage=({data})=>{
  try{
   if(data.type==='plan'){
