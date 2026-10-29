@@ -1,0 +1,103 @@
+{
+  "release": "runtime-efficiency-20261028",
+  "status": "VERIFIED_COMPONENTS_FULL_VIDEO_UNMEASURED",
+  "standardProcessingOnly": true,
+  "voiceEstimateMinutes": 12.3,
+  "voiceCalibrationChanged": false,
+  "fullVideoSpeedupMeasured": false,
+  "imageQualityAndCadenceChanged": false,
+  "checkCoverageChanged": false,
+  "statusNoop": {
+    "scope": "Synthetic local project; unchanged chapter state only",
+    "projectBytes": 10311110,
+    "shots": 1200,
+    "chapters": 48,
+    "historyRows": 12000,
+    "baselineMedianSeconds": 0.3109309000428766,
+    "optimizedMedianSeconds": 0.10076040006242692,
+    "reductionPercent": 67.59395735562714,
+    "samplesPerArm": 7
+  },
+  "queueSyncNoop": {
+    "projectBytes": 10313895,
+    "shots": 1200,
+    "chapters": 48,
+    "historyRows": 12000,
+    "samplesPerArm": 9,
+    "legacyMedianSeconds": 0.2595476000569761,
+    "optimizedMedianSeconds": 0.12638769997283816,
+    "allSavedBytesUnchanged": true
+  },
+  "acceptedVisualDispatch": {
+    "requests": 8,
+    "workUnits": 42,
+    "peakSlotsBoth": 4,
+    "oldMakespanUnits": 18,
+    "newMakespanUnits": 14,
+    "reductionPercent": 22.22222222222222,
+    "actualModelOrNetworkCalls": 0,
+    "interpretation": "Deterministic synthetic scheduling replay only; not measured API/full-story throughput."
+  },
+  "realExecutorIntegration": {
+    "testsPassed": 2,
+    "realPaths": [
+      "AcceptedVisualQueue",
+      "CloudStoryOverlap._director_executor",
+      "LaneDirector",
+      "OpenAIDirector",
+      "SpendLedger",
+      "ExecutionJournal"
+    ],
+    "successCase": {
+      "actualMockPOSTs": 6,
+      "peakSharedSlots": 4,
+      "secondGroupStartsBeforeFirstGroupTailEnds": true,
+      "settledPaidReceipts": 6,
+      "distinctRequestOwners": 6,
+      "canonicalChaptersAndSettingsUnchanged": true
+    },
+    "failureCase": {
+      "actualMockPOSTs": 4,
+      "settledPaidReceipts": 3,
+      "UNKNOWNReservations": 1,
+      "UNKNOWNReservationPositive": true,
+      "nextGroupPOSTs": 0,
+      "incompleteResponseAutomaticRetriesAfterSiblingFailure": 0,
+      "paidSiblingDrained": true,
+      "unresolvedLiabilityBlocksNewOverlap": true,
+      "canonicalChaptersAndSettingsUnchanged": true
+    },
+    "modelOrProviderCalls": 0
+  },
+  "regression": {
+    "testsRun": 346,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "externalNetworkAttempts": 0,
+    "paidCalls": 0
+  },
+  "referenceReuse": {
+    "installed": false,
+    "liveSpeedupMeasured": false,
+    "reason": "Live API benchmark pending; no reference-reuse gain applied."
+  },
+  "limitations": [
+    "Synthetic scheduling replay is not measured API or two-hour production elapsed time.",
+    "The accepted-group dispatcher requires staged-lean, accepted-source/visual overlap and more than one API slot.",
+    "One accepted fact group has no cross-group tail to overlap.",
+    "Source decisions remain ordered; output order, models, efforts, references, checks and retry ceilings are preserved.",
+    "Local save timings depend on project/history size and host load. No-op savings are not a universal per-frame speedup.",
+    "No new full-video calibration or voice timing change is applied."
+  ],
+  "sourceSHA256": {
+    "director_pipeline.py": "65a885a6c7784fe6504fa6e1dcc34f5dabcb6de4bb647965eefbd7673587bb91",
+    "director_pipeline_test.py": "b87475ab0054b85463d622c5a24b4d2f0d9553f9e6aa3500e2e2e2c012e82873",
+    "director_pipeline_integration_test.py": "ff685fa1a8380e6cf4543d06edc67f20e928f9f907cf3fecad532fd93af378ab",
+    "studio_service.py": "6c38508040e125bc02320e2c61463c0d6fb1cab142da6ff714fab7d7fb7a3ef7",
+    "studio_status_write_test.py": "e4b098df9f02471f55a69b2ad6f765dee7552457b4ab899b4969c59348ef362f",
+    "studio_queue_sync_test.py": "e9fec9564bda383ebd7569ad252953b1c7ddbd35febfd3926cfaf97cdd16acee",
+    "studio_performance.py": "21dc8150a7b4dd4d838968ba1df08c0bbea65e50801baf22e26959de604a67fc",
+    "studio_performance_test.py": "9dde9c55b5447e934800df4d40767ac0bd5a7e88ce12ea4ad67611b89152be18"
+  }
+}

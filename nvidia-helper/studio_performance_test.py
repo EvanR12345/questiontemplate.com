@@ -59,6 +59,8 @@ class PerformanceTest(unittest.TestCase):
         wide=profile_for('AI directing',self.project,{})
         d['sourceVisualOverlap']=True
         self.assertNotEqual(wide,profile_for('AI directing',self.project,{}))
+        self.assertEqual(profile_for('AI directing',self.project,{})['acceptedVisualDispatchVersion'],2)
+        self.assertNotIn('acceptedVisualDispatchVersion',wide)
         before=profile_for('AI directing',self.project,{})
         d['factBeatsMode']='storyboard'
         after=profile_for('AI directing',self.project,{})

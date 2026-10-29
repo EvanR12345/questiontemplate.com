@@ -104,6 +104,8 @@ def profile_for(stage, project, config, details=None):
             if lean:profile['reviewHintsVersion']=2
             if lean:profile['sourceTimingUnitsVersion']=1
             if lean:profile['sourceVisualOverlap']=director.get('sourceVisualOverlap',False)
+            if lean and profile['sourceVisualOverlap']:
+                profile['acceptedVisualDispatchVersion']=2
             if lean:profile['factReasoning']='high' if director.get('reasoning')=='High' else 'medium'
             from director_staged import visual_group_limits
             sentences,characters,shots=visual_group_limits(director)

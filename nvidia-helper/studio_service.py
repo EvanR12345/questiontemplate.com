@@ -173,8 +173,22 @@ class StudioService:
         for pid, items in byproject.items():
 
             def update(p):
+                previous_statuses = {}
+                def set_status(item, value):
+                    # One chapter can be assigned twice before aggregation.
+                    # Compare its final state with its original state, so an
+                    # intermediate change that is restored remains a no-op.
+                    previous_statuses.setdefault(id(item), (item, 'status' in item, item.get('status')))
+                    item['status'] = value
+                timing_changed = False
                 if completed_job and completed_job['project'] == pid:
+                    production = p.get('production')
+                    timings = production.get('timings') if isinstance(production, dict) else None
+                    timing_count = len(timings) if isinstance(timings, list) else None
                     self.append_queue_timing(p, completed_job)
+                    production = p.get('production')
+                    timings = production.get('timings') if isinstance(production, dict) else None
+                    timing_changed = isinstance(timings, list) and len(timings) != timing_count
                 affected = set()
                 for item in items:
                     try:
@@ -189,17 +203,17 @@ class StudioService:
                         except StopIteration:
                             continue
                         if state != "COMPLETE":
-                            s["status"] = (
+                            set_status(s, (
                                 "PAUSED"
                                 if state == "QUEUED" and self.paused
                                 else "GENERATING" if state == "RUNNING" else state
-                            )
+                            ))
                     elif state != "COMPLETE":
-                        c["status"] = (
+                        set_status(c, (
                             "PAUSED"
                             if state == "QUEUED" and self.paused
                             else "ANALYZING" if state == "RUNNING" else state
-                        )
+                        ))
                 for cid in affected:
                     c = get_chapter(p, cid)
                     active = [
@@ -208,7 +222,7 @@ class StudioService:
                         if r["chapter"] == cid and r["status"] in ("QUEUED", "RUNNING")
                     ]
                     if active:
-                        c["status"] = (
+                        set_status(c, (
                             "PAUSED"
                             if self.paused
                             else (
@@ -216,17 +230,21 @@ class StudioService:
                                 if any(r["status"] == "RUNNING" for r in active)
                                 else "QUEUED"
                             )
-                        )
+                        ))
                     elif c.get("scenes"):
                         shots = [s for sc in c["scenes"] for s in sc["shots"]]
                         if shots and all(
                             s.get("imagePath") and s["status"] in ("COMPLETE", "PASSED")
                             for s in shots
                         ):
-                            c["status"] = "COMPLETE"
+                            set_status(c, "COMPLETE")
+                if (not timing_changed
+                        and all(present and item.get('status') == previous
+                                for item, present, previous in previous_statuses.values())):
+                    return UNCHANGED
 
             try:
-                self.store.mutate(pid, update, skip_unchanged=True)
+                self.store.mutate(pid, update)
             except FileNotFoundError:
                 pass
 
@@ -1114,7 +1132,16 @@ class StudioService:
 
     def status(self, pid, chid, value):
         if chid:
-            self.store.mutate(pid, lambda p: get_chapter(p, chid).update(status=value))
+            def update(project):
+                chapter = get_chapter(project, chid)
+                if value not in STATES:
+                    raise ValueError('Invalid chapter status.')
+                # Dense QC can report the same chapter state for many shots.
+                # Keep the fresh locked read without publishing identical data.
+                if chapter.get('status') == value:
+                    return UNCHANGED
+                chapter['status'] = value
+            self.store.mutate(pid, update)
 
     def worker(self):
         while True:
