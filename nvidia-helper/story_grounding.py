@@ -5,6 +5,9 @@ still resolves actors; the application preserves the evidence and history.
 """
 import copy
 import re
+import unicodedata
+
+OWNERSHIP_RESOLUTION_VERSION = 2
 
 GLOBAL_ENVIRONMENT = frozenset(('time', 'weather', 'season'))
 INTERNAL_ENVIRONMENT = frozenset(('location', 'locationId', 'mood', 'gunfire', 'elapsedTime', 'condition'))
@@ -21,6 +24,15 @@ def owner_conflicts(events, people):
     named people need the director, and are not rejected just for two names.
     """
     by_id = {p['id']: p for p in people}
+    # Labels identify a different accepted person only if they distinguish that
+    # ID. Two cast members can share a name/alias; a generic role is evidence
+    # for the role check below, never proof of one named individual.
+    normalize=lambda value:' '.join(unicodedata.normalize('NFKC',value).casefold().split())
+    label_ids={}
+    for accepted in people:
+        for label in labels(accepted):
+            key=normalize(label)
+            if key:label_ids.setdefault(key,set()).add(accepted['id'])
     conflicts = []
     for index, event in enumerate(events):
         if event.get('field') in ('outfit','hairStyle','injury','accessories','wetness','dirt','makeup','disguise','age','transformation','status','restraint','posture'):
@@ -47,7 +59,9 @@ def owner_conflicts(events, people):
         object_words = re.findall(r'[a-z]+',str(event.get('field','')).lower())
         for other in people:
             if other['id'] == person['id']: continue
-            matches = [re.search(r'(?<!\w)'+re.escape(label)+r'\s+(?:was\s+|is\s+)?(?:holding|holds|held|carrying|carries)\b([^.;!?]*)',quote,re.I) for label in labels(other) if label]
+            matches = [re.search(r'(?<!\w)'+re.escape(label)+r'\s+(?:was\s+|is\s+)?(?:holding|holds|held|carrying|carries)\b([^.;!?]*)',quote,re.I)
+                for label in labels(other) if label and label_ids.get(normalize(label))=={other['id']}
+                and not re.fullmatch(r'(?:(?:the|a|an) )?(?:woman|man|girl|boy|female|male)',normalize(label))]
             if any(match and any(re.search(r'\b'+re.escape(w)+r'\b',re.split(r'\b(?:while|and|but|as)\b',match[1],flags=re.I)[0],re.I) for w in object_words) for match in matches):
                 conflicts.append({'changeIndex':index, 'issue':f'The quoted holder is {other["name"]}, not {person["name"]}. Preserve the explicit object owner.'})
                 break

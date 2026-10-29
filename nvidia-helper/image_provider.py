@@ -717,6 +717,22 @@ class ComfyImageProvider(ImageProvider):
         if body is None:return request_json(url,timeout=timeout)
         return request_json(url,body,timeout=timeout)
 
+    def _readiness_json(self,path,timeout):
+        """Retry only timed-out, pre-submission metadata GETs, at most twice.
+
+        Memory/workflow checks remain mandatory. This never wraps inference,
+        uploads, history or cancellation, whose existing dispatch rules apply.
+        Each attempt retains the existing timeout (9s/30s total socket bounds).
+        """
+        if path not in ('/system_stats','/object_info'):
+            raise ValueError('Readiness retry is restricted to metadata GETs.')
+        for attempt in range(3):
+            try:return self._request_json(self.url+path,timeout=timeout)
+            except (TimeoutError,urllib.error.URLError) as error:
+                timed_out=(isinstance(error,TimeoutError) or
+                    not isinstance(error,urllib.error.HTTPError) and isinstance(error.reason,TimeoutError))
+                if not timed_out or attempt==2:raise
+
     def _open(self,request,timeout):
         if self._transport:return self._transport.open(request,timeout)
         return urllib.request.urlopen(request,timeout=timeout)
@@ -726,7 +742,7 @@ class ComfyImageProvider(ImageProvider):
         # Always inspect ComfyUI's device rather than the helper's laptop.
         if time.time() - self._server_memory[0] > 60:
             try:
-                stats = self._request_json(self.url + "/system_stats", timeout=3)
+                stats = self._readiness_json('/system_stats',timeout=3)
                 devices = stats.get("devices", [])
                 memory = max(
                     (float(d.get("vram_total", 0)) / 2**30 for d in devices),
@@ -851,7 +867,7 @@ class ComfyImageProvider(ImageProvider):
             if self._node_catalog[1] and self._node_catalog[1][0]==catalog_stamp and time.time()-self._node_catalog[0]<30:
                 nodes=self._node_catalog[1][1]
             else:
-                nodes = self._request_json(self.url + "/object_info", timeout=10)
+                nodes = self._readiness_json('/object_info',timeout=10)
                 self._node_catalog=(time.time(),(catalog_stamp,nodes))
             templates = template.get("variants", [template])
             selected=model or template.get('automaticWorkflows',{}).get(workflow,{}).get('model')

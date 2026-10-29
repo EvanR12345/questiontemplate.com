@@ -50,6 +50,7 @@ export function directorForecast(config,evidence) {
   // The measurement already contains its tested concurrency. Reserving that
   // capacity avoids applying an invented second speedup or overbooking visual QC.
   return {id,label:p.label.replace('· Standard',tier==='flex'?'· Flex':tier==='fast'?'· Fast':'· Standard'),slots,aggregated:true,tier,installed:p.installed,
+    includesHandoffCommitTime:p.includesHandoffCommitTime===true,
     secondsPerStorySecond:(usable?observed.seconds:p.seconds*(tier==='flex'?flexFactor:1))/data.sourceNarrationSeconds,
     costPerTwoHours:manual?config.directorCost:(usable?observed.estimatedUSD:p.estimatedUSD*multiplier)/data.sourceNarrationSeconds*7200,
     sourceSeconds:data.sourceNarrationSeconds,sourceWords:data.sourceWords,sourceChapters:p.sourceChapters,

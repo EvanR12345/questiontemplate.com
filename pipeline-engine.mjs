@@ -1,10 +1,11 @@
 // A local scheduling model. This module never calls a paid provider or changes Studio projects.
-import {scheduleTasksFast} from './pipeline-fast-scheduler.mjs?v=fast-planner-20261028';
+import {scheduleTasksFast,includedHandoffDependency} from './pipeline-fast-scheduler.mjs?v=matched-production-20261029';
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {directorForecast} from './pipeline-director-calibration.mjs?v=production-parallel-20261012';
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=one-hour-speed-20261028';
-import {denseActive,denseRoundCounts} from './pipeline-dense.mjs?v=dense-image-phase-20261028';
+import {directorForecast} from './pipeline-director-calibration.mjs?v=matched-production-20261029';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=matched-production-20261029';
+import {denseActive,denseRoundCounts,densePrewarmCredit,densePrewarmMeasurement} from './pipeline-dense.mjs?v=matched-production-20261029';
+import {applySourceBurstProjection} from './pipeline-source-burst.mjs?v=matched-production-20261029';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'practical', sample:20,
@@ -17,6 +18,8 @@ export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intr
   productionModelCopies:1,productionRequestSlots:1,productionAudioLookahead:false,productionRenderOverlap:false,directorConditionsMatch:true,
   productionGenerationStrategy:'legacy',productionDenseVersion:0,productionDenseSupported:false,productionDenseEligible:false,
   productionDenseQCSlots:0,productionDenseGenerationTasks:5,productionDenseDescriptorLimit:0,productionDenseMaxRepairRounds:0,repairRounds:1,
+  productionDensePrewarmVersion:0,productionDensePrewarmEligible:false,productionDensePrewarmMeasured:false,
+  productionDensePrewarmProof:'',productionDensePrewarmMeasuredProof:'',productionDensePrewarmAssemblySeconds:0,productionDensePrewarmProofSeconds:0,
   directorObservedSecondsPerStorySecond:0,directorObservedCostPerTwoHours:0,directorObservedSamples:0,directorObservedRuns:0 };
 
 export const LANES = [
@@ -120,7 +123,7 @@ export function validateConfig(input, evidence) {
       throw Error('Dense scheduling requires a supported eligible managed-cloud helper profile and measured image format.');
     for(const [key,lo,hi] of [['productionDenseQCSlots',1,4],['productionDenseGenerationTasks',2,5],['productionDenseDescriptorLimit',1,Infinity],['productionDenseMaxRepairRounds',0,100]])
       if(!Number.isSafeInteger(c[key])||c[key]<lo||c[key]>hi)throw Error('Invalid dense capability: '+key+'.');
-    if(c.earlyGpu||c.readyChapters!==c.chapters)throw Error('Dense image generation requires every chapter plan before GPU boot.');
+    if(c.earlyGpu||c.readyChapters!==c.chapters)throw Error('Dense image generation requires every chapter plan; startup overlap needs a separate matched envelope proof.');
   }
   if(c.intro && c.introSeconds>=c.minutes*60) throw Error('The intro must be shorter than the full video.');
   return c;
@@ -188,7 +191,10 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       prev=add(prefix+'chapter','chapter',i,total,deps,{api:director.slots},{images,
         name:'Chapter directing · all measured passes',directorProfile:director.id,
         includedStages:director.stages,basis:`${director.label}: ${director.measuredSeconds.toFixed(3)}s for ${director.sourceSeconds}s of narration; ${director.calls} API requests, ${director.slots} tested slots. Includes source analysis, storyboards, fidelity checks and observed repairs once. ${director.scope}`});
-      prev=add(prefix+'handoff','handoff',i,.3,[prev],{disk:1},{images,basis:'Separate 0.3-second durable commit allowance. Full measured chapter directing is counted once above.'});
+      // Explicit included-time metadata bypasses the display task's 0.05s floor.
+      prev=add(prefix+'handoff','handoff',i,director.includesHandoffCommitTime===true?0:.3,[prev],director.includesHandoffCommitTime===true?{}:{disk:1},{images,
+        ...(director.includesHandoffCommitTime===true?{duration:0,dependencyOnly:true}:{}),
+        basis:director.includesHandoffCommitTime===true?'Ordered handoff dependency; commit time is already included in the selected raw directing calibration. No additional duration.':'Separate 0.3-second durable commit allowance. Full measured chapter directing is counted once above.'});
       prompts[i]=prefix+'chapter';
     }else{
     for(const [kind,weight] of [['analyst',.17],['chapter',.14],['scene',.18],['layout',.12],['workflow',.06],['continuity',.12],['prompt',.18],['handoff',.03]]) {
@@ -331,11 +337,29 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       done.add(task.id);previous=task.id;left.splice(left.indexOf(task),1);
     }
   }
-  return {version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,rentalWindows,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
-    director,renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.backend==='native'?'local GTX 1650 GPU motion, one worker; shared narration GPU; full-story mux timed separately':renderProfile.mode==='chapter-export'?'fresh real-media CPU chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local CPU clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
+  const prewarmSeconds=densePrewarmCredit(c,g.boot+(c.warmCache?1:g.download)+3);
+  const prewarm=densePrewarmMeasurement(c);
+  if(prewarm){
+    tasks.find(t=>t.id==='boot').deps=['preflight'];
+    tasks.find(t=>t.id==='boot').basis+=` Matched final-envelope assembly: ${prewarm.assemblySeconds.toFixed(3)}s; additional proof allowance: ${prewarm.proofSeconds.toFixed(3)}s. Startup timing remains uncertain; early completion may add paid idle time.`;
+    // The first real inference's cold overhead remains behind accepted plans.
+    for(const task of tasks.filter(t=>t.id==='cold'||['delivered','infer'].includes(t.kind)&&!t.id.startsWith('repair')))
+      if(!task.deps.includes('dense-ready'))task.deps.push('dense-ready');
+  }
+  return applySourceBurstProjection({version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,rentalWindows,prewarm,prewarmSeconds,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
+    director,renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.backend==='native'?'local GTX 1650 GPU motion, one worker; shared narration GPU; full-story mux timed separately':renderProfile.mode==='chapter-export'?'fresh real-media CPU chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local CPU clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`},evidence);
 }
 
 export function schedule(plan, preferences={}) {
+  if(plan.prewarm){
+    const bootIndex=plan.tasks.findIndex(t=>t.id==='boot');
+    const planning=scheduleTasksFast({...plan,tasks:plan.tasks.slice(0,bootIndex)},preferences);
+    const ready=planning.find(t=>t.id==='dense-ready').end;
+    // Model the actual envelope trigger, including paid idle if startup beats
+    // assembly. Additional proof cost delays readiness; it is not free speed.
+    plan={...plan,tasks:plan.tasks.map(t=>t.id==='boot'?{...t,notBefore:Math.max(t.notBefore||0,ready-plan.prewarm.assemblySeconds+plan.prewarm.proofSeconds)}:
+      t.id==='cold'?{...t,notBefore:Math.max(t.notBefore||0,ready+plan.prewarm.proofSeconds)}:t)};
+  }
   const out=scheduleTasksFast(plan,preferences),completed=new Map(out.map(t=>[t.id,t]));
   if(!completed.has('boot')||!completed.has('stop'))throw Error('Rental accounting requires boot and stop tasks.');
   const end=out.reduce((at,t)=>Math.max(at,t.end),0),boot=completed.get('boot'),stop=completed.get('stop');
@@ -343,16 +367,19 @@ export function schedule(plan, preferences={}) {
   const rentalSeconds=windows.reduce((n,w)=>n+w.end-w.start,0),gpuWork=out.filter(t=>denseActive(plan.config)?['delivered','infer'].includes(t.kind):t.resources.remote).reduce((n,t)=>n+t.duration,0);
   const directorUSD=plan.director.costPerTwoHours*plan.storySeconds/7200;
   const qcCount=out.filter(t=>t.kind==='vision').reduce((n,t)=>n+(t.images||0),0);
-  const qcUSD=qcCount*plan.config.qcCost;
+  const repairQC=plan.sourceBurstProjectionUsed===true?out.filter(t=>t.kind==='vision'&&t.sourceBurstRepairQC===true&&Number.isFinite(t.sourceBurstQCUSD)&&t.sourceBurstQCUSD>=0):[];
+  const qcUSD=repairQC.length?(qcCount-repairQC.reduce((n,t)=>n+(t.images||0),0))*plan.config.qcCost+
+    repairQC.reduce((n,t)=>n+t.sourceBurstQCUSD,0):qcCount*plan.config.qcCost;
   return {tasks:out,end,rentalSeconds,rentalWindows:windows,gpuWork,gpuIdleSeconds:Math.max(0,rentalSeconds-gpuWork),
     ...costParts(rentalSeconds,plan.gpu.hourly,directorUSD,qcUSD,plan.config.storageDaily,plan.config.storageDays),
-    directorUSD,qcUSD,qcCount,diagnostics:validateSchedule(plan,out)};
+    directorUSD,qcUSD,qcCount,prewarmSeconds:plan.prewarmSeconds||0,diagnostics:validateSchedule(plan,out)};
 }
 
 export function validateSchedule(plan,tasks) {
   const errors=[],map=new Map(tasks.map(t=>[t.id,t]));
   for(const task of tasks){
-    if(!Number.isFinite(task.start)||!Number.isFinite(task.end)||task.start<0||task.end<=task.start)errors.push(`Invalid time: ${task.id}`);
+    if(!Number.isFinite(task.start)||!Number.isFinite(task.end)||task.start<0||task.end<task.start||
+       task.end===task.start&&!includedHandoffDependency(task))errors.push(`Invalid time: ${task.id}`);
     for(const d of task.deps)if(!map.has(d)||map.get(d).end>task.start+1e-6)errors.push(`Dependency violated: ${d} → ${task.id}`);
   }
   for(const [pool,capacity] of Object.entries(plan.capacities)){

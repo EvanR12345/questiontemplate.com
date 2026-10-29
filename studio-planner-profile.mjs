@@ -1,10 +1,14 @@
 // Shared settings projection. No story, references, budgets or keys are copied.
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=one-hour-speed-20261028';
-import {denseCapability} from './pipeline-dense.mjs?v=dense-image-phase-20261028';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=matched-production-20261029';
+import {denseCapability} from './pipeline-dense.mjs?v=matched-production-20261029';
+import {matchedDirectorProfile} from './pipeline-director-matched.mjs?v=matched-production-20261029';
 export function plannerSettings(config, profile, evidence) {
   if(profile?.version!==1)throw Error('Update the helper to load saved production settings.');
   const s=profile.settings, v=s.video, d=s.director, i=s.image;
   const warnings=[], next={...config};
+  // Read-only observed settings metadata, retained across worker structuredClone.
+  // No control or saved production setting is changed by this projection.
+  next.sourceBurstImageSettings=Object.fromEntries(['provider','model','workflow','steps','guidance','sampler','scheduler','width','height','referenceStrength'].map(k=>[k,i[k]]));
   next.productionGenerationStrategy=profile.generationStrategy||'align';
   next.productionDenseVersion=0;next.productionDenseSupported=false;next.productionDenseEligible=false;
   next.productionDenseQCSlots=0;next.productionDenseGenerationTasks=5;next.productionDenseDescriptorLimit=0;next.productionDenseMaxRepairRounds=0;
@@ -39,8 +43,9 @@ export function plannerSettings(config, profile, evidence) {
     warnings.push('Full-video automation is enabled: confirmed major errors use bounded repairs within saved caps; minor or uncertain Practical findings remain warnings. Repair work is separate from the initial image burst; the final finish time depends on how many repairs are needed.');
   next.directorTier=d.processingTier||'default';
   const profiles=evidence.directorCalibration?.profiles||[];
-  let id=d.executionMode==='classic'?'classic-standard':d.executionMode==='staged-lean'?
-    (d.compactCuts&&d.factBeatsMode==='storyboard'?'lean-compact-standard':d.factBeatsMode==='storyboard'?'lean-beats-standard':'lean-current-standard'):null;
+  const matched=matchedDirectorProfile(config,profile,evidence);
+  let id=matched?.id||(d.executionMode==='classic'?'classic-standard':d.executionMode==='staged-lean'?
+    (d.compactCuts&&d.factBeatsMode==='storyboard'?'lean-compact-standard':d.factBeatsMode==='storyboard'?'lean-beats-standard':'lean-current-standard'):null);
   if(id&&profiles.some(p=>p.id===id))next.directorProfile=id;
   else warnings.push('This director workflow has no matching measured profile. Existing timing is a comparison reference.');
   next.directorActualSlots=d.parallelism||1;next.apiSlots=next.directorActualSlots;
@@ -93,22 +98,29 @@ export function plannerSettings(config, profile, evidence) {
     next.productionDenseDescriptorLimit=phase.descriptorLimit;next.productionDenseMaxRepairRounds=phase.maxRepairRounds;
     next.readyChapters=next.chapters;
     next.repairRounds=Math.min(config.repairRounds||1,Math.max(1,phase.maxRepairRounds));
-    warnings.push('Installed Dense plans every chapter and prepares intro/references before one initial GPU burst. Generation does not wait for QC; the GPU stops before its remaining QC tail. Startup, readiness, transfers and shutdown still bill, so image-pipeline coverage cannot be 100%. The new phase fingerprint has no matching complete-production timing; existing component rates remain reference projections.');
+    warnings.push('Installed Dense plans every chapter and prepares intro/references before one initial GPU burst. Generation does not wait for QC; the GPU stops before its remaining QC tail. Startup, readiness, transfers and shutdown still bill, so image-pipeline coverage cannot be 100%. Complete-production finish time remains unmeasured; compatible component data and explicitly labelled source-based projections determine this scenario.');
     warnings.push(next.retries>0?`The ${next.retries}% extra-attempt allowance is spread across up to ${next.repairRounds} assumed repair rounds, not a measured defect rate. Each nonempty round pays its own startup and shutdown before rechecks. Runtime retains each shot's saved ceiling of ${phase.maxRepairRounds} retries.`:
       `No repair rate is assumed. QC can require additional bounded repair bursts, each with paid startup and shutdown, up to the saved ${phase.maxRepairRounds} per-shot retry ceiling; their unknown work is excluded from this zero-extra-attempt scenario.`);
   }else if(profile.generationStrategy==='align'&&!profile.timedHistoryReady){
     next.readyChapters=next.chapters;
     warnings.push('Timed align has no complete matching production history; like Studio, this setup waits for all chapter plans before image dispatch. The 15-second alignment target is not a guaranteed finish.');
   }else if(profile.generationStrategy==='fastest')next.readyChapters=1;
-  if(d.visualPacking&&d.visualPacking!=='small'||d.sourceVisualOverlap||d.reasoning!=='Balanced')
+  if(!matched&&(d.visualPacking&&d.visualPacking!=='small'||d.sourceVisualOverlap||d.reasoning!=='Balanced'))
     warnings.push('Director grouping, overlap or reasoning differs from the public calibration; its time and token cost are reference projections, not matching measurements.');
   const measured=profiles.find(p=>p.id===next.directorProfile);
   const actual=profile.directorCalibrationProfile;
-  next.directorConditionsMatch=!(d.visualPacking&&d.visualPacking!=='small'||d.sourceVisualOverlap||d.reasoning!=='Balanced');
+  next.directorConditionsMatch=!!matched||!(d.visualPacking&&d.visualPacking!=='small'||d.sourceVisualOverlap||d.reasoning!=='Balanced');
+  if(matched)warnings.push('Director time and token cost use one accepted full-source 17.5-minute sample at four Standard API slots. Two-hour finish time remains a projection. Other stages use their separately stated component evidence; the voice estimate is unchanged.');
   if(actual&&measured?.profileVersions){
     for(const field of ['factsVersion','planVersion','reviewHintsVersion','sourceTimingUnitsVersion'])
       if(actual[field]!==measured.profileVersions[field])next.directorConditionsMatch=false;
   }
+  const reviewCapacity=measured?.conditions?.storyboardReviewCapacityVersion??measured?.profileVersions?.storyboardReviewCapacityVersion;
+  if(actual&&(actual.storyboardReviewCapacityVersion!==undefined||reviewCapacity!==undefined)&&
+     actual.storyboardReviewCapacityVersion!==reviewCapacity)next.directorConditionsMatch=false;
+  const ownershipVersion=measured?.conditions?.ownershipResolutionVersion??measured?.profileVersions?.ownershipResolutionVersion;
+  if(actual&&(actual.ownershipResolutionVersion!==undefined||ownershipVersion!==undefined)&&
+     actual.ownershipResolutionVersion!==ownershipVersion)next.directorConditionsMatch=false;
   if(!next.directorConditionsMatch)warnings.push('Exact saved director settings/schema versions do not match this calibration. Its displayed time and token cost are comparison references; no measured speedup is assumed.');
   const observed=profile.directorObservation;
   next.directorObservedSecondsPerStorySecond=0;next.directorObservedCostPerTwoHours=0;next.directorObservedSamples=0;next.directorObservedRuns=0;

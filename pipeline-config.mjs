@@ -1,5 +1,5 @@
-import {describePlan} from './pipeline-engine.mjs?v=dense-image-phase-20261028';
-import {denseActive} from './pipeline-dense.mjs?v=dense-image-phase-20261028';
+import {describePlan} from './pipeline-engine.mjs?v=matched-production-20261029';
+import {denseActive} from './pipeline-dense.mjs?v=matched-production-20261029';
 
 export function plannerSourceState(project, requestedFollowing, applied) {
   const following=Boolean(requestedFollowing && applied?.project===project);
@@ -47,6 +47,7 @@ export function selectGPUConfig(config,evidence,gpu) {
 }
 
 export function executionLabel(plan) {
+  if(plan.sourceBurstProjectionUsed)return 'Conditional n=1 source-inclusive spans · 2 model copies · 4 request slots';
   const m=plan.measurement;
   if(!m)return 'Earlier serial profile';
   const slots=m.clientSlots||m.workers;
@@ -56,6 +57,7 @@ export function executionLabel(plan) {
 // Story image frequency is independent of generation throughput. Never feed this
 // derived speed back into cadence, which would increase the work being compared.
 export function generationSpeed(plan,evidence) {
+  if(plan.sourceBurstProjectionUsed)return {highest:null,current:60/plan.sourceBurstProjection.initialSecondsPerImage,isFastest:false,label:executionLabel(plan),conditionalSourceProjection:true};
   if(!plan.measurement)return {highest:null,current:null,isFastest:false,label:''};
   const fastest=describePlan(selectGPUConfig(plan.config,evidence,plan.config.gpu),evidence);
   const highest=fastest.measurement.imagesPerSecond*60,current=plan.measurement.imagesPerSecond*60;

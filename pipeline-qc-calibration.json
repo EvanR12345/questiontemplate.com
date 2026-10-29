@@ -159,7 +159,128 @@
         "No new full-video run, narration, rendering, automatic repair or human-review completion was measured.",
         "Two short mirrored batches on one host; longer production and shared director contention remain projections."
       ]
+    },
+    {
+      "id": "qc-full-source-settled-partial-20261029-current",
+      "status": "COMPLETE",
+      "policy": "practical",
+      "apiSlots": 4,
+      "processingTier": "default",
+      "timingScope": "api-call",
+      "qcCompatibilityHash": "1c27fa75e17e59833533216c7d5b64d9880e109147ede64cd9c47260f90bd7e0",
+      "secondsPerCheck": 13.683504672897197,
+      "costUSDPerCheck": 0.0003436759906542057,
+      "checks": 107,
+      "uniqueImages": 107,
+      "referenceImages": "up to 2",
+      "observedAt": 1793249847.083647,
+      "unknownRequests": 0,
+      "workload": "image-qc-pipeline",
+      "topology": {
+        "gpu": "5090",
+        "modelCopies": 2,
+        "requestSlots": 4,
+        "imageTasks": 5
+      },
+      "studyStatus": "STOPPED_NO_REPLAY",
+      "armStatus": "FAILED",
+      "componentTimingComplete": true,
+      "productionBursts": 1,
+      "qualityAllowsRender": false,
+      "humanQualityAccepted": false,
+      "scope": "Complete107initial720p chapter API reviews in a financially settled FAILED production arm. API-lane wait excluded by native callback; bounded API retry cost/work included once. Intro and image-repair rechecks excluded from this cohort but retained in all study costs. Not quality acceptance or a finished-video measurement.",
+      "limits": [
+        "One source/burst; no confidence interval or causal speedup.",
+        "All112initial+38repaired outputs checked;30finalimages remain blocked.",
+        "Actual identity/context reference count varies, up to two."
+      ],
+      "matchesOriginalTargetCompatibility": true,
+      "candidateOnlyRootReviewRequired": true
     }
   ],
-  "scope": "Sanitized initial visual-review calibration from completed compatible cohorts. Apply only to matching review profile, policy, actual API-slot count and processing tier; prefer newer matching production history."
+  "scope": "Sanitized initial visual-review calibration from completed compatible cohorts. Apply only to matching review profile, policy, actual API-slot count and processing tier; prefer newer matching production history.",
+  "sourceBurstProjection": {
+    "type": "single-source-inclusive-span-v1",
+    "version": 1,
+    "samples": 1,
+    "studyStatus": "STOPPED_NO_REPLAY",
+    "armStatus": "FAILED",
+    "standardReceiptsVerified": true,
+    "freshSamplerDecodeInferenceVerified": true,
+    "unknownRequests": 0,
+    "pendingRequests": 0,
+    "reservedUSD": 0,
+    "rawFrozenInventoryVerified": true,
+    "sourceInventory": {
+      "chapter720": 107,
+      "intro1344x768": 5,
+      "total": 112
+    },
+    "evidenceSHA256": "0e5ea22d11c88a550b15818930b6cb768641116541a6aa9a0b857eae431d3a98",
+    "phasePreflightSHA256": "1a884a4a7b7d9022fcdf58110d9cdd3a9a284bf0a31043a6372dc32021e73cc5",
+    "qualityOutcome": {
+      "initialImages": 112,
+      "initialBlocking": 41,
+      "repairReserved": 41,
+      "repairGeneratedAndRechecked": 38,
+      "completedRepairsResolvedBlocking": 11,
+      "completedRepairsStillBlocking": 27,
+      "repairFailedBeforeSubmission": 3,
+      "finalBlocking": 30,
+      "finalNonblocking": 82,
+      "deferredChecksComplete": 150
+    },
+    "qualityAllowsRender": false,
+    "humanQualityAccepted": false,
+    "qcCompatibilityHash": "1c27fa75e17e59833533216c7d5b64d9880e109147ede64cd9c47260f90bd7e0",
+    "imageSettings": {
+      "provider": "comfyui",
+      "model": "flux2-klein-4b",
+      "workflow": "flux2-klein-4b-auto",
+      "steps": 4,
+      "guidance": 1,
+      "sampler": "euler",
+      "scheduler": "flux2",
+      "width": 1280,
+      "height": 720,
+      "referenceStrength": 0.65
+    },
+    "initialChapter": {
+      "images": 107,
+      "inclusiveSeconds": 426.4183759689331
+    },
+    "repairChapter": {
+      "images": 38,
+      "inclusiveSeconds": 370.8001606464386
+    },
+    "intro": {
+      "images": 5,
+      "inclusiveSeconds": 33.39255356788635
+    },
+    "scope": "Conditional n=1 source-normalized inclusive execution spans. Resolution cohorts separate; cold/queued delivery/transfers/local save included. Full study FAILED with30blockers. Not replicated warmthroughput, quality acceptance or an established full-video ETA. First-run fixed costs are allocated proportionally across source-cohort images; additive intro/chapter spans can overcount their overlap.",
+    "observedRepairCase": {
+      "attempted": 41,
+      "completed": 38,
+      "denominatorInitialImages": 112,
+      "finalBlocked": 30,
+      "limits": "Not a predicted defectrate or a maximum. Existing saved retry ceilings and allchecks remain."
+    },
+    "repairQcSamples": 38,
+    "repairQC": {
+      "type": "completed-repair-rechecks-cohort-v1",
+      "samples": 38,
+      "reservedRepairAttempts": 41,
+      "failedBeforeSubmission": 3,
+      "partialAttemptCohort": true,
+      "componentTimingComplete": true,
+      "processingTier": "default",
+      "apiSlots": 4,
+      "unknownRequests": 0,
+      "measuredSeconds": 704.4849999999999,
+      "measuredUSD": 0.014877413,
+      "secondsPerCheck": 18.53907894736842,
+      "costUSDPerCheck": 0.00039151086842105265,
+      "scope": "All38completed repair rechecks, separately from107initialchapter checks. Three additional repair attempts failed before submission; study remainsqualityblocked. What-if scaling is not a success or defect-rate guarantee."
+    }
+  }
 }

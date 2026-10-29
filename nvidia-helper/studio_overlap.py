@@ -60,6 +60,8 @@ class CloudStoryOverlap:
             raise ValueError('Dense images require the explicit unattended production policy.')
         self.deferred_qc=None
         self.dense_preflight_complete=False
+        self.dense_prewarm=None
+        self.dense_prewarm_proof=None
         self.scheduler=None
         self.root=service
         self.project=project['id']
@@ -134,14 +136,16 @@ class CloudStoryOverlap:
             'manualNarration':chapter.get('cleanNarrationText') if chapter.get('narrationMode')=='manual' else None}
             for chapter in project['chapters']]
 
-    def gate(self, context, message='', step=0,total=0,wait_paused=True):
+    def gate(self, context, message='', step=0,total=0,wait_paused=True,abort_event=None):
         # No mutable current-job lookup: every callback owns this immutable ID.
         from studio_service import JobCancelled, AudioYield
+        if self.dense_prewarm:self.dense_prewarm.check()
         if getattr(self,'deferred_qc',None):self.deferred_qc.check()
         if wait_paused and self.scheduler:self.scheduler.check()
         with self.root.cv:
             while True:
-                if self.root.closed or self.root.cancel or context.cancelled.is_set():raise JobCancelled()
+                if (self.root.closed or self.root.cancel or context.cancelled.is_set()
+                        or abort_event is not None and abort_event.is_set()):raise JobCancelled()
                 if self.root.yield_requested:raise AudioYield()
                 if not self.root.paused or not wait_paused:break
                 self.root.cv.wait(.1)
@@ -603,6 +607,9 @@ class CloudStoryOverlap:
                 self.main.record_timing(self.project,'Image pipeline',seconds,details)
 
     def close(self, status, message=''):
+        startup_error=None
+        try:self.finish_dense_prewarm(abort=status!='COMPLETE')
+        except BaseException as error:startup_error=error
         self._collecting_after_failure=status not in ('COMPLETE','CANCELLED') and not self.root.cancel
         if self.deferred_qc:self.deferred_qc.stop_admission()
         if status!='COMPLETE':
@@ -617,3 +624,7 @@ class CloudStoryOverlap:
         with self.root.cv:
             for context in self.contexts:self.root.active_executions.pop(context.identity,None)
         self.coordinator.close()
+        if startup_error:raise startup_error
+
+    def finish_dense_prewarm(self, abort=False):
+        if self.dense_prewarm:self.dense_prewarm.close(abort=abort)

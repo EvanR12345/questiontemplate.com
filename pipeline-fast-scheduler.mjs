@@ -9,12 +9,15 @@ class Heap{
  pop(){const a=this.items;if(!a.length)return;const first=a[0],last=a.pop();if(a.length){let i=0;for(;;){let k=i*2+1;if(k>=a.length)break;if(k+1<a.length&&this.compare(a[k+1],a[k])<0)k++;if(this.compare(last,a[k])<=0)break;a[i]=a[k];i=k;}a[i]=last;}return first;}
 }
 const comparePriority=(a,b)=>a.priority-b.priority||a.task.priority-b.task.priority||a.queued-b.queued;
+export const includedHandoffDependency=t=>t.duration===0&&t.kind==='handoff'&&t.dependencyOnly===true&&
+ t.resources&&typeof t.resources==='object'&&!Array.isArray(t.resources)&&Object.keys(t.resources).length===0;
 export function validateFastInputs(plan,preferences={}){
  if(!plan||!Array.isArray(plan.tasks)||!plan.tasks.length||!plan.capacities||typeof plan.capacities!=='object'||Array.isArray(plan.capacities))throw Error('Fast scheduling requires a nonempty task graph and resource capacities.');
  for(const [pool,capacity] of Object.entries(plan.capacities))if(!pool||!Number.isFinite(capacity)||capacity<=0)throw Error('Fast resource capacities must be finite and positive.');
  const ids=new Set();for(const t of plan.tasks){if(!t||typeof t.id!=='string'||!t.id||ids.has(t.id))throw Error('Fast task IDs must be unique nonempty strings.');ids.add(t.id);}
  for(const t of plan.tasks){
-  if(!Number.isFinite(t.duration)||t.duration<=EPS||!Number.isFinite(t.priority))throw Error('Fast duration/priority must be finite; duration must exceed the scheduling tolerance.');
+  const includedHandoff=includedHandoffDependency(t);
+  if(!Number.isFinite(t.duration)||t.duration<=EPS&&!includedHandoff||!Number.isFinite(t.priority))throw Error('Fast duration/priority must be finite; duration must exceed the scheduling tolerance unless it is an included-time handoff dependency.');
   if(t.notBefore!==undefined&&(!Number.isFinite(t.notBefore)||t.notBefore<0))throw Error('Fast notBefore must be finite and nonnegative.');
   if(!Array.isArray(t.deps)||new Set(t.deps).size!==t.deps.length||t.deps.some(id=>typeof id!=='string'||id===t.id||!ids.has(id)))throw Error('Fast dependencies must be unique known non-self IDs.');
   if(!t.resources||typeof t.resources!=='object'||Array.isArray(t.resources))throw Error('Fast task resources must be an object.');

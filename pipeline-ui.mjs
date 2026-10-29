@@ -1,19 +1,19 @@
-import {migrateDirectorForecast,directorProfileOptions,directorTimingLabel} from './pipeline-director-calibration.mjs?v=production-parallel-20261012';
+import {migrateDirectorForecast,directorProfileOptions,directorTimingLabel} from './pipeline-director-calibration.mjs?v=matched-production-20261029';
 import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pipeline-admission-pilot-20261011';
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
 import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex,startupApplyConfig} from './pipeline-detail-ui.mjs?v=dense-image-phase-20261028';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=dense-image-phase-20261028';
-import {mountConcurrencyLab} from './pipeline-lab.mjs?v=dense-image-phase-20261028';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex,startupApplyConfig} from './pipeline-detail-ui.mjs?v=matched-production-20261029';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=matched-production-20261029';
+import {mountConcurrencyLab} from './pipeline-lab.mjs?v=matched-production-20261029';
 import {serverlessHTML} from './pipeline-serverless.mjs';
-import {matchedHTML} from './pipeline-matched.mjs?v=dense-image-phase-20261028';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=dense-image-phase-20261028';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=dense-image-phase-20261028';
+import {matchedHTML} from './pipeline-matched.mjs?v=matched-production-20261029';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=matched-production-20261029';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=matched-production-20261029';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=dense-image-phase-20261028';
-import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=dense-image-phase-20261028';
-import {denseActive,imageRentalPercent} from './pipeline-dense.mjs?v=dense-image-phase-20261028';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=matched-production-20261029';
+import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=matched-production-20261029';
+import {denseActive,imageRentalPercent} from './pipeline-dense.mjs?v=matched-production-20261029';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -76,9 +76,9 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=dense-image-phase-20261028',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=dense-image-phase-20261028',import.meta.url),{type:'module'}));
-const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=dense-image-phase-20261028',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=matched-production-20261029',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=matched-production-20261029',import.meta.url),{type:'module'}));
+const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=matched-production-20261029',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,renderedGeneration=-1,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -92,7 +92,7 @@ function getTask(id){return id===PREPARATION_GROUP?preparation:taskLookup.get(id
 function renderGenerationSpeed(){
   const speed=generationSpeed(plan,evidence);
   $('generationRate').value=speed.current===null?'Not measured':speed.current.toFixed(1);
-  $('generationRateNote').textContent=speed.highest===null?'No completed generation-speed measurement for this timing profile. Choose a measured resolution.':
+  $('generationRateNote').textContent=plan.sourceBurstProjectionUsed?plan.sourceBurstProjectionWarning:speed.highest===null?'No completed generation-speed measurement for this timing profile. Choose a measured resolution.':
     `Selected setup: ${executionLabel(plan)}. This measured warm rate includes preparation, transfer and saving once, but excludes startup, Luna/QC waiting and rendering. It is not measured full-production throughput.`+
     (speed.isFastest?'':` Fastest benchmark comparison: ${speed.highest.toFixed(1)} images/min; it is not substituted into this schedule.`);
   $('fastestGPU').disabled=speed.highest===null||speed.isFastest;
@@ -130,8 +130,9 @@ async function rebuild(){
     $('scheduleDescription').textContent=`${config.policy==='proposed'?'Proposed':config.policy==='current'?'Installed overlap model':'Sequential baseline'} · ${plan.director.label} · ${config.directorTier} · ${plan.imageCount} images · ${result.tasks.length} operations · ${Object.keys(preferences).length} manual moves`;
     $('metricTime').textContent=formatTime(result.end);
     $('metricRange').textContent=(plan.director.timingMeasured?'':plan.director.conditionsMatch===false?'Unmeasured saved configuration · ':plan.director.slotsMatch===false?'Unmeasured API-slot timing · ':'Unmeasured tier timing · ')+`${formatTime(result.end*(1-uncertainty/100))}–${formatTime(result.end*(1+uncertainty/100))} assumed sensitivity`;
-    const saving=1-result.end/serial.end;$('metricSaved').textContent=(saving*100).toFixed(0)+'% '+(saving>=0?'less time':'more time');
-    $('metricSerial').textContent=`${formatTime(serial.end)} fully sequential`;
+    const comparable=!plan.sourceBurstProjectionUsed&&serial.comparisonMatched!==false;
+    const saving=comparable?1-result.end/serial.end:null;$('metricSaved').textContent=comparable?(saving*100).toFixed(0)+'% '+(saving>=0?'less time':'more time'):'Not comparable';
+    $('metricSerial').textContent=comparable?`${formatTime(serial.end)} fully sequential`:'Sequential reference has a different timing basis; no same-work saving claimed.';
     $('metricCost').textContent=money(result.totalUSD);$('metricCostParts').textContent=`${money(result.gpuUSD)} GPU + ${money(result.directorUSD)} Luna + ${money(result.qcUSD)} QC + ${money(result.storageUSD)} storage`;
     $('pricingNote').textContent=plan.gpu.pricing.note;
     $('directorTimingNote').textContent=`${plan.director.label}. ${plan.director.scope} ${directorTimingLabel(plan.director)}`;
@@ -151,7 +152,8 @@ async function rebuild(){
     $('workerField').hidden=config.resolution==='legacy';
     $('workerLabel').textContent=config.executionMode==='resident'?'Model copies on one GPU':'Request slots on one GPU';
     $('workerNote').textContent=config.executionMode==='resident'?'Each worker is a separate model copy, not another GPU. Installed mode keeps the supported single-copy comparison.':`${plan.measurement?.workers||config.productionModelCopies} model copies serve ${plan.measurement?.clientSlots||config.productionRequestSlots} bounded request slots. Slots include queued/preparing requests; they do not mean that many simultaneous model copies or GPUs.`;
-    if(plan.measurement)$('modeNote').textContent+=` Measured worker groups include image preparation through saving once. Internal stages cannot be moved separately from these aggregate measurements. ${plan.renderScope}`;
+    if(plan.sourceBurstProjectionUsed)$('modeNote').textContent+=' '+plan.sourceBurstProjectionWarning;
+    else if(plan.measurement)$('modeNote').textContent+=` Measured worker groups include image preparation through saving once. Internal stages cannot be moved separately from these aggregate measurements. ${plan.renderScope}`;
     const oldFocus=focus;
     $('chapterFocus').innerHTML='<option value="all">All chapters</option><option value="0">Project / intro</option>'+Array.from({length:config.chapters},(_,i)=>`<option value="${i+1}">Chapter ${String(i+1).padStart(2,'0')}</option>`).join('');
     focus=oldFocus==='all'||Number(oldFocus)<=config.chapters?oldFocus:'all';$('chapterFocus').value=focus;
@@ -316,8 +318,8 @@ function download(name,value,type){const blob=new Blob([value],{type}),url=URL.c
 async function start(){
   try{
     const response=await fetch('./pipeline-evidence.json?v=one-hour-speed-20261028');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
-    try{const qcReply=await fetch('./pipeline-qc-calibration.json?v=one-hour-speed-20261028');if(qcReply.ok)evidence.qcCalibration=await qcReply.json();}catch{ /* Retain prior history/assumptions if the optional study is unavailable. */ }
-    const directorReply=await fetch('./pipeline-director-calibration.json?v=luna-standard-optimization-20261010');
+    try{const qcReply=await fetch('./pipeline-qc-calibration.json?v=matched-production-20261029');if(qcReply.ok)evidence.qcCalibration=await qcReply.json();}catch{ /* Retain prior history/assumptions if the optional study is unavailable. */ }
+    const directorReply=await fetch('./pipeline-director-calibration.json?v=matched-production-20261029');
     if(directorReply.ok)evidence.directorCalibration=await directorReply.json();
     $('directorProfile').innerHTML=directorProfileOptions(evidence);
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');

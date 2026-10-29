@@ -72,6 +72,34 @@ class PerformanceTest(unittest.TestCase):
         row=self.store.estimate(self.profile,{'kind':'characters','value':100},10001)
         self.assertEqual(row['seconds'],10);self.assertEqual(row['runs'],3)
         self.assertEqual(row['rangeSeconds'],[10,100])
+    def test_uncapped_storyboard_review_versions_only_ai_directing_history(self):
+        from director_provider import STORYBOARD_REVIEW_CAPACITY_VERSION
+        d=self.project['settings']['director']
+        for mode in ('staged-review','staged-lean'):
+            d['executionMode']=mode
+            current=profile_for('AI directing',self.project,{})
+            self.assertEqual(current['storyboardReviewCapacityVersion'],STORYBOARD_REVIEW_CAPACITY_VERSION)
+            self.assertEqual(current['maxOutputTokens'],12000)
+            old=copy.deepcopy(current);old.pop('storyboardReviewCapacityVersion')
+            units={'kind':'characters','value':100}
+            self.store.record('old-'+mode,'old',old,units,10,{})
+            self.assertIsNone(self.store.estimate(current,units)['seconds'])
+            for stage in ('Visual QC','Narration','Render chapter','Assemble full video'):
+                self.assertNotIn('storyboardReviewCapacityVersion',profile_for(stage,self.project,{}))
+        d['executionMode']='classic'
+        self.assertNotIn('storyboardReviewCapacityVersion',profile_for('AI directing',self.project,{}))
+    def test_ownership_resolution_versions_only_ai_directing_and_excludes_older_history(self):
+        from story_grounding import OWNERSHIP_RESOLUTION_VERSION
+        for mode in ('classic','staged-review','staged-lean'):
+            self.project['settings']['director']['executionMode']=mode
+            current=profile_for('AI directing',self.project,{})
+            self.assertEqual(current['ownershipResolutionVersion'],OWNERSHIP_RESOLUTION_VERSION)
+            old=copy.deepcopy(current);old.pop('ownershipResolutionVersion')
+            units={'kind':'characters','value':100}
+            self.store.record('old-owner-'+mode,'old',old,units,10,{})
+            self.assertIsNone(self.store.estimate(current,units)['seconds'])
+            for stage in ('Visual QC','Narration','Render chapter','Assemble full video'):
+                self.assertNotIn('ownershipResolutionVersion',profile_for(stage,self.project,{}))
     def test_qc_lookup_matches_actual_director_callback_instead_of_image_model(self):
         p=self.project;p['settings']['director'].update(provider='openai-luna',qcReasoning='Fast')
         expected=profile_for('Visual QC',p,{'openaiModel':'gpt-6-luna'})

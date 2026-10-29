@@ -1,5 +1,23 @@
 // Scheduling assumptions only. No inference speeds, voice timings or prices.
 export const denseActive=config=>config.policy==='current'&&config.productionGenerationStrategy==='dense';
+// A measured final-assembly interval is useful only for the exact proven
+// project envelope. Another story/profile's receipt never supplies free credit.
+export function densePrewarmMeasurement(config){
+ const hash=/^[a-f0-9]{64}$/;
+ if(!denseActive(config)||config.productionDensePrewarmVersion!==1||
+    config.productionDensePrewarmEligible!==true||config.productionDensePrewarmMeasured!==true||
+    !hash.test(config.productionDensePrewarmProof||'')||
+    config.productionDensePrewarmProof!==config.productionDensePrewarmMeasuredProof)return null;
+ const assembly=config.productionDensePrewarmAssemblySeconds,overhead=config.productionDensePrewarmProofSeconds;
+ if(!Number.isFinite(assembly)||assembly<=0||assembly>120||!Number.isFinite(overhead)||overhead<0||
+    overhead>120)return null;
+ return {assemblySeconds:assembly,proofSeconds:overhead};
+}
+export function densePrewarmCredit(config,startupSeconds){
+ const measured=densePrewarmMeasurement(config);
+ if(!measured||!Number.isFinite(startupSeconds)||startupSeconds<=0)return 0;
+ return Math.max(0,Math.min(measured.assemblySeconds,startupSeconds)-measured.proofSeconds);
+}
 export function denseCapability(profile){
  const p=profile?.denseImagePhase;
  return p?.version===1&&p.supported===true&&p.eligible===true&&p.allPlansFirst===true&&

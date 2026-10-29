@@ -95,6 +95,12 @@ def profile_for(stage, project, config, details=None):
             layoutSettings=settings.get('customLayout',{}),maxOutputTokens=director.get('maxOutputTokens',12000),
             checkLevel=settings.get('qcCheckLevel','off'))
         profile['sourceGroundingVersion']=1
+        if stage=='AI directing':
+            from story_grounding import OWNERSHIP_RESOLUTION_VERSION
+            profile['ownershipResolutionVersion']=OWNERSHIP_RESOLUTION_VERSION
+        if stage=='AI directing' and director.get('executionMode') in ('staged-review','staged-lean'):
+            from director_provider import STORYBOARD_REVIEW_CAPACITY_VERSION
+            profile['storyboardReviewCapacityVersion']=STORYBOARD_REVIEW_CAPACITY_VERSION
         if director.get('executionMode','classic').startswith('staged'):
             lean=director.get('executionMode')=='staged-lean'
             profile['compactCuts']=director.get('compactCuts',False)

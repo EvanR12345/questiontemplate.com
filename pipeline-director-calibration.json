@@ -572,6 +572,152 @@
         "directionSchemaVersion": 2
       },
       "scope": "One complete settled Standard text-plan sample on the current version. Small visual groups, 128-sentence source groups; full reviews retained. No source/visual overlap. Other condition failures remain published; no 3x or generated-image quality proof."
+    },
+    {
+      "id": "lean-overlap-standard",
+      "label": "Current lean overlap \u00b7 Standard \u00b7 one accepted sample",
+      "status": "COMPLETE",
+      "seconds": 322.73399999993853,
+      "rawSeconds": 322.73399999993853,
+      "boundaryCaptureExcludedSeconds": 0,
+      "estimatedUSD": 0.04759000700000001,
+      "calls": 35,
+      "shots": 107,
+      "slots": 4,
+      "installed": true,
+      "sourceChapters": 2,
+      "completedChapters": 2,
+      "unknownRequests": 0,
+      "productionReviewsPassed": true,
+      "standardReceiptsVerified": true,
+      "inputCadencePerMinute": 5.884425316359273,
+      "conditions": {
+        "version": 1,
+        "stage": "AI directing",
+        "productionTopology": {
+          "modelCopies": 2,
+          "requestSlots": 4,
+          "audioLookahead": true,
+          "chapterRenderOverlap": true
+        },
+        "provider": "openai-luna",
+        "model": "gpt-6-luna",
+        "reasoning": "Balanced",
+        "parallelism": 4,
+        "concise": false,
+        "focused": false,
+        "executionMode": "staged-lean",
+        "reasoningProfile": "selected",
+        "factGroupSentences": 128,
+        "cadencePerMinute": 5.884425316359273,
+        "compactWire": true,
+        "tier": "default",
+        "layout": "MANGA / ANIME",
+        "mode": "BALANCED",
+        "style": "Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage.",
+        "layoutSettings": {
+          "sceneCount": null,
+          "minDuration": 3,
+          "maxDuration": 30,
+          "imagesPerMinute": 8,
+          "minShots": 1,
+          "maxShots": 4,
+          "pacing": "balanced",
+          "cameraVariety": "medium",
+          "closeUpFrequency": "medium",
+          "establishingFrequency": "low",
+          "transition": "cut",
+          "movement": "subtle",
+          "promptDetail": "normal"
+        },
+        "maxOutputTokens": 12000,
+        "checkLevel": "practical",
+        "sourceGroundingVersion": 1,
+        "ownershipResolutionVersion": 2,
+        "storyboardReviewCapacityVersion": 2,
+        "compactCuts": false,
+        "planVersion": 11,
+        "factsVersion": 4,
+        "reviewHintsVersion": 2,
+        "sourceTimingUnitsVersion": 1,
+        "sourceVisualOverlap": true,
+        "acceptedVisualDispatchVersion": 2,
+        "factReasoning": "medium",
+        "visualGroupLimit": {
+          "sentences": 12,
+          "characters": 6000,
+          "targetShots": 8
+        }
+      },
+      "samples": 1,
+      "stages": [
+        {
+          "name": "Casting supervisor",
+          "calls": 2,
+          "callWorkSeconds": 32.390000000130385,
+          "activeSeconds": 32.390000000130385,
+          "elapsedSpanSeconds": 168.8430000001099,
+          "estimatedUSD": 0.0021378
+        },
+        {
+          "name": "Workflow planner",
+          "calls": 3,
+          "callWorkSeconds": 2.7020000002812594,
+          "activeSeconds": 2.7020000002812594,
+          "elapsedSpanSeconds": 173.65599999995902,
+          "estimatedUSD": 0.0001588
+        },
+        {
+          "name": "Source fact analyst",
+          "calls": 3,
+          "callWorkSeconds": 78.70300000021234,
+          "activeSeconds": 78.70300000021234,
+          "elapsedSpanSeconds": 203.06299999984913,
+          "estimatedUSD": 0.005375400000000001
+        },
+        {
+          "name": "Source continuity reviewer",
+          "calls": 3,
+          "callWorkSeconds": 41.235000000102445,
+          "activeSeconds": 41.235000000102445,
+          "elapsedSpanSeconds": 182.64100000006147,
+          "estimatedUSD": 0.002243203
+        },
+        {
+          "name": "Visual storyboard director",
+          "calls": 21,
+          "callWorkSeconds": 432.3889999995008,
+          "activeSeconds": 125.43799999984913,
+          "elapsedSpanSeconds": 209.81299999984913,
+          "estimatedUSD": 0.028576704
+        },
+        {
+          "name": "Storyboard continuity supervisor",
+          "calls": 4,
+          "callWorkSeconds": 63.84400000004098,
+          "activeSeconds": 58.25,
+          "elapsedSpanSeconds": 199.2970000000205,
+          "estimatedUSD": 0.007981
+        },
+        {
+          "name": "Targeted storyboard repair",
+          "calls": 1,
+          "callWorkSeconds": 6.6560000001918525,
+          "activeSeconds": 6.6560000001918525,
+          "elapsedSpanSeconds": 6.6560000001918525,
+          "estimatedUSD": 0.0011171
+        }
+      ],
+      "scope": "One accepted current-policy run on two chapters (17.5 minutes of saved narration), four API slots, explicit Standard terminal receipts. Raw elapsed is retained. No causal speedup or end-to-end two-hour measurement is claimed; prior failed attempts remain in study costs.",
+      "cadenceNormalization": {
+        "version": 1,
+        "kind": "observed-production-cadence-before-clearing-scenes",
+        "savedProfileCadencePerMinute": null,
+        "inputCadencePerMinute": 5.884425316359273,
+        "originalPreflightSHA256": "24c69b8366f766d750dae9cd089126c18a5c5c00f31168e4414fa6b3d2f9abe2",
+        "stateBeforeSHA256": "c65f8f748f3bf0c2e6fee08a08e3a2688ae0a419a70684a9ca17ac53261bac06"
+      },
+      "includesHandoffCommitTime": true
     }
   ],
   "recommendedProfile": "lean-current-standard"

@@ -1,103 +1,556 @@
 {
-  "release": "runtime-efficiency-20261028",
-  "status": "VERIFIED_COMPONENTS_FULL_VIDEO_UNMEASURED",
+  "release": "matched-production-20261029",
+  "status": "MEASURED_COMPONENTS_EXPORT_QUALITY_BLOCKED",
+  "actualTwoHourVideoGenerated": false,
+  "fullVideoSpeedupEstablished": false,
   "standardProcessingOnly": true,
   "voiceEstimateMinutes": 12.3,
   "voiceCalibrationChanged": false,
-  "fullVideoSpeedupMeasured": false,
-  "imageQualityAndCadenceChanged": false,
-  "checkCoverageChanged": false,
-  "statusNoop": {
-    "scope": "Synthetic local project; unchanged chapter state only",
-    "projectBytes": 10311110,
-    "shots": 1200,
-    "chapters": 48,
-    "historyRows": 12000,
-    "baselineMedianSeconds": 0.3109309000428766,
-    "optimizedMedianSeconds": 0.10076040006242692,
-    "reductionPercent": 67.59395735562714,
-    "samplesPerArm": 7
-  },
-  "queueSyncNoop": {
-    "projectBytes": 10313895,
-    "shots": 1200,
-    "chapters": 48,
-    "historyRows": 12000,
-    "samplesPerArm": 9,
-    "legacyMedianSeconds": 0.2595476000569761,
-    "optimizedMedianSeconds": 0.12638769997283816,
-    "allSavedBytesUnchanged": true
-  },
-  "acceptedVisualDispatch": {
-    "requests": 8,
-    "workUnits": 42,
-    "peakSlotsBoth": 4,
-    "oldMakespanUnits": 18,
-    "newMakespanUnits": 14,
-    "reductionPercent": 22.22222222222222,
-    "actualModelOrNetworkCalls": 0,
-    "interpretation": "Deterministic synthetic scheduling replay only; not measured API/full-story throughput."
-  },
-  "realExecutorIntegration": {
-    "testsPassed": 2,
-    "realPaths": [
-      "AcceptedVisualQueue",
-      "CloudStoryOverlap._director_executor",
-      "LaneDirector",
-      "OpenAIDirector",
-      "SpendLedger",
-      "ExecutionJournal"
+  "director": {
+    "schemaVersion": 1,
+    "status": "REVIEWED_ACCEPTED_DIRECTOR_SAMPLE",
+    "singleAcceptedSample": true,
+    "sampleRuns": 1,
+    "sourceChapters": 2,
+    "sourceNarrationSeconds": 1050.23,
+    "actualTwoHourMeasurement": false,
+    "rawElapsedSeconds": 322.73399999993853,
+    "measuredBoundaryCaptureSeconds": 0.671000000089407,
+    "boundaryCaptureExcludedSeconds": 0,
+    "calibrationSeconds": 322.73399999993853,
+    "timingBasis": "raw whole-arm accepted elapsed",
+    "conditions": {
+      "version": 1,
+      "stage": "AI directing",
+      "productionTopology": {
+        "modelCopies": 2,
+        "requestSlots": 4,
+        "audioLookahead": true,
+        "chapterRenderOverlap": true
+      },
+      "provider": "openai-luna",
+      "model": "gpt-6-luna",
+      "reasoning": "Balanced",
+      "parallelism": 4,
+      "concise": false,
+      "focused": false,
+      "executionMode": "staged-lean",
+      "reasoningProfile": "selected",
+      "factGroupSentences": 128,
+      "cadencePerMinute": 5.884425316359273,
+      "compactWire": true,
+      "tier": "default",
+      "layout": "MANGA / ANIME",
+      "mode": "BALANCED",
+      "style": "Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage.",
+      "layoutSettings": {
+        "sceneCount": null,
+        "minDuration": 3,
+        "maxDuration": 30,
+        "imagesPerMinute": 8,
+        "minShots": 1,
+        "maxShots": 4,
+        "pacing": "balanced",
+        "cameraVariety": "medium",
+        "closeUpFrequency": "medium",
+        "establishingFrequency": "low",
+        "transition": "cut",
+        "movement": "subtle",
+        "promptDetail": "normal"
+      },
+      "maxOutputTokens": 12000,
+      "checkLevel": "practical",
+      "sourceGroundingVersion": 1,
+      "ownershipResolutionVersion": 2,
+      "storyboardReviewCapacityVersion": 2,
+      "compactCuts": false,
+      "planVersion": 11,
+      "factsVersion": 4,
+      "reviewHintsVersion": 2,
+      "sourceTimingUnitsVersion": 1,
+      "sourceVisualOverlap": true,
+      "acceptedVisualDispatchVersion": 2,
+      "factReasoning": "medium",
+      "visualGroupLimit": {
+        "sentences": 12,
+        "characters": 6000,
+        "targetShots": 8
+      }
+    },
+    "conditionsEvidence": {
+      "kind": "AI_DIRECTING_CONDITIONS_CAPTURE",
+      "captureSHA256": "2086f603138c465a3bc769336db36597c1759122795c68fa9e09009ca673c4a7",
+      "profileForSourceSHA256": "ab29b221a0acd4584b11902c106a25c84675efd9406283eb08486310c11c2b8a",
+      "snapshotManifestSHA256": "dac9da10addccdbbe889f5e70c6f13d61d8c6f7810b458a4f041c21093c623e0",
+      "projectSettingsSHA256": "9110eab7a2e770e196195e2c097cbd789cae7459018924c3f82c19b8c98c4edc",
+      "aggregateTimingObservationSynthesized": false
+    },
+    "current": {
+      "completedChapters": 2,
+      "directorPassCount": 37,
+      "directorPassSummedSeconds": 657.9190000004601,
+      "shots": [
+        46,
+        61
+      ],
+      "sourceReviewMajorFindings": 0,
+      "complete": true,
+      "sourceSentenceCoverage": [
+        {
+          "sourceSentences": 101,
+          "coveredSentences": 101,
+          "coverageFraction": 1.0
+        },
+        {
+          "sourceSentences": 134,
+          "coveredSentences": 134,
+          "coverageFraction": 1.0
+        }
+      ],
+      "visualWhileSourceActiveSeconds": 29.375999999931082,
+      "maximumOpenClientRequestIntervals": 4,
+      "tokens": {
+        "input_tokens": 162710,
+        "output_tokens": 62638,
+        "total_tokens": 225348,
+        "cached_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "productionAcceptedBothChapters": true,
+      "groups": [
+        1,
+        2
+      ],
+      "ordinal": 1,
+      "wallSeconds": 322.73399999993853,
+      "actualRequestCount": 35,
+      "passesByRole": {
+        "Casting supervisor": 2,
+        "Workflow planner": 3,
+        "Source fact analyst": 3,
+        "Source continuity reviewer": 3,
+        "Visual storyboard director": 21,
+        "Storyboard continuity supervisor": 4,
+        "Targeted storyboard repair": 1
+      },
+      "explicitStandardTerminalReceipts": 35,
+      "chapterTimings": [
+        {
+          "chapterOrdinal": 1,
+          "wallSeconds": 152.23400000017136,
+          "prepareStagedSeconds": 132.14099999982864,
+          "prepareReturnToCommitRawSeconds": 4.187000000150874,
+          "boundaryCaptureSeconds": 0.2029999999795109,
+          "prepareReturnToCommitAdjustedSeconds": 3.9840000001713634,
+          "visualFinishToFirstReviewSeconds": 0.1720000000204891
+        },
+        {
+          "chapterOrdinal": 2,
+          "wallSeconds": 170.18800000008196,
+          "prepareStagedSeconds": 149.96900000004098,
+          "prepareReturnToCommitRawSeconds": 3.547000000020489,
+          "boundaryCaptureSeconds": 0.46800000010989606,
+          "prepareReturnToCommitAdjustedSeconds": 3.078999999910593,
+          "visualFinishToFirstReviewSeconds": 0.2029999999795109
+        }
+      ],
+      "repairOrCorrectionCalls": 1,
+      "observedProductionProfileVersions": {
+        "acceptedVisualDispatchVersion": [
+          2
+        ],
+        "factsVersion": [
+          4
+        ],
+        "planVersion": [
+          11
+        ],
+        "reviewHintsVersion": [
+          2
+        ],
+        "sourceGroundingVersion": [
+          1
+        ],
+        "sourceTimingUnitsVersion": [
+          1
+        ],
+        "version": [
+          1
+        ]
+      },
+      "reservedUSD": 0,
+      "confirmedUnchargedCount": 0,
+      "reviewCalls": 7,
+      "storyboardReviewMajorFindings": 2,
+      "humanQualityReviewPerformed": false,
+      "directorPassUnionSeconds": 315.9980000008363,
+      "pendingRequestCount": 0,
+      "missingOrUnverifiedTerminalTierCount": 0,
+      "completedDirectorPassCount": 37,
+      "arm": "current",
+      "settledCostUSD": 0.04759000700000001,
+      "scenes": [
+        9,
+        13
+      ],
+      "settledRequestCount": 35,
+      "maximumConcurrentPassIntervals": 5
+    },
+    "stages": [
+      {
+        "name": "Casting supervisor",
+        "calls": 2,
+        "callWorkSeconds": 32.390000000130385,
+        "activeSeconds": 32.390000000130385,
+        "elapsedSpanSeconds": 168.8430000001099,
+        "estimatedUSD": 0.0021378
+      },
+      {
+        "name": "Workflow planner",
+        "calls": 3,
+        "callWorkSeconds": 2.7020000002812594,
+        "activeSeconds": 2.7020000002812594,
+        "elapsedSpanSeconds": 173.65599999995902,
+        "estimatedUSD": 0.0001588
+      },
+      {
+        "name": "Source fact analyst",
+        "calls": 3,
+        "callWorkSeconds": 78.70300000021234,
+        "activeSeconds": 78.70300000021234,
+        "elapsedSpanSeconds": 203.06299999984913,
+        "estimatedUSD": 0.005375400000000001
+      },
+      {
+        "name": "Source continuity reviewer",
+        "calls": 3,
+        "callWorkSeconds": 41.235000000102445,
+        "activeSeconds": 41.235000000102445,
+        "elapsedSpanSeconds": 182.64100000006147,
+        "estimatedUSD": 0.002243203
+      },
+      {
+        "name": "Visual storyboard director",
+        "calls": 21,
+        "callWorkSeconds": 432.3889999995008,
+        "activeSeconds": 125.43799999984913,
+        "elapsedSpanSeconds": 209.81299999984913,
+        "estimatedUSD": 0.028576704
+      },
+      {
+        "name": "Storyboard continuity supervisor",
+        "calls": 4,
+        "callWorkSeconds": 63.84400000004098,
+        "activeSeconds": 58.25,
+        "elapsedSpanSeconds": 199.2970000000205,
+        "estimatedUSD": 0.007981
+      },
+      {
+        "name": "Targeted storyboard repair",
+        "calls": 1,
+        "callWorkSeconds": 6.6560000001918525,
+        "activeSeconds": 6.6560000001918525,
+        "elapsedSpanSeconds": 6.6560000001918525,
+        "estimatedUSD": 0.0011171
+      }
     ],
-    "successCase": {
-      "actualMockPOSTs": 6,
-      "peakSharedSlots": 4,
-      "secondGroupStartsBeforeFirstGroupTailEnds": true,
-      "settledPaidReceipts": 6,
-      "distinctRequestOwners": 6,
-      "canonicalChaptersAndSettingsUnchanged": true
+    "globalAccounting": {
+      "settledRequestCount": 165,
+      "settledCostUSD": 0.218502027,
+      "pendingRequestCount": 0,
+      "reservedUSD": 0,
+      "allTerminalTiersDefault": true,
+      "includesAllEarlierFailedAndCompletedAttempts": true,
+      "APICapUSD": 0.3
     },
-    "failureCase": {
-      "actualMockPOSTs": 4,
-      "settledPaidReceipts": 3,
-      "UNKNOWNReservations": 1,
-      "UNKNOWNReservationPositive": true,
-      "nextGroupPOSTs": 0,
-      "incompleteResponseAutomaticRetriesAfterSiblingFailure": 0,
-      "paidSiblingDrained": true,
-      "unresolvedLiabilityBlocksNewOverlap": true,
-      "canonicalChaptersAndSettingsUnchanged": true
+    "earlierAttempts": [
+      {
+        "arm": "baseline",
+        "complete": false,
+        "wallSeconds": 339.85899999993853,
+        "actualRequestCount": 37,
+        "settledCostUSD": 0.048979805000000015,
+        "productionAcceptedBothChapters": false
+      },
+      {
+        "arm": "current",
+        "complete": true,
+        "wallSeconds": 305.594000000041,
+        "actualRequestCount": 35,
+        "settledCostUSD": 0.04635730400000001,
+        "productionAcceptedBothChapters": true
+      },
+      {
+        "arm": "baseline",
+        "complete": true,
+        "wallSeconds": 367.594000000041,
+        "actualRequestCount": 39,
+        "settledCostUSD": 0.050825805999999994,
+        "productionAcceptedBothChapters": true
+      },
+      {
+        "arm": "current",
+        "complete": false,
+        "wallSeconds": 235.96900000004098,
+        "actualRequestCount": 19,
+        "settledCostUSD": 0.024749105,
+        "productionAcceptedBothChapters": false
+      }
+    ],
+    "causalSpeedupEstablished": false,
+    "humanQualityReviewPerformed": false,
+    "voiceEstimateMinutesUnchanged": 12.3,
+    "twoHourDirectorOnlyProjectionSeconds": 2212.548489378096,
+    "twoHourDirectorOnlyProjectedUSD": 0.3262600100930273,
+    "calibrationChangesLimitedToProfile": "lean-overlap-standard",
+    "includesHandoffCommitTime": true,
+    "cadenceNormalization": {
+      "version": 1,
+      "kind": "observed-production-cadence-before-clearing-scenes",
+      "savedProfileCadencePerMinute": null,
+      "inputCadencePerMinute": 5.884425316359273,
+      "originalPreflightSHA256": "24c69b8366f766d750dae9cd089126c18a5c5c00f31168e4414fa6b3d2f9abe2",
+      "stateBeforeSHA256": "c65f8f748f3bf0c2e6fee08a08e3a2688ae0a419a70684a9ca17ac53261bac06"
+    }
+  },
+  "imageAndQCStudy": {
+    "status": "REVIEWED_SETTLED_PARTIAL_COMPONENTS",
+    "studyStatus": "STOPPED_NO_REPLAY",
+    "studyErrorType": "RuntimeError",
+    "wholeStudyComplete": false,
+    "pairedStudyComplete": false,
+    "actualArms": 1,
+    "inventedMeasurementRounds": false,
+    "arms": [
+      {
+        "arm": "current",
+        "status": "FAILED",
+        "wallSeconds": 1101.4839999999385,
+        "frozenInitialInventory": {
+          "chapter720": 107,
+          "intro1344x768": 5,
+          "total": 112
+        },
+        "admittedGenerationAttempts": 153,
+        "generatedImages": 150,
+        "qualityOutcome": {
+          "initialImages": 112,
+          "initialBlocking": 41,
+          "repairReserved": 41,
+          "repairGeneratedAndRechecked": 38,
+          "completedRepairsResolvedBlocking": 11,
+          "completedRepairsStillBlocking": 27,
+          "repairFailedBeforeSubmission": 3,
+          "finalBlocking": 30,
+          "finalNonblocking": 82,
+          "deferredChecksComplete": 150
+        },
+        "renderReady": false,
+        "qualityAcceptanceClaimed": false,
+        "imageCohorts": [
+          {
+            "cohort": "chapter",
+            "repair": false,
+            "images": 107,
+            "width": 1280,
+            "height": 720,
+            "inclusiveExecutionSpanSeconds": 426.4183759689331,
+            "inclusiveExecutionUnionSeconds": 426.4183759689331,
+            "workerOutputCounts": {
+              "0": 51,
+              "1": 56
+            },
+            "includesQueueColdIfPresentTransfersAndLocalSave": true,
+            "includesDeferredQC": false
+          },
+          {
+            "cohort": "chapter",
+            "repair": true,
+            "images": 38,
+            "width": 1280,
+            "height": 720,
+            "inclusiveExecutionSpanSeconds": 370.8001606464386,
+            "inclusiveExecutionUnionSeconds": 370.8001606464386,
+            "workerOutputCounts": {
+              "1": 18,
+              "0": 20
+            },
+            "includesQueueColdIfPresentTransfersAndLocalSave": true,
+            "includesDeferredQC": false
+          },
+          {
+            "cohort": "intro",
+            "repair": false,
+            "images": 5,
+            "width": 1344,
+            "height": 768,
+            "inclusiveExecutionSpanSeconds": 33.39255356788635,
+            "inclusiveExecutionUnionSeconds": 33.39255356788635,
+            "workerOutputCounts": {
+              "0": 3,
+              "1": 2
+            },
+            "includesQueueColdIfPresentTransfersAndLocalSave": true,
+            "includesDeferredQC": false
+          }
+        ],
+        "QCReviewCohorts": [
+          {
+            "cohort": "chapter",
+            "repairRecheck": false,
+            "checks": 107,
+            "requestsIncludingAPIRetries": 107,
+            "APIWorkSecondsExcludingLaneWait": 1464.135,
+            "settledCostUSD": 0.036773331000000006
+          },
+          {
+            "cohort": "chapter",
+            "repairRecheck": true,
+            "checks": 38,
+            "requestsIncludingAPIRetries": 38,
+            "APIWorkSecondsExcludingLaneWait": 704.4849999999999,
+            "settledCostUSD": 0.014877413
+          },
+          {
+            "cohort": "intro",
+            "repairRecheck": false,
+            "checks": 5,
+            "requestsIncludingAPIRetries": 5,
+            "APIWorkSecondsExcludingLaneWait": 40.374,
+            "settledCostUSD": 0.0013204010000000001
+          }
+        ],
+        "projectionAssessment": {
+          "chapterRequestsStartedAfterAllIntroCompleted": 0,
+          "warmAfterIntroRateProven": false,
+          "projectionBasis": "Single complete initial source burst, resolution cohorts separate; source-normalized inclusive-span allocation is a conditional case, not asymptotic warm throughput.",
+          "coldTransferSaveMustNotBeAddedAgainToInclusiveSpan": true,
+          "oneBurstDoesNotSatisfyExistingTwoRoundMeasurementSelector": true,
+          "zeroRepairCase": "Initial chapter720 inclusive span/107 times projected chapter images, plus separately measured intro1344 span when enabled. This conservative additive case may count cohort overlap twice and allocates first-run cold across107; it is not an exact once-cold continuous-burst forecast.",
+          "observedRepairCase": "Show separate completed38/112 output repair burden and41/112 attempted burden, actual repair rental/startup windows and blocked final outcome. Preserve saved one-repair ceiling; do not call the observed fraction an upper bound or completion guarantee."
+        }
+      }
+    ],
+    "QCProposedCohorts": [
+      {
+        "id": "qc-full-source-settled-partial-20261029-current",
+        "status": "COMPLETE",
+        "policy": "practical",
+        "apiSlots": 4,
+        "processingTier": "default",
+        "timingScope": "api-call",
+        "qcCompatibilityHash": "1c27fa75e17e59833533216c7d5b64d9880e109147ede64cd9c47260f90bd7e0",
+        "secondsPerCheck": 13.683504672897197,
+        "costUSDPerCheck": 0.0003436759906542057,
+        "checks": 107,
+        "uniqueImages": 107,
+        "referenceImages": "up to 2",
+        "observedAt": 1793249847.083647,
+        "unknownRequests": 0,
+        "workload": "image-qc-pipeline",
+        "topology": {
+          "gpu": "5090",
+          "modelCopies": 2,
+          "requestSlots": 4,
+          "imageTasks": 5
+        },
+        "studyStatus": "STOPPED_NO_REPLAY",
+        "armStatus": "FAILED",
+        "componentTimingComplete": true,
+        "productionBursts": 1,
+        "qualityAllowsRender": false,
+        "humanQualityAccepted": false,
+        "scope": "Complete107initial720p chapter API reviews in a financially settled FAILED production arm. API-lane wait excluded by native callback; bounded API retry cost/work included once. Intro and image-repair rechecks excluded from this cohort but retained in all study costs. Not quality acceptance or a finished-video measurement.",
+        "limits": [
+          "One source/burst; no confidence interval or causal speedup.",
+          "All112initial+38repaired outputs checked;30finalimages remain blocked.",
+          "Actual identity/context reference count varies, up to two."
+        ],
+        "matchesOriginalTargetCompatibility": true
+      }
+    ],
+    "allStudyCosts": {
+      "QCSettledUSD": 0.052971145,
+      "QCReservedUSD": 0,
+      "QCPendingRequests": 0,
+      "QCSettledRequests": 150,
+      "GPUAndWorkingDiskConservativeUpperUSD": 0.44906149503721127,
+      "combinedGPUUpperAndQCUSD": 0.5020326400372113,
+      "includesFailedAttemptsAndSetup": true,
+      "GPUDeletedConfirmed": true,
+      "settledInvoiceClaimed": false
     },
-    "modelOrProviderCalls": 0
+    "oldSmallPilotImageRateSupportsThisStory": false,
+    "imageRateAutomaticReplacement": false,
+    "voiceEstimateMinutesUnchanged": 12.3,
+    "fullProductionTimingOrQualityPassClaimed": false
   },
-  "regression": {
-    "testsRun": 346,
-    "failures": 0,
-    "errors": 0,
-    "skipped": 0,
-    "externalNetworkAttempts": 0,
-    "paidCalls": 0
+  "conditionalForecast": {
+    "endSeconds": 5495.675177497619,
+    "totalUSD": 1.7133449588135177,
+    "gpuUSD": 0.976106023327967,
+    "directorUSD": 0.3262600100930273,
+    "qcUSD": 0.24297892539252341,
+    "storageUSD": 0.168,
+    "rentalSeconds": 2946.0489199651734,
+    "gpuWorkSeconds": 2811.8184933357893,
+    "imageRentalRatioPercent": 95.4437135880632,
+    "images": 707,
+    "attempts": 707,
+    "qcCount": 707,
+    "initialImageGaps": 0,
+    "bootStart": 2273.4579949362046,
+    "bootEnd": 2320.2795870287187,
+    "stopStart": 5211.506914901378,
+    "stopEnd": 5219.506914901378,
+    "lastQCFinish": 5295.335792210661,
+    "narrationLaneMinutes": 12.275551296892056,
+    "directorProfile": "lean-overlap-standard",
+    "directorConditionsMatch": true,
+    "sourceBurstProjectionUsed": true,
+    "prewarmCreditSeconds": 0,
+    "apiSlots": 4
   },
-  "referenceReuse": {
-    "installed": false,
-    "liveSpeedupMeasured": false,
-    "reason": "Live API benchmark pending; no reference-reuse gain applied."
+  "observedRepairWorkScenario": {
+    "allowancePercent": 36.607142857142854,
+    "sourceAttemptedRepairs": 41,
+    "sourceInitialImages": 112,
+    "endSeconds": 9374.249683594962,
+    "totalUSD": 2.6946833878689826,
+    "images": 707,
+    "attempts": 966,
+    "checks": 966,
+    "rentalWindows": 2,
+    "diagnostics": [],
+    "scope": "Conditional work scenario using this sample's attempted repair fraction; not a universal repair rate, quality acceptance or a completed-video ETA."
   },
-  "limitations": [
-    "Synthetic scheduling replay is not measured API or two-hour production elapsed time.",
-    "The accepted-group dispatcher requires staged-lean, accepted-source/visual overlap and more than one API slot.",
-    "One accepted fact group has no cross-group tail to overlap.",
-    "Source decisions remain ordered; output order, models, efforts, references, checks and retry ceilings are preserved.",
-    "Local save timings depend on project/history size and host load. No-op savings are not a universal per-frame speedup.",
-    "No new full-video calibration or voice timing change is applied."
-  ],
-  "sourceSHA256": {
-    "director_pipeline.py": "65a885a6c7784fe6504fa6e1dcc34f5dabcb6de4bb647965eefbd7673587bb91",
-    "director_pipeline_test.py": "b87475ab0054b85463d622c5a24b4d2f0d9553f9e6aa3500e2e2e2c012e82873",
-    "director_pipeline_integration_test.py": "ff685fa1a8380e6cf4543d06edc67f20e928f9f907cf3fecad532fd93af378ab",
-    "studio_service.py": "6c38508040e125bc02320e2c61463c0d6fb1cab142da6ff714fab7d7fb7a3ef7",
-    "studio_status_write_test.py": "e4b098df9f02471f55a69b2ad6f765dee7552457b4ab899b4969c59348ef362f",
-    "studio_queue_sync_test.py": "e9fec9564bda383ebd7569ad252953b1c7ddbd35febfd3926cfaf97cdd16acee",
-    "studio_performance.py": "21dc8150a7b4dd4d838968ba1df08c0bbea65e50801baf22e26959de604a67fc",
-    "studio_performance_test.py": "9dde9c55b5447e934800df4d40767ac0bd5a7e88ce12ea4ad67611b89152be18"
-  }
+  "budget": {
+    "capUSD": 2,
+    "priorConservativeCommittedUSD": 0.8749099891002298,
+    "allDirectorAttemptsSettledUSD": 0.218502027,
+    "GPUAndDiskContinuousUpperUSD": 0.44906149503721127,
+    "allVisualQCSettledUSD": 0.052971145,
+    "archiveReadAndTransferReserveUSD": 0.1,
+    "totalConservativeCommittedUSD": 1.695444656137441,
+    "remainingUSD": 0.304555343862559,
+    "scope": "Continuous GPU/disk upper estimate includes setup and stopped intervals; archive allocation is a reserve. Not a final invoice. Earlier file-storage reserve is already in prior committed cost."
+  },
+  "appliedCalibrationSHA256": {
+    "director": "0d2a5edc2147a8d239b1f55021c7eb2eb31970e1bc3fa3883e77884ef456f4fb",
+    "visualQCAndSourceProjection": "ecf5148047cd29802bdc344cc6baab33352756ffb872fdb7bab0e8dbc532fade"
+  },
+  "readinessFix": {
+    "maximumAttempts": 3,
+    "onlyTimeoutMetadataGETs": true,
+    "inferenceReplayed": false,
+    "offlineTestsPassed": 28,
+    "liveFullPipelineRetestedAfterFix": false
+  },
+  "limits": [
+    "One 17.5-minute source sample; two-hour values are conditional projections.",
+    "Image study failed during repairs; 30 selected sample images remain blocked.",
+    "Observed repair demand is a what-if allowance, not a guaranteed defect rate or successful repair rate.",
+    "Local narration, full rendering, long-video export and human correction time were not remeasured.",
+    "No complete old-versus-new image pipeline comparison or causal end-to-end speedup was established."
+  ]
 }

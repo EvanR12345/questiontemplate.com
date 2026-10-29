@@ -1,5 +1,5 @@
-import {buildPlan} from './pipeline-engine.mjs?v=dense-image-phase-20261028';
-import {selectGPUConfig} from './pipeline-config.mjs?v=dense-image-phase-20261028';
+import {buildPlan} from './pipeline-engine.mjs?v=matched-production-20261029';
+import {selectGPUConfig} from './pipeline-config.mjs?v=matched-production-20261029';
 
 // An unmatched/unconnected saved project must not imply experimental overlap.
 // This is a conservative comparison until Follow applies an actual topology.

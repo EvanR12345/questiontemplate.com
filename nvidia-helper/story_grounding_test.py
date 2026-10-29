@@ -33,6 +33,70 @@ class StoryGroundingTest(unittest.TestCase):
         self.assertTrue(owner_conflicts([event],people))
         event['characterId']='mira';self.assertEqual(owner_conflicts([event],people),[])
 
+    def test_shared_generic_aliases_do_not_turn_correct_female_holders_into_each_other(self):
+        people=[{'id':'plate','name':'Seated attendant','aliases':['woman'],'description':'A seated woman'},
+                {'id':'glass','name':'Standing attendant','aliases':['woman'],'description':'A standing woman'}]
+        events=[self.event('The woman was holding a plate.','plate','plate'),
+                self.event('The woman held a glass.','glass','glass')]
+        original=copy.deepcopy((events,people))
+        self.assertEqual(owner_conflicts(events,people),[])
+        require_owners(events,people)
+        self.assertEqual((events,people),original)
+        self.assertEqual([e['characterId'] for e in events],['plate','glass'])
+
+    def test_shared_normalized_names_and_aliases_are_not_unique_owner_proof(self):
+        people=[{'id':'first','name':'First performer','aliases':['Ｃｏｕｒｔ　Ｓｉｎｇｅｒ']},
+                {'id':'second','name':'Second performer','aliases':['Court Singer']}]
+        event=self.event('Court Singer holds a bell.','first','bell')
+        self.assertEqual(owner_conflicts([event],people),[])
+        people=[{'id':'first','name':'Alex','aliases':[]},{'id':'second','name':'ALEX','aliases':[]}]
+        self.assertEqual(owner_conflicts([self.event('Alex holds a bell.','first','bell')],people),[])
+
+    def test_bare_role_is_not_a_named_identity_even_with_only_one_matching_alias(self):
+        for label in ('woman','the woman',' A WOMAN '):
+            people=[{'id':'first','name':'First attendant','aliases':[label],'description':'A woman'},
+                    {'id':'second','name':'Second attendant','aliases':[],'description':'A woman'},
+                    {'id':'male','name':'Male attendant','aliases':[],'description':'A man'}]
+            quote='The woman holds a plate.'
+            self.assertEqual(owner_conflicts([self.event(quote,'second')],people),[])
+            with self.assertRaisesRegex(ValueError,'ownership'):require_owners([self.event(quote,'male')],people)
+
+    def test_unique_name_alias_and_distinguishing_role_still_reject_wrong_holder(self):
+        people=[{'id':'first','name':'Mira','aliases':['Quartermaster','attendant in blue'],'description':'A woman'},
+                {'id':'second','name':'Nora','aliases':['woman'],'description':'A woman'}]
+        for label in ('Mira','Quartermaster','attendant in blue'):
+            event=self.event(label+' holds a key.','second','key')
+            self.assertTrue(owner_conflicts([event],people))
+            with self.assertRaisesRegex(ValueError,'ownership'):require_owners([event],people)
+            event['characterId']='first'
+            self.assertEqual(owner_conflicts([event],people),[])
+        # Repeated cast records for the same accepted ID do not make its unique
+        # alias ambiguous; the index counts distinct people rather than rows.
+        people.append(copy.deepcopy(people[0]))
+        self.assertTrue(owner_conflicts([self.event('Quartermaster holds a key.','second','key')],people))
+
+    def test_ambiguous_or_unknown_labels_never_assign_or_invent_an_owner(self):
+        people=[{'id':'first','name':'First attendant','aliases':['woman'],'description':'A woman'},
+                {'id':'second','name':'Second attendant','aliases':['woman'],'description':'A woman'}]
+        for chosen in ('first','second','unknown'):
+            event=self.event('A woman held the key in her hand.',chosen,'key')
+            original=copy.deepcopy(event)
+            self.assertEqual(owner_conflicts([event],people),[])
+            self.assertEqual(event,original)
+
+    def test_correct_shared_alias_source_review_does_not_buy_a_spurious_correction(self):
+        people=[{'id':'plate','name':'Seated attendant','aliases':['woman'],'description':'A woman'},
+                {'id':'glass','name':'Standing attendant','aliases':['woman'],'description':'A woman'}]
+        event=self.event('The woman was holding a plate.','plate')
+        context={'people':people,'objects':['plate'],'changes':[event],
+                 'sentences':[{'text':event['reason']}],'knownState':{}}
+        original=copy.deepcopy(context)
+        provider=DirectorProvider();provider.call=Mock(return_value={'majorIssues':[],'objectChanges':[]})
+        result=provider.checkSourceFacts(context,lambda *_:None)
+        self.assertEqual(provider.call.call_count,1)
+        self.assertNotIn('sourceRepair',result)
+        self.assertEqual(context,original)
+
     def test_pronouns_transfers_separate_objects_and_injuries_are_not_guessed(self):
         people=self.people+[{'id':'mira','name':'Mira'}]
         events=[self.event('He held it in his hand.'),

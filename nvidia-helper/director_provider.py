@@ -4,6 +4,7 @@ import copy, hashlib, json, os, re, subprocess, time, urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
+STORYBOARD_REVIEW_CAPACITY_VERSION = 2
 
 def local_url(value):
     parsed = urlparse(value)
@@ -434,7 +435,7 @@ class DirectorProvider:
         issues=arr(obj({'shotKey':{'type':'string','enum':list(bindings)},
             'category':{'type':'string','enum':['speaker','object','appearance','action','timing']},
             'sentence':{'type':'integer','enum':list(range(len(context['sentences'])))},
-            'issue':short_text(300)})) | {'maxItems':12}
+            'issue':short_text(300)}))
         scope_instruction=('When reviewShotIndices is supplied, use the explicit shotIndex field, not the position in the shorter shots array. '
             'This is a post-repair check of changed shots and their immediate neighbors. Full narration is context; '
             'report issues only for the supplied shots. The initial review already examined every shot. '

@@ -39,6 +39,8 @@ export function qualityConfig(config,evidence){
   if(!config.qcCostManual)next.qcCost=cohort.costUSDPerCheck;
   next.qcBenchmarkId=cohort.id;next.qcBenchmarkObservedAt=cohort.observedAt;
   const workload=cohort.workload==='image-qc-pipeline'?'combined image-and-QC production pilot':'QC-only comparison';
-  next.qcBenchmarkNote=`QC forecast uses the ${workload} from ${new Date(cohort.observedAt*1000).toISOString().slice(0,10)}: ${cohort.checks} checks of ${cohort.uniqueImages} unique images, ${cohort.apiSlots} actual API slots, ${cohort.referenceImages} reference image. Initial API-call time and usage cost only; repairs, manual waiting and full-video completion are unmeasured.`;
+  const partial=cohort.componentTimingComplete===true&&cohort.studyStatus==='STOPPED_NO_REPLAY';
+  next.qcBenchmarkNote=`QC forecast uses the ${workload} from ${new Date(cohort.observedAt*1000).toISOString().slice(0,10)}: ${cohort.checks} checks of ${cohort.uniqueImages} unique images, ${cohort.apiSlots} actual API slots, ${cohort.referenceImages} reference image. `+
+    (partial?'Initial-review API work and usage cost only. Measured repairs and rechecks are excluded from this initial-review average and reported separately; the source study remains quality-blocked. Manual waiting and full-video completion are unmeasured.':'Initial API-call time and usage cost only; repairs, manual waiting and full-video completion are unmeasured.');
   return next;
 }

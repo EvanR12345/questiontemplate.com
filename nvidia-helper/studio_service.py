@@ -1101,9 +1101,9 @@ class StudioService:
         self.sync_queue_states(sync_project)
         return self.snapshot()
 
-    def gate(self, message="", step=0, total=0, wait_paused=True):
+    def gate(self, message="", step=0, total=0, wait_paused=True, abort_event=None):
         with self.cv:
-            if self.closed or self.cancel:
+            if self.closed or self.cancel or abort_event is not None and abort_event.is_set():
                 raise JobCancelled()
             if self.yield_requested:
                 raise AudioYield()
@@ -1116,7 +1116,7 @@ class StudioService:
                 self.db.commit()
                 self._progress_key = progress_key
             while self.paused and wait_paused:
-                if self.closed or self.cancel:
+                if self.closed or self.cancel or abort_event is not None and abort_event.is_set():
                     raise JobCancelled()
                 if self.yield_requested:
                     raise AudioYield()
@@ -1821,6 +1821,11 @@ class StudioService:
             finally:self._production_gpu=None
 
     def ensure_production_gpu(self):
+        overlap=getattr(self,'_overlap',None)
+        if overlap and overlap.dense_prewarm:
+            if not overlap.dense_preflight_complete:
+                raise ValueError('Prewarming does not authorize inference before the accepted-plan preflight.')
+            overlap.dense_prewarm.join()
         rental=getattr(self,'_production_gpu',None)
         if rental:rental.ensure()
 
@@ -1862,6 +1867,9 @@ class StudioService:
                 message=str(error)[:1800]
                 # Paid Luna replies can finish collecting receipts without an
                 # idle GPU rental while overlap.close waits for their threads.
+                # A background startup must finish/abort BEFORE any stop call;
+                # otherwise a late successful start could race that shutdown.
+                overlap.finish_dense_prewarm(abort=True)
                 rental=getattr(self,'_production_gpu',None)
                 if rental:rental.stop('production interrupted; collecting API receipts')
                 raise
@@ -1987,6 +1995,7 @@ class StudioService:
                 self.render_production_chapter(pid, chid, index, chapters)
 
         if dense:
+            self.mark_dense_prewarm_assembly_ready(pid)
             self.run_dense_image_phase(pid,chapters)
         if getattr(self,'_overlap',None):
             self._overlap.drain()
@@ -2167,8 +2176,12 @@ class StudioService:
             except (OSError,ValueError,KeyError) as error:
                 raise ValueError('Prepare every selected identity, location, style and manual reference before the dense GPU window.') from error
         proof=capacity_preflight(p,shots,self.store.folder(pid),p['settings']['maxImageRetries'])
-        self.store.mutate(pid,lambda q:q.setdefault('production',{}).update(denseImagePreflight=proof))
         overlap=self._overlap
+        if overlap.dense_prewarm is not None and not overlap.dense_prewarm.retired:
+            from studio_dense_prewarm import validate_final
+            validate_final(overlap.dense_prewarm_proof,p,self.store)
+            if overlap.dense_prewarm:overlap.dense_prewarm.join()
+        self.store.mutate(pid,lambda q:q.setdefault('production',{}).update(denseImagePreflight=proof))
         overlap.dense_plans=overlap.dense_plan_inputs(p)
         overlap.deferred_qc=DenseReviews(overlap)
         overlap.dense_preflight_complete=True
@@ -2177,6 +2190,63 @@ class StudioService:
         for shot in p['intro'].get('shots',[]) if p['intro']['enabled'] else []:
             if shot.get('imagePath') and (review_settings_stale(p,shot) or shot.get('qc',{}).get('status') in (None,'PENDING','UNREVIEWED')):
                 overlap.deferred_qc.enqueue(p,None,shot,overlap.main_context.identity)
+
+    def maybe_dense_prewarm(self,project,chapter,prepared,cast,expected):
+        """A frozen final staged envelope can hide startup, never inference."""
+        overlap=getattr(self,'_overlap',None)
+        if not overlap or not overlap.dense or overlap.dense_prewarm_proof is not None:return
+        active=[c for c in project['chapters'] if c['sourceText'].strip()]
+        if not active or active[-1]['id']!=chapter['id']:return
+        from studio_dense_prewarm import envelope,Startup
+        current=overlap.validate_settings()
+        if self.analysis_input_signature(current,chapter['id'])!=expected:return
+        proof_started=time.monotonic()
+        try:proof=envelope(self,project,chapter,prepared,cast)
+        except (OSError,ValueError,KeyError,TypeError,IndexError) as error:
+            self.store.mutate(project['id'],lambda p:p.setdefault('production',{}).setdefault('scheduling',{}).update(
+                densePrewarm={'version':1,'eligible':False,'reason':str(error)[:400]}))
+            return
+        current=overlap.validate_settings()
+        if self.analysis_input_signature(current,chapter['id'])!=expected:return
+        from studio_dense_prewarm import reference_proof
+        if reference_proof(current,self.store)!=proof['references']:return
+        started=time.monotonic()
+        overlap.dense_prewarm_proof=proof
+        overlap.dense_prewarm_envelope_at=started
+        enabled=self.config.get('studioDenseJITPrewarm',True) is True
+        rental=getattr(self,'_production_gpu',None)
+        marker={'version':1,'eligible':True,'startupEnabled':bool(enabled and rental),
+                'envelopeAtEpoch':time.time(),'maximumImages':proof['maximumImages'],
+                'provisionalImages':proof['provisionalImages'],'maximumAssemblySeconds':120,
+                'proofSignature':proof['signature'],'eligibilityProofSeconds':max(0,started-proof_started),
+                'scope':'Startup only; accepted plans, references and capacity are rechecked before inference.'}
+        self.store.mutate(project['id'],lambda p:p.setdefault('production',{}).setdefault('scheduling',{}).update(densePrewarm=marker))
+        if enabled and rental:
+            self.gate('Prewarming the image worker behind the final plan gate')
+            overlap.dense_prewarm=Startup(rental,self.gate)
+            overlap.dense_prewarm.start()
+
+    def mark_dense_prewarm_assembly_ready(self,pid):
+        overlap=getattr(self,'_overlap',None)
+        if not overlap or overlap.dense_prewarm_proof is None:return
+        if overlap.dense_prewarm:
+            if not overlap.dense_prewarm.mark_ready():
+                self.store.mutate(pid,lambda p:p.setdefault('production',{}).setdefault('scheduling',{}).setdefault('densePrewarm',{}).update(
+                    eligible=False,retired=True,reason='Optional startup retired at its assembly bound; ordinary planning and final preflight continue under the same cap.'))
+                overlap.dense_prewarm_proof=None
+                return
+        from studio_dense_prewarm import validate_final
+        try:validate_final(overlap.dense_prewarm_proof,self.store.load(pid),self.store)
+        except (OSError,ValueError,KeyError,TypeError) as error:
+            if overlap.dense_prewarm:raise
+            self.store.mutate(pid,lambda p:p.setdefault('production',{}).setdefault('scheduling',{}).setdefault('densePrewarm',{}).update(
+                eligible=False,reason='Final envelope validation: '+str(error)[:350]))
+            overlap.dense_prewarm_proof=None
+            return
+        seconds=max(0,time.monotonic()-overlap.dense_prewarm_envelope_at)
+        self.store.mutate(pid,lambda p:p.setdefault('production',{}).setdefault('scheduling',{}).setdefault('densePrewarm',{}).update(
+            finalPlansAcceptedAtEpoch=time.time(),hiddenAssemblySeconds=seconds,
+            measurement='Monotonic interval from verified frozen final envelope to all accepted plans; not a startup-speed measurement.'))
 
     def run_dense_image_phase(self,pid,chapters=None):
         """Actual plan-ready image/QC phase, also used by isolated phase pilots."""
@@ -3742,6 +3812,7 @@ class StudioService:
         if staged:
             from director_staged import prepare_staged
             prepared = prepare_staged(self,p,ch,groups,chapter_cast,state,memory,expected_analysis)
+            self.maybe_dense_prewarm(p,ch,prepared,chapter_cast,expected_analysis)
         visual_base=0
         for group_index, group in enumerate(groups):
             if prepared and prepared[group_index].get('visualTimings'):
