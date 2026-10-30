@@ -6,7 +6,7 @@ from studio_data import digest, get_chapter, get_shot
 SCALARS = ('style', 'layoutMode', 'generationMode', 'voice', 'voiceEngine', 'voiceCompute', 'voiceLocalFallback', 'voiceChapterBatchSize',
            'voiceInstruction', 'qwenSpeaker', 'speed', 'narrationDelivery', 'soundEffects',
            'emphasisPhrases', 'continuityStrictness', 'appearanceHandling', 'maxImageRetries',
-           'visionQC', 'qcSampleEvery', 'qcCheckLevel', 'automaticRepair', 'qcPolicy',
+           'visionQC', 'qcSampleEvery', 'qcCheckLevel', 'automaticRepair', 'qcPolicy', 'qcClothingContinuity',
            'focusedPrompts', 'cloudImagesOnly', 'unattendedProduction', 'qcRepairBudgetMode')
 GROUPS = {
     'director': ('provider', 'model', 'reasoning', 'parallelism', 'concisePrompts', 'serviceTier'),
@@ -54,6 +54,19 @@ def workspace_change(store, pid, body):
         def remember():
             from studio_action_history import record
             record(p, before, operation.replace('-', ' '))
+        if operation == 'set-clothing-continuity':
+            value = body.get('value')
+            if value not in ('required', 'advisory'):
+                raise ValueError('Choose required or advisory clothing continuity.')
+            if p['settings'].get('qcClothingContinuity', 'required') == value:
+                from studio_data import UNCHANGED
+                return UNCHANGED
+            previous = copy.deepcopy(p['settings'])
+            p['settings']['qcClothingContinuity'] = value
+            from studio_qc import retain_review_settings
+            retain_review_settings(p, previous)
+            remember()
+            return
         if operation == 'save-setup':
             name = str(body.get('name', '')).strip()
             if not name or len(name) > 80:

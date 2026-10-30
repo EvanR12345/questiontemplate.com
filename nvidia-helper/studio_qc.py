@@ -39,6 +39,8 @@ def should_check(project, shot, context=None):
     return int(hashlib.sha256(key.encode()).hexdigest()[:16], 16) % interval == 0
 
 def validate_checks(settings):
+    if settings.get('qcClothingContinuity', 'required') not in ('required', 'advisory'):
+        raise ValueError('Choose Required or Advisory clothing continuity.')
     if 'unattendedProduction' in settings and type(settings['unattendedProduction']) is not bool:
         raise ValueError('Unattended production must be enabled or disabled.')
     if settings.get('qcRepairBudgetMode', 'overhead') not in ('overhead', 'project-cap'):
@@ -56,12 +58,16 @@ def policy(settings):
 def review_settings_signature(settings):
     """Only inputs that change the review, not cadence/retry scheduling."""
     director=settings.get('director',{})
-    return digest({'version':1,'policy':policy(settings),
+    fields={'version':1,'policy':policy(settings),
         'continuity':settings.get('continuityStrictness'),
         'style':settings.get('style'),
         'constraints':settings.get('imageVisualConstraints',settings.get('visualConstraints','')),
         'provider':director.get('provider'),'model':director.get('model'),
-        'reasoning':director.get('qcReasoning') or ('High' if settings.get('generationMode')=='MAX QUALITY' else 'Fast')})
+        'reasoning':director.get('qcReasoning') or ('High' if settings.get('generationMode')=='MAX QUALITY' else 'Fast')}
+    # Preserve the historical signature byte-for-byte for the default policy.
+    if settings.get('qcClothingContinuity')=='advisory':
+        fields['clothingContinuity']='advisory'
+    return digest(fields)
 
 
 def review_settings_stale(project, shot, context=None):
@@ -148,6 +154,22 @@ def issue_levels(qc):
             levels.append('uncertain')
     return levels
 
+def clothing_advisory_indices(settings, qc):
+    """Use explicit review semantics only; never infer tolerance from issue text."""
+    if settings.get('qcClothingContinuity')!='advisory':return []
+    issues,findings=qc.get('issues',[]),qc.get('findings')
+    if not isinstance(issues,list) or not isinstance(findings,list) or len(findings)!=len(issues):return []
+    if not all(isinstance(f,dict) and f.get('issue')==issue
+            and f.get('severity') in ('advisory','major','uncertain')
+            and type(f.get('clothingOnly')) is bool for f,issue in zip(findings,issues)):return []
+    return [index for index,finding in enumerate(findings) if finding['clothingOnly']]
+
+def effective_issue_levels(settings, qc):
+    """Decision-only levels; the original findings and raw pass stay untouched."""
+    levels=issue_levels(qc)
+    for index in clothing_advisory_indices(settings,qc):levels[index]='advisory'
+    return levels
+
 def decision(project, shot, store, context=None):
     qc = shot.get('qc', {})
     mode = policy(project['settings'])
@@ -163,7 +185,12 @@ def decision(project, shot, store, context=None):
     if qc.get('pass') is not False:
         # Preserve prior semantics for deliberately disabled/unavailable vision.
         return {'disposition':'unreviewed','blocking':False,'policy':mode}
-    levels = issue_levels(qc)
+    levels = effective_issue_levels(project['settings'],qc)
+    clothing=clothing_advisory_indices(project['settings'],qc)
+    if levels and len(clothing)==len(levels):
+        return {'disposition':'advisory','blocking':False,'policy':mode,'issueLevels':levels,
+                'clothingAdvisoryCount':len(clothing),
+                'warning':'Clothing-only findings are advisory under this project setting; original findings remain unchanged.'}
     if mode == 'practical' and project['settings'].get('unattendedProduction') and levels and 'major' not in levels:
         return {'disposition':'advisory','blocking':False,'policy':mode,'issueLevels':levels,
                 'warning':'Unattended Practical mode retains minor/uncertain findings as warnings.'}
@@ -184,12 +211,14 @@ def automatic_repairs(settings, qc=None):
                and int(settings.get('maxImageRetries',2))>0 and repair_budget_reason(settings) is None)
     if not enabled or qc is None: return enabled
     if qc.get('pass') is not False: return False
+    levels=effective_issue_levels(settings,qc)
+    if levels and len(clothing_advisory_indices(settings,qc))==len(levels):return False
     if qc.get('action') not in ('image_edit','regenerate') and not (
-            settings.get('unattendedProduction') and 'major' in issue_levels(qc)): return False
+            settings.get('unattendedProduction') and 'major' in levels): return False
     if policy(settings)=='strict': return True
     # Practical/Sampled mode can fix a confirmed major defect, never spend on
     # advisory/uncertain discrepancies or a manual-review-only instruction.
-    return 'major' in issue_levels(qc)
+    return 'major' in levels
 
 def repair_budget_reason(settings):
     """Unknown combined overhead never authorizes spending to find it out.

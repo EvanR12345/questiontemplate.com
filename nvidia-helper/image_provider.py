@@ -1231,6 +1231,15 @@ def format_prompt(project, shot, provider):
     return prompt, negative
 
 
+def _reference_clothing_changed(person, current):
+    """Only an explicit current/baseline difference changes reference guidance."""
+    baseline = person.get('defaultAppearance', {})
+    clothing = str(current.get('outfit') or current.get('clothing') or '').strip()
+    original = str(baseline.get('outfit') or baseline.get('clothing') or '').strip()
+    return bool(clothing and original
+                and ' '.join(clothing.casefold().split()) != ' '.join(original.casefold().split()))
+
+
 def reference_prompt(project, shot, metadata, operation="generate"):
     """Name reference roles without locking a character to old reference clothing."""
     chapter = shot_chapter(project,shot) or {"people":[]}
@@ -1238,6 +1247,8 @@ def reference_prompt(project, shot, metadata, operation="generate"):
     appearances = {c['id']: visible_appearance(shot, c) for c in shot['characters']}
     from prompt_quality import focused
     use_focused = focused(project,shot)
+    automatic_prompt = not shot.get('manual', {}).get('prompt')
+    multiple_people = len({ref['characterId'] for ref in metadata if ref.get('characterId')}) > 1
     notes = []
     offset = 1 if operation == "edit" else 0
     if offset:
@@ -1252,6 +1263,15 @@ def reference_prompt(project, shot, metadata, operation="generate"):
                 f'Use image {index} as the identity reference for {person.get("name", ref["characterId"])}. '
                 "Preserve face and permanent traits; the shot's current appearance controls clothing and pose."
             )
+            current = appearances.get(ref['characterId'], {})
+            if automatic_prompt and (multiple_people or _reference_clothing_changed(person, current)):
+                # Bind state to its actual subject beside the numbered reference.
+                # A value occurring elsewhere in the body may describe another
+                # person; it is not evidence that this subject's state is bound.
+                if current:
+                    notes.append(f'Current-shot state for {person.get("name", ref["characterId"])}: '
+                                 + '; '.join(f'{key}: {value}' for key, value in current.items() if value) + '.')
+                continue
             # Saved or hand-authored prompts may omit current appearance.
             # Deduplicate only facts already in the body, never erase them.
             body=shot.get('prompt','').casefold()
@@ -1264,6 +1284,8 @@ def reference_prompt(project, shot, metadata, operation="generate"):
             notes.append(f"Use image {index} for visual style only, not its characters or events.")
         else:
             notes.append(f"Use image {index} only for its user-selected reference role.")
+    if automatic_prompt and multiple_people:
+        notes.append('Keep each named person matched to their own reference and current-shot state, including their own pose and restraints.')
     return " ".join(notes)
 
 
@@ -1318,6 +1340,14 @@ def select_references(project, shot, store, provider, reserved_slots=0):
                 )
             )
         )
+        # An outfit change should not preferentially pull a full-body portrait's
+        # old costume into the new scene when an identity portrait is available.
+        # Preserve angle-specific side/back selection and never invent a change
+        # from missing baseline or current clothing data.
+        current = visible_appearance(shot, selected)
+        if (not shot.get('manual', {}).get('prompt') and _reference_clothing_changed(p, current)
+                and 'profile' not in angle + distance and 'behind' not in angle):
+            desired = ['face', 'expression', 'front', 'three-quarter', 'full-body']
         ordered = sorted(
             options,
             key=lambda r: (

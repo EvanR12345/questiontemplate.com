@@ -258,6 +258,7 @@ def new_project(name="My story"):
             "qcSampleEvery": 5,
             "automaticRepair": False,
             "qcPolicy": "practical",
+            "qcClothingContinuity": "required",
             "customLayout": {
                 "sceneCount": None,
                 "minDuration": 3,

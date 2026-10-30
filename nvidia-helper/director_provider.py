@@ -561,8 +561,21 @@ class DirectorProvider:
                     "Vision model/projector unavailable; visual continuity requires review."
                 ],
             }
+        role="Visual quality reviewer: compare image to expected canonical identity and current appearance. Planned clothing changes are allowed. Anatomical left/right belong to the CHARACTER, not the viewer. Report only visible evidence. Do not demand a tiny facial mark, eye color, wrist accessory or object to be resolvable when framing, occlusion or lighting hides it. An unclear detail is not evidence it changed. For Low/Medium strictness, minor framing differences and uncertain details use action=review, not image_edit/regenerate. Reserve repairs for clearly visible wrong identity, wrong planned clothing, missing important people, contradictory action/objects, severe anatomy or serious artifacts. High strictness may require closer review of composition. pass can be true ONLY if issues is empty and action is pass. Never mark a review as passed. Return targeted repair only for a confirmed defect; otherwise leave repairPrompt empty. Return one finding for each issues entry, in the same order with identical issue text. Severity advisory means minor cinematic staging, approximate poses, framing, expression, gaze, cosmetic anatomy or small injury/detail discrepancies that do not change the story. Major means a clearly visible wrong MAIN character identity, wrong weapon or essential action that changes the narrated story, or an unusable image. Uncertain means suspected defects without clear evidence. Do not classify absent inventory props or tiny injury details as major unless essential to the current narrated action. Respect intentional clothing/injury changes, occlusion and camera crop. qualityPolicy=practical prioritizes useful storytelling over exact pose or framing; it never authorizes repair spending. Keep actual findings even when advisory."
+        finding_fields={"issue": STR, "severity": {"enum": ["advisory", "major", "uncertain"]}}
+        if context.get('clothingContinuity')=='advisory':
+            finding_fields['clothingOnly']=BOOL
+            role+=(" For this project's clothing-continuity preference, classify each finding with clothingOnly. "
+                "Set clothingOnly=true ONLY when the ENTIRE finding concerns non-plot-critical garment or outfit continuity alone. "
+                "Set it false for any mixed concern, uncertainty about this classification, wrong identity or role, hair/body traits, "
+                "action, pose, restraint, injury, object or ownership, anatomy, missing/extra people, or other story contradiction. "
+                "A uniform, disguise, armor or other clothing that establishes identity or affects the narrated action is plot-critical: set false. "
+                "Do not label a mixed issue clothingOnly just because it mentions clothing. "
+                "Keep original issues, severity, repairPrompt, action and raw pass under the normal review rules; "
+                "the application separately decides whether explicitly clothing-only findings are advisory. "
+                "Do not hide a non-clothing defect or mark an image passed because clothing tolerance is enabled.")
         result = self.call(
-            "Visual quality reviewer: compare image to expected canonical identity and current appearance. Planned clothing changes are allowed. Anatomical left/right belong to the CHARACTER, not the viewer. Report only visible evidence. Do not demand a tiny facial mark, eye color, wrist accessory or object to be resolvable when framing, occlusion or lighting hides it. An unclear detail is not evidence it changed. For Low/Medium strictness, minor framing differences and uncertain details use action=review, not image_edit/regenerate. Reserve repairs for clearly visible wrong identity, wrong planned clothing, missing important people, contradictory action/objects, severe anatomy or serious artifacts. High strictness may require closer review of composition. pass can be true ONLY if issues is empty and action is pass. Never mark a review as passed. Return targeted repair only for a confirmed defect; otherwise leave repairPrompt empty. Return one finding for each issues entry, in the same order with identical issue text. Severity advisory means minor cinematic staging, approximate poses, framing, expression, gaze, cosmetic anatomy or small injury/detail discrepancies that do not change the story. Major means a clearly visible wrong MAIN character identity, wrong weapon or essential action that changes the narrated story, or an unusable image. Uncertain means suspected defects without clear evidence. Do not classify absent inventory props or tiny injury details as major unless essential to the current narrated action. Respect intentional clothing/injury changes, occlusion and camera crop. qualityPolicy=practical prioritizes useful storytelling over exact pose or framing; it never authorizes repair spending. Keep actual findings even when advisory.",
+            role,
             context,
             obj(
                 {
@@ -570,7 +583,7 @@ class DirectorProvider:
                     "issues": arr(STR),
                     "repairPrompt": STR,
                     "action": {"enum": ["pass", "image_edit", "regenerate", "review"]},
-                    "findings": arr(obj({"issue": STR, "severity": {"enum": ["advisory", "major", "uncertain"]}})),
+                    "findings": arr(obj(finding_fields)),
                 }
             ),
             gate,

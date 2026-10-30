@@ -154,6 +154,12 @@
               ]
             }
           }
+        },
+        "qcClothingContinuity": {
+          "enum": [
+            "required",
+            "advisory"
+          ]
         }
       },
       "additionalProperties": true

@@ -4,7 +4,7 @@ from studio_qc import check_level
 from studio_performance import profile_for,signature
 
 FIELDS = ('unattendedProduction','qcRepairBudgetMode','style','generationMode','layoutMode','voice','voiceEngine','voiceCompute','qwenSpeaker','voiceInstruction','voiceChapterBatchSize','speed','narrationDelivery',
-          'soundEffects','automaticRepair','maxImageRetries','cloudImagesOnly')
+          'soundEffects','automaticRepair','maxImageRetries','cloudImagesOnly','qcClothingContinuity')
 GROUPS = {
     'video': ('width','height','fps','renderer','crf','imageFit','motionMode','zoomAmount','motionEasing'),
     'image': ('provider','model','workflow','width','height','steps','sampler','scheduler','guidance','referenceStrength'),

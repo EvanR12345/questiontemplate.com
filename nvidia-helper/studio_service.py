@@ -5156,6 +5156,7 @@ class StudioService:
             {
                 "expectedShot": expected,
                 "strictness": p["settings"]["continuityStrictness"],
+                **({"clothingContinuity": "advisory"} if p["settings"].get("qcClothingContinuity") == "advisory" else {}),
                 "qualityPolicy": qc_policy(p["settings"]),
                 "intentionalChanges": shot["intentionalAppearanceChanges"],
                 "imageOrder": "Generated shot first. Use referenceRoles to identify each later image: location/style references do not define character identity. Compare clothing to current state, not reference clothing.",

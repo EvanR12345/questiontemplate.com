@@ -198,6 +198,9 @@ def profile_for(stage, project, config, details=None):
             delivery=settings.get('narrationDelivery','standard'),effectMode=settings.get('soundEffects','subtle'),
             emphasis=signature(settings.get('emphasisPhrases',[])))
     else:return None
+    if stage in ('Visual QC', 'Image pipeline', 'Image + quality checks') and settings.get('qcClothingContinuity') == 'advisory':
+        profile['clothingContinuity'] = 'advisory'
+        profile['clothingFindingVersion'] = 1
     return profile
 
 
