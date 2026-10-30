@@ -2,6 +2,8 @@
 import copy
 import tempfile
 import unittest
+from unittest.mock import patch
+import image_provider
 
 from image_provider import reference_prompt, select_references
 from studio_data import ProjectStore, character, new_project
@@ -9,6 +11,9 @@ from studio_data import ProjectStore, character, new_project
 
 class CurrentAppearanceReferences(unittest.TestCase):
     def fixture(self):
+        candidate = patch.object(image_provider, 'CURRENT_APPEARANCE_REFERENCES', True)
+        candidate.start()
+        self.addCleanup(candidate.stop)
         project = new_project('Current scene')
         first, second = character('Christopher'), character('Jonathan')
         first['defaultAppearance']['outfit'] = 'dark suit'
@@ -28,6 +33,18 @@ class CurrentAppearanceReferences(unittest.TestCase):
             'manual': {},
         }
         return project, shot, first, second
+
+    def test_unverified_candidate_is_not_the_default(self):
+        self.assertIs(image_provider.CURRENT_APPEARANCE_REFERENCES, False)
+
+    def test_default_preserves_old_prompt_and_reference_priority(self):
+        project, shot, first, second = self.fixture()
+        with patch.object(image_provider, 'CURRENT_APPEARANCE_REFERENCES', False):
+            text = reference_prompt(project, shot, [{'characterId': first['id']}, {'characterId': second['id']}])
+            self.assertNotIn('Current-shot state for', text)
+            self.assertNotIn('Keep each named person', text)
+            metadata = self.selection(project, shot, first, second)
+            self.assertEqual([r['kind'] for r in metadata], ['full-body', 'full-body'])
 
     def test_named_state_is_retained_even_when_all_values_exist_in_body(self):
         project, shot, first, second = self.fixture()

@@ -1231,6 +1231,10 @@ def format_prompt(project, shot, provider):
     return prompt, negative
 
 
+# Candidate binding stays experimental until the matched image test passes.
+CURRENT_APPEARANCE_REFERENCES = False
+
+
 def _reference_clothing_changed(person, current):
     """Only an explicit current/baseline difference changes reference guidance."""
     baseline = person.get('defaultAppearance', {})
@@ -1248,6 +1252,7 @@ def reference_prompt(project, shot, metadata, operation="generate"):
     from prompt_quality import focused
     use_focused = focused(project,shot)
     automatic_prompt = not shot.get('manual', {}).get('prompt')
+    binding_enabled = automatic_prompt and CURRENT_APPEARANCE_REFERENCES
     multiple_people = len({ref['characterId'] for ref in metadata if ref.get('characterId')}) > 1
     notes = []
     offset = 1 if operation == "edit" else 0
@@ -1264,7 +1269,7 @@ def reference_prompt(project, shot, metadata, operation="generate"):
                 "Preserve face and permanent traits; the shot's current appearance controls clothing and pose."
             )
             current = appearances.get(ref['characterId'], {})
-            if automatic_prompt and (multiple_people or _reference_clothing_changed(person, current)):
+            if binding_enabled and (multiple_people or _reference_clothing_changed(person, current)):
                 # Bind state to its actual subject beside the numbered reference.
                 # A value occurring elsewhere in the body may describe another
                 # person; it is not evidence that this subject's state is bound.
@@ -1284,7 +1289,7 @@ def reference_prompt(project, shot, metadata, operation="generate"):
             notes.append(f"Use image {index} for visual style only, not its characters or events.")
         else:
             notes.append(f"Use image {index} only for its user-selected reference role.")
-    if automatic_prompt and multiple_people:
+    if binding_enabled and multiple_people:
         notes.append('Keep each named person matched to their own reference and current-shot state, including their own pose and restraints.')
     return " ".join(notes)
 
@@ -1345,7 +1350,7 @@ def select_references(project, shot, store, provider, reserved_slots=0):
         # Preserve angle-specific side/back selection and never invent a change
         # from missing baseline or current clothing data.
         current = visible_appearance(shot, selected)
-        if (not shot.get('manual', {}).get('prompt') and _reference_clothing_changed(p, current)
+        if (CURRENT_APPEARANCE_REFERENCES and not shot.get('manual', {}).get('prompt') and _reference_clothing_changed(p, current)
                 and 'profile' not in angle + distance and 'behind' not in angle):
             desired = ['face', 'expression', 'front', 'three-quarter', 'full-body']
         ordered = sorted(
