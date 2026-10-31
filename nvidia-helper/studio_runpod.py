@@ -4,7 +4,7 @@ REST v2 contract verified against Runpod's live OpenAPI schema. Never creates
 or deletes pods, adopts externally running rentals, or exposes a Comfy port.
 The helper must stay running for the independent deadline watchdog.
 """
-import copy,datetime,ipaddress,json,math,os,re,subprocess,threading,time,urllib.request,urllib.error
+import copy,datetime,ipaddress,json,math,os,re,subprocess,threading,time,uuid,urllib.request,urllib.error
 from pathlib import Path
 from urllib.parse import urlparse
 from cost_control import atomic_replace
@@ -265,6 +265,10 @@ class ProductionGPU:
         if seconds<60:raise ManagedGPUError('GPU cap cannot cover startup and the 90-second shutdown allowance; no rental started.')
         self.started=self.owned_startup['started'] if prestarted else self.clock();self.rate=rate;self.previous=previous
         self.deadline=self.started+seconds
+        # A verified new rental, rather than metadata refresh or a health read,
+        # is the only event allowed to retire an uncertain endpoint lifetime.
+        self.worker_lifetime_id=uuid.uuid4().hex
+        self.worker_lifetime_prepared=False
         # A stopped rental's elapsed cost, readiness and stopped timestamp
         # belong to its saved project history, not this new rental window.
         self.state={'spentByProject':dict(self.state.get('spentByProject',{}))}
@@ -273,7 +277,9 @@ class ProductionGPU:
         self.owned=True;self.rented=True
         self.save(podId=self.pod,project=self.project,status='STARTING',started=self.started,
                   **({'startupHandoff':True} if prestarted else {}),
-                  hourlyUSD=rate,capUSD=cap,deadline=self.deadline)
+                  hourlyUSD=rate,capUSD=cap,deadline=self.deadline,
+                  workerLifetimeId=self.worker_lifetime_id,
+                  workerLifetimeOrigin='fresh-owned-startup' if prestarted else 'verified-stopped-start')
         self.owned_startup=None
         threading.Thread(target=self.watch,name='studio-rental-deadline',daemon=True).start()
         try:
@@ -283,6 +289,8 @@ class ProductionGPU:
                 self.check();self.gate('Starting the image GPU and private connection')
                 current=self.client.request(self.pod)
                 if current.get('status')=='RUNNING':
+                    if current.get('id')!=self.pod:
+                        raise ManagedGPUError('Started worker identity differs from the owned rental; no image request submitted.')
                     required=self.config.get('runpodRequiredGPUType')
                     if required and (current.get('gpu') or {}).get('id')!=required:
                         raise ManagedGPUError('Started worker GPU differs from the required GPU; shutting down without generating images.')
@@ -291,8 +299,10 @@ class ProductionGPU:
                     self.connector(current)
                     if self.tunnel and self.tunnel.poll() is not None:
                         raise ManagedGPUError('Private SSH connection failed. Check the dedicated key and localhost port; no public image port was opened.')
-                    reset=getattr(self.provider,'begin_worker_lifetime',None)
-                    if callable(reset):reset()
+                    if not self.worker_lifetime_prepared:
+                        prepare=getattr(self.provider,'prepare_worker_lifetime',None)
+                        if callable(prepare):prepare()
+                        self.worker_lifetime_prepared=True
                     self.bootstrap(current)
                     invalidate=getattr(self.provider,'invalidate_backend_cache',None)
                     if callable(invalidate):invalidate()
@@ -301,9 +311,19 @@ class ProductionGPU:
                         self.provider._node_catalog=(0,None)
                     health=(self.provider.healthCheck(**self.image_selection) if self.image_selection else self.provider.healthCheck())
                     if health.get('installed'):
-                        self.check()
-                        if not self.owned:raise ManagedGPUError('Rental closed during worker startup.')
-                        self.save(status='RUNNING',ready=self.clock());return
+                        with self.lock:
+                            self.check()
+                            if not self.owned:raise ManagedGPUError('Rental closed during worker startup.')
+                            reset=getattr(self.provider,'begin_worker_lifetime',None)
+                            if callable(reset):
+                                endpoint=getattr(self.provider,'url',None)
+                                if not isinstance(endpoint,str) or not endpoint:
+                                    raise ManagedGPUError('Verified image worker endpoint is unavailable; no dispatch admitted.')
+                                reset({'owned':True,'ready':True,'podId':self.pod,
+                                       'lifetimeId':self.worker_lifetime_id,'endpoint':endpoint})
+                            self.save(status='RUNNING',ready=self.clock(),workerLifetimeVerified=True,
+                                      requestSlots=getattr(self.provider,'client_capacity',1))
+                            return
                 self.finished.wait(1)
             raise ManagedGPUError('Image GPU did not become ready within its startup window.')
         except BaseException:

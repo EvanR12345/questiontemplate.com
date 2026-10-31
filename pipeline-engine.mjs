@@ -1,11 +1,13 @@
 // A local scheduling model. This module never calls a paid provider or changes Studio projects.
-import {scheduleTasksFast,includedHandoffDependency} from './pipeline-fast-scheduler.mjs?v=matched-production-20261029';
+import {scheduleTasksFast,includedHandoffDependency} from './pipeline-fast-scheduler.mjs?v=production-components-20261031';
 import {latestProfiles} from './pipeline-measurements.mjs';
 import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {directorForecast} from './pipeline-director-calibration.mjs?v=matched-production-20261029';
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=matched-production-20261029';
-import {denseActive,denseRoundCounts,densePrewarmCredit,densePrewarmMeasurement} from './pipeline-dense.mjs?v=matched-production-20261029';
-import {applySourceBurstProjection} from './pipeline-source-burst.mjs?v=matched-production-20261029';
+import {directorForecast} from './pipeline-director-calibration.mjs?v=production-components-20261031';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=production-components-20261031';
+import {denseActive,denseLeaseRetained,denseLeasePair,heldQualityIdleSeconds,denseRoundCounts,densePrewarmCredit,densePrewarmMeasurement} from './pipeline-dense.mjs?v=production-components-20261031';
+import {applySourceBurstProjection} from './pipeline-source-burst.mjs?v=production-components-20261031';
+import {applyCurrentProductionCalibration} from './pipeline-production-calibration.mjs?v=production-components-20261031';
+import {applyCurrentProductionComponents} from './pipeline-production-components.mjs?v=production-components-20261031';
 export const VERSION = 1;
 export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intro:true,
   introSeconds:30, introImages:5, gpu:'5090', policy:'proposed', qc:'practical', sample:20,
@@ -18,9 +20,11 @@ export const DEFAULTS = { minutes:120, chapters:14, cadence:103/1050.23*60, intr
   productionModelCopies:1,productionRequestSlots:1,productionAudioLookahead:false,productionRenderOverlap:false,directorConditionsMatch:true,
   productionGenerationStrategy:'legacy',productionDenseVersion:0,productionDenseSupported:false,productionDenseEligible:false,
   productionDenseQCSlots:0,productionDenseGenerationTasks:5,productionDenseDescriptorLimit:0,productionDenseMaxRepairRounds:0,repairRounds:1,
+  productionDenseLeasePolicy:'stopped-qc-v1',productionDenseHoldsGPUForQC:false,
   productionDensePrewarmVersion:0,productionDensePrewarmEligible:false,productionDensePrewarmMeasured:false,
   productionDensePrewarmProof:'',productionDensePrewarmMeasuredProof:'',productionDensePrewarmAssemblySeconds:0,productionDensePrewarmProofSeconds:0,
-  directorObservedSecondsPerStorySecond:0,directorObservedCostPerTwoHours:0,directorObservedSamples:0,directorObservedRuns:0 };
+  directorObservedSecondsPerStorySecond:0,directorObservedCostPerTwoHours:0,directorObservedSamples:0,directorObservedRuns:0,
+  productionCalibration:'reference' };
 
 export const LANES = [
   ['setup','Cloud startup','Boot · models · shutdown'],
@@ -76,6 +80,8 @@ export const CATALOG = [
   ['audioEncode','Audio encoding and save','audio','Maintain continuous audio, encode chapter output and save to the helper’s persistent project.','Narration PCM.','Existing voice experiment covers inference/encoding overlap.','Included in Voice; not added twice.'],
   ['motion','Zoom, pan and framing','render','Landscape image, cover fit, smooth subpixel zoom/pan and optional transitions.','Validated image and shot duration.','Clip concurrency depends on the selected renderer; native photo motion uses one worker and shares the laptop GPU with narration.','Included in Render. Output format selects its matched calibration; long production is extrapolated.'],
   ['cache','Cache validation and resume','save','Fingerprint saved assets/settings; keep complete outputs and known remote IDs, flag unresolved operations rather than repurchase them.','Saved journal and source revision.','Writes serialize; readonly validation can overlap.','Included in preflight and save allowances.'],
+  ['archive','Confirm final cloud revision','finish','Wait for the remaining final cloud-save tail and verify the exact accepted revision, image digests and final video.','Final local checks and completed production.','Earlier cloud uploads may already overlap generation and render.','Only a matching completed-production critical-tail observation; concurrent transfer work is not added again.'],
+  ['qcBoundary','Measured QC completion boundary','qc','Retain the quality-blocked source cohort’s queue, transfer and commit completion boundary while its actual API calls overlap generation.','Current matching component evidence.','A timing constraint with no API resource or additional call; image work and API work run inside the same span.','Excluded from summed task work. Its held-lease waiting still affects elapsed time and rental cost.'],
   ['retryJSON','JSON repair / API retry','director','Validate director schemas and story evidence; retry only bounded invalid responses.','Invalid model result, if any.','Costs time and tokens; observed director aggregate includes its test behavior.','Not an additional fixed duration. Outages/manual reviews cannot be predicted.']
 ].map(([id,name,lane,description,requires,parallel,basis])=>({id,name,lane,description,requires,parallel,basis}));
 
@@ -102,6 +108,7 @@ export function validateConfig(input, evidence) {
   if(c.executionMode!=='resident'&&c.resolution==='legacy')throw Error('Pipeline timing requires a measured resolution.');
   if(!['legacy','720p','1080p'].includes(c.resolution))throw Error('Unknown image resolution.');
   if(!['720p','1080p'].includes(c.videoResolution))throw Error('Unknown video resolution.');
+  if(!['reference','current-production-20261031','current-components-20261031'].includes(c.productionCalibration))throw Error('Choose retained references, current source components or a completed-production calibration.');
   if(!['auto','cpu','native'].includes(c.videoRenderer))throw Error('Choose a tested local video renderer.');
   c.videoFps=Number(c.videoFps);
   if(![24,30,60].includes(c.videoFps))throw Error('Choose a calibrated video frame rate: 24, 30 or 60.');
@@ -119,6 +126,7 @@ export function validateConfig(input, evidence) {
   c.gpuStartSeconds=Number(c.gpuStartSeconds);
   if(!['legacy','align','fastest','dense'].includes(c.productionGenerationStrategy))throw Error('Unknown production image phase.');
   if(denseActive(c)){
+    if(!denseLeasePair(c.productionDenseLeasePolicy,c.productionDenseHoldsGPUForQC))throw Error('Dense lease policy and paid-QC ownership flag must match.');
     if(c.productionDenseVersion!==1||c.productionDenseSupported!==true||c.productionDenseEligible!==true||c.resolution==='legacy')
       throw Error('Dense scheduling requires a supported eligible managed-cloud helper profile and measured image format.');
     for(const [key,lo,hi] of [['productionDenseQCSlots',1,4],['productionDenseGenerationTasks',2,5],['productionDenseDescriptorLimit',1,Infinity],['productionDenseMaxRepairRounds',0,100]])
@@ -136,6 +144,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   const director=directorForecast(provisional,evidence);
   const c=validateConfig(qualityConfig({...provisional,qcEffectiveSlots:director.slots},evidence),evidence);
   const dense=denseActive(c);
+  const retainedLease=denseLeaseRetained(c);
   const nativeProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&p.backend==='native');
   const cpuProfile=cal.productionRenderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps&&(p.backend||'cpu')==='cpu')||cal.renderProfiles?.find(p=>p.resolution===c.videoResolution&&p.fps===c.videoFps);
   const renderProfile=c.videoRenderer==='native'?nativeProfile:c.videoRenderer==='cpu'?cpuProfile:nativeProfile||cpuProfile;
@@ -266,36 +275,42 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
       timingRange:{min:stageProfile.minWallSeconds/stageProfile.videoSeconds*videoSeconds,max:stageProfile.maxWallSeconds/stageProfile.videoSeconds*videoSeconds},
       basis:`${i===0&&renderProfile.backend==='native'?'Intro remains on the CPU compatibility path; its fades are not separately calibrated. ':''}${c.videoResolution}/${c.videoFps}fps, ${stageProfile.clips} fresh clips in ${stageProfile.rounds} rounds, one clip worker; reference ${stageProfile.wallSeconds.toFixed(2)}s per ${stageProfile.videoSeconds}s of ${stageProfile.mode==='chapter-export'?'motion and chapter assembly':'motion'}. ${stageProfile.scope} ${stageProfile.hardwareCondition||''} Two-worker speedup is not assumed.`}));
   }
-  const rentalWindows=[{boot:'boot',stop:'stop',phase:'initial'}],repairEnds=[],chapterRepairEnds=new Map();
+  const rentalWindows=[{boot:'boot',stop:'stop',phase:retainedLease?'continuous':'initial'}],repairEnds=[],chapterRepairEnds=new Map();
+  let repairRoundCount=0;
   if(dense){
     const roundCounts=denseRoundCounts(c,Math.ceil(count*c.retries/100));
-    let previousChecks=[...reviews],previousStop='stop';
+    repairRoundCount=roundCounts.length;
+    let previousChecks=[...reviews],previousImages=[...saves],previousStop='stop';
     for(const [index,images] of roundCounts.entries()){
       const prefix='repair'+(index+1)+'-';
-      const boot=add(prefix+'boot','boot',0,g.boot,[previousStop,...previousChecks],{cloud:1},{name:'Repair round '+(index+1)+' · GPU boot'});
-      const models=add(prefix+'models','models',0,c.warmCache?1:g.download,[boot],{cloud:1});
-      const health=add(prefix+'health','health',0,3,[models],{cloud:1});
-      const cold=add(prefix+'cold','cold',0,g.cold,[health],{remote:1});
-      const image=add(prefix+'images','delivered',0,images/measurement.imagesPerSecond,[cold],{remote:1},
+      let boot,cold;
+      if(!retainedLease){
+        boot=add(prefix+'boot','boot',0,g.boot,[previousStop,...previousChecks],{cloud:1},{name:'Repair round '+(index+1)+' · GPU boot'});
+        const models=add(prefix+'models','models',0,c.warmCache?1:g.download,[boot],{cloud:1});
+        const health=add(prefix+'health','health',0,3,[models],{cloud:1});
+        cold=add(prefix+'cold','cold',0,g.cold,[health],{remote:1});
+      }
+      const image=add(prefix+'images','delivered',0,images/measurement.imagesPerSecond,retainedLease?[...previousImages,...previousChecks]:[cold],{remote:1},
        {name:'Repair round '+(index+1)+' · assumed images',images,attempts:images,workers:measurement.workers,
-        basis:'Explicit extra-attempt/round scenario, not a predicted defect rate. Same existing delivered-image reference rate; each round pays startup and shutdown.'});
-      const stop=add(prefix+'stop','stop',0,8,[image],{cloud:1},{name:'Repair round '+(index+1)+' · stop before rechecks',priority:-1});
+        basis:retainedLease?'Explicit repair scenario on the same paid lease after required reviews. Existing delivered-image reference rate; no additional boot or model reload is assumed. Paid QC gaps remain in the rental.':'Explicit extra-attempt/round scenario, not a predicted defect rate. Same existing delivered-image reference rate; each round pays startup and shutdown.'});
+      const stop=retainedLease?null:add(prefix+'stop','stop',0,8,[image],{cloud:1},{name:'Repair round '+(index+1)+' · stop before rechecks',priority:-1});
       const checks=[];
       for(let chapter=1;chapter<=c.chapters;chapter++){
         const before=Math.floor(count*(chapter-1)/c.chapters),after=Math.floor(count*chapter/c.chapters);
         const chapterImages=Math.floor(images*after/count)-Math.floor(images*before/count);
         if(!chapterImages)continue;
-        const own=[image,stop];
+        const own=retainedLease?[image]:[image,stop];
         if(c.qc!=='off')for(let slot=0,slots=Math.min(c.productionDenseQCSlots,director.slots,chapterImages);slot<slots;slot++){
           const n=Math.floor(chapterImages*(slot+1)/slots)-Math.floor(chapterImages*slot/slots);
-          const check=add(prefix+'c'+chapter+'-vision'+slot,'vision',chapter,n*(c.qcSeconds||cal.qcSeconds),[image,stop],{api:1,denseQC:1},{images:n,
-            basis:'Explicit assumed repair attempts are apportioned by chapter, not predicted defects. Each repaired image is rechecked after this rental stops; existing QC reference timing/cost remain unchanged.'});
+          const check=add(prefix+'c'+chapter+'-vision'+slot,'vision',chapter,n*(c.qcSeconds||cal.qcSeconds),retainedLease?[image]:[image,stop],{api:1,denseQC:1},{images:n,
+            basis:retainedLease?'Every assumed repair is rechecked on the retained paid lease. Existing check work, API slots and quality policy are unchanged; the GPU remains billed while checks run.':'Explicit assumed repair attempts are apportioned by chapter, not predicted defects. Each repaired image is rechecked after this rental stops; existing QC reference timing/cost remain unchanged.'});
           checks.push(check);own.push(check);
         }
         chapterRepairEnds.set(chapter,[...(chapterRepairEnds.get(chapter)||[]),...own]);
       }
-      rentalWindows.push({boot,stop,phase:'repair',round:index+1});repairEnds.push(image,stop,...checks);
-      previousChecks=checks;previousStop=stop;
+      if(!retainedLease)rentalWindows.push({boot,stop,phase:'repair',round:index+1});
+      repairEnds.push(image,...(stop?[stop]:[]),...checks);
+      previousChecks=checks;previousImages=[image];if(stop)previousStop=stop;
     }
     // Preserve the configured chapter-ready rendering. Unrelated chapters' QC
     // must not delay a ready chapter. Explicit repair allowances still gate
@@ -308,7 +323,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   if(!dense&&c.policy!=='proposed' && !(c.policy==='current'&&c.productionRenderOverlap)) {
     for(const r of renders){const task=tasks.find(t=>t.id===r);task.deps.push(...saves,...reviews);}
   }
-  add('stop','stop',0,8,c.policy==='current'&&!dense?[...saves,...reviews]:saves,{cloud:1});
+  add('stop','stop',0,8,retainedLease?[...saves,...reviews,...repairEnds]:c.policy==='current'&&!dense?[...saves,...reviews]:saves,{cloud:1},retainedLease?{name:'Stop retained GPU after checks and repairs',basis:'One paid lease ends only after all required initial reviews, bounded repairs and rechecks finish. Local render/archive work can continue after confirmed shutdown.'}:{});
   tasks.find(t=>t.id==='stop').priority=-1; // Stop compute before purely local rendering, including in the serial baseline.
   if(c.policy==='current') {
     for(let i=2;i<=c.chapters;i++) {
@@ -346,8 +361,12 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
     for(const task of tasks.filter(t=>t.id==='cold'||['delivered','infer'].includes(t.kind)&&!t.id.startsWith('repair')))
       if(!task.deps.includes('dense-ready'))task.deps.push('dense-ready');
   }
-  return applySourceBurstProjection({version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,rentalWindows,prewarm,prewarmSeconds,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
-    director,renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.backend==='native'?'local GTX 1650 GPU motion, one worker; shared narration GPU; full-story mux timed separately':renderProfile.mode==='chapter-export'?'fresh real-media CPU chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local CPU clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`},evidence);
+  const basePlan={version:VERSION,config:c,groupSize,gpu:g,measurement,tasks,capacities,rentalWindows,repairRoundCount,prewarm,prewarmSeconds,imageCount:count+(c.intro?c.introImages:0),attemptCount,storySeconds:story,
+    director,renderProfile,renderScope:`${c.videoResolution}/${c.videoFps}fps video · ${renderProfile.backend==='native'?'local GTX 1650 GPU motion, one worker; shared narration GPU; full-story mux timed separately':renderProfile.mode==='chapter-export'?'fresh real-media CPU chapter exports, RAM-limited one worker; full-story mux timed separately':'matched fresh local CPU clip timing, one worker'}. Long-video scaling, overlays, cloud transfer and production contention remain unmeasured; these forecasts are projections, not guaranteed completion times.`};
+  const current=applyCurrentProductionCalibration(basePlan,evidence);
+  if(current.productionCalibrationUsed)return current;
+  const components=applyCurrentProductionComponents(basePlan,evidence);
+  return components.currentProductionComponentsUsed?components:applySourceBurstProjection(basePlan,evidence);
 }
 
 export function schedule(plan, preferences={}) {
@@ -368,10 +387,15 @@ export function schedule(plan, preferences={}) {
   const directorUSD=plan.director.costPerTwoHours*plan.storySeconds/7200;
   const qcCount=out.filter(t=>t.kind==='vision').reduce((n,t)=>n+(t.images||0),0);
   const repairQC=plan.sourceBurstProjectionUsed===true?out.filter(t=>t.kind==='vision'&&t.sourceBurstRepairQC===true&&Number.isFinite(t.sourceBurstQCUSD)&&t.sourceBurstQCUSD>=0):[];
-  const qcUSD=repairQC.length?(qcCount-repairQC.reduce((n,t)=>n+(t.images||0),0))*plan.config.qcCost+
+  const productionQC=plan.productionCalibrationUsed||plan.currentProductionComponentsUsed?out.filter(t=>t.kind==='vision'):[];
+  const qcUSD=productionQC.length?productionQC.reduce((n,t)=>n+t.productionQCUSD,0):repairQC.length?(qcCount-repairQC.reduce((n,t)=>n+(t.images||0),0))*plan.config.qcCost+
     repairQC.reduce((n,t)=>n+t.sourceBurstQCUSD,0):qcCount*plan.config.qcCost;
+  const dollars=costParts(rentalSeconds,plan.gpu.hourly,directorUSD,qcUSD,plan.config.storageDaily,plan.config.storageDays);
+  if(plan.productionCalibrationUsed){dollars.archiveUSD=plan.productionArchiveUSD;dollars.productionUSD+=dollars.archiveUSD;dollars.totalUSD+=dollars.archiveUSD;}
+  const heldQC=denseLeaseRetained(plan.config)?heldQualityIdleSeconds(out,windows):0;
   return {tasks:out,end,rentalSeconds,rentalWindows:windows,gpuWork,gpuIdleSeconds:Math.max(0,rentalSeconds-gpuWork),
-    ...costParts(rentalSeconds,plan.gpu.hourly,directorUSD,qcUSD,plan.config.storageDaily,plan.config.storageDays),
+    ...(denseLeaseRetained(plan.config)?{heldQCIdleSeconds:heldQC,heldQCIdleUSD:heldQC/3600*plan.gpu.hourly}:{}),
+    ...dollars,
     directorUSD,qcUSD,qcCount,prewarmSeconds:plan.prewarmSeconds||0,diagnostics:validateSchedule(plan,out)};
 }
 

@@ -1,6 +1,6 @@
-import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=matched-production-20261029';
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=matched-production-20261029';
-import {startupSearch} from './pipeline-detail-ui.mjs?v=matched-production-20261029';
+import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=production-components-20261031';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=production-components-20261031';
+import {startupSearch} from './pipeline-detail-ui.mjs?v=production-components-20261031';
 self.onmessage=({data})=>{
  try{
   if(data.type==='plan'){
@@ -16,4 +16,4 @@ self.onmessage=({data})=>{
   }else throw Error('Unknown planner computation');
  }catch(error){self.postMessage({type:'error',message:error.message});}
 };
-import {sourceBurstSerialComparison} from './pipeline-source-burst.mjs?v=matched-production-20261029';
+import {sourceBurstSerialComparison} from './pipeline-source-burst.mjs?v=production-components-20261031';

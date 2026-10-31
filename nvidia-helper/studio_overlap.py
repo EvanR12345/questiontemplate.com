@@ -275,7 +275,7 @@ class CloudStoryOverlap:
             if event in ('submitting','accepted'):image_operations.add(operation)
             elif event in ('completed','failed','rejected'):image_operations.discard(operation)
         def checkpoint(step,total,message):
-            if self.dense and image_operations:
+            if image_operations:
                 # A sibling QC error closes admission, never receipt collection
                 # for an already submitted image. Explicit cancel and rental
                 # hard caps retain authority over that collection.

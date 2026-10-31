@@ -1,0 +1,622 @@
+{
+  "version": 1,
+  "id": "current-production-20261031",
+  "date": "2026-10-31",
+  "status": "QUALITY_BLOCKED_COMPONENTS_ONLY",
+  "sourceNarrationSeconds": 1050.23,
+  "introSeconds": 30,
+  "sourceChapters": 2,
+  "inputCadencePerMinute": 5.884425316359273,
+  "imageSettings": {
+    "provider": "comfyui",
+    "model": "flux2-klein-4b",
+    "workflow": "flux2-klein-4b-auto",
+    "steps": 4,
+    "guidance": 1,
+    "sampler": "euler",
+    "scheduler": "flux2",
+    "width": 1280,
+    "height": 720,
+    "referenceStrength": 0.65
+  },
+  "qcCompatibilityHash": "1c27fa75e17e59833533216c7d5b64d9880e109147ede64cd9c47260f90bd7e0",
+  "components": {
+    "director": {
+      "status": "COMPLETE",
+      "seconds": 309.922,
+      "USD": 0.044775205,
+      "calls": 35,
+      "acceptedChapterShots": 105,
+      "introShots": 5,
+      "actualReturnedTiersStandard": true,
+      "pendingRequests": 0,
+      "reservedUSD": 0,
+      "evidenceSHA256": "9a6a5c5742f263908d3c652a7bedf315fa4cbf453eaa393f4f55a41f46339aaf",
+      "resultSHA256": "299960fb1a144639a709c8ee9150e14c553b31cd4d8d5c2755f139880ac5f41d"
+    },
+    "cachedSetup": {
+      "status": "OBSERVED",
+      "seconds": 75.4052164554596,
+      "verifiedModelCopies": 1,
+      "scope": "Owned cached worker preparation to the first verified process; later resume, second-process readiness and inference loading are excluded. This is not the completed two-copy production startup envelope.",
+      "evidenceSHA256": "9a9d93badbed708020cab273d83533d74744fe0183132f421251f3e18075383a"
+    },
+    "CPUCachePreparation": {
+      "status": "CONSERVATIVE_ESTIMATE",
+      "USD": 0.0026260379003153907,
+      "scope": "One completed CPU staging interval; not a final provider invoice."
+    }
+  },
+  "completion": null,
+  "scope": "Component observations only until complete settled production, machine quality, fresh render and exact final archive proofs are available. No fast mode; original narration reused; voice forecast unchanged.",
+  "studyBudget": {
+    "additionalCapUSD": 3,
+    "bucketsUSD": {
+      "GPUAndDiskIncludingSetupShutdown": 1.5,
+      "directorAndQCAPI": 0.7,
+      "networkVolumeLease": 0.4,
+      "CPUCachePreparation": 0.1,
+      "GoogleStorageAndTransfer": 0.05,
+      "contingency": 0.25
+    },
+    "accountedFinalUSD": 1.7330712851841146,
+    "scope": "Authorization ceilings, not charges. All failed preparation, waiting, storage and cleanup must remain in the final conservative accounting. Prior closed experiments are separate.",
+    "finalAccounting": {
+      "GPUAndDiskConservativeUpperUSD": 1.1834562012837992,
+      "APISettledUSD": 0.096989046,
+      "CPUCachePreparationConservativeUSD": 0.0026260379003153907,
+      "full48HourModelCacheLeaseReserveUSD": 0.4,
+      "GoogleStorageAndTransferReserveUSD": 0.05,
+      "totalConservativeIncludingReservesUSD": 1.7330712851841146,
+      "remainingAgainstThreeDollarCapUSD": 1.2669287148158854,
+      "source": "Root final study reconciliation; exact local benchmark receipts are separately pinned",
+      "notAnInvoice": true,
+      "scope": "Includes every GPU attempt and diagnostic benchmark, startup/stopped intervals and cleanup, settled API calls, CPU staging, the full bounded 48-hour model-cache reserve and the same $0.05 GCS reserve including unresolved usage. Reserves are included once, not represented as fully consumed charges."
+    }
+  },
+  "attemptHistory": [
+    {
+      "id": "initial-production-admission",
+      "status": "STOPPED_NO_REPLAY",
+      "reason": "Owned worker could not start because capacity was unavailable",
+      "elapsedSeconds": 20.5,
+      "freshImages": 0,
+      "costUSD": null,
+      "scope": "Failed admission retained. Allocation preparation and capacity waiting remain in controller accounting; zero images does not mean zero infrastructure cost.",
+      "nativeElapsedSeconds": 20.5,
+      "rootElapsedSeconds": 26.36
+    },
+    {
+      "id": "guarded-continuation",
+      "status": "STOPPED_NO_REPLAY",
+      "scope": "A real failed 614.422-second capacity wait; no images were generated. Preparation, waiting and stopped-disk costs stay in shared infrastructure accounting; no speedup or free-cost claim.",
+      "reason": "Owned worker remained unavailable during bounded capacity waiting",
+      "elapsedSeconds": 614.422,
+      "nativeElapsedSeconds": 613.297,
+      "elapsedScope": "Root wrapper including native 613.297 seconds and completion/close work",
+      "freshImages": 0,
+      "costUSD": null
+    },
+    {
+      "id": "fresh-owned-worker",
+      "status": "STOPPED_QUALITY_GATE",
+      "scope": "Generated 110 initial images and 36 bounded repairs; all 146 Practical checks settled. Twenty-six blockers remain, so rendering was withheld. Cloud archive also retains one unresolved write. No fresh video or exact final cloud completion is claimed.",
+      "elapsedSeconds": 907.0469999999996,
+      "nativeElapsedSeconds": 905.3279999999995,
+      "freshImages": 146,
+      "initialImages": 110,
+      "repairImages": 36,
+      "blockingImages": 26,
+      "costUSD": null
+    }
+  ],
+  "candidateLeasePolicy": {
+    "leasePolicy": "retained-qc-v1",
+    "holdsGPUForQC": true,
+    "status": "MEASURED_QUALITY_BLOCKED",
+    "scope": "One paid worker remains held through required initial checks, the same bounded repair allowance and rechecks, then stops. QC-only gaps cost rental time and are excluded from image-busy work. Avoiding restarts is not proof of a completed-video speedup or lower total cost."
+  },
+  "partial": {
+    "id": "current-components-20261031",
+    "version": 1,
+    "status": "QUALITY_BLOCKED",
+    "samples": 1,
+    "nativeStatus": "STOPPED_NO_REPLAY",
+    "rootStatus": "STOPPED_RETAINED",
+    "nativeElapsedSeconds": 905.3279999999995,
+    "rootElapsedSeconds": 907.0469999999996,
+    "initialChapterImages": 105,
+    "introImages": 5,
+    "selectedImages": 110,
+    "repairImages": 36,
+    "qualityAllowsRender": false,
+    "blockingImages": 26,
+    "decisionCounts": {
+      "passed": 46,
+      "advisory": 38,
+      "review": 26
+    },
+    "blockerCategories": {
+      "clothesOnly": 19,
+      "mixed": 4,
+      "nonClothing": 3
+    },
+    "maxAutomaticRepairRounds": 1,
+    "freshRenderVerified": false,
+    "finalArchiveVerified": false,
+    "apiSettledUSD": 0.096989046,
+    "reservedUSD": 0,
+    "pendingRequests": 0,
+    "unknownImageOperations": 0,
+    "actualReturnedTiersStandard": true,
+    "QCRequests": 146,
+    "QCEffort": "low",
+    "freshVoiceCalls": 0,
+    "voiceEstimateChanged": false,
+    "qcCompatibilityHash": "1c27fa75e17e59833533216c7d5b64d9880e109147ede64cd9c47260f90bd7e0",
+    "proof": {
+      "measurementSHA256": "e07a63e8b5213c7b49217ed560967ed65c2293c91ed288cd62fd8a1d62a473ba",
+      "nativeResultSHA256": "012395abbbaca38b3817be3ad02c00f8b6bfd7e1d9aac022a8a45485a991f466",
+      "rootResultSHA256": "1da9679e1eca0614751b39dadf07718da16beba635f9302d742d0a44fc37d1ca",
+      "sourceFreezeSHA256": "a21d3baab45af370e0e2f0bcff9243efd02d8584811423aff18e14a8c8dca879",
+      "rentalEventsSHA256": "39f11e20959c361d25261bbb32e5375c64b842e9b0f1560f4743948e80c6e701"
+    },
+    "lease": {
+      "policy": "retained-qc-v1",
+      "holdsGPUForQC": true,
+      "rentalWindows": 1,
+      "shutdownConfirmed": true
+    },
+    "startup": {
+      "seconds": 135.3613796234131,
+      "cachedWeightsVerified": true,
+      "modelCopies": 2,
+      "requestSlots": 4,
+      "scope": "replacement allocation intent through both worker processes ready; cold inference remains inside image work"
+    },
+    "images": {
+      "cohortTimeBasis": "nonoverlapping-wall-allocation",
+      "initialWallSeconds": 409.2936840057373,
+      "chapter": {
+        "images": 105,
+        "seconds": 399.79837369918823
+      },
+      "intro": {
+        "images": 5,
+        "seconds": 9.495310306549072
+      },
+      "repair": {
+        "images": 36,
+        "seconds": 301.62236309051514
+      },
+      "includesCold": true,
+      "includesLocalDelivery": true,
+      "freshEncodingVerified": true,
+      "freshInferenceVerified": true,
+      "allocationScope": "Chapter allocation owns the common initial span through the last chapter save. Intro owns only the remaining tail, because its earlier requests overlap chapters. These are coupled source allocations, not isolated model benchmarks."
+    },
+    "QC": {
+      "chapter": {
+        "checks": 105,
+        "workSeconds": 1355.9539999999897,
+        "USD": 0.03614322899999999,
+        "includesLaneWait": false,
+        "processingTier": "default",
+        "effort": "low"
+      },
+      "intro": {
+        "checks": 5,
+        "workSeconds": 66.90799999999945,
+        "USD": 0.0014519010000000002,
+        "includesLaneWait": false,
+        "processingTier": "default",
+        "effort": "low"
+      },
+      "repair": {
+        "checks": 36,
+        "workSeconds": 534.9210000000012,
+        "USD": 0.014618710999999998,
+        "includesLaneWait": false,
+        "processingTier": "default",
+        "effort": "low"
+      }
+    },
+    "boundaries": {
+      "initialDispatchSeconds": 0.41588759422302246,
+      "initialQCCompletionSecondsFromImageStart": 537.3260056972504,
+      "initialQCActiveOffsetSeconds": 8.985986709594727,
+      "initialQCWallSeconds": 528.3400189876556,
+      "initialQCTailSeconds": 128.03232169151306,
+      "repairAdmissionGapSeconds": 1.3951337337493896,
+      "repairQCCompletionSecondsFromImageStart": 320.51942563056946,
+      "repairQCActiveOffsetSeconds": 20.679659366607666,
+      "repairQCWallSeconds": 299.8397662639618,
+      "repairQCTailSeconds": 18.89706254005432,
+      "shutdownSecondsAfterLastRecheck": 4.397894859313965,
+      "scope": "Measured cohort completion floors retain source queue, transport and local-commit delays. They overlap per-call API work; never add both wall spans as serial work."
+    },
+    "archive": {
+      "unknownWrites": 1,
+      "retainedReserveUSD": 0.04,
+      "finalTailMeasured": false
+    },
+    "scope": "Actual settled image/QC components from a quality-blocked source. Conditional scheduling only; no fresh video, final cloud proof, completed two-hour time or paired speedup."
+  },
+  "conditionalScenarios": {
+    "status": "QUALITY_BLOCKED_CONDITIONAL_ONLY",
+    "config": {
+      "minutes": 120,
+      "chapters": 14,
+      "cadence": 5.884425316359274,
+      "intro": true,
+      "introSeconds": 30,
+      "introImages": 5,
+      "gpu": "5090",
+      "policy": "current",
+      "qc": "practical",
+      "sample": 20,
+      "retries": 0,
+      "warmCache": true,
+      "apiSlots": 4,
+      "cpuOverlap": false,
+      "batch": 24,
+      "exhaustive": false,
+      "earlyGpu": false,
+      "directorCost": 0.38798,
+      "qcCost": 0.0003,
+      "storageDaily": 0.168,
+      "directorProfile": "lean-overlap-standard-20261031",
+      "directorTier": "default",
+      "directorCostMode": "measured",
+      "flexLatencyFactor": 1,
+      "directorActualSlots": 4,
+      "qcSeconds": 0,
+      "pricingBasis": "published",
+      "containerGB": 20,
+      "storageDays": 1,
+      "quotedGPUHourly": 0,
+      "quotedGPU": "",
+      "resolution": "720p",
+      "videoResolution": "720p",
+      "videoFps": 30,
+      "videoRenderer": "native",
+      "fullAssemblyPolicy": "direct-concat-original-audio-v1",
+      "imageWorkers": "4",
+      "encodingProfile": "fresh",
+      "executionMode": "hybrid",
+      "measurementAttempt": "latest",
+      "readyChapters": 14,
+      "gpuStartSeconds": 0,
+      "productionModelCopies": 2,
+      "productionRequestSlots": 4,
+      "productionAudioLookahead": true,
+      "productionRenderOverlap": true,
+      "directorConditionsMatch": true,
+      "productionGenerationStrategy": "dense",
+      "productionDenseVersion": 1,
+      "productionDenseSupported": true,
+      "productionDenseEligible": true,
+      "productionDenseQCSlots": 4,
+      "productionDenseGenerationTasks": 5,
+      "productionDenseDescriptorLimit": 8192,
+      "productionDenseMaxRepairRounds": 1,
+      "repairRounds": 1,
+      "productionDenseLeasePolicy": "retained-qc-v1",
+      "productionDenseHoldsGPUForQC": true,
+      "productionDensePrewarmVersion": 0,
+      "productionDensePrewarmEligible": false,
+      "productionDensePrewarmMeasured": false,
+      "productionDensePrewarmProof": "",
+      "productionDensePrewarmMeasuredProof": "",
+      "productionDensePrewarmAssemblySeconds": 0,
+      "productionDensePrewarmProofSeconds": 0,
+      "directorObservedSecondsPerStorySecond": 0,
+      "directorObservedCostPerTwoHours": 0,
+      "directorObservedSamples": 0,
+      "directorObservedRuns": 0,
+      "productionCalibration": "current-components-20261031",
+      "qcCompatibilityHash": "1c27fa75e17e59833533216c7d5b64d9880e109147ede64cd9c47260f90bd7e0",
+      "qcProcessingTier": "default",
+      "qcProductionTasks": 5,
+      "sourceBurstImageSettings": {
+        "provider": "comfyui",
+        "model": "flux2-klein-4b",
+        "workflow": "flux2-klein-4b-auto",
+        "steps": 4,
+        "guidance": 1,
+        "sampler": "euler",
+        "scheduler": "flux2",
+        "width": 1280,
+        "height": 720,
+        "referenceStrength": 0.65
+      }
+    },
+    "cases": [
+      {
+        "id": "zero-extra",
+        "label": "Zero extra attempts",
+        "retriesPercent": 0,
+        "initialImages": 709,
+        "totalImageAttempts": 709,
+        "conditionalScheduleMinutes": 97.08405161894756,
+        "throughQCAndShutdownMinutes": 96.33405161894756,
+        "rentalMinutes": 60.058091798153804,
+        "heldQCWaitingMinutes": 12.8877021656941,
+        "forecastUSD": 1.9113999934028851,
+        "forecastCostBasis": "Existing published-price scenario and selected storage allowance; not live billing or a complete-video price",
+        "completedVideoETA": false,
+        "measuredTwoHourRun": false,
+        "renderUsesOlderCompatibleReference": true,
+        "finalArchiveTailIncluded": false
+      },
+      {
+        "id": "manual-10",
+        "label": "Manual 10% allowance",
+        "retriesPercent": 10,
+        "initialImages": 709,
+        "totalImageAttempts": 780,
+        "conditionalScheduleMinutes": 112.69530381478215,
+        "throughQCAndShutdownMinutes": 106.89289607921859,
+        "rentalMinutes": 70.61693625842484,
+        "heldQCWaitingMinutes": 13.508855610297875,
+        "forecastUSD": 2.150137257284384,
+        "forecastCostBasis": "Existing published-price scenario and selected storage allowance; not live billing or a complete-video price",
+        "completedVideoETA": false,
+        "measuredTwoHourRun": false,
+        "renderUsesOlderCompatibleReference": true,
+        "finalArchiveTailIncluded": false
+      },
+      {
+        "id": "observed-source-ratio",
+        "label": "Observed source ratio \u00b7 36 / 110",
+        "retriesPercent": 32.72727272727273,
+        "initialImages": 709,
+        "totalImageAttempts": 940,
+        "conditionalScheduleMinutes": 133.33869006939247,
+        "throughQCAndShutdownMinutes": 130.63507575555707,
+        "rentalMinutes": 94.35911593476331,
+        "heldQCWaitingMinutes": 14.908638020672349,
+        "forecastUSD": 2.6870950447390025,
+        "forecastCostBasis": "Existing published-price scenario and selected storage allowance; not live billing or a complete-video price",
+        "completedVideoETA": false,
+        "measuredTwoHourRun": false,
+        "renderUsesOlderCompatibleReference": true,
+        "finalArchiveTailIncluded": false
+      }
+    ],
+    "scope": "All cases use the same current image/QC components and retained lease, unchanged 12.3-minute voice estimate and older compatible native render reference. The source\u2019s 26 blockers prevent a complete-video ETA; final archive tail is unmeasured. The observed 36/110 ratio is reported, not silently used as a default. Existing percent-allowance semantics apply to chapter images; intro stays five initial shots. These costs remain selected forecast assumptions, separate from study spending."
+  },
+  "componentBenchmarks": {
+    "singleCopyQueue": {
+      "status": "VERIFIED",
+      "serialSeconds": 15.07800000000043,
+      "queuedSeconds": 10.67199999999957,
+      "reductionPercent": 29.221382146178097,
+      "sameRGBPixels": {
+        "real-unique-03": true,
+        "real-unique-02": true,
+        "real-unique-01": true
+      },
+      "scope": "Three timed images per arm on one Comfy copy; no two-copy/full-video gain inferred",
+      "eightCallsRetained": true,
+      "evidenceSHA256": "4fd138c4362b63dce1c56fa4ff74bac5ee35bb0ea86d5f9d74a0bca18e589e09"
+    },
+    "modelRouting": {
+      "status": "NINE_CALLS_COMPLETE_DIAGNOSTICALLY_REVIEWED",
+      "enabled": false,
+      "sameQualityEstablished": false,
+      "sourceDefaultChanged": false,
+      "productionQCNotRunForDiagnostics": true,
+      "noWarmMedianClaim": true,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "evidenceSHA256": "a7b7c46c789c40c690c1d6ce4c18285e7bf281a934460f7699a1acdce40ea05c",
+      "rows": [
+        {
+          "recipe": "klein4",
+          "case": "M01-two-character-roles",
+          "steps": 4,
+          "references": 2,
+          "deliverySeconds": 4.235000000000582,
+          "nativeGraphSeconds": 2.634,
+          "firstInPhase": true,
+          "freshSamplerDecode": true,
+          "positiveEncoderCacheHit": false,
+          "manualDiagnosticFindings": [
+            "Wrong character pose/role assignment and injury assignment"
+          ]
+        },
+        {
+          "recipe": "klein4",
+          "case": "M02-empty-passage",
+          "steps": 4,
+          "references": 0,
+          "deliverySeconds": 1.905999999999949,
+          "nativeGraphSeconds": 0.831,
+          "firstInPhase": false,
+          "freshSamplerDecode": true,
+          "positiveEncoderCacheHit": false,
+          "manualDiagnosticFindings": []
+        },
+        {
+          "recipe": "klein4",
+          "case": "M03-one-cup",
+          "steps": 4,
+          "references": 0,
+          "deliverySeconds": 2.094000000000051,
+          "nativeGraphSeconds": 0.822,
+          "firstInPhase": false,
+          "freshSamplerDecode": true,
+          "positiveEncoderCacheHit": false,
+          "manualDiagnosticFindings": [
+            "One cup has two handles"
+          ]
+        },
+        {
+          "recipe": "turbo1",
+          "case": "M02-empty-passage",
+          "steps": 1,
+          "references": 0,
+          "deliverySeconds": 32.53099999999995,
+          "nativeGraphSeconds": 30.73,
+          "firstInPhase": true,
+          "freshSamplerDecode": true,
+          "positiveEncoderCacheHit": false,
+          "manualDiagnosticFindings": [
+            "Furniture/ocean windows despite prompt exclusions",
+            "Different grainy rendering style"
+          ]
+        },
+        {
+          "recipe": "turbo4",
+          "case": "M02-empty-passage",
+          "steps": 4,
+          "references": 0,
+          "deliverySeconds": 1.610000000000582,
+          "nativeGraphSeconds": 0.478,
+          "firstInPhase": false,
+          "freshSamplerDecode": true,
+          "positiveEncoderCacheHit": true,
+          "manualDiagnosticFindings": [
+            "Furniture/ocean windows despite prompt exclusions",
+            "Different grainy rendering style"
+          ]
+        },
+        {
+          "recipe": "turbo1",
+          "case": "M03-one-cup",
+          "steps": 1,
+          "references": 0,
+          "deliverySeconds": 1.5779999999995198,
+          "nativeGraphSeconds": 0.36,
+          "firstInPhase": false,
+          "freshSamplerDecode": true,
+          "positiveEncoderCacheHit": false,
+          "manualDiagnosticFindings": [
+            "Three cups and saucers",
+            "Photographic shading/background blur"
+          ]
+        },
+        {
+          "recipe": "turbo4",
+          "case": "M03-one-cup",
+          "steps": 4,
+          "references": 0,
+          "deliverySeconds": 1.6099999999996726,
+          "nativeGraphSeconds": 0.453,
+          "firstInPhase": false,
+          "freshSamplerDecode": true,
+          "positiveEncoderCacheHit": true,
+          "manualDiagnosticFindings": [
+            "Two cups plus additional tableware",
+            "Photographic shading/background blur"
+          ]
+        },
+        {
+          "recipe": "qwen-lightning4",
+          "case": "M01-two-character-roles",
+          "steps": 4,
+          "references": 2,
+          "deliverySeconds": 92.70300000000043,
+          "nativeGraphSeconds": 91.297,
+          "firstInPhase": true,
+          "freshSamplerDecode": true,
+          "positiveEncoderCacheHit": false,
+          "manualDiagnosticFindings": [
+            "Christopher seated foreground rather than kneeling away",
+            "Jonathan seated background rather than foreground",
+            "Open deck rather than enclosed room"
+          ]
+        },
+        {
+          "recipe": "qwen-teacher40",
+          "case": "M01-two-character-roles",
+          "steps": 40,
+          "references": 2,
+          "deliverySeconds": 148.23400000000038,
+          "nativeGraphSeconds": 146.652,
+          "firstInPhase": false,
+          "freshSamplerDecode": true,
+          "positiveEncoderCacheHit": true,
+          "manualDiagnosticFindings": [
+            "Christopher seated foreground rather than kneeling away",
+            "Jonathan seated background rather than foreground",
+            "Open deck rather than enclosed room"
+          ]
+        }
+      ],
+      "scope": "All nine diagnostic outputs are retained. Each recipe/case has one request; first phase requests include loading/switching and encoder reuse is explicit. Hard-scene role/layout and Turbo content/style failures reject automatic routing. A baseline output without a recorded diagnostic finding is not a production quality pass."
+    },
+    "immutableArchiveTransport": {
+      "liveCorrectnessPassed": true,
+      "workers": 2,
+      "evidenceSHA256": "f83af1592f7c2e3b8c6887bdf00808e60baaebfb24a653e58f7388a151983f80",
+      "newVerifiedMutationCount": 289,
+      "newRecoverySpeedupClaim": false,
+      "scope": "Two-worker immutable upload transport passed live native-receipt and final-revision/restore correctness checks. Local snapshotting adds I/O; this recovery is not a new throughput comparison."
+    },
+    "earlierStorageABBA": {
+      "evidenceSHA256": "dd1f7b3a5d1c44ad3ad41dc220f2054fc75da1f264d86aed62925e5b23e9704e",
+      "arms": 4,
+      "workers": [
+        1,
+        2,
+        2,
+        1
+      ],
+      "bytesPerArm": 16438317,
+      "serialMeanSeconds": 20.25750000000005,
+      "parallelMeanSeconds": 18.7265000000001,
+      "reductionPercent": 7.5576946809820855,
+      "scope": "Earlier small mixed-upload ABBA observation only, before the final immutable-transport recovery. Its approximately 7.56% reduction is not a new-copy benchmark or a whole-video speedup."
+    }
+  },
+  "finalProjectStatus": "REVIEW_REQUIRED",
+  "cloudRecovery": {
+    "status": "ARCHIVE_RECOVERED_REVIEW_REQUIRED",
+    "archiveRecovered": true,
+    "evidenceSHA256": "f83af1592f7c2e3b8c6887bdf00808e60baaebfb24a653e58f7388a151983f80",
+    "newVerifiedMutations": 289,
+    "cumulativeMutationIntents": 411,
+    "cumulativeAttemptedBodyBytes": 463735591,
+    "selectedImageSHA256Matches": 110,
+    "nativeGenerationAndCRCReceiptsVerified": true,
+    "exactProjectRevision": 2809,
+    "finalOperationalLedgerIncluded": true,
+    "freshCacheRestore": {
+      "projectExact": true,
+      "finalLedgerExact": true,
+      "oneSelectedPNGExact": true,
+      "APISettledUSD": 0.096989046,
+      "pendingAPIRequests": 0
+    },
+    "originalUnknownRowUnchanged": true,
+    "quarantinedUnknownReferenced": false,
+    "quarantinedObjectRetained": true,
+    "freshVideoProduced": false,
+    "productionQualityStatus": "REVIEW_REQUIRED",
+    "blockingImages": 26,
+    "reserveIncludedInStudyAccountingUSD": 0.05,
+    "cleanup": {
+      "status": "VERIFIED_OWNED_DELETED_QUARANTINE_RETAINED",
+      "verifiedOwnedObjectsDeletedOrAbsent": 345,
+      "quarantinedUnknownRetained": true,
+      "originalUnknownReserveUSD": 0.04,
+      "evidenceSHA256": "a3d5e3562c84a5cbaac008d23fc2d8073a2a74d4464a04dbd2c6ccaa242ac906",
+      "verifiedArchiveObjectsAvailableAfterCleanup": false,
+      "scope": "Recovery proofs and the local project/assets remain. The 345 exact study-owned verified objects were deleted or confirmed absent; the original quarantined UNKNOWN object was not adopted or deleted and its liability remains included."
+    },
+    "scope": "Later project/image archive recovery passed exact revision, selected-image SHA/native-receipt and limited fresh-cache restore checks. The original UNKNOWN row remains quarantined and charged. Recovery creates no fresh video and does not satisfy completed-production quality."
+  },
+  "cacheIntegration": {
+    "status": "VERIFIED_AVAILABLE_LAUNCHER_ATTACHMENT_REQUIRED",
+    "verifiedVolumeGB": 80,
+    "verifiedCachedWorkerSetupSeconds": 135.3613796234131,
+    "boundedLeaseHours": 48,
+    "bootstrapVerifiesAndReusesAttachedCache": true,
+    "nativePoolAutomaticAttachmentWired": false,
+    "scope": "The retained 80 GB cache worked on the fresh RTX 5090. A next job-owned launcher must explicitly attach it at /runpod-volume; native bootstrap can then verify and reuse /runpod-volume/models. Automatic fresh allocation/mount adaptation for the native pool is not wired. The measured setup is not a universal future cold-start guarantee."
+  }
+}

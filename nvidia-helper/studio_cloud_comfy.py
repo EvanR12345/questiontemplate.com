@@ -111,6 +111,10 @@ class CloudComfyRunner:
         self.connection.connect(pod);self.ssh=self.connection.ssh
 
     def prepare(self,pod):
+        pod_id=pod.get('id')
+        if not isinstance(pod_id,str) or not pod_id:
+            raise GPUProviderError('Owned image-worker identity is unavailable.')
+        provider_name=pod['provider']
         self.gate('Preparing pinned Klein image service on '+pod['provider'])
         began=time.monotonic();bootstrap=remote_script(2)
         if self.config.get('comfyNativeFP8Matmul') is True:
@@ -134,8 +138,8 @@ class CloudComfyRunner:
             workers=next((json.loads(line.removeprefix('WORKERS_VERIFIED ')) for line in output.splitlines() if line.startswith('WORKERS_VERIFIED ')),None)
             source=next((json.loads(line.removeprefix('COMFY_SOURCE_VERIFIED ')) for line in output.splitlines() if line.startswith('COMFY_SOURCE_VERIFIED ')),None)
             if workers is None or source is None:raise GPUProviderError('Independent image processes and pinned source were not verified.')
-            reset=getattr(self.provider,'begin_worker_lifetime',None)
-            if callable(reset):reset()
+            prepare=getattr(self.provider,'prepare_worker_lifetime',None)
+            if callable(prepare):prepare()
             self.provider.confirm_workers(workers)
             forwards=[]
             for index,url in enumerate(worker_endpoints(self.config)):
@@ -152,6 +156,15 @@ class CloudComfyRunner:
                 except Exception:pass
                 if time.monotonic()>=until:raise GPUProviderError('Cloud image-worker health check did not pass.')
                 time.sleep(.5)
+            self.gate('Confirming the owned image-worker lifetime')
+            reset=getattr(self.provider,'begin_worker_lifetime',None)
+            if callable(reset):
+                # A process replacement can leave another endpoint's UNKNOWN
+                # work alive. Only a fresh owned allocation may clear the group
+                # fence; PIDs remain startup evidence, not reset authority.
+                reset({'owned':True,'ready':True,'podId':pod_id,
+                       'lifetimeId':provider_name+':'+pod_id,
+                       'endpoint':self.provider.url})
             source['nativeFP8Matmul']=self.config.get('comfyNativeFP8Matmul') is True
             self.report={'prepareSeconds':time.monotonic()-began,'workers':workers,'source':source}
         finally:

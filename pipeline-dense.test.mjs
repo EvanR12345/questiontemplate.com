@@ -33,7 +33,7 @@ test('saved Dense maps only a supported eligible capability to Installed all-pla
  assert.ok(denseCapability(p));assert.ok(denseActive(r.config));assert.equal(r.config.readyChapters,r.config.chapters);
  assert.equal(r.config.earlyGpu,false);assert.equal(r.config.directorTier,'default');assert.equal(r.config.cadence,DEFAULTS.cadence);
  assert.equal(r.config.productionRenderOverlap,true);assert.equal(r.config.productionDenseMaxRepairRounds,3);
- assert.match(r.warnings.join(' '),/no matching complete-production timing/);assert.match(r.warnings.join(' '),/No repair rate is assumed/);
+ assert.match(r.warnings.join(' '),/Complete-production finish time remains unmeasured/);assert.match(r.warnings.join(' '),/No repair rate is assumed/);
  assert.match(profileSummary(p),/5 generation tasks; 4 independent QC slots/);assert.deepEqual(p,before);
  for(const phase of [undefined,{...capability,version:0},{...capability,eligible:false},{...capability,allPlansFirst:false}]){
   const old={...profile(),denseImagePhase:phase};assert.throws(()=>plannerSettings(DEFAULTS,old,evidence),/updated helper/);

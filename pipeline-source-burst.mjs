@@ -4,7 +4,7 @@ const CADENCE=5.884425316359273;
 const HASH=/^[a-f0-9]{64}$/;
 const positive=x=>Number.isFinite(x)&&x>0;
 export function sourceBurstSerialComparison(plan,result,serial){
- return plan.sourceBurstProjectionUsed===true?
+ return plan.sourceBurstProjectionUsed===true||plan.productionCalibrationUsed===true||plan.currentProductionComponentsUsed===true?
   {comparisonMatched:false,comparisonSaving:null,comparisonNote:'Sequential reference uses a different image timing basis and QC/rental topology; no same-work speed saving is claimed.'}:
   {comparisonMatched:true,comparisonSaving:1-result.end/serial.end,comparisonNote:''};
 }
@@ -20,6 +20,7 @@ export function sourceBurstEligible(plan,evidence){
   d.qualityOutcome?.finalBlocking!==30||d.qualityOutcome?.finalNonblocking!==82||
   d.qualityAllowsRender!==false||d.humanQualityAccepted!==false)return null;
  if(c.policy!=='current'||c.productionGenerationStrategy!=='dense'||
+  c.productionDenseLeasePolicy!=='stopped-qc-v1'||c.productionDenseHoldsGPUForQC!==false||
   c.productionDenseSupported!==true||c.productionDenseEligible!==true||
   c.productionDenseVersion!==1||c.gpu!=='5090'||c.resolution!=='720p'||
   c.executionMode!=='hybrid'||String(c.imageWorkers)!=='4'||c.encodingProfile!=='fresh'||

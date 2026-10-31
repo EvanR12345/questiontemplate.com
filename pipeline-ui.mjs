@@ -1,19 +1,21 @@
-import {migrateDirectorForecast,directorProfileOptions,directorTimingLabel} from './pipeline-director-calibration.mjs?v=matched-production-20261029';
+import {completedProductionEvidence,productionCalibrationSummary} from './pipeline-production-calibration.mjs?v=production-components-20261031';
+import {qualityBlockedProductionEvidence} from './pipeline-production-components.mjs?v=production-components-20261031';
+import {migrateDirectorForecast,directorProfileOptions,directorTimingLabel} from './pipeline-director-calibration.mjs?v=production-components-20261031';
 import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pipeline-admission-pilot-20261011';
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
 import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex,startupApplyConfig} from './pipeline-detail-ui.mjs?v=matched-production-20261029';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=matched-production-20261029';
-import {mountConcurrencyLab} from './pipeline-lab.mjs?v=matched-production-20261029';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex,startupApplyConfig} from './pipeline-detail-ui.mjs?v=production-components-20261031';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=production-components-20261031';
+import {mountConcurrencyLab} from './pipeline-lab.mjs?v=production-components-20261031';
 import {serverlessHTML} from './pipeline-serverless.mjs';
-import {matchedHTML} from './pipeline-matched.mjs?v=matched-production-20261029';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=matched-production-20261029';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=matched-production-20261029';
+import {matchedHTML} from './pipeline-matched.mjs?v=production-components-20261031';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=production-components-20261031';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=production-components-20261031';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=matched-production-20261029';
-import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=matched-production-20261029';
-import {denseActive,imageRentalPercent} from './pipeline-dense.mjs?v=matched-production-20261029';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=production-components-20261031';
+import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=production-components-20261031';
+import {denseActive,denseLeaseRetained,imageRentalPercent} from './pipeline-dense.mjs?v=production-components-20261031';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -76,9 +78,9 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=matched-production-20261029',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=matched-production-20261029',import.meta.url),{type:'module'}));
-const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=matched-production-20261029',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-components-20261031',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-components-20261031',import.meta.url),{type:'module'}));
+const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-components-20261031',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,renderedGeneration=-1,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -92,7 +94,7 @@ function getTask(id){return id===PREPARATION_GROUP?preparation:taskLookup.get(id
 function renderGenerationSpeed(){
   const speed=generationSpeed(plan,evidence);
   $('generationRate').value=speed.current===null?'Not measured':speed.current.toFixed(1);
-  $('generationRateNote').textContent=plan.sourceBurstProjectionUsed?plan.sourceBurstProjectionWarning:speed.highest===null?'No completed generation-speed measurement for this timing profile. Choose a measured resolution.':
+  $('generationRateNote').textContent=plan.currentProductionComponentsUsed?plan.currentProductionComponentsWarning:plan.productionCalibrationUsed?plan.productionCalibrationWarning:plan.sourceBurstProjectionUsed?plan.sourceBurstProjectionWarning:speed.highest===null?'No completed generation-speed measurement for this timing profile. Choose a measured resolution.':
     `Selected setup: ${executionLabel(plan)}. This measured warm rate includes preparation, transfer and saving once, but excludes startup, Luna/QC waiting and rendering. It is not measured full-production throughput.`+
     (speed.isFastest?'':` Fastest benchmark comparison: ${speed.highest.toFixed(1)} images/min; it is not substituted into this schedule.`);
   $('fastestGPU').disabled=speed.highest===null||speed.isFastest;
@@ -124,16 +126,18 @@ async function rebuild(){
     $('qcPolicyNote').textContent=reviewPolicyNote(config,result,evidence);
     $('modeNote').textContent=productionModeNote(config);
     const dense=denseActive(config);
+    const retained=denseLeaseRetained(config);
     $('readyChapters').disabled=dense;$('earlyGpu').disabled=dense;
     $('repairRoundsField').hidden=!dense||config.retries===0;
     $('repairRounds').max=String(config.productionDenseMaxRepairRounds||1);
+    $('repairRounds').nextElementSibling.textContent=retained?'Splits the extra-attempt allowance into assumed rounds on the same paid lease. Required checks and saved retry limits stay unchanged.':'Distributes your extra-attempt allowance across separately billed rentals. It does not change saved retry limits or predict a defect rate.';
     $('scheduleDescription').textContent=`${config.policy==='proposed'?'Proposed':config.policy==='current'?'Installed overlap model':'Sequential baseline'} · ${plan.director.label} · ${config.directorTier} · ${plan.imageCount} images · ${result.tasks.length} operations · ${Object.keys(preferences).length} manual moves`;
     $('metricTime').textContent=formatTime(result.end);
-    $('metricRange').textContent=(plan.director.timingMeasured?'':plan.director.conditionsMatch===false?'Unmeasured saved configuration · ':plan.director.slotsMatch===false?'Unmeasured API-slot timing · ':'Unmeasured tier timing · ')+`${formatTime(result.end*(1-uncertainty/100))}–${formatTime(result.end*(1+uncertainty/100))} assumed sensitivity`;
-    const comparable=!plan.sourceBurstProjectionUsed&&serial.comparisonMatched!==false;
+    $('metricRange').textContent=(plan.currentProductionComponentsUsed?'Quality-blocked source · finish unproven · ':plan.director.timingMeasured?'':plan.director.conditionsMatch===false?'Unmeasured saved configuration · ':plan.director.slotsMatch===false?'Unmeasured API-slot timing · ':'Unmeasured tier timing · ')+`${formatTime(result.end*(1-uncertainty/100))}–${formatTime(result.end*(1+uncertainty/100))} assumed sensitivity`;
+    const comparable=!plan.currentProductionComponentsUsed&&!plan.productionCalibrationUsed&&!plan.sourceBurstProjectionUsed&&serial.comparisonMatched!==false;
     const saving=comparable?1-result.end/serial.end:null;$('metricSaved').textContent=comparable?(saving*100).toFixed(0)+'% '+(saving>=0?'less time':'more time'):'Not comparable';
     $('metricSerial').textContent=comparable?`${formatTime(serial.end)} fully sequential`:'Sequential reference has a different timing basis; no same-work saving claimed.';
-    $('metricCost').textContent=money(result.totalUSD);$('metricCostParts').textContent=`${money(result.gpuUSD)} GPU + ${money(result.directorUSD)} Luna + ${money(result.qcUSD)} QC + ${money(result.storageUSD)} storage`;
+    $('metricCost').textContent=money(result.totalUSD);$('metricCostParts').textContent=`${money(result.gpuUSD)} GPU + ${money(result.directorUSD)} Luna + ${money(result.qcUSD)} QC${plan.productionCalibrationUsed?' + '+money(result.archiveUSD)+' GCS':''} + ${money(result.storageUSD)} storage`;
     $('pricingNote').textContent=plan.gpu.pricing.note;
     $('directorTimingNote').textContent=`${plan.director.label}. ${plan.director.scope} ${directorTimingLabel(plan.director)}`;
     $('flexTimingField').hidden=config.directorTier!=='flex'||plan.director.tierMeasured;
@@ -144,15 +148,22 @@ async function rebuild(){
     if(config.directorCostMode==='measured')$('directorCost').value=plan.director.costPerTwoHours.toFixed(6);
     $('quotedGPUHourly').disabled=config.pricingBasis!=='quote';
     $('metricBusyLabel').textContent=plan.measurement?'Image pipeline / rented':'GPU work / rented';$('metricBusy').textContent=imageRentalPercent(result);
-    $('metricImages').textContent=`${formatTime(result.rentalSeconds)} rented · ${plan.attemptCount} image attempts`+(dense?` · ${result.rentalWindows.length} assumed rental ${result.rentalWindows.length===1?'window':'windows'}`:'');
-    if(dense)$('modeNote').textContent+=config.retries>0?` Your ${config.retries}% extra-attempt allowance uses ${result.rentalWindows.length-1} assumed repair rounds, each including startup/stop. This is not a measured failure rate.`:' No extra-attempt rate is assumed; unknown repairs and their additional rentals remain conditional and are excluded from this scenario.';
+    $('metricImages').textContent=`${formatTime(result.rentalSeconds)} rented · ${plan.attemptCount} image attempts`+(retained?` · ${formatTime(result.heldQCIdleSeconds)} paid QC waiting`:dense?` · ${result.rentalWindows.length} assumed rental ${result.rentalWindows.length===1?'window':'windows'}`:'');
+    if(dense)$('modeNote').textContent+=config.retries>0?` Your ${config.retries}% extra-attempt allowance uses ${plan.repairRoundCount} assumed repair rounds ${retained?'on the same paid lease':'with separate startup/stop'}. This is not a measured failure rate.`:` No extra-attempt rate is assumed; unknown repairs ${retained?'and their additional held-lease time':'and their additional rentals'} remain conditional and are excluded from this scenario.`;
     $('taskCount').textContent=`${result.tasks.length} tasks · ${plan.measurement?plan.measurement.workers+' measured workers on one GPU'+(config.executionMode!=='resident'?' · '+plan.measurement.clientSlots+' request slots':''):'one inference lane'}`;
     $('profileScope').textContent=(plan.measurement?`${config.resolution} image pipeline · ${plan.measurement.workers} workers${config.executionMode!=='resident'?' · '+plan.measurement.clientSlots+' request slots':''} · ${config.encodingProfile} conditioning`:'Historical 1344 × 768 images · one worker')+` · video ${config.videoResolution}/${config.videoFps}fps`;
     $('renderTimingNote').textContent=plan.renderScope;
     $('workerField').hidden=config.resolution==='legacy';
     $('workerLabel').textContent=config.executionMode==='resident'?'Model copies on one GPU':'Request slots on one GPU';
     $('workerNote').textContent=config.executionMode==='resident'?'Each worker is a separate model copy, not another GPU. Installed mode keeps the supported single-copy comparison.':`${plan.measurement?.workers||config.productionModelCopies} model copies serve ${plan.measurement?.clientSlots||config.productionRequestSlots} bounded request slots. Slots include queued/preparing requests; they do not mean that many simultaneous model copies or GPUs.`;
-    if(plan.sourceBurstProjectionUsed)$('modeNote').textContent+=' '+plan.sourceBurstProjectionWarning;
+    $('currentProductionCalibration').textContent=productionCalibrationSummary(evidence,plan);
+    const completedOption=$('productionCalibration').querySelector('option[value="current-production-20261031"]');
+    completedOption.disabled=!completedProductionEvidence(evidence);
+    completedOption.textContent=completedOption.disabled?'Current completed production · awaiting evidence':'Current complete source · matching cached two-copy setup';
+    $('productionCalibration').querySelector('option[value="current-components-20261031"]').disabled=!qualityBlockedProductionEvidence(evidence);
+    if(plan.currentProductionComponentsUsed)$('modeNote').textContent+=' '+plan.currentProductionComponentsWarning;
+    else if(plan.productionCalibrationUsed)$('modeNote').textContent+=' '+plan.productionCalibrationWarning;
+    else if(plan.sourceBurstProjectionUsed)$('modeNote').textContent+=' '+plan.sourceBurstProjectionWarning;
     else if(plan.measurement)$('modeNote').textContent+=` Measured worker groups include image preparation through saving once. Internal stages cannot be moved separately from these aggregate measurements. ${plan.renderScope}`;
     const oldFocus=focus;
     $('chapterFocus').innerHTML='<option value="all">All chapters</option><option value="0">Project / intro</option>'+Array.from({length:config.chapters},(_,i)=>`<option value="${i+1}">Chapter ${String(i+1).padStart(2,'0')}</option>`).join('');
@@ -248,17 +259,17 @@ function renderPreparationInspector(group){
 }
 function renderBreakdown(){
   const groups=[['Directing',t=>t.lane==='director'],['Narration',t=>t.lane==='audio'],[plan.measurement?'Measured image pipeline':'Cloud GPU work',t=>t.resources.remote],['Preparation & transfer',t=>['prepare','transfer'].includes(t.lane)],['Vision QC',t=>t.lane==='qc'],['Save & state',t=>t.lane==='save'],['Rendering',t=>t.lane==='render'],['Setup & delivery',t=>['setup','finish'].includes(t.lane)]];
-  const vals=groups.map(([label,predicate])=>({label,value:result.tasks.filter(predicate).reduce((n,t)=>n+t.duration,0)})),max=Math.max(...vals.map(v=>v.value));
-  $('workBreakdown').innerHTML=vals.map(v=>`<div class="workrow"><span>${v.label}</span><div class="bar"><i style="width:${v.value/max*100}%"></i></div><span class="time">${sec(v.value)}</span></div>`).join('')+'<p class="caption">These are task work totals. Overlap makes their sum exceed elapsed production time. Cold loading belongs to image work. Measured worker groups also include transfer and saving; this is not GPU utilization.</p>';
-  const windows=denseActive(config)?result.rentalWindows.map(w=>[w.phase==='initial'?'Initial image rental':`Assumed repair rental ${w.round}`,`${formatTime(w.end-w.start)} · ${money((w.end-w.start)/3600*plan.gpu.hourly)}`]):[];
-  $('costBreakdown').innerHTML=[['GPU + running container rental',money(result.gpuUSD)],...windows,['Rental time',formatTime(result.rentalSeconds)],['GPU idle/setup time',formatTime(result.gpuIdleSeconds)],['Luna / QC estimate',money(result.apiUSD)],['Run estimate · before shared storage',money(result.productionUSD)],[`Shared storage · ${config.storageDays} days`,money(result.storageUSD)],['Total with allocated storage',money(result.totalUSD)]].map(([k,v])=>`<div class="costrow"><span>${k}</span><strong>${v}</strong></div>`).join('');
+  const vals=groups.map(([label,predicate])=>({label,value:result.tasks.filter(t=>t.kind!=='qcBoundary'&&predicate(t)).reduce((n,t)=>n+t.duration,0)})),max=Math.max(...vals.map(v=>v.value));
+  $('workBreakdown').innerHTML=vals.map(v=>`<div class="workrow"><span>${v.label}</span><div class="bar"><i style="width:${v.value/max*100}%"></i></div><span class="time">${sec(v.value)}</span></div>`).join('')+'<p class="caption">These are task work totals. Overlap makes their sum exceed elapsed production time. QC boundary spans are timing constraints and are excluded from these work sums. Cold loading belongs to image work. Measured worker groups also include transfer and saving; this is not GPU utilization.</p>';
+  const windows=denseActive(config)?result.rentalWindows.map(w=>[w.phase==='continuous'?'One lease · images, QC and repairs':w.phase==='initial'?'Initial image rental':`Assumed repair rental ${w.round}`,`${formatTime(w.end-w.start)} · ${money((w.end-w.start)/3600*plan.gpu.hourly)}`]):[];
+  $('costBreakdown').innerHTML=[['GPU + running container rental',money(result.gpuUSD)],...windows,['Rental time',formatTime(result.rentalSeconds)],['GPU idle/setup time',formatTime(result.gpuIdleSeconds)],...(denseLeaseRetained(config)?[['Paid QC waiting · included in rental',`${formatTime(result.heldQCIdleSeconds)} · ${money(result.heldQCIdleUSD)}`]]:[]),['Luna / QC estimate',money(result.apiUSD)],...(plan.productionCalibrationUsed?[[`Google archive · ${plan.productionCalibration.archiveCostBasis}`,money(result.archiveUSD)]]:[]),['Run estimate · before shared storage',money(result.productionUSD)],[`Shared storage · ${config.storageDays} days`,money(result.storageUSD)],['Total with allocated storage',money(result.totalUSD)]].map(([k,v])=>`<div class="costrow"><span>${k}</span><strong>${v}</strong></div>`).join('');
 }
 function renderProcesses(){
   $('processCount').textContent=CATALOG.length;const query=$('processSearch').value.toLowerCase();
   $('processList').innerHTML=CATALOG.filter(m=>(m.name+' '+m.description+' '+m.basis).toLowerCase().includes(query)).map(m=>{
     const tasks=result.tasks.filter(t=>t.kind===m.id),duration=tasks.reduce((n,t)=>n+t.duration,0);
     const index=CATALOG.indexOf(m)+1;
-    return `<div class="process-row"><span>${String(index).padStart(2,'0')}</span><div><button data-process="${m.id}">${esc(m.name)}</button><p>${esc(m.description)}</p></div><div class="resource">${esc(LANES.find(l=>l[0]===m.lane)[1])}<p>${tasks.length?sec(duration)+' work · '+tasks.length+' tasks':'Nested / conditional'}</p></div><span class="basis">${['introPlan','vision','decode','repair','retryJSON'].includes(m.id)?'Optional / conditional':tasks.length?'Scheduled parent':'Nested, not extra work'}</span></div>`;
+    return `<div class="process-row"><span>${String(index).padStart(2,'0')}</span><div><button data-process="${m.id}">${esc(m.name)}</button><p>${esc(m.description)}</p></div><div class="resource">${esc(LANES.find(l=>l[0]===m.lane)[1])}<p>${tasks.length?sec(duration)+(m.id==='qcBoundary'?' boundary spans · ':' work · ')+tasks.length+' tasks':'Nested / conditional'}</p></div><span class="basis">${m.id==='qcBoundary'?'Constraint, not extra work':['introPlan','vision','decode','repair','retryJSON'].includes(m.id)?'Optional / conditional':tasks.length?'Scheduled parent':'Nested, not extra work'}</span></div>`;
   }).join('')||'<div class="inline-note">No processes match. Try “voice”, “reference” or “render”.</div>';
   $('processList').querySelectorAll('[data-process]').forEach(b=>b.onclick=()=>{
     const m=CATALOG.find(x=>x.id===b.dataset.process),task=result.tasks.find(t=>t.kind===m.id);
@@ -318,8 +329,9 @@ function download(name,value,type){const blob=new Blob([value],{type}),url=URL.c
 async function start(){
   try{
     const response=await fetch('./pipeline-evidence.json?v=one-hour-speed-20261028');if(!response.ok)throw Error('Calibration could not load. Open through the local preview or website server.');evidence=await response.json();
-    try{const qcReply=await fetch('./pipeline-qc-calibration.json?v=matched-production-20261029');if(qcReply.ok)evidence.qcCalibration=await qcReply.json();}catch{ /* Retain prior history/assumptions if the optional study is unavailable. */ }
-    const directorReply=await fetch('./pipeline-director-calibration.json?v=matched-production-20261029');
+    try{const productionReply=await fetch('./pipeline-production-calibration.json?v=production-components-20261031');if(productionReply.ok)evidence.productionCalibration=await productionReply.json();}catch{ /* Missing current production proof never replaces historical timing. */ }
+    try{const qcReply=await fetch('./pipeline-qc-calibration.json?v=production-components-20261031');if(qcReply.ok)evidence.qcCalibration=await qcReply.json();}catch{ /* Retain prior history/assumptions if the optional study is unavailable. */ }
+    const directorReply=await fetch('./pipeline-director-calibration.json?v=production-components-20261031');
     if(directorReply.ok)evidence.directorCalibration=await directorReply.json();
     $('directorProfile').innerHTML=directorProfileOptions(evidence);
     const concurrencyResponse=await fetch('./pipeline-concurrency.json');
@@ -383,7 +395,7 @@ async function start(){
       const controls=readControls();
       if(config.directorCostMode==='measured')controls.directorCost=config.directorCost;
       if(renderedGeneration!==computeGeneration||JSON.stringify(controls)!==JSON.stringify(config)||Number($('uncertainty').value)!==uncertainty){toast('Wait for the current settings to finish calculating before exporting.');return;}
-      const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,rentalWindows:result.rentalWindows,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,productionUSD:result.productionUSD,storageUSD:result.storageUSD,totalUSD:result.totalUSD,pricing:plan.gpu.pricing},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};
+      const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,rentalWindows:result.rentalWindows,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,archiveUSD:result.archiveUSD||0,productionUSD:result.productionUSD,storageUSD:result.storageUSD,totalUSD:result.totalUSD,pricing:plan.gpu.pricing},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};
       download(`studio-plan-${config.gpu}-${config.minutes}min.json`,JSON.stringify(value,null,2),'application/json');toast('Exported schedule, task IDs, dependencies, resource limits and evidence.');
     };
     $('import').onclick=()=>$('importFile').click();$('importFile').onchange=async()=>{const file=$('importFile').files[0];if(!file)return;try{if(file.size>16_000_000)throw Error('Plan export must be smaller than 16 MB.');const input=JSON.parse(await file.text()),state=importSnapshot(input,evidence);checkpoint();config=state.config;preferences=state.preferences;uncertainty=Number.isFinite(input.uncertainty)?Math.max(0,Math.min(100,input.uncertainty)):20;selected=null;setControls();rebuild();toast('Plan imported. Paid execution and Studio projects remain unchanged.');}catch(e){toast('Could not import: '+e.message);}finally{$('importFile').value='';}};

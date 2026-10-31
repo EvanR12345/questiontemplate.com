@@ -115,6 +115,8 @@ class DensePhaseTest(unittest.TestCase):
     tearDown=fixtures.CloudOverlapTest.tearDown
 
     def prepared(self,count=8):
+        # These historical tests exercise the explicit stop-before-QC policy.
+        self.service.config['studioDenseLeaseContinuity']=False
         self.service.wait_for_overlap=False
         self.service.store.mutate(self.project['id'],lambda p:p['settings']['director'].update(parallelism=1,executionMode='classic'))
         self.provider=DenseProvider();self.service.providers['comfyui']=self.provider

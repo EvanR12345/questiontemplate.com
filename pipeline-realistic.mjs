@@ -1,5 +1,5 @@
-import {buildPlan} from './pipeline-engine.mjs?v=matched-production-20261029';
-import {selectGPUConfig} from './pipeline-config.mjs?v=matched-production-20261029';
+import {buildPlan} from './pipeline-engine.mjs?v=production-components-20261031';
+import {selectGPUConfig} from './pipeline-config.mjs?v=production-components-20261031';
 
 // An unmatched/unconnected saved project must not imply experimental overlap.
 // This is a conservative comparison until Follow applies an actual topology.

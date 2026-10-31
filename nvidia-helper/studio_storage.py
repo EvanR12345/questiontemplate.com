@@ -12,9 +12,10 @@ import os
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from pathlib import Path
 from urllib.parse import quote
+from immutable_upload import frozen_body, SourceChangedAfterUpload
 
 MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.wav', '.m4a', '.opus', '.mp3', '.mp4', '.json', '.flac'}
 
@@ -72,6 +73,74 @@ def stable_file(path):
     stat = path.stat()
     return (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
 
+def stage_immutable_assets(objects, pid, folder, paths, records, validate_path,
+                           progress=lambda *_:None, workers=1, cancelled=lambda:False):
+    """Transfer bounded immutable assets; the caller alone publishes a manifest.
+
+    Successful records remain private until every admitted transfer finishes.
+    Failure cancels pending work and joins active transfers before returning.
+    No file body is retained in memory and input records are never mutated.
+    """
+    if type(workers) is not int or not 1<=workers<=4:
+        raise ValueError('Archive upload workers must be an integer from 1 to 4.')
+    paths=list(paths);folder=Path(folder)
+    tasks=[]
+    for path in paths:
+        relative=path.relative_to(folder).as_posix()
+        validate_path(relative)
+        tasks.append((path,relative,records.get(relative,{})))
+    def check_cancelled():
+        if cancelled():raise RuntimeError('Cloud archive stopped; previous snapshot and local files retained.')
+    def one(task):
+        check_cancelled()
+        path,relative,previous=task
+        before=stable_file(path)
+        if previous.get('stamp')==list(before):return relative,previous,0
+        checksum=sha(path)
+        if stable_file(path)!=before:raise ValueError('An asset changed during upload preparation. Retry safely.')
+        check_cancelled()
+        key=f'studio/assets/{pid}/{checksum}/{relative}'
+        uploaded=0;receipt=None
+        if previous.get('sha256')!=checksum:
+            receipt=objects.upload(key,path,checksum);uploaded=before[0]
+        try:changed=stable_file(path)!=before
+        except FileNotFoundError:changed=True
+        if changed:raise SourceChangedAfterUpload(receipt)
+        return relative,{'key':key,'sha256':checksum,'bytes':before[0],'stamp':list(before)},uploaded
+    check_cancelled();completed={};uploaded=0
+    progress(0,len(tasks),0)
+    if workers==1:
+        for index,task in enumerate(tasks):
+            check_cancelled();completed[index]=one(task)
+            uploaded+=completed[index][2];progress(index+1,len(tasks),uploaded)
+    else:
+        pool=ThreadPoolExecutor(max_workers=workers,thread_name_prefix='studio-cloud-asset')
+        pending={};next_index=0
+        try:
+            while next_index<len(tasks) or pending:
+                check_cancelled()
+                while next_index<len(tasks) and len(pending)<workers:
+                    check_cancelled();future=pool.submit(one,tasks[next_index])
+                    pending[future]=next_index;next_index+=1
+                done,_=wait(pending,return_when=FIRST_COMPLETED)
+                # Resolve the entire completion set before admitting more work;
+                # a failed transfer cannot cause an avoidable additional submit.
+                ready=[(pending[f],f.result()) for f in sorted(done,key=lambda f:pending[f])]
+                for index,value in ready:
+                    completed[index]=value;uploaded+=value[2]
+                for future in done:del pending[future]
+                progress(len(completed),len(tasks),uploaded)
+        except BaseException:
+            for future in pending:future.cancel()
+            raise
+        finally:
+            pool.shutdown(wait=True,cancel_futures=True)
+    check_cancelled()
+    staged=dict(records)
+    for index in range(len(tasks)):
+        relative,record,_=completed[index];staged[relative]=record
+    return staged,uploaded
+
 class S3Objects:
     provider = 'Cloudflare R2'
     publisher_compatible = True
@@ -104,14 +173,25 @@ class S3Objects:
         self.client.put_object(**args)
 
     def upload(self, key, path, checksum):
+        # The complete body and checksum are fixed before the SDK sees a file.
+        # Local atomic ledger replacements cannot change this transfer's bytes.
+        path=Path(path)
+        with frozen_body(path, checksum) as (snapshot, size):
+            return self.upload_frozen(key, snapshot, size, checksum, path.name)
+
+    def upload_frozen(self, key, snapshot, size, checksum, original_name):
         from boto3.s3.transfer import TransferConfig
-        self.client.upload_file(str(path), self.bucket, key,
-            ExtraArgs={'ContentType':mimetypes.guess_type(path.name)[0] or 'application/octet-stream',
+        snapshot.seek(0)
+        self.client.upload_fileobj(snapshot, self.bucket, key,
+            ExtraArgs={'ContentType':mimetypes.guess_type(original_name)[0] or 'application/octet-stream',
                        'Metadata':{'sha256':checksum}},
             Config=TransferConfig(multipart_threshold=64*1024*1024,multipart_chunksize=64*1024*1024,max_concurrency=3))
         head = self.client.head_object(Bucket=self.bucket,Key=key)
-        if head['ContentLength'] != path.stat().st_size or head.get('Metadata',{}).get('sha256') != checksum:
+        if head['ContentLength'] != size or head.get('Metadata',{}).get('sha256') != checksum:
             raise ValueError('Cloud upload verification failed; local file retained.')
+        # This post-transfer HEAD verifies bytes/metadata; it is deliberately
+        # not labelled a native writer-generation/ownership receipt.
+        return {'bytes':size, 'sha256':checksum, 'writerOwnershipVerified':False}
 
     def download(self, key, target):
         self.client.download_file(self.bucket, key, str(target))
@@ -164,6 +244,11 @@ class R2Archive:
                 except (OSError,ValueError):self.journal_error='Cloud status journal could not be read. Retry cloud save.'
         self.enabled = self.objects is not None
         self.manifests = {}
+        # Completed immutable transfers can outlive a superseded project
+        # snapshot. Reuse their verified file stamps on the next sync without
+        # publishing the old project or repeating hashes/remote existence reads.
+        # Private, bounded metadata only; every file still passes stable_file.
+        self.staged_assets = {}
         self.asset_locks = [threading.RLock() for _ in range(32)]
         self.catalogue_lock = threading.RLock()
         self.catalogue = None; self.catalogue_at = 0
@@ -217,26 +302,33 @@ class R2Archive:
         if old and old['project']['revision'] == project['revision'] and old['project'] != project:
             raise ValueError('Cloud and helper revisions conflict. Both copies retained for review.')
         records = dict(old.get('files',{})) if old else {}
-        uploaded = 0
         video_references=project_video_paths(project)
         paths=[path for path in sorted(local_media(folder))
             if not render_scratch(project,path.relative_to(folder).as_posix(),video_references)
             and path.name not in ('project.json','revision.json','project.previous.json')]
-        for index,path in enumerate(paths):
-            relative = path.relative_to(folder).as_posix()
+        relative_paths={path.relative_to(folder).as_posix() for path in paths}
+        with self.cv:
+            staged=self.staged_assets.get(pid,{})
+            records.update({relative:record for relative,record in staged.items()
+                            if relative in relative_paths})
+        def progress(processed,total,uploaded):
             with self.cv:
                 if self.active_project==pid:
-                    self.states[pid]['syncProgress']={'filesProcessed':index,'totalFiles':len(paths),'uploadedBytes':uploaded}
-            self.store.asset(pid, relative)  # Reject traversal and unsupported asset paths.
-            before = stable_file(path); previous = records.get(relative,{})
-            if previous.get('stamp') == list(before): continue
-            checksum = sha(path)
-            if stable_file(path) != before: raise ValueError('An asset changed during upload preparation. Retry safely.')
-            key = f'studio/assets/{pid}/{checksum}/{relative}'
-            if previous.get('sha256') != checksum:
-                self.objects.upload(key, path, checksum); uploaded += before[0]
-            if stable_file(path) != before: raise ValueError('An asset changed during upload. Previous cloud snapshot preserved.')
-            records[relative] = {'key':key,'sha256':checksum,'bytes':before[0],'stamp':list(before)}
+                    self.states[pid]['syncProgress']={'filesProcessed':processed,'totalFiles':total,'uploadedBytes':uploaded}
+        owner_is_worker=threading.current_thread() is self.thread
+        def cancelled():
+            # Explicit direct/offline sync remains available after close(); only
+            # the owner worker is cancelled by shutdown of its background loop.
+            return self.stopped and owner_is_worker
+        workers=getattr(self.objects,'upload_workers',1) if self.provider=='Google Cloud Storage' else 1
+        records,uploaded=stage_immutable_assets(self.objects,pid,folder,paths,records,
+            lambda relative:self.store.asset(pid,relative),progress,workers,cancelled)
+        with self.cv:
+            self.staged_assets.pop(pid,None)
+            self.staged_assets[pid]={relative:records[relative]
+                for relative in sorted(relative_paths)[:4096]}
+            while len(self.staged_assets)>8:
+                self.staged_assets.pop(next(iter(self.staged_assets)))
         manifest = {'version':1,'project':project,'files':records,'savedAt':time.time()}
         if old and old.get('renderCache'):
             # Cloud render aliases belong to immutable content-keyed outputs;
@@ -255,9 +347,12 @@ class R2Archive:
         else:
             from studio_data import digest
             history=digest({'project':project,'files':records})[:16]
+            if cancelled():raise RuntimeError('Cloud archive stopped before publication; local files retained.')
             self.objects.put_json(f'studio/history/{pid}/{project["revision"]}-{history}.json',manifest)
+            if cancelled():raise RuntimeError('Cloud archive stopped before publication; local files retained.')
             self.objects.put_json(f'studio/manifests/{pid}.json',manifest,etag,create=old is None)
         self.manifests.pop(pid,None)
+        with self.cv:self.staged_assets.pop(pid,None)
         # Invalidate after any concurrent catalogue refresh finishes; otherwise
         # that refresh could overwrite this invalidation with its new timestamp.
         with self.catalogue_lock:self.catalogue_at = 0

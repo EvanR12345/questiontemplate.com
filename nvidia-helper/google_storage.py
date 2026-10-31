@@ -11,6 +11,7 @@ import re
 import hashlib
 import io
 from studio_storage import attachment_disposition
+from immutable_upload import ImmutableUploadMixin
 
 
 class HashingReader(io.RawIOBase):
@@ -26,7 +27,7 @@ class HashingReader(io.RawIOBase):
         data=self.read(len(buffer));buffer[:len(data)]=data;return len(data)
 
 
-class GCSObjects:
+class GCSObjects(ImmutableUploadMixin):
     provider = 'Google Cloud Storage'
     publisher_compatible = True  # Publisher must still verify its active provider.
 
@@ -38,6 +39,12 @@ class GCSObjects:
         if type(chunk_mib) is not int or chunk_mib not in (8,16,32,64):
             raise ValueError('Google upload chunks must be 8, 16, 32 or 64 MiB.')
         self.upload_chunk_size=chunk_mib*1024*1024
+        workers=config.get('uploadWorkers',1)
+        if type(workers) is not int or not 1<=workers<=4:
+            raise ValueError('Google upload workers must be an integer from 1 to 4.')
+        # Opt-in only. The archive retains one publication owner regardless of
+        # the number of independent immutable assets being transferred.
+        self.upload_workers=workers
         if client is None:
             from google.cloud import storage
             if config.get('authMode') == 'federated':
@@ -95,28 +102,16 @@ class GCSObjects:
     def put_json(self, key, value, etag=None, create=False):
         blob = self.bucket.blob(key)
         condition = int(etag) if etag is not None else (0 if create else None)
+        raw=json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode()
         blob.upload_from_string(
-            json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode(),
+            raw,
             content_type='application/json', if_generation_match=condition, timeout=60,
         )
-
-    @staticmethod
-    def _verify(blob, path, checksum):
-        if blob.size != path.stat().st_size or (blob.metadata or {}).get('sha256') != checksum:
-            raise ValueError('Cloud upload verification failed; local file retained.')
-
-    def upload(self, key, path, checksum):
-        existing = self.bucket.get_blob(key, timeout=60)
-        if existing is not None:
-            self._verify(existing, path, checksum)
-            return
-        blob = self.bucket.blob(key, chunk_size=self.upload_chunk_size)
-        blob.metadata = {'sha256': checksum}
-        blob.upload_from_filename(str(path),
-            content_type=mimetypes.guess_type(path.name)[0] or 'application/octet-stream',
-            if_generation_match=0, timeout=120, checksum='auto')
-        blob.reload(timeout=60)
-        self._verify(blob, path, checksum)
+        # The upload response identifies this writer's generation. A later
+        # metadata GET could observe a different writer and is not a receipt.
+        return {'generation':str(blob.generation) if blob.generation is not None else None,
+                'bytes':blob.size,'crc32c':getattr(blob,'crc32c',None),
+                'storageClass':getattr(blob,'storage_class',None)}
 
     def download(self, key, target):
         blob = self.bucket.get_blob(key, timeout=60)

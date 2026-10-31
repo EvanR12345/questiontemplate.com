@@ -16,8 +16,7 @@ function observedCadenceMatch(config,actual,expected,p){
   /^[a-f0-9]{64}$/.test(n.originalPreflightSHA256||'')&&
   /^[a-f0-9]{64}$/.test(n.stateBeforeSHA256||'');
 }
-export function matchedDirectorProfile(config,profile,evidence){
- const p=evidence.directorCalibration?.profiles?.find(p=>p.id==='lean-overlap-standard');
+function matchingProfile(config,profile,p){
  if(!p||p.status!=='COMPLETE'||p.unknownRequests||p.completedChapters!==p.sourceChapters||
     p.productionReviewsPassed!==true||p.standardReceiptsVerified!==true||p.slots!==4)return null;
  const actual=profile?.directorCalibrationProfile,expected=p.conditions;
@@ -33,4 +32,13 @@ export function matchedDirectorProfile(config,profile,evidence){
  if(!Number.isFinite(Number(config.cadence))||!Number.isFinite(p.inputCadencePerMinute)||
     Math.abs(Number(config.cadence)-p.inputCadencePerMinute)>0.001)return null;
  return p;
+}
+
+export function matchedDirectorProfile(config,profile,evidence){
+ // Following a saved setup may use a newer exact-condition component. Explicit
+ // historical/manual director IDs are retained by the planner's normal import.
+ const profiles=(evidence.directorCalibration?.profiles||[])
+  .filter(p=>p.id==='lean-overlap-standard'||p.calibrationFamily==='lean-overlap-standard')
+  .sort((a,b)=>(b.observedAt||0)-(a.observedAt||0));
+ return profiles.map(p=>matchingProfile(config,profile,p)).find(Boolean)||null;
 }

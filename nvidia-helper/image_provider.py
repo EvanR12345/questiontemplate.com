@@ -42,6 +42,15 @@ class RemoteGenerationUncertain(RuntimeError):
             ' Stop the rented GPU if you are finished: stopping this queue does not stop rental billing.')
 
 
+class ImageAdmissionBlocked(RuntimeError):
+    """No POST belongs to this request; do not retry or switch image providers."""
+    submitted = False
+    prompt_id = None
+
+    def __init__(self, reason):
+        super().__init__(reason + ' This request was not submitted; no automatic retry or alternate image provider is permitted.')
+
+
 class ComfyHTTPPool:
     """Bounded keepalive to one private Comfy endpoint; never retry a request.
 
@@ -694,7 +703,9 @@ class NativeFluxProvider(ImageProvider):
 class ComfyImageProvider(ImageProvider):
     id = "comfyui"
 
-    def __init__(self, config):
+    def __init__(self, config, request_slots=1):
+        if type(request_slots) is not int or request_slots not in (1, 2):
+            raise ValueError('Choose one or two ComfyUI request slots.')
         self.config = config
         self.url = local_url(config.get("comfyEndpoint", "http://127.0.0.1:8188"))
         # Matched real-worker ABBA kept all corresponding pixels identical.
@@ -705,12 +716,133 @@ class ComfyImageProvider(ImageProvider):
         self._health = (0, None)
         self._node_catalog = (0, None)
         self._uploads = {}
+        self._request_slots = request_slots
+        self._admission = threading.Condition(threading.RLock())
+        self._active_requests = 0
+        self._worker_epoch = 0
+        self._upload_flights = {}
+        self._uncertain = threading.Event()
+        self._uncertain_prompt = None
+        self._worker_lifetime = None
+
+    @property
+    def client_capacity(self):
+        return self._request_slots
+
+    def begin_worker_lifetime(self, proof=None):
+        """Accept only the owner's verified fresh rental, never a health refresh.
+
+        The rental controller supplies the token only after a stopped-to-started
+        owned worker or a newly created owned worker has passed readiness. This
+        provider also refuses active-call resets and replay of a fenced token.
+        """
+        if (not isinstance(proof, dict) or proof.get('owned') is not True
+                or proof.get('ready') is not True or proof.get('endpoint') != self.url
+                or not isinstance(proof.get('podId'), str) or not proof['podId'].strip()
+                or not isinstance(proof.get('lifetimeId'), str) or not proof['lifetimeId'].strip()):
+            raise ValueError('A verified owned worker lifetime proof is required.')
+        identity = (proof['podId'], proof['lifetimeId'])
+        with self._admission:
+            if self._active_requests:
+                raise RuntimeError('Cannot reset a worker while image requests are active.')
+            if identity == self._worker_lifetime:
+                if self._uncertain.is_set():
+                    raise RuntimeError('The same worker still has unresolved remote work; no reset permitted.')
+                return
+            self.invalidate_backend_cache()
+            self._worker_lifetime = identity
+            self._uncertain_prompt = None
+            self._uncertain.clear()
+
+    def _available_for_dispatch(self, epoch=None):
+        if self._uncertain.is_set():
+            raise ImageAdmissionBlocked('This image endpoint has unresolved remote work; reconcile and verify a fresh owned worker before new dispatch.')
+        if self._request_slots == 2 and self._worker_lifetime is None:
+            raise ImageAdmissionBlocked('Queued image delivery requires a verified owned worker lifetime.')
+        if epoch is not None and epoch != self._worker_epoch:
+            raise ImageAdmissionBlocked('Image worker metadata changed during preparation.')
+
+    def _acquire_request(self, request, checkpoint):
+        while True:
+            checkpoint(0, request.get('settings', {}).get('steps', 1), 'Waiting for a ComfyUI request slot')
+            with self._admission:
+                self._available_for_dispatch()
+                if self._active_requests < self._request_slots:
+                    self._active_requests += 1
+                    return self._worker_epoch
+                self._admission.wait(.05)
+
+    def _latch_uncertainty(self, prompt_id=None):
+        # Set the flag before waiting for the admission mutex or releasing a
+        # slot. Preparing requests recheck it immediately before their POST.
+        self._uncertain.set()
+        with self._admission:
+            if self._uncertain_prompt is None:
+                self._uncertain_prompt = prompt_id
+            self._admission.notify_all()
+
+    def block_new_dispatch(self):
+        """Fence a pool sibling without acquiring a worker admission mutex.
+
+        The pool may hold its own mutex while another worker's final validator
+        checks that pool. Taking both mutexes here would invert their order.
+        Already submitted calls retain their own IDs and continue collecting.
+        """
+        self._uncertain.set()
+
+    def _upload_reference(self, raw, fingerprint, epoch, checkpoint, steps):
+        key = (epoch, fingerprint)
+        with self._admission:
+            self._available_for_dispatch(epoch)
+            if fingerprint in self._uploads:
+                return self._uploads[fingerprint], True
+            flight = self._upload_flights.get(key)
+            owner = flight is None
+            if owner:
+                flight = {'done': threading.Event()}
+                self._upload_flights[key] = flight
+        if not owner:
+            while not flight['done'].wait(.05):
+                checkpoint(0, steps, 'Waiting for the identical character reference upload')
+                with self._admission:self._available_for_dispatch(epoch)
+            with self._admission:
+                self._available_for_dispatch(epoch)
+                if 'error' in flight:
+                    raise RuntimeError('The shared character reference upload did not complete.') from flight['error']
+                return flight['name'], True
+        try:
+            boundary = 'qt-' + secrets.token_hex(8)
+            name = 'qt-' + secrets.token_hex(8) + '.png'
+            body = (f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\nContent-Type: image/png\r\n\r\n'.encode()
+                    + raw + f'\r\n--{boundary}--\r\n'.encode())
+            req = urllib.request.Request(self.url + '/upload/image', data=body,
+                headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
+            with self._open(req, timeout=30) as response:uploaded = json.load(response)
+            uploaded_name = uploaded['name']
+            if not isinstance(uploaded_name, str) or not uploaded_name:
+                raise ValueError('Character reference upload returned no filename.')
+            checkpoint(0, steps, 'Character reference upload received')
+            with self._admission:
+                self._available_for_dispatch(epoch)
+                self._uploads[fingerprint] = uploaded_name
+                flight['name'] = uploaded_name
+            return uploaded_name, False
+        except BaseException as error:
+            with self._admission:flight['error'] = error
+            raise
+        finally:
+            with self._admission:
+                self._upload_flights.pop(key, None)
+                flight['done'].set()
 
     def invalidate_backend_cache(self):
-        """Remote filenames and probes belong to one verified worker lifetime."""
-        self._uploads.clear()
-        if self._transport:self._transport.invalidate()
-        self._health=(0,None);self._server_memory=(0,None);self._node_catalog=(0,None)
+        """Invalidate metadata without reauthorizing uncertain remote work."""
+        with self._admission:
+            self._worker_epoch += 1
+            self._uploads.clear()
+            if self._transport:self._transport.invalidate()
+            self._health=(0,None);self._server_memory=(0,None);self._node_catalog=(0,None)
+            self._admission.notify_all()
 
     def _request_json(self,url,body=None,timeout=180):
         if self._transport:return self._transport.json(url,body,timeout)
@@ -931,7 +1063,76 @@ class ComfyImageProvider(ImageProvider):
         except Exception as e:
             return {"installed": False, "error": str(e)}
 
+    def _skip_builtin_qwen_cfg1_negative_encoding(self, template, prompt):
+        """Drop only an inactive dependency in an unmodified built-in bundle.
+
+        Native CFG1 discards unconditional conditioning before the denoiser.
+        The audited default post-CFGNorm does not disable that optimization.
+        Keep exported nodes/bindings intact; only the sampler socket changes.
+        Manual graphs and every non-CFG1 resolved sampler retain their branch.
+        """
+        try:
+            from qwen_workflow import bundle as qwen_bundle
+            from flux_workflow import bundle as flux_bundle
+        except ImportError:
+            return False
+
+        builtin = qwen_bundle()
+        if template not in builtin["variants"]:
+            return False
+        configured = self.template()
+        if configured != builtin and configured != flux_bundle():
+            return False
+        sampler = prompt.get("9", {})
+        inputs = sampler.get("inputs", {})
+        cfg = inputs.get("cfg")
+        if (sampler.get("class_type") != "KSampler"
+                or type(cfg) not in (int, float) or cfg != 1
+                or inputs.get("model") != ["5", 0]
+                or prompt.get("5") != {
+                    "class_type": "CFGNorm", "inputs": {
+                        "model": ["4", 0], "strength": 1.0, "pre_cfg": False}}
+                or prompt["5"]["inputs"]["pre_cfg"] is not False):
+            return False
+        positive = ["12", 0] if template.get("kind") == "reference" else ["6", 0]
+        negative = ["13", 0] if template.get("kind") == "reference" else ["7", 0]
+        if inputs.get("positive") != positive or inputs.get("negative") != negative:
+            return False
+        inputs["negative"] = copy.deepcopy(positive)
+        return True
+
     def generateImage(self, r, checkpoint):
+        epoch = self._acquire_request(r, checkpoint)
+        execution = {'epoch': epoch, 'submitted': False, 'terminal': False,
+                     'observerStarted': False, 'remoteId': None}
+        try:
+            return self._generate_image(r, checkpoint, execution)
+        except BaseException as error:
+            if isinstance(error, ImageAdmissionBlocked):
+                raise
+            elif isinstance(error, RemoteGenerationUncertain):
+                self._latch_uncertainty(error.prompt_id)
+            elif execution['submitted'] and not execution['terminal']:
+                self._latch_uncertainty(execution['remoteId'])
+                # Preserve the legacy single-slot user-cancel signal. A queued
+                # cancellation must surface unresolved ownership to the caller.
+                if not isinstance(error, Exception) or (
+                        self._request_slots == 1 and isinstance(error, InterruptedError)):
+                    raise
+                raise RemoteGenerationUncertain(execution['remoteId']) from error
+            elif (execution['observerStarted'] and not execution['terminal']
+                    and self._request_slots == 2):
+                # A durable admission hook may have partly committed before it
+                # failed. No HTTP replay or sibling admission is safe here.
+                self._latch_uncertainty()
+                if isinstance(error, Exception):raise RemoteGenerationUncertain() from error
+            raise
+        finally:
+            with self._admission:
+                self._active_requests -= 1
+                self._admission.notify_all()
+
+    def _generate_image(self, r, checkpoint, execution):
         began = time.monotonic()
         polling_interval = self.config.get('comfyPollInterval', .25)
         timeout = self.config.get('comfyGenerationTimeoutSeconds', 600)
@@ -975,59 +1176,65 @@ class ComfyImageProvider(ImageProvider):
                 for value in prompt.values():
                     value["inputs"] = {key: field for key, field in value["inputs"].items()
                         if not (isinstance(field, list) and field and str(field[0]) == str(node))}
+        negative_encoding_skipped = self._skip_builtin_qwen_cfg1_negative_encoding(t, prompt)
         prepared = time.monotonic()
         upload_hits = 0
         for index, ref in enumerate(refs):
             checkpoint(0, s["steps"], "Uploading character references")
             raw, fingerprint = _image_encoding_cache.reference_bytes(ref)
-            uploaded_name = self._uploads.get(fingerprint)
-            upload_hits += int(bool(uploaded_name))
-            if not uploaded_name:
-                boundary = "qt-" + secrets.token_hex(8)
-                name = "qt-" + secrets.token_hex(8) + ".png"
-                body = (
-                    f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\nContent-Type: image/png\r\n\r\n'.encode()
-                    + raw
-                    + f"\r\n--{boundary}--\r\n".encode()
-                )
-                req = urllib.request.Request(
-                    self.url + "/upload/image",
-                    data=body,
-                    headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
-                )
-                with self._open(req, timeout=30) as response:
-                    uploaded = json.load(response)
-                uploaded_name = uploaded["name"]
-                self._uploads[fingerprint] = uploaded_name
+            uploaded_name, cache_hit = self._upload_reference(
+                raw, fingerprint, execution['epoch'], checkpoint, s['steps'])
+            upload_hits += int(cache_hit)
             for node, field in t["bindings"].get("reference" + str(index), []):
                 prompt[str(node)]["inputs"][field] = uploaded_name
         uploaded_at = time.monotonic()
         observer = r.get('_executionObserver')
         if observer is not None and not callable(observer):
             raise ValueError('Execution observer must be callable.')
+        validator = r.get('_preDispatchValidator')
+        if validator is not None and not callable(validator):
+            raise ValueError('Pre-dispatch validator must be callable.')
         operation_id = 'comfy-' + secrets.token_hex(16)
-        if observer:
-            observer('submitting', {'operationId': operation_id, 'provider': 'comfyui'})
-        try:
-            job = self._request_json(
-                self.url + "/prompt", {"prompt": prompt, "client_id": secrets.token_hex(16)}
-            )
-            id = job['prompt_id']
-            if not isinstance(id,str) or not id:
-                raise ValueError('No confirmed ComfyUI prompt identity.')
+        # One admission mutex orders the final source/cap/cancel validation,
+        # durable intent and single POST against uncertainty/lifetime changes.
+        # It does not cover generation, polling or image retrieval.
+        with self._admission:
+            self._available_for_dispatch(execution['epoch'])
+            checkpoint(0, s['steps'], 'Submitting ComfyUI generation')
+            if validator:validator()
+            self._available_for_dispatch(execution['epoch'])
             if observer:
-                try:observer('accepted', {'operationId': operation_id, 'remoteId': id})
-                except Exception as error:raise RemoteGenerationUncertain(id) from error
-        except urllib.error.HTTPError as error:
-            # A gateway can return 408 after the worker accepted the request.
-            # Only explicit rejection statuses are safe to classify as unused.
-            if error.code in (400, 401, 403, 404, 413, 422, 429):
-                if observer:
-                    observer('rejected', {'operationId': operation_id})
+                execution['observerStarted'] = True
+                observer('submitting', {'operationId': operation_id, 'provider': 'comfyui'})
+            try:
+                self._available_for_dispatch(execution['epoch'])
+            except Exception:
+                # The intent was durable, but this exact call has not entered
+                # its POST. Settle only this unused operation before stopping.
+                if observer:observer('rejected', {'operationId': operation_id})
+                execution['terminal'] = True
                 raise
-            raise RemoteGenerationUncertain() from error
-        except (OSError, ValueError, KeyError) as error:
-            raise RemoteGenerationUncertain() from error
+            execution['submitted'] = True
+            try:
+                job = self._request_json(
+                    self.url + '/prompt', {'prompt': prompt, 'client_id': secrets.token_hex(16)})
+                id = job['prompt_id']
+                if not isinstance(id, str) or not id:
+                    raise ValueError('No confirmed ComfyUI prompt identity.')
+                execution['remoteId'] = id
+                if observer:
+                    try:observer('accepted', {'operationId': operation_id, 'remoteId': id})
+                    except Exception as error:raise RemoteGenerationUncertain(id) from error
+            except urllib.error.HTTPError as error:
+                # A gateway can return 408 after the worker accepted the request.
+                # Only explicit rejection statuses prove no generation bought.
+                if error.code in (400, 401, 403, 404, 413, 422, 429):
+                    if observer:observer('rejected', {'operationId': operation_id})
+                    execution['terminal'] = True
+                    raise
+                raise RemoteGenerationUncertain() from error
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise RemoteGenerationUncertain(execution['remoteId']) from error
         submitted_at = time.monotonic()
         started = time.time()
         polls = 0
@@ -1045,15 +1252,18 @@ class ComfyImageProvider(ImageProvider):
                     raise RemoteGenerationUncertain(id, timed_out=True)
                 time.sleep(polling_interval)
         except Exception as error:
-            # Remove this queued job. Interrupt only if this job owns the running slot.
+            # Queue deletion is scoped to this exact prompt. Queued delivery
+            # never uses global interrupt: the running job could have changed
+            # between GET /queue and POST /interrupt, harming a sibling.
             # A transient disconnect may still finish successfully. Leave that
             # request alone for reconciliation; explicit cancel/timeout stops it.
             if not isinstance(error, RemoteGenerationUncertain) or error.timed_out:
                 try:
                     self._request_json(self.url + "/queue", {"delete": [id]}, timeout=3)
-                    q = self._request_json(self.url + "/queue", timeout=3)
-                    if any(v[1] == id for v in q.get("queue_running", [])):
-                        self._request_json(self.url + "/interrupt", {}, timeout=3)
+                    if self._request_slots == 1:
+                        q = self._request_json(self.url + '/queue', timeout=3)
+                        if any(v[1] == id for v in q.get('queue_running', [])):
+                            self._request_json(self.url + '/interrupt', {}, timeout=3)
                 except Exception:
                     pass
             raise
@@ -1063,6 +1273,7 @@ class ComfyImageProvider(ImageProvider):
             if observer:
                 try:observer('failed', {'operationId': operation_id})
                 except Exception as error:raise RemoteGenerationUncertain(id) from error
+            execution['terminal'] = True
             raise RuntimeError("ComfyUI failed: " + str(entry.get("status"))[:1200])
         try:
             image = next(
@@ -1078,10 +1289,7 @@ class ComfyImageProvider(ImageProvider):
         except OSError as error:
             raise RemoteGenerationUncertain(id) from error
         img = visible_image(raw)
-        if observer:
-            try:observer('completed', {'operationId': operation_id})
-            except Exception as error:raise RemoteGenerationUncertain(id) from error
-        return {
+        result = {
             "pil": img,
             "seed": s["seed"],
             "seconds": time.time() - started,
@@ -1091,6 +1299,7 @@ class ComfyImageProvider(ImageProvider):
             "settings": s,
             "resolvedWorkflow": prompt,
             'remotePromptId': id,
+            'requestSlots': self._request_slots,
             'serverExecutionEvidence': execution_evidence(entry,prompt),
             'providerTimings': {
                 'preparationSeconds': prepared-began,
@@ -1101,9 +1310,15 @@ class ComfyImageProvider(ImageProvider):
                 'totalClientSeconds': time.monotonic()-began,
                 'historyRequests': polls,
                 'references':len(refs),'referenceUploadCacheHits':upload_hits,
+                'negativeEncodingDependencySkipped':negative_encoding_skipped,
                 'timingSource':'client wall time; wait includes queue, inference and polling',
             },
         }
+        if observer:
+            try:observer('completed', {'operationId': operation_id})
+            except Exception as error:raise RemoteGenerationUncertain(id) from error
+        execution['terminal'] = True
+        return result
 
 
 def visible_appearance(shot, selected):

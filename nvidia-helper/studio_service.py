@@ -11,6 +11,7 @@ from image_provider import (
     ExistingImageProvider,
     NativeFluxProvider,
     ComfyImageProvider,
+    ImageAdmissionBlocked,
     RemoteGenerationUncertain,
     format_prompt,
     select_references,
@@ -1701,12 +1702,13 @@ class StudioService:
                     and relevant(chapter.get('inputState', {})) == relevant(state)
                     and not chapter.get('continuityNeedsReview', False))
 
-    def preflight_chapter(self, pid, chid):
+    def preflight_chapter(self, pid, chid, prepared_inputs=None):
         def check(project):
+            if prepared_inputs is not None:self.require_dense_image_preparation(project,chid,prepared_inputs)
             for scene in get_chapter(project, chid)['scenes']:
                 for shot in scene['shots']:
                     shot['preflight'] = require_shot(project, shot)
-        self.store.mutate(pid, check, skip_unchanged=True)
+        return self.store.mutate(pid, check, skip_unchanged=True)
 
     def confirm_chapter_people(self, pid, chid):
         # Only the explicit full-production action opts into main acceptance.
@@ -2177,6 +2179,22 @@ class StudioService:
                 raise ValueError('Prepare every selected identity, location, style and manual reference before the dense GPU window.') from error
         proof=capacity_preflight(p,shots,self.store.folder(pid),p['settings']['maxImageRetries'])
         overlap=self._overlap
+        overlap.dense_image_preparations={}
+        for chapter in p['chapters']:
+            if not chapter['sourceText'].strip():continue
+            self.gate('Preparing accepted chapter image settings')
+            overlap.validate_settings()
+            expected=self.dense_image_preparation_signature(p,chapter['id'])
+            normalized=self.prepare_production_chapter_image_settings(pid,chapter['id'],expected)
+            prepared=self.preflight_chapter(pid,chapter['id'],self.dense_image_preparation_signature(normalized,chapter['id']))
+            overlap.dense_image_preparations[chapter['id']]=self.dense_image_preparation_signature(prepared,chapter['id'])
+        self.gate('Validating prepared dense image inputs')
+        p=overlap.validate_settings()
+        # Capacity is still checked before preparation mutations above. Recheck
+        # the normalized dimensions without starting or joining the GPU worker.
+        shots=[s for ch in p['chapters'] if ch['sourceText'].strip() for sc in ch['scenes'] for s in sc['shots']]
+        if p['intro']['enabled']:shots+=p['intro'].get('shots',[])
+        proof=capacity_preflight(p,shots,self.store.folder(pid),p['settings']['maxImageRetries'])
         if overlap.dense_prewarm is not None and not overlap.dense_prewarm.retired:
             from studio_dense_prewarm import validate_final
             validate_final(overlap.dense_prewarm_proof,p,self.store)
@@ -2258,6 +2276,7 @@ class StudioService:
         chapters=chapters or [c['id'] for c in p['chapters'] if c['sourceText'].strip()]
         self.store.mutate(pid,lambda q:q.setdefault('production',{}).setdefault('scheduling',{}).update(
             imageDispatchStarted=True,dispatchReason='All chapter/intro plans, required references and full-burst capacity verified.'))
+        continuous=self.config.get('studioDenseLeaseContinuity',True) is True
         try:
             for index,chapter in enumerate(chapters):
                 self.generate_production_chapter_images(pid,chapter,index,chapters)
@@ -2269,9 +2288,15 @@ class StudioService:
                     if not shot.get('imagePath') or not self.store.has_asset(pid,shot['imagePath']):
                         overlap.submit_dense_intro(self.store.load(pid),shot)
             overlap.pool.drain()
-        finally:self.stop_dense_image_window('Dense initial image window ended; quality tail continues without GPU')
-        overlap.deferred_qc.drain()
-        self.complete_dense_repairs(pid)
+            if continuous:
+                # Preserve the same owned worker through checks and its existing
+                # repair round. The rental watchdog and original cap still run.
+                overlap.deferred_qc.drain()
+                self.complete_dense_repairs(pid,retain_lease=True)
+        finally:self.stop_dense_image_window('Dense image and quality window ended')
+        if not continuous:
+            overlap.deferred_qc.drain()
+            self.complete_dense_repairs(pid)
 
     def stop_dense_image_window(self,reason):
         # Ordinary gates can fail before drain completes. Collect every already
@@ -2286,8 +2311,8 @@ class StudioService:
             rental.stop(reason)
             if rental.state.get('status')!='STOPPED':raise RuntimeError('Dense image GPU shutdown is not confirmed; quality/render admission stopped.')
 
-    def complete_dense_repairs(self,pid):
-        """Batch each existing repair round; never hold GPU for the QC tail."""
+    def complete_dense_repairs(self,pid,retain_lease=False):
+        """Batch the existing repair round under the selected lease policy."""
         overlap=self._overlap
         for _round in range(self.store.load(pid)['settings']['maxImageRetries']):
             p=self.store.load(pid);candidates=[]
@@ -2312,7 +2337,8 @@ class StudioService:
                     if chapter is None:overlap.submit_dense_intro(current,selected,repair=True)
                     else:overlap.submit_shot(current,chapter,selected,repair=True)
                 overlap.pool.drain()
-            finally:self.stop_dense_image_window('Dense repair round finished; rechecks continue without GPU')
+            finally:
+                if not retain_lease:self.stop_dense_image_window('Dense repair round finished; rechecks continue without GPU')
             overlap.deferred_qc.drain()
 
     def reserve_automatic_repair(self,pid,chid,sid,signature,intro=False):
@@ -2357,10 +2383,64 @@ class StudioService:
             raise RuntimeError(f'Visual QC: {len(flags)} saved images need review before rendering. '
                 'The GPU is stopped; no replacement was purchased. Review or repair the flagged shots, then continue.')
 
+    def prepare_production_chapter_image_settings(self,pid,chid,prepared_inputs=None):
+        """Persist the existing CPU-only normalization before dense admission."""
+        def prepare_images(latest):
+            if prepared_inputs is not None:self.require_dense_image_preparation(latest,chid,prepared_inputs)
+            chapter = get_chapter(latest, chid)
+            for scene in chapter["scenes"]:
+                for shot in scene["shots"]:
+                    if self.saved_image_ready(latest, shot) or self.retained_production_image(latest,shot):
+                        continue
+                    provider = self.provider(shot["imageProvider"])
+                    settings = shot["generationSettings"]
+                    has_refs = any(
+                        c["references"]
+                        and any(s["id"] == c["id"] for s in shot["characters"])
+                        for c in latest["characters"]
+                    )
+                    if (
+                        provider.id == "native-flux"
+                        and has_refs
+                        and not shot.get("manual", {}).get("generationSettings")
+                    ):
+                        settings["width"] = min(settings.get("width", 384), 384)
+                        settings["height"] = min(settings.get("height", 384), 384)
+                    requested=settings | {"model":shot['imageModel']}
+                    validated = (provider.validateSettings(requested,check_hardware=False)
+                        if provider.id=='comfyui' and getattr(self,'_overlap',None)
+                        else provider.validateSettings(requested))
+                    shot["generationSettings"] = validated
+
+        return self.store.mutate(pid, prepare_images)
+
+    def dense_image_preparation_signature(self,project,chid):
+        from studio_schedule import chapter_signature
+        chapter=get_chapter(project,chid)
+        # Include the source-owner/cast inputs used by require_shot, beyond the
+        # existing scheduler's shot/settings signature. Runtime QC and timing
+        # receipts are deliberately not preparation inputs.
+        return digest({'chapter':chapter_signature(self,project,chid),
+            'analysis':chapter.get('analysis',{}),'people':chapter.get('people',[]),
+            'characters':project['characters']})
+
+    def require_dense_image_preparation(self,project,chid,expected):
+        if not expected or expected!=self.dense_image_preparation_signature(project,chid):
+            from studio_overlap import StaleExecution
+            raise StaleExecution('Dense chapter inputs changed after image preparation; current edits retained. Restart with the current plans.')
+
     def generate_production_chapter_images(self,pid,chid,index,chapters):
         p=self.store.load(pid)
         ch=get_chapter(p,chid)
-        dense=bool(getattr(getattr(self,'_overlap',None),'dense',False))
+        overlap=getattr(self,'_overlap',None)
+        dense=bool(getattr(overlap,'dense',False))
+        if dense:
+            self.gate('Validating prepared chapter images')
+            if not overlap.dense_preflight_complete:
+                raise RuntimeError('Dense images require complete accepted-plan preflight before GPU admission.')
+            p=overlap.validate_settings();ch=get_chapter(p,chid)
+            prepared=getattr(overlap,'dense_image_preparations',{}).get(chid)
+            self.require_dense_image_preparation(p,chid,prepared)
         def dense_saved(project,shot):return bool(dense and shot.get('imagePath') and not shot.get('generationStale') and self.store.has_asset(pid,shot['imagePath']))
         if any(not (self.saved_image_ready(p,s) or self.retained_production_image(p,s) or self.reviewable_saved_image(p,s) or dense_saved(p,s)) for sc in ch['scenes'] for s in sc['shots']):
             self.ensure_production_gpu()
@@ -2389,38 +2469,12 @@ class StudioService:
                         character=person["name"],
                     )
 
-        def prepare_images(latest):
-            chapter = get_chapter(latest, chid)
-            for scene in chapter["scenes"]:
-                for shot in scene["shots"]:
-                    if self.saved_image_ready(latest, shot) or self.retained_production_image(latest,shot):
-                        continue
-                    provider = self.provider(shot["imageProvider"])
-                    settings = shot["generationSettings"]
-                    has_refs = any(
-                        c["references"]
-                        and any(s["id"] == c["id"] for s in shot["characters"])
-                        for c in latest["characters"]
-                    )
-                    if (
-                        provider.id == "native-flux"
-                        and has_refs
-                        and not shot.get("manual", {}).get("generationSettings")
-                    ):
-                        settings["width"] = min(settings.get("width", 384), 384)
-                        settings["height"] = min(settings.get("height", 384), 384)
-                    requested=settings | {"model":shot['imageModel']}
-                    validated = (provider.validateSettings(requested,check_hardware=False)
-                        if provider.id=='comfyui' and getattr(self,'_overlap',None)
-                        else provider.validateSettings(requested))
-                    shot["generationSettings"] = validated
-
-        self.store.mutate(pid, prepare_images)
+        if not dense:self.prepare_production_chapter_image_settings(pid,chid)
         p = self.store.load(pid)
         ch = get_chapter(p, chid)
         shots = [s for scene in ch["scenes"] for s in scene["shots"]]
         if getattr(self,'_overlap',None):
-            self.preflight_chapter(pid,chid)
+            if not dense:self.preflight_chapter(pid,chid)
             self._overlap.chapter_dependencies.append(digest(ch.get('handoff',{})))
         for shot_index, shot in enumerate(shots):
             # Cached shots need no per-shot progress writes to the entire
@@ -4815,7 +4869,7 @@ class StudioService:
                 with self.trace.span(p['id'], 'Image backend', {'chapter': ch['number'], 'shot': sid,
                                                                'provider': provider.id, 'model': settings['model'], 'seed': seed}):
                     result = provider.generateImage(request, self.checkpoint)
-            except (JobCancelled, AudioYield, RemoteGenerationUncertain):
+            except (JobCancelled, AudioYield, ImageAdmissionBlocked, RemoteGenerationUncertain):
                 raise
             except Exception as e:
                 attempts.append(

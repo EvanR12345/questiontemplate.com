@@ -281,6 +281,7 @@ class LaneProvider:
             if self.validator:self.validator()
             request=dict(request)
             if self.observer:request['_executionObserver']=self.observer
+            if self.validator:request['_preDispatchValidator']=self.validator
             return self.original.generateImage(request,checkpoint)
 
 

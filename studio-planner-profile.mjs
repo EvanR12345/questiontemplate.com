@@ -1,7 +1,8 @@
 // Shared settings projection. No story, references, budgets or keys are copied.
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=matched-production-20261029';
-import {denseCapability} from './pipeline-dense.mjs?v=matched-production-20261029';
-import {matchedDirectorProfile} from './pipeline-director-matched.mjs?v=matched-production-20261029';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=production-components-20261031';
+import {denseCapability} from './pipeline-dense.mjs?v=production-components-20261031';
+import {matchedDirectorProfile} from './pipeline-director-matched.mjs?v=production-components-20261031';
+import {currentComponentsEligible,CURRENT_COMPONENTS_ID} from './pipeline-production-components.mjs?v=production-components-20261031';
 export function plannerSettings(config, profile, evidence) {
   if(profile?.version!==1)throw Error('Update the helper to load saved production settings.');
   const s=profile.settings, v=s.video, d=s.director, i=s.image;
@@ -12,6 +13,7 @@ export function plannerSettings(config, profile, evidence) {
   next.productionGenerationStrategy=profile.generationStrategy||'align';
   next.productionDenseVersion=0;next.productionDenseSupported=false;next.productionDenseEligible=false;
   next.productionDenseQCSlots=0;next.productionDenseGenerationTasks=5;next.productionDenseDescriptorLimit=0;next.productionDenseMaxRepairRounds=0;
+  next.productionDenseLeasePolicy='stopped-qc-v1';next.productionDenseHoldsGPUForQC=false;
   if(s.voiceCompute==='kaggle' || s.voiceEngine && s.voiceEngine!=='kokoro-82m')
     throw Error('Kaggle narration has no matching full-production calibration yet. Local Kokoro timings cannot estimate this voice. Use an audition and retain the existing planner scenario.');
   if(!['off','sampled','practical','strict'].includes(s.qcCheckLevel))throw Error('Unsupported saved visual check level.');
@@ -96,11 +98,13 @@ export function plannerSettings(config, profile, evidence) {
     next.productionDenseVersion=phase.version;next.productionDenseSupported=true;next.productionDenseEligible=true;
     next.productionDenseQCSlots=phase.qcTaskSlots;next.productionDenseGenerationTasks=phase.generationTasks;
     next.productionDenseDescriptorLimit=phase.descriptorLimit;next.productionDenseMaxRepairRounds=phase.maxRepairRounds;
+    next.productionDenseLeasePolicy=phase.leasePolicy||'stopped-qc-v1';next.productionDenseHoldsGPUForQC=phase.holdsGPUForQC===true;
     next.readyChapters=next.chapters;
     next.repairRounds=Math.min(config.repairRounds||1,Math.max(1,phase.maxRepairRounds));
-    warnings.push('Installed Dense plans every chapter and prepares intro/references before one initial GPU burst. Generation does not wait for QC; the GPU stops before its remaining QC tail. Startup, readiness, transfers and shutdown still bill, so image-pipeline coverage cannot be 100%. Complete-production finish time remains unmeasured; compatible component data and explicitly labelled source-based projections determine this scenario.');
-    warnings.push(next.retries>0?`The ${next.retries}% extra-attempt allowance is spread across up to ${next.repairRounds} assumed repair rounds, not a measured defect rate. Each nonempty round pays its own startup and shutdown before rechecks. Runtime retains each shot's saved ceiling of ${phase.maxRepairRounds} retries.`:
-      `No repair rate is assumed. QC can require additional bounded repair bursts, each with paid startup and shutdown, up to the saved ${phase.maxRepairRounds} per-shot retry ceiling; their unknown work is excluded from this zero-extra-attempt scenario.`);
+    const held=next.productionDenseHoldsGPUForQC;
+    warnings.push('Installed Dense plans every chapter and prepares intro/references before one initial GPU burst. '+(held?'The saved policy retains one paid GPU lease through required QC and bounded repairs; QC-only waiting bills as idle time, not image work. No extra resume or model reload is assumed per repair round.':'Generation does not wait for QC; the GPU stops before its remaining QC tail.')+' Startup, readiness, transfers and shutdown still bill, so image-pipeline coverage cannot be 100%. Complete-production finish time remains unmeasured; compatible component data and explicitly labelled source-based projections determine this scenario.');
+    warnings.push(next.retries>0?`The ${next.retries}% extra-attempt allowance is spread across up to ${next.repairRounds} assumed repair rounds, not a measured defect rate. ${held?'Reviews and repairs stay on the same paid lease.':'Each nonempty round pays its own startup and shutdown before rechecks.'} Runtime retains each shot's saved ceiling of ${phase.maxRepairRounds} retries.`:
+      `No repair rate is assumed. QC can require additional bounded repairs ${held?'on the same retained paid lease':'in separately billed bursts, each with startup and shutdown'}, up to the saved ${phase.maxRepairRounds} per-shot retry ceiling; their unknown work is excluded from this zero-extra-attempt scenario.`);
   }else if(profile.generationStrategy==='align'&&!profile.timedHistoryReady){
     next.readyChapters=next.chapters;
     warnings.push('Timed align has no complete matching production history; like Studio, this setup waits for all chapter plans before image dispatch. The 15-second alignment target is not a guaranteed finish.');
@@ -149,6 +153,10 @@ export function plannerSettings(config, profile, evidence) {
   }else{next.qcSeconds=0;qcFallbackWarning=next.qc==='off'?'Visual checks are explicitly Off in this saved project; file checks remain.':'No matching visual-check history yet; historical QC time and the displayed per-image cost are estimates.';}
   warnings.push('Voice delivery, motion, overlays, transfers and long exports can differ from short benchmark conditions; total finish time remains a projection.');
   const resolved=qualityConfig(next,evidence);
+  if(config.productionCalibration!=='current-production-20261031'&&currentComponentsEligible(resolved,evidence,{ignoreSelection:true})){
+    resolved.productionCalibration=CURRENT_COMPONENTS_ID;
+    warnings.push('Following current retained-QC image/check components from the quality-blocked source. Its 26 blockers prevented rendering; the conditional forecast keeps older compatible render timing and no final cloud-save measurement. It is not a completed-video ETA. Cached startup is applied only when the cached-weights scenario is selected; a job-owned launcher must attach the volume, because automatic native pool attachment is not wired.');
+  }
   if(resolved.qcBenchmarkNote)warnings.push(resolved.qcBenchmarkNote);
   else if(qcFallbackWarning)warnings.push(qcFallbackWarning);
   return {config:resolved,warnings};
@@ -157,7 +165,7 @@ export function plannerSettings(config, profile, evidence) {
 export function profileSummary(p) {
   const s=p.settings,v=s.video,i=s.image,d=s.director;
   const copies=p.imageExecution?.modelCopies||p.imageExecution?.gpuLanes||1;
-  const window=p.generationStrategy==='dense'?(denseCapability(p)?`${p.denseImagePhase.generationTasks} generation tasks; ${p.denseImagePhase.qcTaskSlots} independent QC slots; plan first, separate rental windows`:'Dense unavailable for this helper/setup'):
+  const window=p.generationStrategy==='dense'?(denseCapability(p)?`${p.denseImagePhase.generationTasks} generation tasks; ${p.denseImagePhase.qcTaskSlots} independent QC slots; plan first, ${p.denseImagePhase.holdsGPUForQC?'one paid lease through QC and repairs':'separate rental windows'}`:'Dense unavailable for this helper/setup'):
     p.imageAdmission?.maximumAfterVerification>p.imageTasks?`${p.imageTasks} image/check tasks; up to ${p.imageAdmission.maximumAfterVerification} after worker and RAM verification`:`${p.imageTasks||3} image/check tasks`;
   return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · ${s.unattendedProduction?'automatic completion and bounded repairs':'manual review policy'} · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${window}, ${copies===1?'one GPU lane':copies+' independent model copies on one GPU'} · ${d.processingTier||'default'} processing`;
 }

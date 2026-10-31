@@ -1,4 +1,4 @@
-import {buildPlan,schedule,DEFAULTS} from './pipeline-engine.mjs?v=matched-production-20261029';
+import {buildPlan,schedule,DEFAULTS} from './pipeline-engine.mjs?v=production-components-20261031';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sec=v=>Number.isFinite(v)?`${v.toFixed(1)}s`:'Unmeasured';
 const min=v=>Number.isFinite(v)?`${(v/60).toFixed(1)} min`:'Unmeasured';

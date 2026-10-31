@@ -93,6 +93,8 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
         'qcHistoryIdentity':qc_history_identity,
         'generationStrategy':selected_strategy,
         'denseImagePhase':{'version':1,'supported':True,'generationTasks':5,
+            'leasePolicy':'retained-qc-v1' if config.get('studioDenseLeaseContinuity',True) is True else 'stopped-qc-v1',
+            'holdsGPUForQC':config.get('studioDenseLeaseContinuity',True) is True,
             'qcTaskSlots':min(4,source['director'].get('parallelism',1)),
             'descriptorLimit':8192,'maxRepairRounds':source.get('maxImageRetries',2),'allPlansFirst':True,
             'eligible':dense_eligible},

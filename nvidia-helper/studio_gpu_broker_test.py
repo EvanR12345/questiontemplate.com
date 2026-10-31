@@ -26,6 +26,20 @@ class BrokerTests(unittest.TestCase):
         reserve=self.reserve({'vast':lambda:first,'lium':lambda:second})
         reserve.ensure();reserve.stop()
         self.assertEqual(self.events,['vast ensure','vast close','lium ensure','lium stop','lium close'])
+    def test_only_runpod_preserves_its_configured_bounded_wait(self):
+        reserve=GPUReservation({'gpuProviderOrder':['runpod'],'runpodAvailabilityWaitSeconds':1800},
+            self.path,'p',{'gpuBudgetUSD':1},None,lambda *_:None)
+        with patch('studio_gpu_broker.ProductionGPU') as controller:
+            reserve.make('runpod')
+        self.assertEqual(controller.call_args.args[0]['runpodAvailabilityWaitSeconds'],1800)
+        self.assertEqual(reserve.config['runpodAvailabilityWaitSeconds'],1800)
+    def test_runpod_with_alternative_checks_once_before_fallback(self):
+        reserve=GPUReservation({'gpuProviderOrder':['runpod','vast'],'runpodAvailabilityWaitSeconds':1800},
+            self.path,'p',{'gpuBudgetUSD':1},None,lambda *_:None)
+        with patch('studio_gpu_broker.ProductionGPU') as controller:
+            reserve.make('runpod')
+        self.assertEqual(controller.call_args.args[0]['runpodAvailabilityWaitSeconds'],0)
+        self.assertEqual(reserve.config['runpodAvailabilityWaitSeconds'],1800)
     def test_unknown_create_never_allocates_second_vendor(self):
         first=self.fake('vast',GPURequestUncertain('lost'));second=self.fake('lium')
         reserve=self.reserve({'vast':lambda:first,'lium':lambda:second})

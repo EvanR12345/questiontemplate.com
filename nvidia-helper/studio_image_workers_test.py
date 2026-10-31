@@ -8,7 +8,7 @@ from studio_worker_bootstrap import remote_script
 class ImageWorkersTest(unittest.TestCase):
     def pool(self, generate=None):
         workers=[]
-        def factory(config):
+        def factory(config, request_slots=2):
             index=len(workers)
             worker=SimpleNamespace(config=config,_uploads={},
                 invalidate_backend_cache=lambda:None,healthCheck=lambda **kw:{'installed':True},
@@ -16,6 +16,8 @@ class ImageWorkersTest(unittest.TestCase):
             workers.append(worker);return worker
         pool=ComfyWorkerPool({'comfyModelCopies':2},factory)
         pool.confirm_workers({'gpu':'NVIDIA GeForce RTX 5090','workers':[{'pid':100,'port':8188},{'pid':101,'port':8189}]})
+        pool.begin_worker_lifetime({'owned':True,'ready':True,'podId':'owned-test-pod',
+            'lifetimeId':'owned-test-rental','endpoint':'http://127.0.0.1:8188'})
         return pool
 
     def test_two_is_default_only_for_an_owned_5090(self):

@@ -149,6 +149,8 @@ class HTTPPoolTest(unittest.TestCase):
         worker.validateSettings=lambda s:s;worker.healthCheck=lambda **_:{'installed':True}
         worker.template=lambda:{'model':'flux','name':'test','prompt':{'1':{'class_type':'Test','inputs':{}}},'bindings':{}}
         pool.confirm_workers({'gpu':'NVIDIA GeForce RTX 5090','workers':[{'pid':1,'port':8188}]})
+        pool.begin_worker_lifetime({'owned':True,'ready':True,'podId':'owned-http-test',
+            'lifetimeId':'owned-http-start','endpoint':self.url})
         request={'prompt':'exact','settings':{'model':'flux','seed':17,'steps':4}}
         with self.assertRaises(RemoteGenerationUncertain):pool.generateImage(request,lambda *_:None)
         self.assertTrue(pool.quarantined)

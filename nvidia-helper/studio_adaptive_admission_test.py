@@ -24,10 +24,12 @@ def until(predicate, timeout=3):
 
 
 def workers():
-    provider=ComfyWorkerPool({'comfyModelCopies':2},lambda config:SimpleNamespace(
+    provider=ComfyWorkerPool({'comfyModelCopies':2},lambda config,request_slots=2:SimpleNamespace(
         invalidate_backend_cache=lambda:None,unload=lambda:None))
     provider.confirm_workers({'gpu':'NVIDIA GeForce RTX 5090',
         'workers':[{'pid':100,'port':8188},{'pid':101,'port':8189}]})
+    provider.begin_worker_lifetime({'owned':True,'ready':True,'podId':'adaptive-test',
+        'lifetimeId':'adaptive-test-start','endpoint':'http://127.0.0.1:8188'})
     return provider
 
 
@@ -209,9 +211,11 @@ class AdaptiveStoryTest(unittest.TestCase):
         import studio_overlap_test as fixtures
         fixtures.CloudOverlapTest.setUp(self)
         original=self.provider
-        self.provider=ComfyWorkerPool({'comfyModelCopies':2},lambda config:original)
+        self.provider=ComfyWorkerPool({'comfyModelCopies':2},lambda config,request_slots=2:original)
         self.provider.confirm_workers({'gpu':'NVIDIA GeForce RTX 5090',
             'workers':[{'pid':100,'port':8188},{'pid':101,'port':8189}]})
+        self.provider.begin_worker_lifetime({'owned':True,'ready':True,'podId':'adaptive-story-test',
+            'lifetimeId':'adaptive-story-start','endpoint':'http://127.0.0.1:8188'})
         self.service.providers['comfyui']=self.provider
         self.service.config['comfyModelCopies']=2
         self.service.config['experimentalAdaptiveImageAdmission']=True

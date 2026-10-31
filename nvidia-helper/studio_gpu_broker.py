@@ -73,9 +73,12 @@ class GPUReservation:
     def make(self,name):
         config=self.config | {'gpuProviderOrder':[name],'gpuWorkload':self.workload}
         if name=='runpod':
-            # Check the prepared pool once, then try the next website if stock
-            # is explicitly absent. No long rental-free wait hides alternatives.
-            config['runpodAvailabilityWaitSeconds']=0
+            # Check once when another provider can be tried. With Runpod as
+            # the only provider, honor its bounded configured availability wait.
+            # ProductionGPU retries only confirmed capacity rejections after
+            # verified shutdown; an uncertain start still stops the workflow.
+            if len(provider_order(self.config))>1:
+                config['runpodAvailabilityWaitSeconds']=0
             kind=ProductionGPU
             if self.workload=='render':
                 from studio_cloud_pod_render import RenderLease
