@@ -59,9 +59,21 @@
       "GoogleStorageAndTransfer": 0.05,
       "contingency": 0.25
     },
-    "accountedFinalUSD": 1.7330712851841146,
+    "accountedFinalUSD": 1.7634688508271072,
     "scope": "Authorization ceilings, not charges. All failed preparation, waiting, storage and cleanup must remain in the final conservative accounting. Prior closed experiments are separate.",
     "finalAccounting": {
+      "GPUAndDiskConservativeUpperUSD": 1.213853766926792,
+      "APISettledUSD": 0.096989046,
+      "CPUCachePreparationConservativeUSD": 0.0026260379003153907,
+      "full48HourModelCacheLeaseReserveUSD": 0.4,
+      "GoogleStorageAndTransferReserveUSD": 0.05,
+      "totalConservativeIncludingReservesUSD": 1.7634688508271072,
+      "remainingAgainstThreeDollarCapUSD": 1.2365311491728928,
+      "source": "Original study reconciliation plus the conservative maximum of the two existing native cache-launcher pilot cost receipts",
+      "notAnInvoice": true,
+      "scope": "Includes every GPU attempt and diagnostic benchmark, startup/stopped intervals and cleanup, settled API calls, CPU staging, the full bounded 48-hour model-cache reserve and the same $0.05 GCS reserve including unresolved usage. Reserves are included once, not represented as fully consumed charges. The separate one-image explicit-launcher pilot is included once; its two overlapping cost receipts are reconciled by maximum, not sum."
+    },
+    "firstPublicationAccounting": {
       "GPUAndDiskConservativeUpperUSD": 1.1834562012837992,
       "APISettledUSD": 0.096989046,
       "CPUCachePreparationConservativeUSD": 0.0026260379003153907,
@@ -72,7 +84,8 @@
       "source": "Root final study reconciliation; exact local benchmark receipts are separately pinned",
       "notAnInvoice": true,
       "scope": "Includes every GPU attempt and diagnostic benchmark, startup/stopped intervals and cleanup, settled API calls, CPU staging, the full bounded 48-hour model-cache reserve and the same $0.05 GCS reserve including unresolved usage. Reserves are included once, not represented as fully consumed charges."
-    }
+    },
+    "cacheLauncherPilotIncrementalGPUAndDiskUpperUSD": 0.030397565642992654
   },
   "attemptHistory": [
     {
@@ -611,12 +624,30 @@
     "scope": "Later project/image archive recovery passed exact revision, selected-image SHA/native-receipt and limited fresh-cache restore checks. The original UNKNOWN row remains quarantined and charged. Recovery creates no fresh video and does not satisfy completed-production quality."
   },
   "cacheIntegration": {
-    "status": "VERIFIED_AVAILABLE_LAUNCHER_ATTACHMENT_REQUIRED",
+    "status": "EXPLICIT_JOB_LAUNCHER_VERIFIED_NATIVE_POOL_AUTOMATION_PENDING",
     "verifiedVolumeGB": 80,
     "verifiedCachedWorkerSetupSeconds": 135.3613796234131,
     "boundedLeaseHours": 48,
     "bootstrapVerifiesAndReusesAttachedCache": true,
     "nativePoolAutomaticAttachmentWired": false,
-    "scope": "The retained 80 GB cache worked on the fresh RTX 5090. A next job-owned launcher must explicitly attach it at /runpod-volume; native bootstrap can then verify and reuse /runpod-volume/models. Automatic fresh allocation/mount adaptation for the native pool is not wired. The measured setup is not a universal future cold-start guarantee."
+    "scope": "The retained 80 GB cache worked on the full-source fresh RTX 5090 (135.361s preparation) and on a separate explicit job-owned native launcher pilot (67.532s to two workers ready; one PNG saved by 85.735s). Bootstrap verified and reused the three required model files. These are different observations. Automatic fresh allocation and cache attachment from the standard native website pool remain unwired; selecting the cached planner scenario does not launch or attach storage. The pilot does not replace full-source forecast timing.",
+    "explicitJobLauncherVerified": true,
+    "nativePoolAutomaticAllocationWired": false,
+    "explicitJobLauncherObservationFile": "pipeline-cache-launcher-20261031.json"
+  },
+  "cacheLauncherPilot": {
+    "id": "cache-launcher-20261031",
+    "status": "PASS_SINGLE_IMAGE_EXPLICIT_JOB_LAUNCHER",
+    "observationFile": "pipeline-cache-launcher-20261031.json",
+    "observationSHA256": "06b2e1c9b19371bce83f1cc8b82eade742db289a2848fb79b7e983fd221684a1",
+    "nativeTwoWorkerReadySeconds": 67.53199999999924,
+    "throughSavedPNGSeconds": 85.73499999999876,
+    "incrementalGPUAndDiskConservativeUpperUSD": 0.030397565642992654,
+    "generatedPNGs": 1,
+    "pixelsIdenticalToFixedSeedBaseline": true,
+    "forecastUsesPilotStartup": false,
+    "nativePoolAutomaticAllocationWired": false,
+    "nativePoolAutomaticCacheAttachmentWired": false,
+    "scope": "Separate explicit job-owned launcher observation; original full-source components and conditional schedules remain unchanged."
   }
 }

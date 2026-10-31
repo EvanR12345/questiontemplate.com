@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "id": "cache-launcher-20261031",
+  "date": "2026-10-31",
+  "status": "PASS_SINGLE_IMAGE_EXPLICIT_JOB_LAUNCHER",
+  "cohort": "separate-job-owned-cache-launcher-pilot-v1",
+  "scope": "One fresh owned RTX 5090 allocation using the retained verified cache and the actual native helper bootstrap/provider. This proves the explicit job launcher path, not automatic allocation from the standard website pool or completed-video quality.",
+  "gpu": "RTX 5090",
+  "nativeProvider": "ComfyWorkerPool",
+  "nativeTwoWorkersVerified": true,
+  "requestSlots": 4,
+  "requiredCachedModelFilesFullSHA256Verified": 3,
+  "modelFileChecks": [
+    {
+      "role": "diffusion",
+      "bytes": 4070624520,
+      "sha256": "97ed34fe0567e436200f2faee3939b88f2b5d99f8af2a4dc16532c4245c0ccb6",
+      "cacheLinked": true
+    },
+    {
+      "role": "textEncoder",
+      "bytes": 8044982048,
+      "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
+      "cacheLinked": true
+    },
+    {
+      "role": "VAE",
+      "bytes": 336213556,
+      "sha256": "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5",
+      "cacheLinked": true
+    }
+  ],
+  "timings": {
+    "allocationIntentThroughNativeTwoWorkerReadySeconds": 67.53199999999924,
+    "allocationIntentThroughSavedPNGSeconds": 85.73499999999876,
+    "actualProviderClientSeconds": 10.264999999999418,
+    "nativeGraphSeconds": 5.018,
+    "scope": "67.532s and 85.735s include allocation, setup/controller and native bootstrap through their stated boundaries. The latter stops at the saved PNG, before cleanup. Provider/native graph intervals are contained components and are not added again."
+  },
+  "image": {
+    "generatedPNGs": 1,
+    "width": 1280,
+    "height": 720,
+    "references": 2,
+    "model": "FLUX.2 Klein 4B",
+    "steps": 4,
+    "guidance": 1,
+    "referenceStrength": 0.65,
+    "seed": 123456789,
+    "originalRequestUnchanged": true,
+    "compiledGraphExact": true,
+    "freshSamplerDecode": true,
+    "positiveEncoderFresh": true,
+    "fileSHA256": "f1bfbaff05e06e80616c143555abd1c0398ccbe3a45dc985b3e22b08fbf13e50",
+    "RGBSHA256": "5b7e6b6dada314b391c9f9f0e81d3f03d4d519a8e104b9094f7bfded83cdd65b",
+    "baselineRGBSHA256": "5b7e6b6dada314b391c9f9f0e81d3f03d4d519a8e104b9094f7bfded83cdd65b",
+    "pixelsIdenticalAcrossFreshWorkers": true,
+    "qualityScope": "One fixed-seed two-reference output exactly matches the earlier serial queue baseline in RGB pixels. That baseline was not a production quality pass; this is neither a whole-video quality result nor a guarantee for other images."
+  },
+  "lifecycle": {
+    "status": "DELETED_INDEPENDENT_GET404_CONFIRMED",
+    "unresolvedGPULiability": false,
+    "cacheLeaseExtended": false,
+    "retainedCacheDeleted": false
+  },
+  "cost": {
+    "originalPilotResultGPUAndDiskUpperUSD": 0.030387876103321713,
+    "ownedGuardGPUAndDiskUpperUSD": 0.030397565642992654,
+    "incrementalGPUAndDiskConservativeUpperUSD": 0.030397565642992654,
+    "selectionRule": "Maximum of the two existing native cost receipts for one rental; never their sum.",
+    "incrementalGPUCapUSD": 0.3,
+    "priorAllGPUAndDiskUpperUSD": 1.1834562012837992,
+    "cumulativeAllGPUAndDiskUpperUSD": 1.213853766926792,
+    "priorStudyTotalConservativeIncludingReservesUSD": 1.7330712851841146,
+    "cumulativeStudyTotalConservativeIncludingReservesUSD": 1.7634688508271072,
+    "remainingAgainstThreeDollarCapUSD": 1.2365311491728928,
+    "includesStartupWaitingDiskShutdownCleanup": true,
+    "sameCacheAndGCSReservesIncludedOnce": true,
+    "invoiceVerified": false
+  },
+  "unchanged": {
+    "OpenAIRequests": 0,
+    "voiceRequests": 0,
+    "cloudArchiveMutations": 0,
+    "narrationEstimateMinutes": 12.3,
+    "sourceBlockingImages": 26,
+    "freshVideoProduced": false,
+    "originalFullSourceTwoWorkerPreparationSeconds": 135.3613796234131,
+    "conditionalScheduleMinutes": [
+      97.08405161894756,
+      112.69530381478215,
+      133.33869006939247
+    ],
+    "forecastUsesThisPilotStartup": false,
+    "nativePoolAutomaticAllocationWired": false,
+    "nativePoolAutomaticCacheAttachmentWired": false
+  },
+  "proofSHA256": {
+    "result.json": "c8b329e2b714d4b4e24df2c9fd1b3d0fdf762ad684b777ac6525e0fa11bff61b",
+    "generation-receipt.json": "e384df854fadca0453290252891959674d1726d4ad2f62bcb939be40214acfe2",
+    "native-ready.json": "58fe0e957fb1e6615792f21dc44b55899f4ff0c88702e3500c21e616411cf92d",
+    "mounted-required-models.json": "6d29d152605b0330bc19e065600a8b5df76532693624e29def0ad4c6ffb3836e",
+    "independent-deletion.json": "9cfeba176f527a42c0b77bb624b01800400e50079819c8d16dacb4d16295f385",
+    "baseline-pixel-comparison.json": "819a9f422c29c2da0e65755ffa22973c019e8dea5e4214e62aaac174561bcadc",
+    "cost-reconciliation.json": "839ce1900e51e4a93d9cde8471bb7182106deb2a1514d492b4b66a7bc9ffc2db"
+  },
+  "limits": [
+    "Different startup cohort from the 135.361-second full-source preparation; no paired or general speedup claim.",
+    "The ordinary website worker pool still needs automatic fresh allocation/cache attachment integration.",
+    "No new directing, visual checks, narration, render or cloud archive was run. The original source remains REVIEW_REQUIRED with 26 blockers and no fresh video."
+  ]
+}

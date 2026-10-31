@@ -31,7 +31,9 @@ test('published current components retain failed quality, archive uncertainty an
  near(f.p.nativeElapsedSeconds,905.328);near(f.p.rootElapsedSeconds,907.047);near(f.p.images.initialWallSeconds,409.2936840057373);
  near(f.p.boundaries.initialQCTailSeconds,128.03232169151306);near(f.p.boundaries.repairQCTailSeconds,18.89706254005432);
  assert.equal(f.p.archive.unknownWrites,1);assert.equal(f.p.freshRenderVerified,false);
- near(f.d.studyBudget.accountedFinalUSD,1.7330712851841146);
+ near(f.d.studyBudget.firstPublicationAccounting.totalConservativeIncludingReservesUSD,1.7330712851841146);
+ near(f.d.studyBudget.cacheLauncherPilotIncrementalGPUAndDiskUpperUSD,.030397565642992654);
+ near(f.d.studyBudget.accountedFinalUSD,1.7330712851841146+.030397565642992654);
  const accounting=f.d.studyBudget.finalAccounting;
  near(accounting.GPUAndDiskConservativeUpperUSD+accounting.APISettledUSD+accounting.CPUCachePreparationConservativeUSD+
   accounting.full48HourModelCacheLeaseReserveUSD+accounting.GoogleStorageAndTransferReserveUSD,f.d.studyBudget.accountedFinalUSD);
