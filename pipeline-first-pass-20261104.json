@@ -1,0 +1,105 @@
+{
+  "status": "FRESH_FIRST_PASS_TEST_COMPLETE",
+  "qualitySettings": {
+    "model": "flux2-klein-4b",
+    "steps": 4,
+    "guidance": 1,
+    "referenceStrength": 0.65,
+    "qcPolicy": "practical",
+    "chapterResolution": [
+      1280,
+      720
+    ],
+    "introResolution": [
+      1344,
+      768
+    ]
+  },
+  "comparison": "Only first-pass current-scene planning differs. Same original full reference bytes in both generation arms; no identity crop experiment, repair calls, QA policy changes or quality reduction.",
+  "arms": {
+    "baseline": {
+      "checked": 32,
+      "blocked": 11,
+      "dispositions": {
+        "advisory": 6,
+        "passed": 15,
+        "review": 11
+      }
+    },
+    "candidate": {
+      "checked": 110,
+      "blocked": 21,
+      "dispositions": {
+        "passed": 51,
+        "advisory": 38,
+        "review": 21
+      }
+    }
+  },
+  "matched32": {
+    "baselineBlocked": 11,
+    "candidateBlocked": 6,
+    "improved": 7,
+    "worsened": 2,
+    "bothBlocked": 4,
+    "neitherBlocked": 19,
+    "exploratoryExactMcNemarTwoSidedP": 0.1796875
+  },
+  "freshNewImages": 142,
+  "repairGenerations": 0,
+  "manualAcceptances": 0,
+  "planning": {
+    "requests": 110,
+    "spentUSD": 0.037917823,
+    "unknownRequests": 0,
+    "APISpanSeconds": 198.67416787147522
+  },
+  "voiceEstimateMinutes": 12.3,
+  "remainingBlockedShotIds": [
+    "shot-fe7bc173cae841b3",
+    "shot-8baa2007e0d84e06",
+    "shot-00e43721cdd94d2e",
+    "shot-2e1c5f3853594a8f",
+    "shot-72a0575ed0854744",
+    "shot-fd95267f3e2f499a",
+    "shot-1451733335994b26",
+    "shot-f3e5ee92435e4eed",
+    "shot-fbc8cf0ba68140f5",
+    "shot-1c1fc69448124c82",
+    "shot-52fa199b12894019",
+    "shot-04fe9aa61ab847e8",
+    "shot-822e928306e94770",
+    "shot-b35c9c54fe0e4804",
+    "shot-4bd2757fb7134a7f",
+    "shot-63367163cbe748fd",
+    "shot-411bf944a2ab47bf",
+    "shot-3b18cfd293bc423f",
+    "shot-b66ae175cdd14bcd",
+    "shot-4b43f2baf44d4a5d",
+    "shot-160ba29048584f12"
+  ],
+  "limitations": [
+    "One story, correlated scenes and stochastic image/QC models; this does not prove a daily failure rate.",
+    "The preceding 110-image experiment also changed reference conditioning; the direct causal comparison here is the new matched32 with identical full references and fresh matched seeds.",
+    "Unblocked includes permitted Practical advisories; raw findings remain visible."
+  ],
+  "activationStatus": "Both experimental first-pass planning and reference-binding changes remain off by default. The full first-pass trial still produced21 blockers among110 images. The20-image reference-binding follow-up could not generate images before its bounded download windows ended; it is not visually validated. All test resources are deleted.",
+  "accounting": {
+    "newSpendUpperUSD": 0.3945094786641451,
+    "newGPUAndDiskUpperUSD": 0.2810720106641451,
+    "newAPISpentUSD": 0.113437468,
+    "includingPriorAllowanceSpentUpperUSD": 1.9375732750636017,
+    "remainingUSD": 0.06242672493639834,
+    "parentCapUSD": 2,
+    "allRecordedResourcesClosed": true
+  },
+  "objectiveStatus": "NOT_SOLVED_21_FIRST_PASS_BLOCKERS",
+  "experimentalDefaultEnabled": false,
+  "followup": {
+    "planned": 20,
+    "generated": 0,
+    "reason": "Bounded model-download timeouts on owned RTX5090 and RTX4090 pods; both deleted."
+  },
+  "runtimeCodeTestsPassed": 163,
+  "voiceEstimateUnchanged": true
+}

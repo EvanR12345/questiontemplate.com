@@ -1,5 +1,6 @@
 """Offline staging/order regressions; no model, GPU or paid API requests."""
 import copy
+import io,json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -49,7 +50,20 @@ class DensePreparationTest(unittest.TestCase):
         def start():
             events.append(('ensure',None));return ensure()
         def response(*args,**kwargs):
-            reviews.append(None);return dense.DensePhaseTest.response(len(reviews))
+            reviews.append(None)
+            schema=json.loads(args[0].data)['text']['format']['schema']['properties']
+            raw=dense.DensePhaseTest.response(len(reviews)).getvalue()
+            observation=schema.get('subjectObservations')
+            if observation:
+                events=[]
+                for line in raw.splitlines():
+                    if not line.startswith(b'data: '):continue
+                    event=json.loads(line[6:])
+                    if event['type']=='response.output_text.delta':
+                        value=json.loads(event['delta']);value['subjectObservations']=[{'subjectId':identity,'restraint':'not_visible','hands':'not_visible','body':'connected'} for identity in observation['items']['properties']['subjectId']['enum']];event['delta']=json.dumps(value)
+                    events.append(b'data: '+json.dumps(event).encode()+b'\n\n')
+                raw=b''.join(events)
+            return io.BytesIO(raw)
         try:
             with patch.object(overlap.main,'prepare_production_chapter_image_settings',side_effect=prepare), \
                  patch.object(overlap.main,'preflight_chapter',side_effect=check), \
