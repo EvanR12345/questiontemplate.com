@@ -1,0 +1,106 @@
+{
+  "status": "BOUNDED_TEST_COMPLETE_FIVE_BLOCKERS_REMAIN",
+  "freshCandidateImages": 110,
+  "freshMatchedBaselineImages": 32,
+  "stages": [
+    {
+      "stage": "first-pass",
+      "blocked": 21
+    },
+    {
+      "stage": "targeted-correction",
+      "blocked": 17,
+      "attempts": 21
+    },
+    {
+      "stage": "fresh-rebuild",
+      "blocked": 14,
+      "attempts": 17
+    },
+    {
+      "stage": "complete-current-scene",
+      "blocked": 5,
+      "attempts": 14
+    }
+  ],
+  "remainingBlockedShotIds": [
+    "shot-72a0575ed0854744",
+    "shot-f3e5ee92435e4eed",
+    "shot-52fa199b12894019",
+    "shot-822e928306e94770",
+    "shot-160ba29048584f12"
+  ],
+  "finalDispositions": {
+    "passed": 50,
+    "advisory": 55,
+    "review": 5
+  },
+  "manualRepairs": 0,
+  "acceptanceWaivers": 0,
+  "referenceSpeed": [
+    {
+      "refs": 0,
+      "serverSeconds": [
+        1.192,
+        1.267,
+        1.337
+      ],
+      "meanServer": 1.2653333333333332,
+      "meanClient": 2.09900000000683,
+      "allSamplerFresh": true,
+      "allTextFresh": true
+    },
+    {
+      "refs": 1,
+      "serverSeconds": [
+        1.88,
+        1.878,
+        1.897
+      ],
+      "meanServer": 1.885,
+      "meanClient": 2.9896666666609235,
+      "allSamplerFresh": true,
+      "allTextFresh": true
+    },
+    {
+      "refs": 2,
+      "serverSeconds": [
+        2.778,
+        2.735,
+        2.707
+      ],
+      "meanServer": 2.7399999999999998,
+      "meanClient": 3.9063333333081878,
+      "allSamplerFresh": true,
+      "allTextFresh": true
+    }
+  ],
+  "candidateReferenceConditioningDefaultEnabled": false,
+  "candidateCompleteSceneRepairDefaultEnabled": false,
+  "productionRetrySettingsChanged": false,
+  "sourceAndInstalledRuntimeTests": 139,
+  "sourceProjectUnchanged": true,
+  "helperProjectAndConfigUnchanged": true,
+  "helperRestarted": false,
+  "voiceEstimateMinutes": 12.3,
+  "twoHourForecastChanged": false,
+  "limits": [
+    "Same story, correlated shots; cannot establish a 700/day failure rate.",
+    "Repeated machine reviews are stochastic; clothing-only tolerance is an assessment policy, not image-generation improvement.",
+    "Matched first-pass candidate 6/32 blocked versus baseline 8/32 is insufficient evidence for a general improvement.",
+    "Fourteen last-stage outputs visually inspected; anatomy and duplication failures remain blocked.",
+    "Promising experimental prompt methods remain opt-in; production retry budgets were not silently increased."
+  ],
+  "accounting": {
+    "newGPUAndDiskUpperUSD": 0.3926092711799674,
+    "newAPISpentUSD": 0.19754652499999997,
+    "newSpendUpperUSD": 0.5901557961799674,
+    "priorTaskConservativeUSD": 0.9529080002194893,
+    "includingPriorAllowanceSpentUpperUSD": 1.5430637963994567,
+    "parentCapUSD": 2,
+    "remainingUSD": 0.4569362036005433,
+    "unresolvedAdditionalLiabilityUSD": 0,
+    "allRecordedResourcesClosed": true,
+    "costMeaning": "Conservative GPU/disk estimates through verified deletion plus settled API usage, not a provider invoice."
+  }
+}

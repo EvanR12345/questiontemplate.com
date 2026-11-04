@@ -516,7 +516,7 @@ class CloudStoryOverlap:
                         from studio_automation import repair_operation
                         operation=repair_operation(current,get_shot(current,chapter,shot['id']),clone.provider('comfyui'))
                         result=clone.generate(current,chapter,shot['id'],shot['generationSettings']['seed'],
-                            {'operation':operation,'budgetedQCRepair':True,'_repairPrompt':qc.get('repairPrompt') or shot['prompt']})
+                            {'operation':operation,'budgetedQCRepair':True,'_repairPrompt':qc.get('productionRepairPrompt') or qc.get('repairPrompt') or shot['prompt']})
                 else:
                     generation_options={'_collectReview':clone.collect_production_reviews(snapshot),
                         'deferAutomaticRepair':snapshot['settings'].get('unattendedProduction',False)}
@@ -525,7 +525,7 @@ class CloudStoryOverlap:
                         from studio_automation import repair_operation
                         generation_options={'_collectReview':True,'deferQC':True,'budgetedQCRepair':True,
                             'operation':repair_operation(snapshot,shot,clone.provider('comfyui')),
-                            '_repairPrompt':shot.get('qc',{}).get('repairPrompt') or shot['prompt']}
+                            '_repairPrompt':shot.get('qc',{}).get('productionRepairPrompt') or shot.get('qc',{}).get('repairPrompt') or shot['prompt']}
                     result=clone.measured_stage(self.project,'Automatic image repair' if repair else 'Image generation' if self.dense else 'Image + quality checks',clone.generate,
                         snapshot,chapter,shot['id'],shot['generationSettings']['seed'],
                         generation_options,

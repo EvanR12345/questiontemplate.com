@@ -1459,7 +1459,7 @@ def _reference_clothing_changed(person, current):
                 and ' '.join(clothing.casefold().split()) != ' '.join(original.casefold().split()))
 
 
-def reference_prompt(project, shot, metadata, operation="generate"):
+def reference_prompt(project, shot, metadata, operation="generate", include_scene_facts=True):
     """Name reference roles without locking a character to old reference clothing."""
     chapter = shot_chapter(project,shot) or {"people":[]}
     people = {c["id"]: c for c in project["characters"] + chapter["people"]}
@@ -1506,6 +1506,9 @@ def reference_prompt(project, shot, metadata, operation="generate"):
             notes.append(f"Use image {index} only for its user-selected reference role.")
     if binding_enabled and multiple_people:
         notes.append('Keep each named person matched to their own reference and current-shot state, including their own pose and restraints.')
+    from scene_conditioning import enabled, scene_contract
+    if include_scene_facts and enabled(project,shot):
+        notes.append(scene_contract(project,shot))
     return " ".join(notes)
 
 
@@ -1578,8 +1581,14 @@ def select_references(project, shot, store, provider, reserved_slots=0):
             if len(refs) >= maximum:
                 break
             r = ordered[0]
-            refs.append(data_url(store.asset(project["id"], r["path"])))
-            metadata.append(r | {"characterId": p["id"]})
+            from scene_conditioning import enabled, conditioned_reference,needs_identity_only
+            if enabled(project,shot) and needs_identity_only(project,shot,p['id']):
+                data, conditioned = conditioned_reference(project,r,store)
+                refs.append(data)
+                metadata.append(conditioned | {"characterId": p["id"]})
+            else:
+                refs.append(data_url(store.asset(project["id"], r["path"])))
+                metadata.append(r | {"characterId": p["id"]})
     if len(refs) < maximum and caps.get("supportsStyleReference"):
         location = next(
             (

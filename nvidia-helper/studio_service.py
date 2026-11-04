@@ -2133,7 +2133,7 @@ class StudioService:
                     operation=repair_operation(current,item,provider)
                     self.measured_stage(pid,'Automatic image repair',self.generate,current,chapter['id'],item['id'],
                         item['generationSettings']['seed'],{'operation':operation,'budgetedQCRepair':True,
-                            '_repairPrompt':qc.get('repairPrompt') or item['prompt'],'_collectReview':True},
+                            '_repairPrompt':qc.get('productionRepairPrompt') or qc.get('repairPrompt') or item['prompt'],'_collectReview':True},
                         chapter=chapter['number'],shot=item['id'])
                     latest=self.store.load(pid)
                     if qc_decision(latest,get_shot(latest,chapter['id'],item['id']),self.store)['blocking']:
@@ -3132,10 +3132,15 @@ class StudioService:
                     if reason:raise ValueError(reason)
                     self.reserve_automatic_repair(p['id'],None,shot['id'],self.visual_spec_signature(p,shot),intro=True)
                 self.check_cloud_budget(p, provider)
+                self.prepare_scene_references(p,shot,provider,reserved_slots=1 if operation=='edit' else 0)
                 references, metadata = select_references(p, shot, self.store, provider,reserved_slots=1 if operation=='edit' else 0)
                 settings = provider.validateSettings(shot['generationSettings'])
-                base_prompt=repair_prompt(shot,shot.get('qc',{}).get('repairPrompt'),operation) if repair else shot['prompt']
-                prompt = reference_prompt(p, shot, metadata,operation) + ' ' + base_prompt if references else base_prompt
+                from scene_repair import selected_plan
+                restaged=(selected_plan(p,shot,expected_spec,expected_hash) if repair and operation=='generate'
+                    and p['settings'].get('automaticSceneRestaging',False) else None)
+                base_prompt=restaged or (repair_prompt(shot,shot.get('qc',{}).get('productionRepairPrompt') or shot.get('qc',{}).get('repairPrompt'),operation) if repair else shot['prompt'])
+                prompt=(base_prompt+' '+reference_prompt(p,shot,metadata,operation,include_scene_facts=False) if restaged
+                    else reference_prompt(p, shot, metadata,operation)+' '+base_prompt) if references else base_prompt
                 result = provider.generateImage({'prompt': prompt, 'negativePrompt': '', 'referenceImages': references,
                     'settings': settings, 'workflow': shot['workflow'], 'operation': operation,
                     **({'sourceImage':data_url(self.store.asset(p['id'],shot['imagePath']))} if operation=='edit' else {})}, self.checkpoint)
@@ -4780,6 +4785,40 @@ class StudioService:
                 previous["endSentence"] = current["startSentence"] - 1
         return items
 
+    def prepare_corrective_scene(self,project,shot,qc,path):
+        """Prepare a complete replacement prompt in the CPU/QC stage, before GPU dispatch."""
+        from scene_repair import ROLE,planning_context,bind
+        from director_provider import obj,short_text
+        if not project['settings'].get('automaticSceneRestaging',False):return None
+        context=planning_context(project,shot,qc)
+        if context is None:return None
+        spec=self.visual_spec_signature(project,shot)
+        image_sha=hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        previous=self.director.reasoning
+        self.select_director(project)
+        reasoning=project['settings']['director'].get('reasoning','Balanced')
+        try:
+            self.director.reasoning=reasoning
+            reply=self.director.call(ROLE,context,obj({'prompt':short_text(2600)}),self.gate)
+            return bind(reply['prompt'],image_sha,spec,context,
+                getattr(self.director,'model',project['settings']['director'].get('model')),reasoning)
+        finally:
+            self.director.stop()
+            self.director.reasoning=previous
+
+    def prepare_scene_references(self,project,shot,provider,reserved_slots=0):
+        from scene_conditioning import enabled,prepare_identity_regions
+        if not enabled(project,shot):return
+        _,metadata=select_references(project,shot,self.store,provider,reserved_slots=reserved_slots)
+        self.select_director(project)
+        previous=self.director.reasoning
+        try:
+            self.director.reasoning=project['settings']['director'].get('qcReasoning') or ('High' if project['settings']['generationMode']=='MAX QUALITY' else 'Fast')
+            prepare_identity_regions(project,shot,self.store,self.director,self.gate,metadata)
+        finally:
+            self.director.stop()
+            self.director.reasoning=previous
+
     def generate(self, p, chid, sid, seed, options):
         if getattr(self,'_overlap',None):self.validate_execution()
         self.director.stop()
@@ -4799,6 +4838,8 @@ class StudioService:
             return hashlib.sha256(asset.read_bytes()).hexdigest() if asset and asset.is_file() else None
         expected_image_digest=selected_digest(p)
         provider = self.provider(shot["imageProvider"])
+        self.prepare_scene_references(p,shot,provider,
+            reserved_slots=1 if provider.id=='comfyui' and options.get('operation')=='edit' else 0)
         self.prepare_image_device(provider)
         if p['settings'].get('cloudImagesOnly') and provider.id != 'comfyui':
             raise ValueError('Local image generation is disabled for this project.')
@@ -4827,15 +4868,26 @@ class StudioService:
             "operation": options.get("operation", "generate"),
             "workflow": shot["workflow"],
         }
-        if options.get('_repairPrompt'):
-            from studio_automation import repair_prompt
-            request['prompt']=repair_prompt(shot,options['_repairPrompt'],operation)
-        if provider.id in ("native-flux", "comfyui") and (
-            references or request["operation"] == "edit"
-        ):
-            request["prompt"] = reference_prompt(
-                p, shot, ref_metadata, request["operation"]
-            ) + " " + request["prompt"]
+        from scene_repair import selected_plan
+        restaged=(selected_plan(p,shot,expected_spec,expected_image_digest)
+            if options.get('budgetedQCRepair') and operation=='generate'
+            and p['settings'].get('automaticSceneRestaging',False) else None)
+        if restaged:
+            request['prompt']=restaged
+            if references:request['prompt']+=' '+reference_prompt(p,shot,ref_metadata,'generate',include_scene_facts=False)
+        else:
+            if options.get('_repairPrompt'):
+                from studio_automation import repair_prompt
+                request['prompt']=repair_prompt(shot,options['_repairPrompt'],operation)
+            if provider.id in ("native-flux", "comfyui") and (
+                references or request["operation"] == "edit"
+            ):
+                request["prompt"] = reference_prompt(
+                    p, shot, ref_metadata, request["operation"]
+                ) + " " + request["prompt"]
+            elif provider.id in ('native-flux','comfyui'):
+                from scene_conditioning import enabled,scene_contract
+                if enabled(p,shot):request['prompt']=scene_contract(p,shot)+' '+request['prompt']
         if request["operation"] in ("edit", "inpaint"):
             source = (shot.get('imagePath') if options.get('budgetedQCRepair') else
                       shot.get("sourceImagePath") or shot.get("imagePath"))
@@ -5038,15 +5090,30 @@ class StudioService:
                         get_shot(latest,chid,sid),qc,relative))
                     return {'status':'SUPERSEDED','imagePath':relative,'selected':False}
             if (
-                qc.get("pass") is False
+                (qc.get("pass") is False or qc.get('criticalStoryBlockers'))
                 and (qc.get("action") != "review" or p['settings'].get('unattendedProduction'))
                 and automatic_repairs(self.store.load(p["id"])["settings"],qc)
                 and attempt < retries
             ):
                 self.status(p["id"], chid, "REPAIRING")
-                from studio_automation import repair_prompt
-                request["prompt"] = repair_prompt(shot,qc.get('repairPrompt'),request['operation'])
+                from studio_automation import repair_prompt,fresh_scene_repair
+                saved=get_shot(self.store.load(p['id']),chid,sid)
+                previous_failed=(saved.get('automaticRepairAttempts',0)>0
+                    and saved.get('automaticRepairSpec')==expected_spec)
+                rebuild=fresh_scene_repair(p['settings'],qc,previous_failed)
+                if rebuild:
+                    request['operation']='generate'
+                    request.pop('sourceImage',None)
+                    request.pop('mask',None)
+                from scene_repair import selected_plan
+                restaged=(selected_plan(p,shot | {'qc':qc},expected_spec,expected_image_digest)
+                    if rebuild and p['settings'].get('automaticSceneRestaging',False) else None)
+                request['prompt']=(restaged or repair_prompt(shot,qc.get('productionRepairPrompt') or qc.get('repairPrompt'),request['operation']))
+                if restaged and references:
+                    request['prompt']+=' '+reference_prompt(p,shot,ref_metadata,'generate',include_scene_facts=False)
                 if (
+                    not rebuild
+                    and
                     provider.getCapabilities()["supportsImageEditing"]
                     and provider.id != "existing"
                     and len(references)<provider.getCapabilities().get('maxReferenceImages',0)
@@ -5056,6 +5123,8 @@ class StudioService:
                     shot["sourceImagePath"] = relative
                     if provider.id in ("native-flux", "comfyui"):
                         request["prompt"] = reference_prompt(p, shot, ref_metadata, "edit") + " Edit only the confirmed defects and preserve the scene: " + request["prompt"]
+                elif rebuild and references and not restaged:
+                    request['prompt']=reference_prompt(p,shot,ref_metadata,'generate')+' '+request['prompt']
                 continue
             break
 
@@ -5190,6 +5259,8 @@ class StudioService:
         ]
         expected['characters'] = [copy.deepcopy(c) | {'appearanceState': visible_appearance(shot, c)}
                                   for c in shot['characters']]
+        from scene_conditioning import scene_facts
+        expected['subjectBoundFacts']=scene_facts(p,shot)
         expected['continuity'] = visual_environment(shot)
         chapter = review_chapter
         scene = next((scene for scene in chapter.get('scenes',[]) if scene['id']==shot.get('sceneId')),None) if chapter else None
@@ -5223,10 +5294,22 @@ class StudioService:
             },
             self.gate,
         )
+        if p['settings'].get('automaticSceneRestaging',False) and not shot.get('manual',{}).get('prompt'):
+            latest=self.store.load(p['id'])
+            if review_chapter is not None:current=get_shot(latest,review_chapter['id'],shot['id'])
+            else:current=next(s for s in latest['intro'].get('shots',[]) if s['id']==shot['id'])
+            spec=self.visual_spec_signature(p,shot)
+            used=current.get('automaticRepairAttempts',0) if current.get('automaticRepairSpec')==spec else 0
+            if (0<used<latest['settings']['maxImageRetries'] and automatic_repairs(p['settings'],result)
+                    and current.get('imagePath') and self.store.asset(p['id'],current['imagePath']).resolve()==Path(path).resolve()):
+                plan=self.prepare_corrective_scene(p,shot,result,path)
+                if plan:result['productionSceneRepair']=plan
         result["seconds"] = round(time.monotonic() - qc_started, 3)
         result["provider"] = p["settings"]["director"].get("provider", "local-qwen")
         result["reasoning"] = self.director.reasoning
         result["referenceRoles"] = reference_roles
+        from openai_director import review_image_details
+        result['imageDetails']=review_image_details('Visual quality reviewer:',{'expectedShot':expected},1+len(review_references))
         result["reviewSettingsSignature"] = review_settings_signature(p["settings"])
         self.director.stop()
         return result

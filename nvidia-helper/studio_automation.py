@@ -32,8 +32,22 @@ def project_cap_reason(settings):
     return None
 
 
+
+def fresh_scene_repair(settings,qc,previous_failed=False):
+    """Preserve useful local edits; stop anchoring a failed major repair to bad pixels."""
+    from scene_conditioning import structural_repair
+    from studio_qc import effective_issue_levels
+    return (qc.get('action')=='regenerate' or structural_repair(qc)
+        or bool(previous_failed and 'major' in effective_issue_levels(settings,qc)))
+
+
 def repair_operation(project, shot, provider):
     """Editing is eligible only if its source leaves every required identity slot."""
+    qc=shot.get('qc',{})
+    previous_failed=(shot.get('automaticRepairAttempts',0)>0
+        and bool(qc.get('shotSpecSignature'))
+        and shot.get('automaticRepairSpec')==qc['shotSpecSignature'])
+    if fresh_scene_repair(project['settings'],qc,previous_failed):return 'generate'
     caps=(provider.getModelCapabilities(shot['imageModel'])
           if shot.get('imageModel') and hasattr(provider,'getModelCapabilities') else provider.getCapabilities())
     if not caps.get('supportsImageEditing'):return 'generate'

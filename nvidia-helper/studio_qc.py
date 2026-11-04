@@ -168,6 +168,7 @@ def effective_issue_levels(settings, qc):
     """Decision-only levels; the original findings and raw pass stay untouched."""
     levels=issue_levels(qc)
     for index in clothing_advisory_indices(settings,qc):levels[index]='advisory'
+    if qc.get('criticalStoryBlockers'):levels.append('major')
     return levels
 
 def decision(project, shot, store, context=None):
@@ -181,6 +182,10 @@ def decision(project, shot, store, context=None):
     if valid_acceptance(project, shot, store,context): return {'disposition':'accepted','blocking':False,'policy':mode}
     if review_settings_stale(project,shot,context) and should_check(project,shot,context):
         return {'disposition':'pending','blocking':True,'policy':mode,'reason':'Visual review settings changed; recheck the saved image.'}
+    if qc.get('criticalStoryBlockers'):
+        return {'disposition':'review','blocking':True,'policy':mode,'issueLevels':['major'],
+                'criticalStoryBlockers':copy.deepcopy(qc['criticalStoryBlockers']),
+                'reason':'Explicit observed subject state contradicts the saved scene; original model findings retained.'}
     if qc.get('pass') is True: return {'disposition':'passed','blocking':False,'policy':mode}
     if qc.get('pass') is not False:
         # Preserve prior semantics for deliberately disabled/unavailable vision.
@@ -210,7 +215,7 @@ def automatic_repairs(settings, qc=None):
     enabled = (settings.get('qcCheckLevel') != 'off' and bool(settings.get('automaticRepair'))
                and int(settings.get('maxImageRetries',2))>0 and repair_budget_reason(settings) is None)
     if not enabled or qc is None: return enabled
-    if qc.get('pass') is not False: return False
+    if qc.get('pass') is not False and not qc.get('criticalStoryBlockers'): return False
     levels=effective_issue_levels(settings,qc)
     if levels and len(clothing_advisory_indices(settings,qc))==len(levels):return False
     if qc.get('action') not in ('image_edit','regenerate') and not (

@@ -119,6 +119,10 @@ class CloudOverlapTest(unittest.TestCase):
         if fail and hasattr(self,'failure_issue'):value['issues']=[self.failure_issue]
         value['findings']=[{'issue':issue,'severity':getattr(self,'failure_severity','major')}
                            for issue in value['issues']]
+        observation_schema=body['text']['format']['schema']['properties'].get('subjectObservations')
+        if observation_schema:
+            value['subjectObservations']=[{'subjectId':identity,'restraint':'not_visible','hands':'not_visible','body':'connected'}
+                for identity in observation_schema['items']['properties']['subjectId']['enum']]
         events=[{'type':'response.created','response':{'id':'response-'+str(index)}},
             {'type':'response.output_text.delta','delta':json.dumps(value)},
             {'type':'response.completed','response':{'id':'response-'+str(index),'status':'completed',
@@ -206,8 +210,10 @@ class CloudOverlapTest(unittest.TestCase):
             'baselineGenerationUSD':1,'combinedQCAndReplacementUpperUSD':.05,'maxImageRetriesCovered':2}))
         self.failed_qc=True;self.run_story()
         self.assertEqual(len(self.provider.requests),3);self.assertEqual(len(self.qc_requests),3)
-        repairs=[r for r in self.provider.requests if r['operation']=='edit']
+        repairs=[r for r in self.provider.requests if 'Repair the defect' in r['prompt']]
         self.assertEqual(len(repairs),1);self.assertEqual(len(repairs[0]['referenceImages']),1)
+        self.assertEqual(repairs[0]['operation'],'generate')
+        self.assertNotIn('sourceImage',repairs[0])
         self.assertIn('Repair the defect',repairs[0]['prompt'])
         self.assertEqual(self.provider.peak,1)
 
