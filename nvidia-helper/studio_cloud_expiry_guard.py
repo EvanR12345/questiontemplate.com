@@ -32,6 +32,13 @@ class Guard:
         p=self.api('/pods/'+self.c['podId'])
         if p is None:return None
         if p.get('id')!=self.c['podId'] or p.get('name')!=self.c['name']:raise ValueError('Own pod identity mismatch')
+        # The live single-pod response may omit env. Resolve only this exact
+        # identity from the complete inventory; never substitute another pod.
+        if 'env' not in p:
+            matches=[x for x in all_pods(self.api) if x.get('id')==self.c['podId']]
+            if len(matches)!=1 or matches[0].get('name')!=self.c['name']:
+                raise ValueError('Own pod inventory identity mismatch')
+            p=p|{'env':matches[0].get('env',{})}
         env=p.get('env',{})
         if env.get('QT_CLOUD_NONCE')!=self.c['nonce']:raise ValueError('Cloud ownership nonce differs')
         return p

@@ -1,26 +1,280 @@
 {
-  "schemaVersion": 1,
-  "atEpoch": 1793778969.4222465,
-  "status": "PREPARED_REVIEWED_AWAITING_ACCOUNT_TOPUP_READY",
-  "userTask": "cloud shutdown, live cache validation, targeted26image repairs",
-  "independentReviewPassed": true,
-  "tests": {
-    "rootInfrastructure": 30,
-    "actualApp": 150
-  },
-  "lastStorageRejection": "RunPod requires at least$5accountbalance to create a network volume",
-  "userWillTopUp": true,
-  "readyNotYetConfirmed": true,
-  "newSpendUSD": 0,
-  "priorStudyKnownReservedUSD": 2.1448563539384695,
+  "schemaVersion": 2,
+  "atEpoch": 1793786341.6912162,
+  "status": "PARTIAL_VERIFIED_CAPACITY_BLOCKED_RESOURCES_CLOSED",
   "originalCapUSD": 3,
-  "remainingUSD": 0.8551436460615305,
-  "repairedImages": 0,
-  "preparedTargetedRepairs": 26,
-  "originalProjectPreserved": true,
-  "freshVideoProduced": false,
-  "cloudOnlyExpiryLiveValidated": false,
+  "priorStudyKnownReservedUSD": 2.1448563539384695,
+  "newProbeConservativeUSD": 0.025580677487121686,
+  "newCacheCPUVolumeCeilingUSD": 0.3,
+  "newGPUConservativeUSD": 0.09364755592809783,
+  "newQCSettledUSD": 0.010647711000000004,
+  "accountedConservativeUpperUSD": 2.574732298353689,
+  "remainingAgainstCapUSD": 0.4252677016463111,
+  "unusedNewQCReserveReleasedUSD": 0.239352289,
+  "invoiceVerified": false,
+  "cloudOnlyExpiryLiveValidated": true,
+  "cloudOnlyExpiryProofSHA256": "c5d4d46df6b647f579e03c9728bd0a4428111200ae3896722aa0ffd8988972fe",
+  "cachedModelsSHA256Verified": 3,
+  "cachedModelBytes": 12451820124,
   "automaticCacheNativeGPUValidated": false,
+  "GPUFallback": "RTX4090 test only",
+  "normal5090Attempts": "definite no-allocation capacity rejections",
+  "communityTestWatchdogLiveValidated": false,
+  "generatedManualRepairs": 26,
+  "recheckedManualRepairs": 26,
+  "newAdvisoryUnblocked": 9,
+  "newBlocking": 17,
+  "selectedQualityCounts": {
+    "passed": 46,
+    "advisory": 47,
+    "review": 17
+  },
+  "selectedBlockingCount": 17,
+  "untargetedSelectedPreserved": 84,
+  "originalProjectPreserved": true,
+  "sourceProjectSHA256": "dbc94eb2a42027e22ba135b3be6c34375f09d5fa89b1f524e85c8a02d32ae7c1",
+  "automaticRetryCountersPreserved": true,
+  "qualityPolicyChanged": false,
+  "fastModeEnabled": false,
+  "freshVideoProduced": false,
+  "allTaskResourcesDeletedVerified": true,
+  "unrelatedPodsChanged": false,
   "installedHelperUpdated": false,
-  "voiceEstimateMinutes": 12.3
+  "automaticCacheEnabled": false,
+  "voiceEstimateMinutes": 12.3,
+  "voiceRequests": 0,
+  "tests": {
+    "actualApp": 147,
+    "rootInfrastructure": 34,
+    "passed": true
+  },
+  "independentReviewPassed": true,
+  "sourceFiles": {
+    "studio_cache_owner.py": "3b120b7ce8f8f12766336c5b9f31a5e379cec9751af9cd5e3146a329232b99d0",
+    "studio_runpod_cache.py": "9de09b7abb17eb466e81a8fae297589a4de1f9d244ca36c8f4290f4e712aaee1",
+    "studio_cloud_expiry_guard.py": "69423ad6b6749790d1f64c3b45167084d7321f09c90f02ac9e6566161f4f103a",
+    "studio_cloud_expiry_test.py": "36310800fc76bb2384f2dcbe7dfd3338467ad738c0839aa0056d6d26a736d51d"
+  },
+  "targetResults": [
+    {
+      "shotId": "shot-cba0248455ae40ad",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "The teeth are mostly white, with blood mainly visible around the gums and lips, rather than appearing covered in blood as narrated."
+      ]
+    },
+    {
+      "shotId": "shot-c6eeb668e3844246",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly the bearded man on the left, but the black-suited man on the right holds the hammer; the narration assigns the meter-long hammer to the bearded man."
+      ]
+    },
+    {
+      "shotId": "shot-1451733335994b26",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly wearing a dark jacket and trousers, although his planned appearance is stripped of his clothes."
+      ]
+    },
+    {
+      "shotId": "shot-faee45aa72c9482f",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s hands and limbs appear unbound, despite his stated tied-limbs restraint."
+      ]
+    },
+    {
+      "shotId": "shot-210ede6e1eb64674",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly wearing dark trousers, contrary to his current appearance state of having been stripped of his clothes."
+      ]
+    },
+    {
+      "shotId": "shot-159a922dec80431f",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher is kneeling, but no clear bindings are visible on his limbs as specified."
+      ]
+    },
+    {
+      "shotId": "shot-b5e90ca7613a459b",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly wearing a sleeveless vest and trousers, although his current appearance state specifies that he is stripped of his clothes.",
+        "The shot is framed as a near-full-body view rather than the requested close-up; the left cheek-to-eyebrow scar is not clearly readable."
+      ]
+    },
+    {
+      "shotId": "shot-9e1995bcf1ca4fa8",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly wearing a bloodied shirt and trousers, but his planned appearance is stripped of his clothes."
+      ]
+    },
+    {
+      "shotId": "shot-2e1c5f3853594a8f",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is clearly clothed in a dark shirt and trousers, contrary to his current appearance as stripped of his clothes.",
+        "Only one woman is visibly depicted; the shot calls for both women to be visible."
+      ]
+    },
+    {
+      "shotId": "shot-bcd6973756004c3b",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher is visibly wearing dark shorts despite the planned appearance stating that he has been stripped of his clothes."
+      ]
+    },
+    {
+      "shotId": "shot-958a6efaf119489c",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly wearing dark shorts despite the specified stripped appearance.",
+        "Christopher\u2019s limbs are not visibly tied, contrary to the specified bound state."
+      ]
+    },
+    {
+      "shotId": "shot-fd95267f3e2f499a",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is clearly wearing a torn, bloodied suit and shirt instead of being stripped of his clothes.",
+        "Christopher\u2019s limbs do not appear tied as specified."
+      ]
+    },
+    {
+      "shotId": "shot-42bbabac58784a29",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher is seated beside Jonathan rather than falling to his knees as specified.",
+        "The shot is wider than planned: Jonathan does not fill the frame, and Christopher occupies nearly half of it.",
+        "A bloody, knife-pierced head is prominently shown between the characters, although this is not part of the narrated moment."
+      ]
+    },
+    {
+      "shotId": "shot-a7107da3b4cb4783",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Jonathan is visibly wearing a white shirt and dark trousers rather than the planned neat white suit.",
+        "Christopher is turned toward Jonathan, making his gaze appear directed at him rather than ignoring him."
+      ]
+    },
+    {
+      "shotId": "shot-4edad0efaf914c39",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly wearing trousers and a belt despite the planned appearance specifying that he is stripped of his clothes.",
+        "Christopher does not appear visibly bound; his hands and arms are free to brace against the floor."
+      ]
+    },
+    {
+      "shotId": "shot-0d14a6350d104f11",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s exposed torso and arms appear largely clean, with no visible knives piercing his limbs and no clear bindings on his limbs; his expected extensive injuries and restraint are not apparent.",
+        "The image is framed as a medium shot rather than the requested close-up."
+      ]
+    },
+    {
+      "shotId": "shot-52fa199b12894019",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly fully clothed rather than stripped, and he is not clearly shown bound as specified."
+      ]
+    },
+    {
+      "shotId": "shot-eacb8627cd444a19",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s visible face and bare upper torso appear clean, despite the expected extensive cuts and blood on his face and body."
+      ]
+    },
+    {
+      "shotId": "shot-58bf63776cbf431c",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly wearing dark trousers despite his planned appearance being stripped of his clothes.",
+        "The framing is wider than the requested medium close-up, with both characters shown nearly full-body."
+      ]
+    },
+    {
+      "shotId": "shot-04fe9aa61ab847e8",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher\u2019s face and visible body are clean, despite the required severe facial wounds and blood covering his body."
+      ]
+    },
+    {
+      "shotId": "shot-be52f57b87f347dd",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly wearing a torn shirt and trousers, despite the planned appearance stating he is stripped of his clothes."
+      ]
+    },
+    {
+      "shotId": "shot-6a604b5818f441a0",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly wearing a dark shirt and trousers, contrary to his planned appearance as stripped of his clothes."
+      ]
+    },
+    {
+      "shotId": "shot-411bf944a2ab47bf",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s arms and legs are visibly pierced and bloodied, but no bindings are visible despite his restrained appearance state.",
+        "Christopher is shirtless but still wearing trousers, so the depicted stripping is only partial.",
+        "Christopher\u2019s expression appears stern rather than smiling."
+      ]
+    },
+    {
+      "shotId": "shot-1d8727e46ae54a5a",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is clearly wearing a shirt and trousers, despite the planned appearance specifying that he is stripped of his clothes."
+      ]
+    },
+    {
+      "shotId": "shot-4b43f2baf44d4a5d",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly unbound and holding a knife, contradicting his captured, tied state."
+      ]
+    },
+    {
+      "shotId": "shot-160ba29048584f12",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher is visibly wearing dark trousers despite the planned appearance stating that he is stripped of his clothes."
+      ]
+    }
+  ]
 }

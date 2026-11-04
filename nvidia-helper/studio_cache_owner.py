@@ -161,13 +161,53 @@ def validate_cloud_heartbeat(value,expected,now):
 
 
 
+def cache_cleanup_margin(profile):
+    """A proven cloud guard can retire the GPU before the cache's expiry.
+
+    Legacy profiles keep the three-hour workstation recovery margin. The
+    shorter margin requires the exact tested script and immutable live proof.
+    """
+    path=profile.get('cloudExpiryLiveProbePath');digest=profile.get('cloudExpiryLiveProbeSHA256')
+    if path is None and digest is None:return 10800
+    raw=cloud_expiry_source(profile)
+    if (raw is None or not isinstance(path,str) or not Path(path).is_absolute()
+        or not isinstance(digest,str) or not re.fullmatch(r'[a-f0-9]{64}',digest)):
+        raise ValueError('Source-bound live cloud expiry proof required')
+    proof_path=Path(path)
+    if proof_path.is_symlink() or proof_path.stat().st_size>65536 or sha(proof_path)!=digest:
+        raise ValueError('Live cloud expiry proof changed')
+    proof=read(proof_path);script_sha=hashlib.sha256(raw).hexdigest()
+    if (proof.get('status')!='PASS_CLOUD_ONLY_EXPIRY' or proof.get('noLocalDeleteIssued') is not True
+        or proof.get('independentPod404') is not True or proof.get('independentVolume404') is not True
+        or proof.get('guardSHA256')!=script_sha):
+        raise ValueError('Independent cloud-only deletion proof required')
+    arm_path=Path(proof.get('armedReceiptPath',''))
+    if (not arm_path.is_absolute() or arm_path.is_symlink() or arm_path.parent.resolve()!=proof_path.parent.resolve()
+        or arm_path.stat().st_size>65536 or sha(arm_path)!=proof.get('armedReceiptSHA256')):
+        raise ValueError('Exact earlier cloud arming proof required')
+    arm=read(arm_path)
+    if (arm.get('status')!='ARMED' or arm.get('sourceSHA256')!=script_sha
+        or any(arm.get(k) is not True for k in ('guardProcessVerified','cloudResident','nonceMatched'))
+        or any(arm.get(k)!=proof.get(k) for k in ('podId','name','deadline'))
+        or type(arm.get('pid')) is not int or arm['pid']<=1 or not arm.get('nonce')
+        or not all(finite(v) for v in (proof.get('created'),proof.get('deadline'),proof.get('confirmedAt'),arm.get('checkedAtEpoch'),arm.get('atEpoch')))
+        or not proof['created']<=arm['checkedAtEpoch']<proof['deadline']<=proof['confirmedAt']
+        or not 0<=arm['checkedAtEpoch']-arm['atEpoch']<12):
+        raise ValueError('Live cloud arming and subsequent expiry do not match')
+    if (not isinstance(proof.get('podId'),str) or not re.fullmatch(r'[a-z0-9]{8,40}',proof['podId'])
+        or not isinstance(proof.get('name'),str) or not proof['name'].startswith('studio-')
+        or not 0<proof['deadline']-proof['created']<=14400 or proof['confirmedAt']>time.time()+5):
+        raise ValueError('Live cloud expiry identity or interval is invalid')
+    return 120
+
+
 def verify_profile_path(path,now=None):
     value=read(path);now=time.time() if now is None else now
     if (value.get('schemaVersion')!=1 or value.get('enabled') is not True
         or not re.fullmatch(r'[a-z0-9]{8,40}',value.get('volumeId',''))
         or value.get('dataCenter')!='EU-RO-1' or value.get('sizeGB')!=80
         or value.get('type')!='STANDARD' or value.get('mountPath')!='/runpod-volume'
-        or not finite(value.get('retentionDeadlineEpoch')) or now+10800>=value['retentionDeadlineEpoch']
+        or not finite(value.get('retentionDeadlineEpoch')) or now+cache_cleanup_margin(value)>=value['retentionDeadlineEpoch']
         or not isinstance(value.get('volumeName'),str) or not value['volumeName']
         or not re.fullmatch(r'[a-f0-9]{64}',value.get('cacheManifestSHA256',''))
         or sha(value['cacheManifestPath'])!=value['cacheManifestSHA256']):
@@ -410,6 +450,12 @@ class Job:
         expected={'podId':state['podId'],'name':state['name'],'nonce':self.plan['jobId'],
             'created':state['startedEpoch'],'deadline':self.plan['deadlineEpoch'],
             'scriptSHA256':hashlib.sha256(raw).hexdigest()}
+        if 'env' not in pod:
+            from studio_cloud_expiry_guard import all_pods
+            matches=[x for x in all_pods(self.api) if x.get('id')==expected['podId']]
+            if len(matches)!=1 or matches[0].get('name')!=expected['name']:
+                raise ValueError('Exact owned cloud expiry inventory differs')
+            pod=pod|{'env':matches[0].get('env',{})}
         env=pod.get('env',{})
         try:cloud_config=json.loads(env.get('QT_CLOUD_CONFIG',''))
         except (ValueError,TypeError):raise ValueError('Exact owned cloud expiry configuration unreadable') from None

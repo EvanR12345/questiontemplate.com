@@ -109,7 +109,7 @@ def public_descriptor(config):
             p=owner.verify_profile_path(config['runpodImageCacheProfile'])
             cloud_expiry=p.get('cloudExpiryEnabled') is True
             ready=Path(p['stateRoot']).resolve()==workstation_owner_root() and config.get('comfyModelCopies')==2 and config.get('studioDenseLeaseContinuity',True) is True
-            expires=p['retentionDeadlineEpoch']-10800
+            expires=p['retentionDeadlineEpoch']-owner.cache_cleanup_margin(p)
         except (OSError,ValueError,KeyError,TypeError):pass
     normal=False;observation=None
     if ready and config.get('runpodImageCacheValidationReceipt'):
@@ -174,7 +174,7 @@ def prepare_job(config,path,project,budget,gate):
         values=[requested,native.get('spentByProject',{}).get(project,0),ledger.get('spentByProject',{}).get(project,0)]
         if not all(owner.finite(v) and v>=0 for v in values):raise ManagedGPUError('Persisted cumulative GPU carry is invalid.')
         previous=max(values);now=time.time();reserve=.04;rate=1.21
-        seconds=min(7200,(cap-previous-reserve)/rate*3600,profile['retentionDeadlineEpoch']-10800-now)
+        seconds=min(7200,(cap-previous-reserve)/rate*3600,profile['retentionDeadlineEpoch']-owner.cache_cleanup_margin(profile)-now)
         explicit=budget.get('gpuDeadlineEpoch')
         if explicit is not None:
             if not owner.finite(explicit):raise ManagedGPUError('Invalid original caller GPU deadline.')

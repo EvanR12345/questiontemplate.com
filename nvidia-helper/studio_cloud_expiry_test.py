@@ -47,6 +47,51 @@ class CloudExpiryTests(unittest.TestCase):
             'QT_CLOUD_CONFIG':json.dumps({k:self.expected[k] for k in ('name','nonce','created','deadline')})}}
     def tearDown(self):self.temp.cleanup()
 
+    def live_probe_profile(self,proof_change=None,arm_change=None):
+        arm={'status':'ARMED','podId':'offlinepod123','name':'studio-expiry-fixture','deadline':self.now-10,
+            'sourceSHA256':owner.sha(self.script),'guardProcessVerified':True,'cloudResident':True,'nonceMatched':True,
+            'pid':123,'nonce':'fixture-nonce','atEpoch':self.now-50,'checkedAtEpoch':self.now-49}
+        arm.update(arm_change or {});arm_path=self.root/'probe-armed.json';owner.write(arm_path,arm)
+        proof={'status':'PASS_CLOUD_ONLY_EXPIRY','noLocalDeleteIssued':True,'independentPod404':True,'independentVolume404':True,
+            'guardSHA256':owner.sha(self.script),'created':self.now-100,'deadline':self.now-10,'confirmedAt':self.now-1,
+            'podId':'offlinepod123','name':'studio-expiry-fixture','armedReceiptPath':str(arm_path),'armedReceiptSHA256':owner.sha(arm_path)}
+        proof.update(proof_change or {});path=self.root/'probe.json';owner.write(path,proof)
+        return self.profile|{'cloudExpiryLiveProbePath':str(path),'cloudExpiryLiveProbeSHA256':owner.sha(path)}
+
+    def test_legacy_profiles_keep_three_hour_cache_margin(self):
+        self.assertEqual(owner.cache_cleanup_margin({}),10800)
+        self.assertEqual(owner.cache_cleanup_margin(self.profile),10800)
+
+    def test_exact_live_cloud_proof_allows_two_minute_cache_cleanup_margin(self):
+        self.assertEqual(owner.cache_cleanup_margin(self.live_probe_profile()),120)
+
+    def test_live_margin_rejects_local_cleanup_absence_without_arm_and_wrong_script(self):
+        for change in ({'noLocalDeleteIssued':False},{'independentPod404':False},{'independentVolume404':False},
+                       {'status':'AWAIT_CLOUD_ARM'},{'guardSHA256':'0'*64},{'confirmedAt':self.now+20}):
+            with self.subTest(change=change),self.assertRaises(ValueError):owner.cache_cleanup_margin(self.live_probe_profile(change))
+
+    def test_live_margin_rejects_unverified_or_late_arming(self):
+        for change in ({'guardProcessVerified':False},{'nonceMatched':False},{'cloudResident':False},{'pid':True},
+                       {'checkedAtEpoch':self.now-9},{'sourceSHA256':'0'*64},{'name':'studio-other'}):
+            with self.subTest(change=change),self.assertRaises(ValueError):owner.cache_cleanup_margin(self.live_probe_profile(arm_change=change))
+
+    def test_live_margin_rejects_changed_or_partial_proof_binding(self):
+        p=self.live_probe_profile();Path(p['cloudExpiryLiveProbePath']).write_text('{}')
+        with self.assertRaises(ValueError):owner.cache_cleanup_margin(p)
+        with self.assertRaises(ValueError):owner.cache_cleanup_margin(self.profile|{'cloudExpiryLiveProbePath':str(self.root/'probe.json')})
+        with self.assertRaises(ValueError):owner.cache_cleanup_margin(self.live_probe_profile()|{'cloudExpiryEnabled':False})
+
+    def test_short_cache_window_requires_exact_proof_and_still_reserves_cleanup(self):
+        manifest=self.root/'cache-manifest.json';owner.write(manifest,{})
+        base={'schemaVersion':1,'enabled':True,'volumeId':'volume12345','volumeName':'studio-cache-fixture',
+            'dataCenter':'EU-RO-1','sizeGB':80,'type':'STANDARD','mountPath':'/runpod-volume',
+            'cacheManifestPath':str(manifest),'cacheManifestSHA256':owner.sha(manifest),'retentionDeadlineEpoch':self.now+400}
+        path=self.root/'profile.json';owner.write(path,base|self.profile)
+        with self.assertRaises(ValueError):owner.verify_profile_path(path,now=self.now)
+        owner.write(path,base|self.live_probe_profile());self.assertEqual(owner.verify_profile_path(path,now=self.now)['retentionDeadlineEpoch'],self.now+400)
+        owner.write(path,base|self.live_probe_profile()|{'retentionDeadlineEpoch':self.now+120})
+        with self.assertRaises(ValueError):owner.verify_profile_path(path,now=self.now)
+
     def test_disabled_body_equals_legacy_and_never_reads_key_or_script(self):
         self.job.verify_profile.return_value={'cloudExpiryEnabled':False,'cloudExpiryScriptPath':'does-not-exist'}
         with patch.object(Path,'read_text',side_effect=AssertionError('key must not be read')):
@@ -155,6 +200,19 @@ class CloudExpiryTests(unittest.TestCase):
             b'python3\0-u\0/tmp/foreign.py\0'):
             def wrong(m,e,h):m['/proc/123/cmdline'].write_bytes(command)
             with self.subTest(command=command),self.assertRaises(AssertionError):self.remote_fixture(wrong)
+
+    def test_handoff_missing_single_env_uses_exact_inventory(self):
+        self.job.guard=Mock();self.job.ssh_args=Mock(return_value=['EXACT-OWNED-SSH'])
+        self.job.api=Mock(return_value=[self.pod])
+        with patch.object(subprocess_module := owner.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(self.proof))):
+            self.job.verify_cloud_handoff(self.state,{k:v for k,v in self.pod.items() if k!='env'})
+        self.job.api.assert_called_once_with('/pods?includeClusterPods=true&limit=100')
+
+    def test_handoff_missing_single_env_rejects_duplicate_inventory(self):
+        self.job.api=Mock(return_value=[self.pod,self.pod])
+        with patch.object(owner.subprocess,'run') as run:
+            with self.assertRaises(ValueError):self.job.verify_cloud_handoff(self.state,{k:v for k,v in self.pod.items() if k!='env'})
+            run.assert_not_called()
 
     def test_handoff_requires_ssh_success_and_fresh_proof_then_saves_sanitized_receipt(self):
         self.job.guard=Mock();self.job.ssh_args=Mock(return_value=['EXACT-OWNED-SSH'])
