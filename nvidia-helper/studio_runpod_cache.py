@@ -103,10 +103,11 @@ def launch_reason(config,native_path,selection):
 
 def public_descriptor(config):
     """Sanitized capability only; no credential/cache ID/private local path."""
-    enabled=configured(config);ready=False;expires=None
+    enabled=configured(config);ready=False;expires=None;cloud_expiry=False
     if enabled:
         try:
             p=owner.verify_profile_path(config['runpodImageCacheProfile'])
+            cloud_expiry=p.get('cloudExpiryEnabled') is True
             ready=Path(p['stateRoot']).resolve()==workstation_owner_root() and config.get('comfyModelCopies')==2 and config.get('studioDenseLeaseContinuity',True) is True
             expires=p['retentionDeadlineEpoch']-10800
         except (OSError,ValueError,KeyError,TypeError):pass
@@ -132,6 +133,7 @@ def public_descriptor(config):
             'workflow':'flux2-klein-4b-auto','modelCopies':2,'requestSlots':4,
             'cachePolicy':'REQUIRED_MOUNTED_SHA_NO_DOWNLOAD','requiresLiveValidation':True,
             'automaticProvisioningConfigured':enabled and ready,'normalBrokerLiveValidated':normal,'normalBrokerObservation':observation,
+            'cloudResidentExpiryConfigured':enabled and ready and cloud_expiry,
             'observedAtEpoch':time.time(),'expiresAtEpoch':expires}
 
 
@@ -202,7 +204,7 @@ def prepare_job(config,path,project,budget,gate):
                  'deadlineEpoch','maximumComputeHourlyUSD','maximumProviderCreateAttempts')}
         release.update(nativeJobAuthorized=True,planSHA256=owner.sha(folder/'plan.json'),
                        profileSHA256=owner.sha(profile_path),nativeReadyForImmediateAdoption=True,
-                       allowExactOwnedExpiryDeletion=True,capacityProbeAllowed=False)
+                       allowExactOwnedExpiryDeletion=True,capacityProbeAllowed=profile.get('allowOneCapacityProbe') is True)
         owner.write(folder/'native-admission.json',release,exclusive=True)
         owner.write(path,{**native,'cacheOwnerRoot':str(root),'cacheJobId':label})
         owner.write(registry,{'jobId':label,'planSHA256':owner.sha(folder/'plan.json'),'status':'RESERVED','atEpoch':now})

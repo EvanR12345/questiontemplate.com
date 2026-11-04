@@ -6,6 +6,7 @@ create a new worker. Provider bodies, credentials and actual cache IDs stay in
 private owner state/config, never the public package profile format.
 """
 import argparse
+import base64
 from contextlib import contextmanager
 import datetime
 import hashlib
@@ -16,6 +17,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -77,6 +79,87 @@ def module(path):
     value=importlib.util.module_from_spec(spec);spec.loader.exec_module(value);return value
 
 
+def cloud_expiry_source(profile):
+    """Private opt-in source; disabling it preserves the original launch body."""
+    enabled=profile.get('cloudExpiryEnabled',False)
+    if type(enabled) is not bool:raise ValueError('Cloud expiry opt-in must be boolean')
+    if not enabled:return None
+    path=profile.get('cloudExpiryScriptPath');digest=profile.get('cloudExpiryScriptSHA256')
+    if (not isinstance(path,str) or not Path(path).is_absolute()
+        or not isinstance(digest,str) or not re.fullmatch(r'[a-f0-9]{64}',digest)):
+        raise ValueError('Explicit private cloud expiry source binding required')
+    raw=Path(path).read_bytes()
+    if len(raw)>128*1024 or hashlib.sha256(raw).hexdigest()!=digest:
+        raise ValueError('Bound cloud expiry source changed')
+    compile(raw,str(path),'exec')
+    return raw
+
+
+def cloud_expiry_command(raw):
+    """Arm the pinned guard before the image's verified original /start.sh."""
+    waiter="""import json,os,pathlib,time
+c=json.loads(os.environ['QT_CLOUD_CONFIG']);p=int(os.environ['QT_CLOUD_GUARD_PID']);until=time.monotonic()+60
+while time.monotonic()<until:
+    os.kill(p,0)
+    try:
+        h=json.loads(pathlib.Path('/tmp/questiontemplate-cloud-guard.json').read_text())
+        assert h['status']=='ARMED' and h['cloudResident'] is True and h['podId']==os.environ['RUNPOD_POD_ID']
+        assert h['deadline']==c['deadline'] and 0<=time.time()-h['atEpoch']<=10
+        assert h['name']==c['name'] and h['nonce']==c['nonce'] and h['pid']==p
+        os.kill(p,0)
+        break
+    except (OSError,ValueError,KeyError,AssertionError):time.sleep(.2)
+else:raise SystemExit(99)
+"""
+    payload=base64.b64encode(raw).decode('ascii')
+    return ("set -eu; umask 077; printf '%s' "+shlex.quote(payload)+
+        " | base64 -d > /tmp/questiontemplate-cloud-guard.py; "
+        "python3 -u /tmp/questiontemplate-cloud-guard.py > /tmp/questiontemplate-cloud-guard.log 2>&1 & guard=$!; "
+        "printf '%s' \"$guard\" > /tmp/questiontemplate-cloud-guard.pid; export QT_CLOUD_GUARD_PID=\"$guard\"; "
+        "python3 -c "+shlex.quote(waiter)+"; exec /start.sh")
+
+
+def cloud_heartbeat_probe(expected):
+    """Remote code emits only bounded identity/proof fields, never environment."""
+    packed=base64.b64encode(json.dumps(expected,separators=(',',':'),allow_nan=False).encode()).decode()
+    code="""import base64,hashlib,json,os,pathlib,time
+e=json.loads(base64.b64decode(PACKED));p=int(pathlib.Path('/tmp/questiontemplate-cloud-guard.pid').read_text())
+assert p>1;os.kill(p,0)
+script=pathlib.Path('/tmp/questiontemplate-cloud-guard.py')
+assert hashlib.sha256(script.read_bytes()).hexdigest()==e['scriptSHA256']
+cmd=pathlib.Path('/proc/'+str(p)+'/cmdline').read_bytes().split(b'\\0')
+if cmd and cmd[-1]==b'':cmd.pop()
+assert len(cmd)==3 and cmd[0] in (b'python3',b'/usr/bin/python3',b'/usr/local/bin/python3')
+assert cmd[1:]==[b'-u',b'/tmp/questiontemplate-cloud-guard.py']
+env=dict(x.split(b'=',1) for x in pathlib.Path('/proc/'+str(p)+'/environ').read_bytes().split(b'\\0') if b'=' in x)
+c=json.loads(env[b'QT_CLOUD_CONFIG']);assert env[b'RUNPOD_POD_ID'].decode()==e['podId']
+assert env[b'QT_CLOUD_NONCE'].decode()==e['nonce']
+assert all(c[k]==e[k] for k in ('name','nonce','created','deadline')) and 'volume' not in c
+h=json.loads(pathlib.Path('/tmp/questiontemplate-cloud-guard.json').read_text())
+assert h['status']=='ARMED' and h['cloudResident'] is True and h['podId']==e['podId'] and h['deadline']==e['deadline']
+assert h['name']==e['name'] and h['nonce']==e['nonce'] and h['pid']==p
+assert type(h['atEpoch']) in (int,float) and 0<=time.time()-h['atEpoch']<=10
+os.kill(p,0)
+print(json.dumps({'version':1,'status':'ARMED','podId':e['podId'],'name':e['name'],'deadline':e['deadline'],
+ 'atEpoch':h['atEpoch'],'guardPID':p,'guardProcessAlive':True,'cloudResident':True,'nonceMatched':True,
+ 'scriptSHA256':e['scriptSHA256'],'checkedAtEpoch':time.time()}))
+""".replace('PACKED',repr(packed))
+    return "python3 -c "+shlex.quote(code)
+
+
+def validate_cloud_heartbeat(value,expected,now):
+    if (not isinstance(value,dict) or value.get('version')!=1 or value.get('status')!='ARMED'
+        or any(value.get(k)!=expected[k] for k in ('podId','name','deadline','scriptSHA256'))
+        or not all(value.get(k) is True for k in ('guardProcessAlive','cloudResident','nonceMatched'))
+        or type(value.get('guardPID')) is not int or value['guardPID']<=1
+        or not finite(value.get('atEpoch')) or not 0<=now-value['atEpoch']<=10
+        or not finite(value.get('checkedAtEpoch')) or not 0<=now-value['checkedAtEpoch']<=10
+        or expected['deadline']<=now):
+        raise ValueError('Exact fresh cloud expiry heartbeat required before native handoff')
+    return {k:value[k] for k in ('version','status','podId','name','deadline','atEpoch','guardPID',
+        'guardProcessAlive','cloudResident','nonceMatched','scriptSHA256','checkedAtEpoch')}
+
+
 
 def verify_profile_path(path,now=None):
     value=read(path);now=time.time() if now is None else now
@@ -89,6 +172,9 @@ def verify_profile_path(path,now=None):
         or not re.fullmatch(r'[a-f0-9]{64}',value.get('cacheManifestSHA256',''))
         or sha(value['cacheManifestPath'])!=value['cacheManifestSHA256']):
         raise ValueError('Explicit current retained-cache profile/manifest required')
+    cloud_expiry_source(value)
+    if type(value.get('allowOneCapacityProbe',False)) is not bool:
+        raise ValueError('Capacity probe opt-in must be boolean')
     return value
 
 
@@ -272,6 +358,8 @@ class Job:
             or release.get('profileSHA256')!=sha(self.plan['profilePath']) or plan['profileSHA256']!=sha(self.plan['profilePath'])
             or release.get('nativeReadyForImmediateAdoption') is not True
             or release.get('allowExactOwnedExpiryDeletion') is not True):raise ValueError('New exact immediate-adoption launch release required')
+        if release.get('capacityProbeAllowed',False) is not (p.get('allowOneCapacityProbe') is True):
+            raise ValueError('Capacity probe requires the exact bound private-profile opt-in')
         for field in ('gpuAndDiskCapUSD','previousGPUUpperUSD','shutdownReserveUSD','deadlineEpoch',
                       'maximumComputeHourlyUSD','maximumProviderCreateAttempts'):
             if release.get(field)!=plan[field]:raise ValueError('Released financial contract differs')
@@ -298,10 +386,46 @@ class Job:
         return self.plan['previousGPUUpperUSD']+seconds*(self.plan['maximumComputeHourlyUSD']+.02)/3600
     def create_body(self,state,public):
         if not public.startswith('ssh-ed25519 ') or 'PRIVATE' in public:raise ValueError('Existing public SSH key required')
-        return {'name':state['name'],'cloud':'SECURE','image':self.plan['image'],
+        body={'name':state['name'],'cloud':'SECURE','image':self.plan['image'],
                 'gpu':{'id':GPU,'count':1,'minCudaVersion':'12.8'},'dataCenterIds':[self.plan['dataCenter']],
                 'disk':80,'mounts':{'network':[{'volumeId':self.plan['volumeId'],'path':'/runpod-volume'}]},
                 'ports':['22/tcp'],'startSsh':True,'startJupyter':False,'env':{'PUBLIC_KEY':public}}
+        profile=self.verify_profile();raw=cloud_expiry_source(profile)
+        if raw is not None:
+            config=read_bound(self.plan['configSourcePath'],self.plan['configSourceSHA256'])
+            key=Path(config['runpodActionKeyFile']).read_text('utf-8-sig').strip()
+            if not key:raise ValueError('Existing private cloud control credential required')
+            values={'name':state['name'],'nonce':self.plan['jobId'],'created':state['startedEpoch'],
+                    'deadline':self.plan['deadlineEpoch']}
+            if (not finite(values['created']) or not finite(values['deadline'])
+                or not 0<values['deadline']-values['created']<=4*3600):raise ValueError('Invalid original cloud expiry window')
+            body['env'].update(QT_CLOUD_CONFIG=json.dumps(values,separators=(',',':'),allow_nan=False),
+                QT_CLOUD_API_KEY=key,QT_CLOUD_NONCE=values['nonce'])
+            body.update(entrypoint=['/bin/bash','-lc'],cmd=[cloud_expiry_command(raw)])
+        return body
+
+    def verify_cloud_handoff(self,state,pod):
+        profile=self.verify_profile();raw=cloud_expiry_source(profile)
+        if raw is None:return None
+        expected={'podId':state['podId'],'name':state['name'],'nonce':self.plan['jobId'],
+            'created':state['startedEpoch'],'deadline':self.plan['deadlineEpoch'],
+            'scriptSHA256':hashlib.sha256(raw).hexdigest()}
+        env=pod.get('env',{})
+        try:cloud_config=json.loads(env.get('QT_CLOUD_CONFIG',''))
+        except (ValueError,TypeError):raise ValueError('Exact owned cloud expiry configuration unreadable') from None
+        if (pod.get('id')!=expected['podId'] or pod.get('name')!=expected['name']
+            or env.get('QT_CLOUD_NONCE')!=expected['nonce']
+            or cloud_config!={k:expected[k] for k in ('name','nonce','created','deadline')}):
+            raise ValueError('Exact owned provider cloud expiry configuration differs')
+        self.guard(state)
+        result=subprocess.run(self.ssh_args(pod)+[cloud_heartbeat_probe(expected)],capture_output=True,text=True,
+            timeout=min(5,max(1,state['setupDeadlineEpoch']-time.time())),creationflags=FLAGS)
+        if result.returncode or len(result.stdout)>4096:raise ValueError('Cloud expiry heartbeat probe failed')
+        try:value=json.loads(result.stdout)
+        except (ValueError,TypeError):raise ValueError('Cloud expiry heartbeat proof malformed') from None
+        proof=validate_cloud_heartbeat(value,expected,time.time())
+        write(self.folder/'cloud-expiry-proof.json',proof,exclusive=True)
+        return proof
     def exact(self,state):
         if not re.fullmatch(r'studio-two-copy-5090-[a-f0-9]{12}',state.get('name','')):raise ValueError('Unowned allocation name')
         if not state.get('podId'):raise ValueError('Unknown create cannot be adopted, resumed or deleted')
@@ -371,7 +495,7 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
         if any(volume.get(k)!=v for k,v in {'id':profile_data['volumeId'],'name':profile_data['volumeName'],'size':80,'dataCenter':'EU-RO-1','type':'STANDARD'}.items()):raise ValueError('Actual retained volume changed')
         quote=self.api('/catalog/gpus/'+urllib.parse.quote(GPU,safe='')+'?include=AVAILABILITY&product=POD&cloud=SECURE&count=1&minCudaVersion=12.8')
         price=quote.get('price',{}).get('secure')
-        available=any(r.get('id')==self.plan['dataCenter'] and r.get('availability') in ('HIGH','MEDIUM','LOW') for r in quote.get('dataCenters',[]))
+        available=any(r.get('id')==self.plan['dataCenter'] and r.get('availability') in ('HIGH','MEDIUM','LOW') for r in (quote.get('dataCenters') or []))
         if quote.get('id')!=GPU or not quote.get('secure') or not finite(price) or not 0<price<=self.plan['maximumComputeHourlyUSD']:
             raise ValueError('Fresh reviewed 5090 catalog price/pool unavailable')
         if not available and release.get('capacityProbeAllowed') is not True:raise ValueError('No cache-region capacity; no create intent')
@@ -452,6 +576,7 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
         self.guard(state);pod=self.get_owned(state);self.validate_pod(pod,state)
         if pod.get('status')!='RUNNING' or not 0<=time.time()-state['actualCreatedEpoch']<110:
             raise ValueError('Original creation age expired; no timestamp rebase')
+        cloud_proof=self.verify_cloud_handoff(state,pod)
         self.verify_profile()
         if (sha(self.plan['configSourcePath'])!=self.plan['configSourceSHA256']
             or policy_digest(read(Path(self.plan['storeRoot'])/self.plan['projectId']/'project.json'))!=self.plan['projectPolicySHA256']
@@ -480,6 +605,8 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
         result.update(cacheVerification='PENDING_NATIVE_BOOTSTRAP',freshWorkerWeightSHAClaim=False,
                       freshEightWeightSHAClaim=False,nativeBootstrapRequiredBeforeDispatch=True,
                       nativeRequiredModel='flux2-klein-4b',nativeModelCopies=2)
+        if cloud_proof is not None:
+            result.update(cloudResidentExpiryConfigured=True,cloudResidentExpiryArmed=True)
         write(self.folder/'handoff.json',result,exclusive=True)
         state=self.state();state.update(status='HANDOFF_RUNNING',handoffEpoch=time.time());self.save(state)
         return result

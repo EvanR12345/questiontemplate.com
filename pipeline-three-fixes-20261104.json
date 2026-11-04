@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "atEpoch": 1793778969.4222465,
+  "status": "PREPARED_REVIEWED_AWAITING_ACCOUNT_TOPUP_READY",
+  "userTask": "cloud shutdown, live cache validation, targeted26image repairs",
+  "independentReviewPassed": true,
+  "tests": {
+    "rootInfrastructure": 30,
+    "actualApp": 150
+  },
+  "lastStorageRejection": "RunPod requires at least$5accountbalance to create a network volume",
+  "userWillTopUp": true,
+  "readyNotYetConfirmed": true,
+  "newSpendUSD": 0,
+  "priorStudyKnownReservedUSD": 2.1448563539384695,
+  "originalCapUSD": 3,
+  "remainingUSD": 0.8551436460615305,
+  "repairedImages": 0,
+  "preparedTargetedRepairs": 26,
+  "originalProjectPreserved": true,
+  "freshVideoProduced": false,
+  "cloudOnlyExpiryLiveValidated": false,
+  "automaticCacheNativeGPUValidated": false,
+  "installedHelperUpdated": false,
+  "voiceEstimateMinutes": 12.3
+}
