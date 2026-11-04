@@ -1,0 +1,352 @@
+{
+  "schemaVersion": 1,
+  "atEpoch": 1793791885.8923364,
+  "status": "PARTIAL_RESOURCES_CLOSED",
+  "additionalCapUSD": 2,
+  "newGPUAndDiskConservativeUSD": 0.7165145852194893,
+  "closedCacheCPUVolumeCeilingUSD": 0.22,
+  "newQCSettledUSD": 0.016393414999999995,
+  "accountedConservativeUpperUSD": 0.9529080002194893,
+  "remainingAgainstCapUSD": 1.0470919997805108,
+  "invoiceVerified": false,
+  "originalThreeDollarTaskSeparateUSD": 2.574732298353689,
+  "targetCount": 17,
+  "targetBlockersCleared": 15,
+  "targetBlockersRemaining": 2,
+  "selectedQualityCounts": {
+    "passed": 48,
+    "advisory": 60,
+    "review": 2
+  },
+  "selectedBlockingCount": 2,
+  "generatedAndReviewedRepairCandidates": 39,
+  "untargetedSelectedPreserved": 93,
+  "originalProjectPreserved": true,
+  "sourceProjectSHA256": "dbc94eb2a42027e22ba135b3be6c34375f09d5fa89b1f524e85c8a02d32ae7c1",
+  "automaticRetryCountersPreserved": true,
+  "qualityPolicyChanged": false,
+  "repairConditioningChanged": "Fresh reconstruction from face crops; final residual attempts may use tighter framing. Original reference assets preserved.",
+  "sameModelAndSamplingQuality": true,
+  "fastModeEnabled": false,
+  "voiceEstimateMinutes": 12.3,
+  "voiceRequests": 0,
+  "voiceEvidenceSHA256": "0fbde0d001f2db81bbcbf44e0ba50e5033a22b96ea2c577ff5c8ed80981907b7",
+  "cachedModelsFullSHAVerified": 3,
+  "cachedModelBytes": 12451820124,
+  "mounted4090CacheValidated": true,
+  "normal5090AutomaticCacheValidated": false,
+  "automaticCacheEnabled": false,
+  "twoHourSpeedupMeasured": false,
+  "freshVideoProduced": false,
+  "allTaskResourcesDeletedVerified": true,
+  "unrelatedPodsChanged": false,
+  "installedHelperUpdated": false,
+  "attempts": [
+    {
+      "attempt": "reconstruct",
+      "status": "RECONSTRUCTIONS_GENERATED_AND_CHECKED",
+      "GPUAndDiskConservativeUSD": 0.6212779104583793,
+      "generatedPNGs": 28,
+      "settled": true
+    },
+    {
+      "attempt": "global-residual4090",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0.012148351487848496,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "fallback-cache4090",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "mounted4090-retry01",
+      "status": "PASS_4090_MOUNTED_CACHE_REUSE_ONLY",
+      "GPUAndDiskConservativeUSD": 0.04683336664173338,
+      "generatedPNGs": 1,
+      "settled": true
+    },
+    {
+      "attempt": "mounted4090-scene02",
+      "status": "CACHE_REUSED_SCENE_REPAIRS",
+      "GPUAndDiskConservativeUSD": 0.03625495663152801,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "native5090",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0.0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "native5090-capacity-01",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0.0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "native5090-capacity-02",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0.0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "native5090-capacity-03",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0.0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "native5090-capacity-04",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0.0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "native5090-capacity-05",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0.0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "native5090-capacity-06",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0.0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "qwen-refine-retry01",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "qwen-refine-retry02",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "qwen-refine02",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "qwen-refine4090-eu",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0,
+      "generatedPNGs": 0,
+      "settled": true
+    },
+    {
+      "attempt": "qwen-refine5090",
+      "status": "STOPPED_NO_REPLAY",
+      "GPUAndDiskConservativeUSD": 0,
+      "generatedPNGs": 0,
+      "settled": true
+    }
+  ],
+  "targetResults": [
+    {
+      "shotId": "shot-1451733335994b26",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher is seated rather than kneeling, and the binding/injuries are only partially visible compared with the planned appearance."
+      ]
+    },
+    {
+      "shotId": "shot-c6eeb668e3844246",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "The setting reads as a plain wood-paneled room, with no clear party-hall or battle-aftermath details.",
+        "The table is visibly cracked, but remains largely intact rather than appearing broken apart by the impact."
+      ]
+    },
+    {
+      "shotId": "shot-4b43f2baf44d4a5d",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly unbound and holding a knife, contradicting his captured, tied state."
+      ]
+    },
+    {
+      "shotId": "shot-210ede6e1eb64674",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s visible arms and hands appear untied, despite the stated restraint that his limbs are tied."
+      ]
+    },
+    {
+      "shotId": "shot-b5e90ca7613a459b",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "The image is framed as a medium shot rather than the requested close-up, so Christopher\u2019s grin and scar are not the clear focal point."
+      ]
+    },
+    {
+      "shotId": "shot-9e1995bcf1ca4fa8",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s visible injuries are much less extensive than his specified appearance: only a few small marks are visible, with no knives apparent in his limbs.",
+        "Christopher is kneeling, but the image does not clearly show his limbs tied; rope is visible around his waist."
+      ]
+    },
+    {
+      "shotId": "shot-2e1c5f3853594a8f",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s visible injuries are much less severe than the specified appearance: his face is not visibly bloodied, and no knives are visible piercing his limbs.",
+        "The bikini-wearing woman is standing beside Jonathan rather than seated on his lap; the other woman is also standing rather than behind his chair."
+      ]
+    },
+    {
+      "shotId": "shot-958a6efaf119489c",
+      "disposition": "passed",
+      "blocking": false,
+      "issues": []
+    },
+    {
+      "shotId": "shot-fd95267f3e2f499a",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "The speech balloon contains garbled, unreadable text, contrary to the no-text visual constraint.",
+        "Jonathan\u2019s expression reads fairly neutral rather than clearly probing or contemptuous."
+      ]
+    },
+    {
+      "shotId": "shot-a7107da3b4cb4783",
+      "disposition": "passed",
+      "blocking": false,
+      "issues": []
+    },
+    {
+      "shotId": "shot-4edad0efaf914c39",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s injuries appear less severe than described: visible bruising and cuts, but no clearly visible knives piercing his limbs or extensive blood."
+      ]
+    },
+    {
+      "shotId": "shot-52fa199b12894019",
+      "disposition": "review",
+      "blocking": true,
+      "issues": [
+        "Christopher is visibly fully clothed rather than stripped, and he is not clearly shown bound as specified."
+      ]
+    },
+    {
+      "shotId": "shot-58bf63776cbf431c",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher is shown upright in the foreground rather than kneeling behind Jonathan as specified.",
+        "Christopher\u2019s visible torso and arms lack the extensive wounds and blood described in his current appearance; the arm bands do not clearly show his limbs tied."
+      ]
+    },
+    {
+      "shotId": "shot-04fe9aa61ab847e8",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher is shown seated rather than kneeling, and the framing is wider than the requested close-up."
+      ]
+    },
+    {
+      "shotId": "shot-be52f57b87f347dd",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "A second, blond man is clearly visible beside Christopher, although no other person is selected for this shot.",
+        "The framing is wider than the requested close-up, showing Christopher\u2019s torso and the seated man beside him.",
+        "A speech bubble contains garbled lettering, despite the constraint against captions and text."
+      ]
+    },
+    {
+      "shotId": "shot-6a604b5818f441a0",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s visible face and torso appear mostly clean despite the specified bloody facial injuries and body cuts; the visible arms also show no clear knife wounds."
+      ]
+    },
+    {
+      "shotId": "shot-1d8727e46ae54a5a",
+      "disposition": "advisory",
+      "blocking": false,
+      "issues": [
+        "Christopher\u2019s visible back and arms lack the described cuts, blood, and embedded knives; the visible marks are minor.",
+        "Jonathan is seated rather than standing and does not visibly point at Christopher."
+      ]
+    }
+  ],
+  "humanVisualRejection": {
+    "atEpoch": 1793791007.1192522,
+    "shotId": "shot-4b43f2baf44d4a5d",
+    "rejectedSelectedCandidate": "shot-4b43f2baf44d4a5d-close-0-mounted4090-retry01.png",
+    "reason": "Both men visibly tied; Jonathan must be the free captor. Machine advisory not sufficient. Prior selection restored.",
+    "rawQCFalsified": false
+  },
+  "additionalHumanVisualRejections": {
+    "atEpoch": 1793791255.5257523,
+    "rejections": [
+      {
+        "shotId": "shot-4b43f2baf44d4a5d",
+        "imagePath": "ch-d21a94512449410b/shot-4b43f2baf44d4a5d-close-0-mounted4090-scene02.png",
+        "reason": "Christopher has a free outstretched hand despite wrists specified tied behind him."
+      },
+      {
+        "shotId": "shot-52fa199b12894019",
+        "imagePath": "ch-d21a94512449410b/shot-52fa199b12894019-close-0-mounted4090-scene02.png",
+        "reason": "An incomplete woman is represented by legs on Jonathan's lap without a connected torso/head."
+      }
+    ],
+    "rawQCFalsified": false
+  },
+  "mounted4090MeasuredStartup": {
+    "nativeWorkersVerified": 1,
+    "throughReadySeconds": 54.47834253311157,
+    "throughPNGSaveSeconds": 67.31034350395203,
+    "notTwoCopyBenchmark": true
+  },
+  "independentClosure": {
+    "atEpoch": 1793791922.0302966,
+    "ownedGPUIdsIndependentlyAbsent": [
+      "3y4vdd0ipvqfm7",
+      "g8g8txm6on15s2",
+      "ntjfktobf4375t",
+      "cc8dm0zfi129ym"
+    ],
+    "cacheVolumeIndependentlyAbsent": true,
+    "guardianIndependentlyAbsent": true,
+    "remainingUnrelatedPods": 11,
+    "finalRefineWaitStopped": "BOUNDED_WAIT_EXHAUSTED",
+    "newRequestsIssued": 0
+  },
+  "freeOfficialDemoOutcome": "Terminal API error without an image; browser file chooser also unavailable; no paid request.",
+  "remainingRepairWork": "Two scenes still require valid wrist restraint and complete group anatomy. New machine-advisory outputs with visible role/anatomy errors were rejected."
+}
