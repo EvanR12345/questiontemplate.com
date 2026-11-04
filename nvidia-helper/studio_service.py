@@ -259,7 +259,8 @@ class StudioService:
         A declared catalogue is not live readiness. The production lease and
         generation path still perform real model/workflow checks before use.
         """
-        managed = self.config.get('runpodManagedPodId') or self.config.get('runpodPreparedPodIds')
+        from studio_runpod_cache import configured as cache_configured
+        managed = self.config.get('runpodManagedPodId') or self.config.get('runpodPreparedPodIds') or cache_configured(self.config)
         if key=='comfyui' and managed:
             lease_path=self.store.root/'.managed-rental.json'
             try:state=json.loads(lease_path.read_text(encoding='utf-8')) if lease_path.exists() else {}
@@ -336,7 +337,7 @@ class StudioService:
             "sourceVisualOverlapAvailable":True,
             "leanFactBeatsAvailable":True,
             "maxDirectorTasks":8,
-            "managedGPU":{'configured':bool(self.config.get('runpodManagedPodId') or self.config.get('runpodPreparedPodIds')),
+            "managedGPU":{'cacheImageLease':__import__('studio_runpod_cache').public_descriptor(self.config),'configured':bool(self.config.get('runpodManagedPodId') or self.config.get('runpodPreparedPodIds') or self.config.get('runpodImageCacheEnabled')),
                           'modelCopies':getattr(self.providers['comfyui'],'model_copies',1),
                           'requestSlots':getattr(self.providers['comfyui'],'client_capacity',1),
                           'audioLookahead':self.config.get('studioAudioLookahead',True) is not False,
@@ -697,6 +698,9 @@ class StudioService:
                     lease=self.store.root/'.managed-rental.json'
                     try:lease_state=json.loads(lease.read_text()) if lease.exists() else {}
                     except (OSError,ValueError):lease_state={'status':'UNKNOWN'}
+                    from studio_runpod_cache import launch_reason
+                    cached_pending=launch_reason(self.config,lease,{'model':image['model'],'workflow':image['workflow']})
+                    check('gpu-cache-recovery',cached_pending is None,cached_pending or 'No unresolved cached worker blocks production.')
                     check('gpu-recovery',lease_state.get('status') in (None,'STOPPED'),
                           'Earlier managed rental must be confirmed stopped before another run.')
                 else:
@@ -3036,7 +3040,7 @@ class StudioService:
         self.store.mutate(p['id'], lambda q:q['intro'].update(shots=shots, directorProvider=p['settings']['director']['provider'], directorPlan=plan))
 
     def check_cloud_budget(self, p, provider):
-        rental=getattr(self,'_production_gpu',None)
+        rental=getattr(self,'_production_gpu',None) or getattr(self,'_queued_image_rental',None)
         if provider.id=='comfyui' and rental:
             rental.check();return
         window = p['settings'].get('cloudWindow', {})

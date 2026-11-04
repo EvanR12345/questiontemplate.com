@@ -105,7 +105,7 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
                           'requiresVerifiedWorkers':adaptive,'requiresMemoryHeadroom':adaptive,
                           'benchmarkStatus':'no-reliable-eight-task-gain' if candidate else None,
                           'forecastSpeedupApplied':False},
-        'imageExecution':{'backend':'comfyui-api' if source.get('image',{}).get('provider')=='comfyui' else source.get('image',{}).get('provider'),
+        'imageExecution':{'cacheImageLease':__import__('studio_runpod_cache').public_descriptor(config or {}),'backend':'comfyui-api' if source.get('image',{}).get('provider')=='comfyui' else source.get('image',{}).get('provider'),
                           'transport':('private-http-keepalive-v1' if (config or {}).get('comfyPersistentHTTP',True) is True
                                        else 'urllib-close-v1') if source.get('image',{}).get('provider')=='comfyui' else None,
                           'gpuLanes':copies,'modelCopies':copies,'requestSlots':copies*2 if copies>1 else 1,

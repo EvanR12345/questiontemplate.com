@@ -397,7 +397,10 @@ class ProductionGPU:
                 if not self.owned or self.clock()>=until:
                     raise ManagedGPUError('Model preparation exceeded the bounded startup window.')
                 try:
-                    output,diagnostic=process.communicate(input=remote_script(copies) if first else None,timeout=1)
+                    required_cache=self.config.get('runpodRequireMountedCache',False)
+                    if type(required_cache) is not bool:raise ManagedGPUError('Invalid private mounted-cache policy.')
+                    script=remote_script(copies,cache_required=True) if required_cache else remote_script(copies)
+                    output,diagnostic=process.communicate(input=script if first else None,timeout=1)
                     break
                 except subprocess.TimeoutExpired:first=False
             if process.returncode or 'MODELS_VERIFIED' not in output:
@@ -406,6 +409,19 @@ class ProductionGPU:
                 last=next((line.strip() for line in reversed(safe.splitlines()) if line.strip()),'Remote bootstrap returned no diagnostic.')
                 self.save(bootstrapError=last[:500])
                 raise ManagedGPUError('Cloud model preparation failed; no image request submitted. '+last[:500])
+            if self.config.get('runpodRequireMountedCache',False):
+                from studio_worker_bootstrap import MODELS
+                line=next((v.removeprefix('CACHE_MODELS_VERIFIED ') for v in output.splitlines() if v.startswith('CACHE_MODELS_VERIFIED ')),None)
+                try:proof=json.loads(line) if line else None
+                except (ValueError,TypeError):proof=None
+                expected=[{'path':v['destination'],'bytes':v['bytes'],'sha256':v['sha256']} for v in MODELS]
+                if (not isinstance(proof,dict) or proof.get('version')!=1 or proof.get('cacheRequired') is not True
+                    or proof.get('modelRoot')!='/runpod-volume/models'
+                    or proof.get('destinationRoot')!='/workspace/runpod-slim/ComfyUI/models'
+                    or proof.get('modelCopies')!=copies or proof.get('weights')!=expected
+                    or not all(proof.get(k) is True for k in ('noModelDownloads','fullSHA256Verified','linksVerified'))):
+                    raise ManagedGPUError('Required mounted-cache SHA/link proof missing; no image request submitted.')
+                self.save(cacheModelsVerified=proof)
             if copies==2:
                 report=next((line.removeprefix('WORKERS_VERIFIED ') for line in output.splitlines() if line.startswith('WORKERS_VERIFIED ')),None)
                 if report is None:raise ManagedGPUError('Two independent workers were not verified; no image request submitted.')

@@ -1,0 +1,27 @@
+{
+  "status": "RESUMED_ALL_OWNED_RESOURCES_DELETED",
+  "atEpoch": 1793775702.7181845,
+  "capUSD": 3,
+  "GPUAndDiskUpperUSD": 1.2330190478159322,
+  "APISettledUSD": 0.096989046,
+  "CPUUpperUSD": 0.0026260379003153907,
+  "storageHoursUpper": 98,
+  "storageUpperUSD": 0.7622222222222224,
+  "storageHistoricalRateUSDPerGBMonth": 0.07,
+  "GCSReserveUSD": 0.05,
+  "knownAndReservedUpperUSD": 2.1448563539384695,
+  "remainingUSD": 0.8551436460615305,
+  "invoiceVerified": false,
+  "storageDeletionLate": true,
+  "normalBrokerLiveValidated": false,
+  "schemaVersion": 1,
+  "sourceQualityBlockers": 26,
+  "freshVideoProduced": false,
+  "pathFixOfflineTests": {
+    "targeted": 27,
+    "inherited": 96,
+    "strictCache": 17
+  },
+  "allOwnedTestResourcesDeleted": true,
+  "voiceEstimateMinutes": 12.3
+}

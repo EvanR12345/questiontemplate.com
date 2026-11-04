@@ -13,6 +13,9 @@ PROVIDERS=('runpod','vast','lium')
 def reconcile(config,path,clients=None,clock=time.time):
     """Recover only the exact persisted owner, never adopt unrelated resources."""
     path=Path(path)
+    from studio_runpod_cache import reconcile as reconcile_cache
+    cached=reconcile_cache(config,path)
+    if cached is not None:return cached
     state=json.loads(path.read_text()) if path.exists() else {'status':'STOPPED'}
     if state.get('status')=='STOPPED':return state
     name=state.get('provider','runpod')
@@ -43,7 +46,9 @@ def provider_order(config):
     return order
 
 def workload_verified(config,name,workload):
-    if workload=='images' and name=='runpod':return configured(config)
+    if workload=='images' and name=='runpod':
+        from studio_runpod_cache import configured as cache_configured
+        return configured(config) or cache_configured(config)
     field='gpuImageVerifiedProviders' if workload=='images' else 'gpuRenderVerifiedProviders'
     return name in config.get(field,[])
 
@@ -83,6 +88,9 @@ class GPUReservation:
             if self.workload=='render':
                 from studio_cloud_pod_render import RenderLease
                 kind=RenderLease
+            elif not self.options.get('owned_startup'):
+                from studio_runpod_cache import supported,CachedProductionGPU
+                if supported(config,self.options.get('image_selection')):kind=CachedProductionGPU
             return kind(config,self.path,self.project,self.budget,self.runner,self.gate,
                 lambda state:self.report(state | {'provider':name}),**self.options)
         from studio_cloud_gpu import CloudGPULease
@@ -97,6 +105,10 @@ class GPUReservation:
         return CloudGPULease(config,self.path,self.project,self.budget,self.runner,self.gate,self.report,**self.options)
     def ensure(self):
         if self.lease and self.lease.owned:self.lease.ensure();return
+        if self.workload=='images':
+            from studio_runpod_cache import pending_reason
+            reason=pending_reason(self.config,self.path)
+            if reason:raise GPURequestUncertain(reason)
         if self.lease and self.lease.state.get('status') not in (None,'STOPPED'):
             raise GPURequestUncertain('The preceding GPU window is not confirmed stopped; reconcile its saved owner before another rental.')
         for name in provider_order(self.config):

@@ -13,9 +13,12 @@ MODELS = [
      'sha256':'d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5'},
 ]
 
-def remote_script(copies=1):
+def remote_script(copies=1,cache_required=False):
     """No configurable URLs, project data, credentials or shell interpolation."""
     if type(copies) is not int or copies not in (1,2):raise ValueError('Only one or two model copies are supported.')
+    if type(cache_required) is not bool:raise ValueError('Cache-required selection must be a boolean.')
+    if cache_required:
+        return cuda_smoke_script(copies)+cache_script(copies)+(copy_script() if copies==2 else '')
     payload=base64.b64encode(json.dumps(MODELS).encode()).decode()
     script='''import base64,concurrent.futures,hashlib,json,os,pathlib,urllib.request
 models=json.loads(base64.b64decode("PAYLOAD"))
@@ -46,6 +49,71 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:list(pool.map(
 print('MODELS_VERIFIED')
 '''.replace('PAYLOAD',payload)
     return cuda_smoke_script(copies) + script + (copy_script() if copies==2 else '')
+
+
+def cache_script(copies):
+    """Stage only the pinned mounted cache; a miss never starts a download."""
+    payload=base64.b64encode(json.dumps(MODELS).encode()).decode()
+    return '''import base64,hashlib,json,os,pathlib,urllib.request
+models=json.loads(base64.b64decode("PAYLOAD"))
+root=pathlib.Path('/workspace/runpod-slim/ComfyUI/models')
+cache=pathlib.Path('/runpod-volume/models')
+if root.resolve()!=root or not root.is_dir():raise RuntimeError('Canonical Comfy model root absent or aliased')
+if cache.resolve()!=cache or not cache.is_dir():raise RuntimeError('Required mounted model cache absent or aliased; no download permitted')
+if len(models)!=3:raise RuntimeError('Exact three-model Klein cache manifest required')
+
+def stamp(path):
+ value=path.stat()
+ return (value.st_dev,value.st_ino,value.st_size,value.st_mtime_ns)
+
+def digest(path):
+ value=hashlib.sha256()
+ with path.open('rb') as stream:
+  for part in iter(lambda:stream.read(8*1024*1024),b''):value.update(part)
+ return value.hexdigest()
+
+verified=[];destinations=set()
+for model in models:
+ name=model.get('destination');relative=pathlib.PurePosixPath(name) if isinstance(name,str) else None
+ if (relative is None or not name or '\\\\' in name or ':' in name or relative.is_absolute() or '..' in relative.parts
+     or relative.as_posix()!=name or name in destinations
+     or type(model.get('bytes')) is not int or model['bytes']<=0
+     or not isinstance(model.get('sha256'),str) or len(model['sha256'])!=64
+     or any(character not in '0123456789abcdef' for character in model['sha256'])):
+  raise RuntimeError('Unsafe or duplicate required cache model identity')
+ destinations.add(name)
+ target=cache/name;destination=root/name
+ if (not target.is_file() or not target.resolve().is_relative_to(cache)
+     or not destination.parent.resolve().is_relative_to(root)):
+  raise RuntimeError('Required cache model missing or path escaped its owned roots; no download permitted')
+ before=stamp(target)
+ if before[2]!=model['bytes'] or digest(target)!=model['sha256'] or stamp(target)!=before:
+  raise RuntimeError('Required mounted cache size/full SHA mismatch; no download permitted')
+ if destination.exists() or destination.is_symlink():
+  if not destination.is_symlink() or destination.resolve()!=target.resolve():
+   raise RuntimeError('Unexpected canonical model destination; preserve and fail')
+ verified.append((model,target,destination,before))
+
+# Every required cache file passes before any destination is changed. Recheck
+# its stable identity at link creation and again before emitting the proof.
+for model,target,destination,before in verified:
+ if stamp(target)!=before or not target.resolve().is_relative_to(cache):raise RuntimeError('Required cache model changed before linking')
+ if not destination.parent.resolve().is_relative_to(root):raise RuntimeError('Canonical model parent escaped before linking')
+ destination.parent.mkdir(parents=True,exist_ok=True)
+ if destination.exists() or destination.is_symlink():
+  if not destination.is_symlink() or destination.resolve()!=target.resolve():
+   raise RuntimeError('Canonical model destination changed before linking; preserve and fail')
+ else:destination.symlink_to(target)
+for model,target,destination,before in verified:
+ if (stamp(target)!=before or not target.resolve().is_relative_to(cache) or not destination.is_symlink()
+     or destination.resolve()!=target.resolve() or not destination.parent.resolve().is_relative_to(root)):
+  raise RuntimeError('Required cache/model link changed before readiness')
+proof={'version':1,'cacheRequired':True,'modelRoot':str(cache),'destinationRoot':str(root),
+ 'modelCopies':COPIES,'noModelDownloads':True,'fullSHA256Verified':True,'linksVerified':True,
+ 'weights':[{'path':model['destination'],'bytes':model['bytes'],'sha256':model['sha256']} for model,_,_,_ in verified]}
+print('CACHE_MODELS_VERIFIED '+json.dumps(proof),flush=True)
+print('MODELS_VERIFIED',flush=True)
+'''.replace('PAYLOAD',payload).replace('COPIES',str(copies))
 
 
 def cuda_smoke_script(copies=1):
