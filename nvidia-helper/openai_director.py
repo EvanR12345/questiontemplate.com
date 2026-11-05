@@ -164,6 +164,11 @@ class OpenAIDirector(DirectorProvider):
             raise
         finally:
             self._failure_trace=None
+            # _call's response context has exited. Do not leave its closed
+            # stream attached for a later stop()/cleanup to close a second time.
+            # Active-call cancellation still sees the live handle until here;
+            # uncertain request liabilities remain in the durable ledger.
+            self.response=None
             self._call_lock.release()
 
     def _call(self, role, context, schema, gate, vision=False):

@@ -1,0 +1,1664 @@
+{
+  "status": "FRESH_THREE_ARM110_COMPLETE",
+  "arms": {
+    "baseline": {
+      "checked": 110,
+      "blocked": 22,
+      "dispositions": {
+        "passed": 47,
+        "advisory": 41,
+        "review": 22
+      }
+    },
+    "candidate": {
+      "checked": 110,
+      "blocked": 17,
+      "dispositions": {
+        "passed": 55,
+        "advisory": 38,
+        "review": 17
+      }
+    },
+    "identityOnly": {
+      "checked": 110,
+      "blocked": 16,
+      "dispositions": {
+        "passed": 60,
+        "advisory": 34,
+        "review": 16
+      }
+    }
+  },
+  "paired": {
+    "improved": 15,
+    "worsened": 10,
+    "bothBlocked": 7,
+    "neitherBlocked": 78,
+    "exploratoryExactMcNemarP": 0.42435622215270996
+  },
+  "freshGeneratedImages": 330,
+  "repairGenerations": 32,
+  "matchedOneRepair": {
+    "sameInitialBlockers": 16,
+    "priorPathStillBlocked": 10,
+    "fixedPathStillBlocked": 5,
+    "maximumReplacementsPerArmPerShot": 1,
+    "qualityChecksUnchanged": true,
+    "manualAcceptanceOverrides": 0,
+    "rawBlockedCounts": {
+      "baseline": 9,
+      "candidate": 4
+    },
+    "identicalInputPolicy": {
+      "atEpoch": 1793835449.7724133,
+      "beforeCompleteQC": true,
+      "inputAndPNGEqualityVerified": true,
+      "identicalShotIds": [
+        "shot-580b81b3f3564d7a",
+        "shot-6a604b5818f441a0",
+        "shot-865ef17f6f1b417f",
+        "shot-b9a4c9e57df044eb",
+        "shot-d714afc8c36a417c"
+      ],
+      "samplerExecutions": 27,
+      "totalImageRequests": 32,
+      "cacheServedDuplicateRequests": 5,
+      "rule": "For exact identical-input and identical-PNG pairs, retain both raw QC responses and apply the stricter blocking disposition to both for the paired comparison. No lenient overrides, no arm-favouring grade selection."
+    },
+    "cases": [
+      {
+        "shotId": "shot-580b81b3f3564d7a",
+        "baseline": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "person-45406cfb01d028da",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-1b6d8b7315f805ed",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "The black-suited faction members are the ones prominently crouching to seize the dropped guns, while the attackers remain in the background; this reverses the narrated action of the attackers taking the faction's guns."
+            ],
+            "action": "image_edit",
+            "findings": [
+              {
+                "issue": "The black-suited faction members are the ones prominently crouching to seize the dropped guns, while the attackers remain in the background; this reverses the narrated action of the attackers taking the faction's guns.",
+                "severity": "major",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "person-45406cfb01d028da",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-1b6d8b7315f805ed",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": true,
+            "issues": [],
+            "action": "pass",
+            "findings": [],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-d714afc8c36a417c",
+        "baseline": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-8dfbc47a068e55a7",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "connected"
+              }
+            ],
+            "pass": true,
+            "issues": [],
+            "action": "pass",
+            "findings": [],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-8dfbc47a068e55a7",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "connected"
+              }
+            ],
+            "pass": true,
+            "issues": [],
+            "action": "pass",
+            "findings": [],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-b9a4c9e57df044eb",
+        "baseline": {
+          "rawBlocked": false,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "not_visible",
+                "hands": "uncertain",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-e362e02511f2fae4",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": true,
+            "issues": [],
+            "action": "pass",
+            "findings": [],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-e362e02511f2fae4",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher appears to be the man on the right, but the bat is striking the other man's bloody knee rather than Christopher's knee."
+            ],
+            "action": "image_edit",
+            "findings": [
+              {
+                "issue": "Christopher appears to be the man on the right, but the bat is striking the other man's bloody knee rather than Christopher's knee.",
+                "severity": "major",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-7a5eac6dcf514601",
+        "baseline": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "uncertain",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-e362e02511f2fae4",
+                "restraint": "not_visible",
+                "hands": "uncertain",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is seated on the floor rather than remaining on his knees; this is a minor pose difference."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is seated on the floor rather than remaining on his knees; this is a minor pose difference.",
+                "severity": "advisory",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "not_visible",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-e362e02511f2fae4",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is seated upright rather than falling to his knees on the floor.",
+              "Christopher is shirtless but still wearing trousers despite the planned stripped appearance."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is seated upright rather than falling to his knees on the floor.",
+                "severity": "advisory",
+                "clothingOnly": false
+              },
+              {
+                "issue": "Christopher is shirtless but still wearing trousers despite the planned stripped appearance.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-8baa2007e0d84e06",
+        "baseline": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "not_visible",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "visible",
+                "hands": "uncertain",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Jonathan is visibly bound with rope around his waist and wrists, contradicting his role as the composed, unrestrained Boss while Christopher is captured."
+            ],
+            "action": "image_edit",
+            "findings": [
+              {
+                "issue": "Jonathan is visibly bound with rope around his waist and wrists, contradicting his role as the composed, unrestrained Boss while Christopher is captured.",
+                "severity": "major",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [
+              {
+                "code": "RESTRAINT_TRANSFER",
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "issue": "Jonathan Turner visibly has restraints that belong only to the planned prisoner; keep this subject free.",
+                "basis": "Explicit structured visual observation compared with the saved subject state"
+              }
+            ],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is visibly wearing a bloodied shirt, although his current appearance specifies that he is stripped of his clothes."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is visibly wearing a bloodied shirt, although his current appearance specifies that he is stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-9e1995bcf1ca4fa8",
+        "baseline": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "uncertain",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher has a clearly visible open, gesturing hand despite the narrated fact that his limbs are tied.",
+              "Christopher is wearing black pants despite the planned appearance that he is stripped of his clothes."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher has a clearly visible open, gesturing hand despite the narrated fact that his limbs are tied.",
+                "severity": "major",
+                "clothingOnly": false
+              },
+              {
+                "issue": "Christopher is wearing black pants despite the planned appearance that he is stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [
+              {
+                "code": "FREE_BOUND_HAND",
+                "subjectId": "char-ae3788d702d5452a",
+                "issue": "Christopher Davis visibly gestures with a free hand despite the specified hand/arm restraint; preserve the saved restraint.",
+                "basis": "Explicit structured visual observation compared with the saved subject state"
+              }
+            ],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_restrained",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is depicted wearing black shorts despite the planned stripped-of-clothes appearance."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is depicted wearing black shorts despite the planned stripped-of-clothes appearance.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-72a0575ed0854744",
+        "baseline": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-1a0a47e1c5f05b77",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-4c98a45986fc8e9c",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher has a clearly visible free, gesturing hand despite being described as having his limbs tied.",
+              "Christopher is wearing black shorts rather than being stripped of his clothes."
+            ],
+            "action": "image_edit",
+            "findings": [
+              {
+                "issue": "Christopher has a clearly visible free, gesturing hand despite being described as having his limbs tied.",
+                "severity": "major",
+                "clothingOnly": false
+              },
+              {
+                "issue": "Christopher is wearing black shorts rather than being stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [
+              {
+                "code": "FREE_BOUND_HAND",
+                "subjectId": "char-ae3788d702d5452a",
+                "issue": "Christopher Davis visibly gestures with a free hand despite the specified hand/arm restraint; preserve the saved restraint.",
+                "basis": "Explicit structured visual observation compared with the saved subject state"
+              }
+            ],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_restrained",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-1a0a47e1c5f05b77",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-4c98a45986fc8e9c",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "not_visible"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "The wine-holding woman is missing; Jonathan is holding the wine glass instead of her.",
+              "Christopher is wearing black trousers despite the planned appearance stating that he is stripped of his clothes."
+            ],
+            "action": "regenerate",
+            "findings": [
+              {
+                "issue": "The wine-holding woman is missing; Jonathan is holding the wine glass instead of her.",
+                "severity": "major",
+                "clothingOnly": false
+              },
+              {
+                "issue": "Christopher is wearing black trousers despite the planned appearance stating that he is stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [
+              {
+                "code": "BODY_DISCONNECTED",
+                "subjectId": "scene",
+                "issue": "Three heads are visible: Christopher in the left foreground, Jonathan above the chair, and the bikini-clad woman seated at right. The intended wine-holding woman is absent behind the chair; instead, Jonathan is visibly holding the wine glass near the upper center.",
+                "basis": "Independent body-layout review of the generated image without identity-reference distraction"
+              }
+            ],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-42bbabac58784a29",
+        "baseline": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is visibly wearing a torn shirt and trousers rather than being stripped of his clothes.",
+              "Christopher appears crouched or seated beside Jonathan, rather than remaining a kneeling figure at the edge of the frame."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is visibly wearing a torn shirt and trousers rather than being stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              },
+              {
+                "issue": "Christopher appears crouched or seated beside Jonathan, rather than remaining a kneeling figure at the edge of the frame.",
+                "severity": "advisory",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "not_visible",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher appears seated on a cushion rather than falling to his knees as specified."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher appears seated on a cushion rather than falling to his knees as specified.",
+                "severity": "advisory",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-1451733335994b26",
+        "baseline": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher gestures with a visibly free hand despite the planned state that his limbs are tied.",
+              "Christopher wears dark trousers despite the planned appearance that he has been stripped of his clothes."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher gestures with a visibly free hand despite the planned state that his limbs are tied.",
+                "severity": "major",
+                "clothingOnly": false
+              },
+              {
+                "issue": "Christopher wears dark trousers despite the planned appearance that he has been stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [
+              {
+                "code": "FREE_BOUND_HAND",
+                "subjectId": "char-ae3788d702d5452a",
+                "issue": "Christopher Davis visibly gestures with a free hand despite the specified hand/arm restraint; preserve the saved restraint.",
+                "basis": "Explicit structured visual observation compared with the saved subject state"
+              }
+            ],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "uncertain",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is shown wearing a shirt and trousers despite the planned appearance specifying that he has been stripped of his clothes."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is shown wearing a shirt and trousers despite the planned appearance specifying that he has been stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-865ef17f6f1b417f",
+        "baseline": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_restrained",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is seated rather than kneeling, and the image uses a two-person view instead of the planned over-the-shoulder composition."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is seated rather than kneeling, and the image uses a two-person view instead of the planned over-the-shoulder composition.",
+                "severity": "advisory",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "not_visible",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is shown wearing black trousers despite the planned appearance stating that he has been stripped of his clothes.",
+              "The staging shows both characters seated rather than Jonathan seated and Christopher kneeling.",
+              "The image is framed as a two-person frontal view rather than the requested over-the-shoulder composition."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is shown wearing black trousers despite the planned appearance stating that he has been stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              },
+              {
+                "issue": "The staging shows both characters seated rather than Jonathan seated and Christopher kneeling.",
+                "severity": "advisory",
+                "clothingOnly": false
+              },
+              {
+                "issue": "The image is framed as a two-person frontal view rather than the requested over-the-shoulder composition.",
+                "severity": "advisory",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-f3e5ee92435e4eed",
+        "baseline": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-e362e02511f2fae4",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-1a0a47e1c5f05b77",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-4c98a45986fc8e9c",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "not_visible"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher's visible gesturing hand is free despite his limbs being tied.",
+              "Christopher is visibly clothed in a torn shirt and trousers, although his planned appearance is stripped of clothing.",
+              "A second battered, shirtless man is visibly present alongside Christopher, creating an unexplained extra person.",
+              "The wine-holding woman behind Jonathan's chair is missing; the visible woman is seated on Jonathan's lap and holds no wine."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher's visible gesturing hand is free despite his limbs being tied.",
+                "severity": "major",
+                "clothingOnly": false
+              },
+              {
+                "issue": "Christopher is visibly clothed in a torn shirt and trousers, although his planned appearance is stripped of clothing.",
+                "severity": "advisory",
+                "clothingOnly": true
+              },
+              {
+                "issue": "A second battered, shirtless man is visibly present alongside Christopher, creating an unexplained extra person.",
+                "severity": "major",
+                "clothingOnly": false
+              },
+              {
+                "issue": "The wine-holding woman behind Jonathan's chair is missing; the visible woman is seated on Jonathan's lap and holds no wine.",
+                "severity": "major",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [
+              {
+                "code": "FREE_BOUND_HAND",
+                "subjectId": "char-ae3788d702d5452a",
+                "issue": "Christopher Davis visibly gestures with a free hand despite the specified hand/arm restraint; preserve the saved restraint.",
+                "basis": "Explicit structured visual observation compared with the saved subject state"
+              }
+            ],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-e362e02511f2fae4",
+                "restraint": "not_visible",
+                "hands": "uncertain",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-1a0a47e1c5f05b77",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-4c98a45986fc8e9c",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is shown wearing black shorts, despite the planned appearance specifying that he has been stripped of his clothes."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is shown wearing black shorts, despite the planned appearance specifying that he has been stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-fbc8cf0ba68140f5",
+        "baseline": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-e362e02511f2fae4",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher visibly grips a knife despite being restrained with his limbs tied."
+            ],
+            "action": "image_edit",
+            "findings": [
+              {
+                "issue": "Christopher visibly grips a knife despite being restrained with his limbs tied.",
+                "severity": "major",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [
+              {
+                "code": "FREE_BOUND_HAND",
+                "subjectId": "char-ae3788d702d5452a",
+                "issue": "Christopher Davis visibly gestures with a free hand despite the specified hand/arm restraint; preserve the saved restraint.",
+                "basis": "Explicit structured visual observation compared with the saved subject state"
+              }
+            ],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_restrained",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "person-e362e02511f2fae4",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "not_visible"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is wearing trousers despite the planned appearance specifying that he is stripped of his clothes."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is wearing trousers despite the planned appearance specifying that he is stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-1c1fc69448124c82",
+        "baseline": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "uncertain",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is visibly wearing dark trousers despite the planned appearance stating he is stripped of his clothes.",
+              "Jonathan is kneeling and handling a rope and knife rather than lounging; the staging does not match the planned pose."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is visibly wearing dark trousers despite the planned appearance stating he is stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              },
+              {
+                "issue": "Jonathan is kneeling and handling a rope and knife rather than lounging; the staging does not match the planned pose.",
+                "severity": "advisory",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher has a clearly visible free hand despite the required restraint of his limbs.",
+              "Christopher is wearing trousers despite the planned stripped-of-clothes appearance."
+            ],
+            "action": "image_edit",
+            "findings": [
+              {
+                "issue": "Christopher has a clearly visible free hand despite the required restraint of his limbs.",
+                "severity": "major",
+                "clothingOnly": false
+              },
+              {
+                "issue": "Christopher is wearing trousers despite the planned stripped-of-clothes appearance.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [
+              {
+                "code": "FREE_BOUND_HAND",
+                "subjectId": "char-ae3788d702d5452a",
+                "issue": "Christopher Davis visibly gestures with a free hand despite the specified hand/arm restraint; preserve the saved restraint.",
+                "basis": "Explicit structured visual observation compared with the saved subject state"
+              }
+            ],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-f3fe9e3fc9c54704",
+        "baseline": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher's hands are visibly free and holding knives, contradicting the stated restraint that his limbs are tied.",
+              "Christopher is wearing trousers despite the planned appearance stating he was stripped of his clothes."
+            ],
+            "action": "image_edit",
+            "findings": [
+              {
+                "issue": "Christopher's hands are visibly free and holding knives, contradicting the stated restraint that his limbs are tied.",
+                "severity": "major",
+                "clothingOnly": false
+              },
+              {
+                "issue": "Christopher is wearing trousers despite the planned appearance stating he was stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [
+              {
+                "code": "FREE_BOUND_HAND",
+                "subjectId": "char-ae3788d702d5452a",
+                "issue": "Christopher Davis visibly gestures with a free hand despite the specified hand/arm restraint; preserve the saved restraint.",
+                "basis": "Explicit structured visual observation compared with the saved subject state"
+              }
+            ],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "not_visible",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is wearing dark trousers, despite the planned appearance that he is stripped of his clothes."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is wearing dark trousers, despite the planned appearance that he is stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-58bf63776cbf431c",
+        "baseline": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "not_visible",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "uncertain",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is shown wearing black shorts despite the planned appearance stating he has been stripped of his clothes."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is shown wearing black shorts despite the planned appearance stating he has been stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": false,
+          "pairedBlocked": false,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_restrained",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "Christopher is wearing shorts despite the planned appearance stating he is stripped of his clothes."
+            ],
+            "action": "review",
+            "findings": [
+              {
+                "issue": "Christopher is wearing shorts despite the planned appearance stating he is stripped of his clothes.",
+                "severity": "advisory",
+                "clothingOnly": true
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      },
+      {
+        "shotId": "shot-6a604b5818f441a0",
+        "baseline": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_restrained",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "A second, clearly visible black-haired bearded man appears beside Christopher, creating a duplicate of the main character."
+            ],
+            "action": "image_edit",
+            "findings": [
+              {
+                "issue": "A second, clearly visible black-haired bearded man appears beside Christopher, creating a duplicate of the main character.",
+                "severity": "major",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        },
+        "candidate": {
+          "rawBlocked": true,
+          "pairedBlocked": true,
+          "rawQualityFindings": {
+            "subjectObservations": [
+              {
+                "subjectId": "char-ae3788d702d5452a",
+                "restraint": "visible",
+                "hands": "visibly_restrained",
+                "body": "connected"
+              },
+              {
+                "subjectId": "char-ae97ccff0d5a46d9",
+                "restraint": "not_visible",
+                "hands": "visibly_free",
+                "body": "connected"
+              }
+            ],
+            "pass": false,
+            "issues": [
+              "A second bearded, bloodied man resembling Christopher appears bound in the foreground, creating a visually prominent duplicate/extra person."
+            ],
+            "action": "image_edit",
+            "findings": [
+              {
+                "issue": "A second bearded, bloodied man resembling Christopher appears bound in the foreground, creating a visually prominent duplicate/extra person.",
+                "severity": "major",
+                "clothingOnly": false
+              }
+            ],
+            "criticalStoryBlockers": [],
+            "reasoning": "Fast",
+            "imageDetails": [
+              "high",
+              "low",
+              "low"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "manualAcceptanceOverrides": 0,
+  "comparison": "Fresh matched110 original prompt pipeline versus complete current-scene planning with current supporting roles/owned props, source-compatible joined-wrist language and narrative-ordered identity references. Exact same original full reference byte multiset and per-shot matched fresh seed. No diagrams, identity crops for generation, Qwen, repairs, quality-setting or QC-policy change.",
+  "qualitySettings": {
+    "model": "flux2-klein-4b",
+    "steps": 4,
+    "guidance": 1,
+    "referenceStrength": 0.65,
+    "qcPolicy": "practical",
+    "chapterResolution": [
+      1280,
+      720
+    ],
+    "introResolution": [
+      1344,
+      768
+    ]
+  },
+  "voiceEstimateMinutes": 12.3,
+  "activation": {
+    "status": "BOUNDED_STRUCTURAL_REBUILD_DEFAULT_INSTALLED",
+    "description": "Complete scene rebuilding before the first confirmed structural repair is now the default within the existing automatic-repair and spending controls. Explicit saved opt-outs, manual prompts, retry limits and latest-state checks remain effective. Upfront current-scene planning and generation face crops remain experimental and off by default. The 106/110 unblocked pilot uses those experimental inputs; it is not a measured default-production success rate or a 700-image/day guarantee.",
+    "firstPassPlanningDefault": false,
+    "generationFaceCropsDefault": false,
+    "boundedStructuralRebuildDefault": true,
+    "explicitFalsePreserved": true,
+    "qualityPolicyUnchanged": true,
+    "sourceTestsPassed": 275,
+    "voiceEstimateMinutes": 12.3
+  },
+  "accounting": {
+    "newRoundCapUSD": 2,
+    "newSpendUpperUSD": 1.2244935622411623,
+    "newGPUAndDiskUpperUSD": 0.9339391842411624,
+    "newAPIUSD": 0.290554378,
+    "newRoundRemainingUSD": 0.7755064377588377,
+    "allOwnedTestGPUsAbsent": true
+  },
+  "earlierTrials": {
+    "sameSeed20ReferenceBindingsBlocked": 4,
+    "sameSeed20SubjectLedgerBlocked": 4,
+    "sameSeed20DiagramBlocked": 4,
+    "same20HistoricalCurrentSceneBlocked": 5,
+    "QwenQuality40RawMachineBlocked": 1,
+    "QwenQuality40Tested": 2,
+    "QwenAnchorsAcceptedAfterVisualReview": 0
+  },
+  "identityOnlyComparison": {
+    "samePromptAndSettings": 110,
+    "changedReferenceBytes": 43,
+    "GPU": "RTX5090 versus RTX4090 for original matched pair; exploratory comparison includes hardware variation"
+  },
+  "limitations": [
+    "One story with correlated shots; this does not establish an independent700-image daily failure rate.",
+    "Repairs were disabled in the three initial arms to measure prevention. The separate matched repair trial allows one replacement per initial blocker and retains failures.",
+    "Public WebP images retain exact decoded RGB pixels from original PNGs; no resizing or lossy compression."
+  ],
+  "latestPilot": {
+    "initialImages": 110,
+    "firstGenerationBlocked": 16,
+    "unblocked": 106,
+    "remainingBlocked": 4,
+    "maximumReplacementsInSelectedPath": 1,
+    "initialSourceArm": "identityOnly",
+    "matchedRepairPathReused": 14,
+    "targetedDuplicateRoutingReplacementsFromOriginalImages": 2,
+    "notANewIndependent110ImageBatch": true,
+    "notDefaultProductionRate": true,
+    "remaining": [
+      {
+        "shotId": "shot-580b81b3f3564d7a",
+        "issues": [
+          "This exact same PNG received a blocking finding in the other arm; both retain the stricter paired disposition. Other-arm findings: The black-suited faction members are the ones prominently crouching to seize the dropped guns, while the attackers remain in the background; this reverses the narrated action of the attackers taking the faction's guns."
+        ],
+        "criticalStoryBlockers": []
+      },
+      {
+        "shotId": "shot-b9a4c9e57df044eb",
+        "issues": [
+          "Christopher appears to be the man on the right, but the bat is striking the other man's bloody knee rather than Christopher's knee."
+        ],
+        "criticalStoryBlockers": []
+      },
+      {
+        "shotId": "shot-72a0575ed0854744",
+        "issues": [
+          "The wine-holding woman is missing; Jonathan is holding the wine glass instead of her.",
+          "Christopher is wearing black trousers despite the planned appearance stating that he is stripped of his clothes."
+        ],
+        "criticalStoryBlockers": [
+          {
+            "code": "BODY_DISCONNECTED",
+            "subjectId": "scene",
+            "issue": "Three heads are visible: Christopher in the left foreground, Jonathan above the chair, and the bikini-clad woman seated at right. The intended wine-holding woman is absent behind the chair; instead, Jonathan is visibly holding the wine glass near the upper center.",
+            "basis": "Independent body-layout review of the generated image without identity-reference distraction"
+          }
+        ]
+      },
+      {
+        "shotId": "shot-1c1fc69448124c82",
+        "issues": [
+          "Christopher has a clearly visible free hand despite the required restraint of his limbs.",
+          "Christopher is wearing trousers despite the planned stripped-of-clothes appearance."
+        ],
+        "criticalStoryBlockers": [
+          {
+            "code": "FREE_BOUND_HAND",
+            "subjectId": "char-ae3788d702d5452a",
+            "issue": "Christopher Davis visibly gestures with a free hand despite the specified hand/arm restraint; preserve the saved restraint.",
+            "basis": "Explicit structured visual observation compared with the saved subject state"
+          }
+        ]
+      }
+    ]
+  },
+  "duplicationFollowup": {
+    "tested": 2,
+    "blocked": 0,
+    "eachStartedFromOriginalInitialFailure": true,
+    "advisoriesRetained": true
+  }
+}

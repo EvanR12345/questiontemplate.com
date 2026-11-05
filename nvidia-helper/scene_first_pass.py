@@ -10,6 +10,7 @@ ROLE=REPAIR_ROLE.replace('Corrective scene planner','Current scene planner').rep
  'a lap-seated person should have a visible head and torso offset from the seated person, with a traceable connection to their own legs. '
  'Do not merge two people to satisfy both descriptions. Genuine camera occlusion is allowed; do not add full-body views to a close-up. '
  'For a bound person, describe one physically coherent restrained pose, and omit an unsupported free-hand gesture. '
+ 'If both wrists or all limbs are tied and the source gives no attachment position, prefer empty hands held together with one visible continuous rope and knot enclosing both wrists. Preserve any explicitly saved behind-the-back, single-limb or fixed-attachment restraint. Keep hands outside a close-up when appropriate; do not widen it just to display restraints. '
  'For an internal concealed prop, show only the visible effect appropriate to this moment, not an invented externally strapped object. '
  'Write the complete image prompt, about100-180 words, with current action and named relationships first. '
  'Static trait notes are identity evidence only, never an instruction to repeat their past actions.')

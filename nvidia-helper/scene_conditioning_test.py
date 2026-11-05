@@ -73,6 +73,9 @@ class SceneConditioning(unittest.TestCase):
   self.assertTrue(structural_repair({'issues':['Two fused bodies share a torso.'],'findings':[{'issue':'Two fused bodies share a torso.','severity':'major'}]}))
   self.assertFalse(structural_repair({'issues':['Tiny scar unclear.'],'findings':[{'issue':'Tiny scar unclear.','severity':'uncertain'}]}))
   self.assertFalse(structural_repair({'issues':['No fused bodies; only a missing small scar.'],'findings':[{'issue':'No fused bodies; only a missing small scar.','severity':'advisory'}]}))
+ def test_a_verified_free_bound_hand_requires_new_geometry(self):
+  self.assertTrue(structural_repair({'criticalStoryBlockers':[{'code':'FREE_BOUND_HAND','issue':'A visibly gestures with a free hand despite both wrists tied.'}]}))
+  self.assertFalse(structural_repair({'findings':[{'issue':'Hands are behind the body; the knot cannot be inspected.','severity':'uncertain'}]}))
  def test_concurrent_jobs_prepare_identical_region_once(self):
   from concurrent.futures import ThreadPoolExecutor
   import time

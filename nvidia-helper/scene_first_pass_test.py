@@ -8,6 +8,13 @@ class FirstPass(unittest.TestCase):
  def test_old_actions_and_qc_never_enter_first_pass_context(self):
   p,s=self.fixture();s['qc']={'issues':['Old pixels are wrong']};before=copy.deepcopy((p,s));value=context(p,s)
   self.assertNotIn(s['prompt'],str(value));self.assertNotIn('Old pixels',str(value));self.assertNotIn('confirmedDefects',value);self.assertEqual((p,s),before)
+ def test_current_temporary_relationships_and_owned_props_are_not_demoted_to_past_identity_notes(self):
+  p,s=self.fixture();chapter=p['chapters'][0];s['chapterId']=chapter['id'];chapter['people']=[{'id':'woman','name':'Plate woman','description':'Woman seated on Leon’s lap holding the plate.'}];s['characters'].append({'id':'woman','type':'temporary','appearanceState':{'plate':'Held in her hands.'}})
+  role=next(x for x in context(p,s)['intendedPeople'] if x['name']=='Plate woman');self.assertEqual(role['currentSceneRole'],'Woman seated on Leon’s lap holding the plate.');self.assertEqual(role['currentAppearance']['plate'],'Held in her hands.')
+ def test_current_role_props_do_not_restore_concealed_or_old_inventory(self):
+  p,s=self.fixture();s['characters'][0]['appearanceState'].update(bomb='Implanted in her stomach.',gun='Holstered at her hip.')
+  chapter=p['chapters'][0];s['chapterId']=chapter['id'];chapter['people']=[{'id':'woman','name':'Plate woman','description':'Woman seated on Leon’s lap holding the plate.'}];s['characters'].append({'id':'woman','type':'temporary','appearanceState':{'plate':'Held in her hands.','gun':'Holstered at her hip.'}})
+  before=copy.deepcopy((p,s));people=context(p,s)['intendedPeople'];self.assertNotIn('bomb',people[0]['currentAppearance']);self.assertNotIn('gun',people[0]['currentAppearance']);self.assertEqual(people[1]['currentAppearance']['plate'],'Held in her hands.');self.assertNotIn('gun',people[1]['currentAppearance']);self.assertEqual((p,s),before)
  def test_stale_policy_prompt_and_scene_are_rejected_before_dispatch(self):
   p,s=self.fixture();s['firstPassScenePlan']=bind('Mira crouches under a table.',context(p,s),'model','Balanced');self.assertEqual(required(p,s),'Mira crouches under a table.')
   for target,key,value in [(s,'prompt','Edited original'),(s,'action','New action'),(p['settings'],'qcClothingContinuity','required')]:
@@ -94,5 +101,26 @@ class FirstPass(unittest.TestCase):
    mutate(p['id'],lambda q:get_shot(q,ch['id'],s['id']).update(firstPassScenePlanIntent={'status':'SUBMITTING_UNKNOWN'}))
    with self.assertRaisesRegex(RuntimeError,'reconciliation'):f.service.prepare_first_pass_scenes(p['id'],ch['id'],s['id'])
   finally:f.tearDown()
+
+ def test_received_invalid_plan_is_retained_and_not_paid_for_again(self):
+  from full_video_test import FullVideoTest
+  from studio_data import get_shot
+  from types import SimpleNamespace
+  from unittest.mock import Mock
+  f=FullVideoTest();f.setUp()
+  try:
+   ch=f.project['chapters'][0];f.service.analyze(f.project,ch['id'],{'managedPipeline':True});p=f.service.store.load(f.project['id']);s=p['chapters'][0]['scenes'][0]['shots'][0];p['settings']['firstPassScenePlanning']=True;f.service.store.save(p);f.service.select_director=Mock();call=Mock(return_value={'prompt':''});f.service.director=SimpleNamespace(reasoning='Fast',model='model',stop=lambda:None,call=call)
+   with self.assertRaises(ValueError):f.service.prepare_first_pass_scenes(p['id'],ch['id'],s['id'])
+   current=get_shot(f.service.store.load(p['id']),ch['id'],s['id']);self.assertEqual(current['firstPassScenePlanIntent']['status'],'COMPLETE_INVALID');self.assertEqual(current['firstPassScenePlanHistory'][-1]['unboundReply'],{'prompt':''})
+   with self.assertRaisesRegex(RuntimeError,'reconciliation'):f.service.prepare_first_pass_scenes(p['id'],ch['id'],s['id'])
+   self.assertEqual(call.call_count,1)
+  finally:f.tearDown()
+ def test_completed_remote_call_does_not_close_its_finished_stream_again_on_cleanup(self):
+  from openai_director import OpenAIDirector
+  from unittest.mock import Mock
+  director=OpenAIDirector({},'.');response=Mock();response.close.side_effect=[None,AssertionError('already closed')]
+  def completed(*args):
+   director.response=response;response.close();return {'prompt':'Saved completed response.'}
+  director._call=completed;self.assertEqual(director.call('role',{}, {},lambda *_:None),{'prompt':'Saved completed response.'});director.stop();self.assertEqual(response.close.call_count,1)
 
 if __name__=='__main__':unittest.main()

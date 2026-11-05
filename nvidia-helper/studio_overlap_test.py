@@ -99,7 +99,7 @@ class CloudOverlapTest(unittest.TestCase):
         p['settings']['visionQC']=True;p['settings']['budget']={'openaiUSD':1}
         p['intro']['enabled']=False
         self.project=self.service.store.save(p)
-        self.qc_requests=[];self.failed_qc=False;self.edit_during_qc=False
+        self.qc_requests=[];self.planner_requests=[];self.failed_qc=False;self.edit_during_qc=False
         self.cancel_during_qc=False
         self.pause_during_qc=False;self.paused=threading.Event()
         self.hold_first_qc=False;self.release_first_qc=threading.Event()
@@ -107,7 +107,15 @@ class CloudOverlapTest(unittest.TestCase):
     def tearDown(self):self.service.close();self.temp.cleanup()
 
     def response(self,request,*args,**kwargs):
-        body=json.loads(request.data);index=len(self.qc_requests);self.qc_requests.append(body)
+        body=json.loads(request.data)
+        if set(body['text']['format']['schema']['properties'])=={'prompt'}:
+            self.planner_requests.append(body)
+            identity='plan-'+str(len(self.planner_requests))
+            events=[{'type':'response.created','response':{'id':identity}},
+                {'type':'response.output_text.delta','delta':json.dumps({'prompt':'Mira carries a brass key. Repair the defect.'})},
+                {'type':'response.completed','response':{'id':identity,'status':'completed','usage':{'input_tokens':100,'output_tokens':30}}}]
+            return io.BytesIO(b''.join(b'data: '+json.dumps(event).encode()+b'\n\n' for event in events))
+        index=len(self.qc_requests);self.qc_requests.append(body)
         signals=self.signals;fail=self.failed_qc and index==0
         if self.edit_during_qc and index==0:
             current=self.service.store.load(self.project['id'])
@@ -210,6 +218,9 @@ class CloudOverlapTest(unittest.TestCase):
             'baselineGenerationUSD':1,'combinedQCAndReplacementUpperUSD':.05,'maxImageRetriesCovered':2}))
         self.failed_qc=True;self.run_story()
         self.assertEqual(len(self.provider.requests),3);self.assertEqual(len(self.qc_requests),3)
+        self.assertEqual(len(self.planner_requests),1)
+        ledger=json.loads((self.service.store.folder(self.project['id'])/'api-cost-ledger.json').read_text())
+        self.assertEqual(len(ledger['receipts']),4);self.assertFalse(ledger['requests'])
         repairs=[r for r in self.provider.requests if 'Repair the defect' in r['prompt']]
         self.assertEqual(len(repairs),1);self.assertEqual(len(repairs[0]['referenceImages']),1)
         self.assertEqual(repairs[0]['operation'],'generate')

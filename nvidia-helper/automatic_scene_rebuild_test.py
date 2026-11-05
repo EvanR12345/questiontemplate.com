@@ -15,6 +15,21 @@ class AutomaticSceneRebuild(unittest.TestCase):
   qc={'pass':False,'action':'image_edit','issues':['The free captor, not the prisoner, uses the weapon.'],'findings':[{'issue':'The free captor, not the prisoner, uses the weapon.','severity':'major','clothingOnly':False}]};p,s,provider=self.fixture(qc);before=copy.deepcopy((p,s));self.assertEqual(repair_operation(p,s,provider),'generate');self.assertEqual((p,s),before)
  def test_critical_free_hand_regenerates_with_reference_candidate_disabled(self):
   p,s,provider=self.fixture({'pass':True,'action':'pass','criticalStoryBlockers':[{'code':'FREE_BOUND_HAND','issue':'A tied prisoner visibly gestures freely.'}]});self.assertEqual(repair_operation(p,s,provider),'generate')
+ def test_first_free_hand_repair_regenerates_before_a_failed_edit_is_needed(self):
+  p,s,provider=self.fixture({'pass':False,'action':'image_edit','criticalStoryBlockers':[{'code':'FREE_BOUND_HAND','issue':'A tied prisoner visibly gestures freely.'}]});s['automaticRepairAttempts']=0;self.assertEqual(repair_operation(p,s,provider),'generate')
+ def test_named_human_duplicates_are_structural_but_repeated_props_are_local(self):
+  for issue in ('Christopher appears duplicated: a separate bloodied shirtless head and shoulder fill the foreground while another Christopher sits across from Jonathan.','A second near-identical bearded man appears in the foreground, creating a clear duplicate of Christopher.'):
+   p,s,provider=self.fixture({'pass':False,'action':'image_edit','findings':[{'issue':issue,'severity':'major','clothingOnly':False}]});s['automaticRepairAttempts']=0;self.assertEqual(repair_operation(p,s,provider),'generate')
+  for issue in ('A wine glass appears duplicated on the table.','A second duplicate knife is held by the man.','The knife is duplicated in the man’s hand.'):
+   p,s,provider=self.fixture({'pass':False,'action':'image_edit','findings':[{'issue':issue,'severity':'major','clothingOnly':False}]});s['automaticRepairAttempts']=0;self.assertEqual(repair_operation(p,s,provider),'edit')
+ def test_first_confirmed_identity_swap_does_not_anchor_the_swapped_faces(self):
+  for issue in ('The two main identities are swapped.','Wrong main-character identity for the blond captor.'):
+   p,s,provider=self.fixture({'pass':False,'action':'image_edit','findings':[{'issue':issue,'severity':'major','clothingOnly':False}]});s['automaticRepairAttempts']=0;self.assertEqual(repair_operation(p,s,provider),'generate')
+  p,s,provider=self.fixture({'pass':False,'action':'image_edit','findings':[{'issue':'Possible mixed identities; faces are heavily occluded.','severity':'uncertain'}]});s['automaticRepairAttempts']=0;self.assertEqual(repair_operation(p,s,provider),'edit')
+  for issue in ('No wrong identity is visible; a small scar is missing.','The identities are not swapped; a small scar is missing.'):
+   p,s,provider=self.fixture({'pass':False,'action':'image_edit','findings':[{'issue':issue,'severity':'major','clothingOnly':False}]});s['automaticRepairAttempts']=0;self.assertEqual(repair_operation(p,s,provider),'edit')
+  for issue in ('Wrong face angle: profile rather than frontal.','Incorrect face expression for this narrated moment.'):
+   p,s,provider=self.fixture({'pass':False,'action':'image_edit','findings':[{'issue':issue,'severity':'major','clothingOnly':False}]});s['automaticRepairAttempts']=0;self.assertEqual(repair_operation(p,s,provider),'edit')
  def test_localized_or_tolerated_clothing_retains_edit_capability(self):
   for severity,clothing in [('advisory',False),('major',True)]:
    p,s,provider=self.fixture({'pass':False,'action':'image_edit','issues':['A small garment detail differs.'],'findings':[{'issue':'A small garment detail differs.','severity':severity,'clothingOnly':clothing}]});self.assertEqual(repair_operation(p,s,provider),'edit')

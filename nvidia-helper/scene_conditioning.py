@@ -140,12 +140,17 @@ def conditioned_reference(project,ref,store):
  return 'data:image/png;base64,'+base64.b64encode(raw).decode('ascii'),meta
 
 def structural_repair(qc):
- if any(b.get('code') in ('BODY_DISCONNECTED','RESTRAINT_TRANSFER') for b in qc.get('criticalStoryBlockers',[])):return True
+ if any(b.get('code') in ('BODY_DISCONNECTED','RESTRAINT_TRANSFER','FREE_BOUND_HAND') for b in qc.get('criticalStoryBlockers',[])):return True
  findings=qc.get('findings',[])
  for f in findings:
   if f.get('severity')!='major':continue
   text=str(f.get('issue',''))
   if re.search(r'\b(?:no|without)\s+(?:fused|duplicate|extra)\b',text,re.I):continue
+  human=r'(?:(?:bearded|bloodied|shirtless|wounded|restrained|bound|injured|adult|male|female|young|old)[,\s]+){0,5}(?:man|woman|person|head|torso|body|character)\b'
+  duplicate=re.search(r'\b(?:second|another|extra)[,\s]+(?:near[- ]identical|identical|duplicate[ds]?)[,\s]+'+human+r'|\b(?:appears?|is|looks?)\s+(?:(?:visibly|clearly)\s+)?duplicated\s*:\s*(?:a|an)\s+(?:separate|extra|second)\s+'+human,text,re.I)
+  if duplicate and not re.search(r'\b(?:no|not|without)\s+(?:(?:any|a|an|the)\s+)?$',text[max(0,duplicate.start()-20):duplicate.start()],re.I):return True
+  identity=re.search(r'\b(?:wrong|incorrect|swapped|mixed|exchanged)\s+(?:main[- ]character\s+)?(?:identit(?:y|ies)\b|faces?\b(?!\s+(?:angle|orientation|expression|pose|lighting|position|direction)s?\b))|\bidentit(?:y|ies)\b.{0,30}\b(?:swapped|mixed|exchanged|reversed)\b',text,re.I)
+  if identity and not re.search(r'\b(?:no|not|without)\b',identity.group(),re.I) and not re.search(r'\b(?:no|not|without)\s+(?:(?:any|a|an|the)\s+)?$',text[max(0,identity.start()-20):identity.start()],re.I):return True
   if re.search(r'fus(?:ed|ion)|duplicat.{0,25}(?:bod|person|people|head|torso)|(?:extra|miniature|detached|disconnected|missing)\s+(?:head|torso|body)|(?:missing|absent).{0,25}(?:woman|women|person|people|character)|(?:woman|women|person|people|character).{0,25}(?:missing|absent)',text,re.I):return True
  return False
 

@@ -13,4 +13,11 @@ class SceneReferenceBinding(unittest.TestCase):
   for key in ('prompt','referenceImages'):
    s['manual']={key:True};self.assertEqual(compose(p,s,'My exact prompt',refs),'My exact prompt')
   s['manual']={};self.assertEqual(compose(p,s,'Mira stays seated.',[]),'Mira stays seated.')
+ def test_portrait_order_can_match_narration_without_losing_references_or_manual_choices(self):
+  from scene_reference_binding import ordered_references
+  p,s,refs=self.fixture();data=['Mira bytes','Leon bytes'];before=copy.deepcopy((p,s,data,refs));self.assertEqual(ordered_references(p,s,'Leon addresses Mira.',data,refs),(data,refs));p['settings']['narrativeReferenceOrder']=True
+  images,metadata=ordered_references(p,s,'Leon addresses Mira.',data,refs);self.assertEqual(images,['Leon bytes','Mira bytes']);self.assertEqual(metadata,[refs[1],refs[0]]);self.assertIn('Leon (the person from image 1)',compose(p,s,'Leon addresses Mira.',metadata))
+  for key in ('prompt','referenceImages'):
+   s['manual']={key:True};self.assertEqual(ordered_references(p,s,'Leon addresses Mira.',data,refs),(data,refs))
+  self.assertEqual(data,before[2]);self.assertEqual(refs,before[3])
 if __name__=='__main__':unittest.main()

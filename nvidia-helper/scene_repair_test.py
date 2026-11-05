@@ -17,6 +17,43 @@ class CorrectiveScene(unittest.TestCase):
  def test_empty_or_unbounded_plan_is_rejected(self):
   for prompt in ('', 'x'*2601):
    with self.assertRaises(ValueError):bind(prompt,'sha','spec',{},'model','Balanced')
+ def first_repair_review_fixture(self):
+  from vision_reference_test import VisionReferencesTest
+  from unittest.mock import Mock,patch
+  p,s,service=VisionReferencesTest().fixture(0);p['settings'].update(automaticSceneRestaging=True,automaticRepair=True,maxImageRetries=1,unattendedProduction=True,qcRepairBudgetMode='project-cap');p['settings']['budget']={'totalUSD':2,'openaiUSD':1,'runpodUSD':1};p['settings']['cloudWindow']={'gpuBudgetUSD':1}
+  s.update(id='s',imagePath='not-read.png',automaticRepairAttempts=0,manual={});p['chapters'][0]['scenes']=[{'id':'scene','shots':[s]}];service.store.load.return_value=p;service.store.asset.return_value=Path('not-read.png');service.visual_spec_signature=Mock(return_value='spec');service.prepare_corrective_scene=Mock(return_value={'prompt':'One complete corrected scene.'})
+  service.director.inspectGeneratedImage.return_value={'pass':False,'action':'image_edit','issues':['Two people share a fused body.'],'findings':[{'issue':'Two people share a fused body.','severity':'major'}]}
+  return p,s,service
+ def test_structural_first_repair_can_prepare_full_plan_with_one_retry_budget(self):
+  from unittest.mock import patch
+  p,s,service=self.first_repair_review_fixture()
+  with patch('studio_service.select_references',return_value=([],[])),patch('studio_service.data_url',return_value='generated'):
+   result=service.visual_check(p,s,Path('not-read.png'))
+  service.prepare_corrective_scene.assert_called_once();self.assertEqual(result['productionSceneRepair']['prompt'],'One complete corrected scene.')
+ def test_budgeted_structural_default_respects_an_explicit_saved_opt_out(self):
+  from unittest.mock import patch
+  for explicit in (None,False):
+   p,s,service=self.first_repair_review_fixture()
+   if explicit is None:del p['settings']['automaticSceneRestaging']
+   else:p['settings']['automaticSceneRestaging']=False
+   with patch('studio_service.select_references',return_value=([],[])),patch('studio_service.data_url',return_value='reviewed'):
+    result=service.visual_check(p,s,Path('not-read.png'))
+   self.assertEqual(service.prepare_corrective_scene.call_count,1 if explicit is None else 0)
+ def test_raced_manual_pause_budget_spec_and_image_changes_block_paid_replanning(self):
+  from unittest.mock import patch
+  for change in ('manual','repairOff','restagingOff','budget','spec','image','policy','exhausted'):
+   with self.subTest(change=change):
+    p,s,service=self.first_repair_review_fixture();latest=copy.deepcopy(p);current=latest['chapters'][0]['scenes'][0]['shots'][0];service.store.load.return_value=latest
+    if change=='manual':current['manual']['prompt']=True
+    elif change=='repairOff':latest['settings']['automaticRepair']=False
+    elif change=='restagingOff':latest['settings']['automaticSceneRestaging']=False
+    elif change=='budget':latest['settings']['budget'].update(totalUSD=0,openaiUSD=0)
+    elif change=='spec':current['prompt']='An edited saved scene.';service.visual_spec_signature.side_effect=lambda p,s:s.get('prompt','')
+    elif change=='policy':latest['settings']['qcClothingContinuity']='advisory'
+    elif change=='exhausted':current.update(automaticRepairSpec='spec',automaticRepairAttempts=1)
+    with patch('studio_service.select_references',return_value=([],[])),patch('studio_service.data_url',side_effect=['reviewed','replaced'] if change=='image' else lambda *_:'reviewed'):
+     result=service.visual_check(p,s,Path('not-read.png'))
+    service.prepare_corrective_scene.assert_not_called();self.assertNotIn('productionSceneRepair',result)
  def test_complete_scene_avoids_duplicate_scene_contract_but_keeps_identity_binding(self):
   from image_provider import reference_prompt
   p,s,qc=self.fixture();p['settings']['sceneConditioning']=True;meta=[{'characterId':p['characters'][0]['id']}];normal=reference_prompt(p,s,meta);short=reference_prompt(p,s,meta,include_scene_facts=False);self.assertIn('Subject-bound current scene facts',normal);self.assertNotIn('Subject-bound current scene facts',short);self.assertIn('Mira',short)

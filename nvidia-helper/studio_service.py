@@ -3160,10 +3160,13 @@ class StudioService:
                 self.check_cloud_budget(p, provider)
                 self.prepare_scene_references(p,shot,provider,reserved_slots=1 if operation=='edit' else 0)
                 references, metadata = select_references(p, shot, self.store, provider,reserved_slots=1 if operation=='edit' else 0)
+                from scene_reference_binding import ordered_references
+                from scene_first_pass import selected
+                references,metadata=ordered_references(p,shot,selected(p,shot) or shot['prompt'],references,metadata)
                 settings = provider.validateSettings(shot['generationSettings'])
                 from scene_repair import selected_plan
                 restaged=(selected_plan(p,shot,expected_spec,expected_hash) if repair and operation=='generate'
-                    and p['settings'].get('automaticSceneRestaging',False) else None)
+                    and p['settings'].get('automaticSceneRestaging',True) else None)
                 initial=None
                 if not repair:
                     from scene_first_pass import required
@@ -4835,7 +4838,7 @@ class StudioService:
             and (force or not s.get('imagePath') or s.get('generationStale')) and enabled(project,s)]
         for sid in ids:
             project=self.store.load(pid);shot=locate(project,sid)
-            if shot.get('firstPassScenePlanIntent',{}).get('status')=='SUBMITTING_UNKNOWN':
+            if shot.get('firstPassScenePlanIntent',{}).get('status') in ('SUBMITTING_UNKNOWN','COMPLETE_INVALID'):
                 raise RuntimeError('A current-scene planning request needs reconciliation; no automatic replay.')
             if selected(project,shot):continue
             value=context(project,shot)
@@ -4844,7 +4847,7 @@ class StudioService:
             admitted=[False]
             def reserve(latest):
                 current=locate(latest,sid)
-                if current.get('firstPassScenePlanIntent',{}).get('status')=='SUBMITTING_UNKNOWN':
+                if current.get('firstPassScenePlanIntent',{}).get('status') in ('SUBMITTING_UNKNOWN','COMPLETE_INVALID'):
                     raise RuntimeError('A current-scene planning request needs reconciliation; no automatic replay.')
                 if selected(latest,current):return UNCHANGED
                 if context(latest,current)!=value:raise RuntimeError('Scene changed before prompt planning; saved edits retained.')
@@ -4853,10 +4856,22 @@ class StudioService:
             self.store.mutate(pid,reserve)
             if not admitted[0]:continue
             previous=self.director.reasoning
+            reply=None
             try:
                 self.select_director(project);reasoning=project['settings']['director'].get('reasoning','Balanced');self.director.reasoning=reasoning
                 reply=self.director.call(ROLE,value,obj({'prompt':short_text(2600)}),self.gate)
                 plan=bind(reply['prompt'],value,getattr(self.director,'model',project['settings']['director'].get('model')),reasoning)
+            except Exception as error:
+                if reply is not None:
+                    # A received paid reply that fails local prompt validation
+                    # is known completed, not a lost request. Preserve it and
+                    # fence paid replay until its result is reconciled.
+                    def invalid(latest):
+                        current=locate(latest,sid);intent=current.get('firstPassScenePlanIntent',{})
+                        current.setdefault('firstPassScenePlanHistory',[]).append({'unboundReply':reply,'contextSHA256':signature,'errorType':type(error).__name__})
+                        if intent.get('status')=='SUBMITTING_UNKNOWN' and intent.get('contextSHA256')==signature:intent['status']='COMPLETE_INVALID'
+                    self.store.mutate(pid,invalid)
+                raise
             finally:
                 self.director.stop();self.director.reasoning=previous
             def save(latest):
@@ -4874,7 +4889,7 @@ class StudioService:
         """Prepare a complete replacement prompt in the CPU/QC stage, before GPU dispatch."""
         from scene_repair import ROLE,planning_context,bind
         from director_provider import obj,short_text
-        if not project['settings'].get('automaticSceneRestaging',False):return None
+        if not project['settings'].get('automaticSceneRestaging',True):return None
         context=planning_context(project,shot,qc)
         if context is None:return None
         spec=self.visual_spec_signature(project,shot)
@@ -4945,6 +4960,8 @@ class StudioService:
             p, shot, self.store, provider,
             reserved_slots=1 if provider.id == "comfyui" and operation == "edit" else 0,
         )
+        from scene_reference_binding import ordered_references
+        references,ref_metadata=ordered_references(p,shot,initial or shot['prompt'],references,ref_metadata)
         if provider.id == "native-flux" and options.get("operation") == "edit":
             references = references[:1]
             ref_metadata = ref_metadata[:1]
@@ -4959,7 +4976,7 @@ class StudioService:
         from scene_repair import selected_plan
         restaged=(selected_plan(p,shot,expected_spec,expected_image_digest)
             if options.get('budgetedQCRepair') and operation=='generate'
-            and p['settings'].get('automaticSceneRestaging',False) else None)
+            and p['settings'].get('automaticSceneRestaging',True) else None)
         restaged=restaged or initial
         if restaged:
             request['prompt']=restaged
@@ -5200,7 +5217,7 @@ class StudioService:
                     request.pop('mask',None)
                 from scene_repair import selected_plan
                 restaged=(selected_plan(p,shot | {'qc':qc},expected_spec,expected_image_digest)
-                    if rebuild and p['settings'].get('automaticSceneRestaging',False) else None)
+                    if rebuild and p['settings'].get('automaticSceneRestaging',True) else None)
                 from scene_first_pass import repair_source
                 request['prompt']=(restaged or repair_prompt(repair_source(p,shot),qc.get('productionRepairPrompt') or qc.get('repairPrompt'),request['operation']))
                 if restaged and references:
@@ -5375,6 +5392,11 @@ class StudioService:
         expected['visualStyle'] = p['settings']['style']
         expected['visualConstraints'] = p['settings'].get('imageVisualConstraints', p['settings'].get('visualConstraints', ''))
         qc_started = time.monotonic()
+        reviewed_image=data_url(path)
+        may_plan=(p['settings'].get('automaticSceneRestaging',True) and automatic_repairs(p['settings'])
+            and not shot.get('manual',{}).get('prompt'))
+        reviewed_spec=self.visual_spec_signature(p,shot) if may_plan else None
+        reviewed_policy=review_settings_signature(p['settings'])
         result = self.director.inspectGeneratedImage(
             {
                 "expectedShot": expected,
@@ -5384,19 +5406,27 @@ class StudioService:
                 "intentionalChanges": shot["intentionalAppearanceChanges"],
                 "imageOrder": "Generated shot first. Use referenceRoles to identify each later image: location/style references do not define character identity. Compare clothing to current state, not reference clothing.",
                 "referenceRoles": reference_roles,
-                "_images": [data_url(path), *review_references],
+                "_images": [reviewed_image, *review_references],
             },
             self.gate,
         )
-        if p['settings'].get('automaticSceneRestaging',False) and not shot.get('manual',{}).get('prompt'):
+        if may_plan:
             latest=self.store.load(p['id'])
             if review_chapter is not None:current=get_shot(latest,review_chapter['id'],shot['id'])
             else:current=next(s for s in latest['intro'].get('shots',[]) if s['id']==shot['id'])
-            spec=self.visual_spec_signature(p,shot)
+            spec=self.visual_spec_signature(latest,current)
             used=current.get('automaticRepairAttempts',0) if current.get('automaticRepairSpec')==spec else 0
-            if (0<used<latest['settings']['maxImageRetries'] and automatic_repairs(p['settings'],result)
-                    and current.get('imagePath') and self.store.asset(p['id'],current['imagePath']).resolve()==Path(path).resolve()):
-                plan=self.prepare_corrective_scene(p,shot,result,path)
+            from studio_automation import fresh_scene_repair
+            if (used<latest['settings']['maxImageRetries']
+                    and latest['settings'].get('automaticSceneRestaging',True)
+                    and not current.get('manual',{}).get('prompt')
+                    and spec==reviewed_spec
+                    and review_settings_signature(latest['settings'])==reviewed_policy
+                    and (used>0 or fresh_scene_repair(latest['settings'],result))
+                    and automatic_repairs(latest['settings'],result)
+                    and current.get('imagePath') and self.store.asset(latest['id'],current['imagePath']).resolve()==Path(path).resolve()
+                    and data_url(self.store.asset(latest['id'],current['imagePath']))==reviewed_image):
+                plan=self.prepare_corrective_scene(latest,current,result,path)
                 if plan:result['productionSceneRepair']=plan
         result["seconds"] = round(time.monotonic() - qc_started, 3)
         result["provider"] = p["settings"]["director"].get("provider", "local-qwen")
