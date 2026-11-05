@@ -1,0 +1,474 @@
+{
+  "title": "Sharper manhwa: original character references, normal and magical scenes",
+  "date": "2026-11-05",
+  "models": [
+    "FLUX.2 Klein4B FP8",
+    "SDXL Turbo FP16"
+  ],
+  "referenceCount": 2,
+  "references": [
+    {
+      "character": "Vaan Astra",
+      "file": "original-style-ref-original-vaan.png",
+      "sha256": "9f95c050854daabdb626d3c7055018c56751f41dbe8f50fc767e62edad6537c3",
+      "sourceFile": "vaan astra.webp",
+      "preprocessing": "Unchanged saved original bytes. No crop, restyle, cleanup or conversion for this test.",
+      "resolution": [
+        480,
+        638
+      ],
+      "unchangedSavedOriginal": true
+    },
+    {
+      "character": "Astra Elysia",
+      "file": "original-style-ref-original-astra.png",
+      "sha256": "b5cbd27fae86a9d3ee82209c42ef9e95a41c331c46333a2bfdbbf6dccd9814dc",
+      "sourceFile": "astra elysia.png",
+      "preprocessing": "Unchanged saved original bytes. No crop, restyle, cleanup or conversion for this test.",
+      "resolution": [
+        480,
+        638
+      ],
+      "unchangedSavedOriginal": true
+    }
+  ],
+  "stylePrompt": "Sharp mature Korean manhwa illustration: angular adult faces, defined cheekbones and eyebrows, narrow expressive eyes, strong clean black ink outlines, crisp two-tone cel shadows, decisive clothing folds, restrained surface texture, rich readable colors, cinematic framing. Fully drawn comic artwork with hard edges and clear expressions. Keep the character identities and clothing from the two original references. One coherent scene with exactly two adults, one of each reference character.",
+  "scenes": {
+    "normal": {
+      "title": "Ordinary study",
+      "seed": 19051125,
+      "scenePrompt": "Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, sits at the left side of a wooden desk. Astra, the long black-haired adult woman in her black feathered mantle, stands at the right. They calmly discuss an open map in a wood-paneled study, with bookshelves, one armchair and warm late-afternoon window light. Medium-wide eye-level view; both faces visible. Ordinary interior and natural daylight.",
+      "prompt": "Sharp mature Korean manhwa illustration: angular adult faces, defined cheekbones and eyebrows, narrow expressive eyes, strong clean black ink outlines, crisp two-tone cel shadows, decisive clothing folds, restrained surface texture, rich readable colors, cinematic framing. Fully drawn comic artwork with hard edges and clear expressions. Keep the character identities and clothing from the two original references. One coherent scene with exactly two adults, one of each reference character. Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, sits at the left side of a wooden desk. Astra, the long black-haired adult woman in her black feathered mantle, stands at the right. They calmly discuss an open map in a wood-paneled study, with bookshelves, one armchair and warm late-afternoon window light. Medium-wide eye-level view; both faces visible. Ordinary interior and natural daylight."
+    },
+    "magical": {
+      "title": "Magical land",
+      "seed": 19051126,
+      "scenePrompt": "Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, stands on the left. Astra, the long black-haired adult woman in her black feathered mantle, stands on the right. They look across an ancient stone bridge over a softly luminous forest toward an elegant citadel with crystal-tipped spires and distant floating rock formations. Subtle glowing runes in the bridge, violet and gold twilight, atmospheric magical landscape. Medium-wide eye-level view; both faces clearly readable. The land is more fantastical while the sharp ink and cel-shaded character drawing stays consistent.",
+      "prompt": "Sharp mature Korean manhwa illustration: angular adult faces, defined cheekbones and eyebrows, narrow expressive eyes, strong clean black ink outlines, crisp two-tone cel shadows, decisive clothing folds, restrained surface texture, rich readable colors, cinematic framing. Fully drawn comic artwork with hard edges and clear expressions. Keep the character identities and clothing from the two original references. One coherent scene with exactly two adults, one of each reference character. Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, stands on the left. Astra, the long black-haired adult woman in her black feathered mantle, stands on the right. They look across an ancient stone bridge over a softly luminous forest toward an elegant citadel with crystal-tipped spires and distant floating rock formations. Subtle glowing runes in the bridge, violet and gold twilight, atmospheric magical landscape. Medium-wide eye-level view; both faces clearly readable. The land is more fantastical while the sharp ink and cel-shaded character drawing stays consistent."
+    }
+  },
+  "files": [
+    {
+      "id": "flux-normal",
+      "scene": "normal",
+      "sceneTitle": "Ordinary study",
+      "model": "flux",
+      "GPU": "NVIDIA GeForce RTX 5090",
+      "seed": 19051125,
+      "adapterWeight": null,
+      "prompt": "Sharp mature Korean manhwa illustration: angular adult faces, defined cheekbones and eyebrows, narrow expressive eyes, strong clean black ink outlines, crisp two-tone cel shadows, decisive clothing folds, restrained surface texture, rich readable colors, cinematic framing. Fully drawn comic artwork with hard edges and clear expressions. Keep the character identities and clothing from the two original references. One coherent scene with exactly two adults, one of each reference character. Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, sits at the left side of a wooden desk. Astra, the long black-haired adult woman in her black feathered mantle, stands at the right. They calmly discuss an open map in a wood-paneled study, with bookshelves, one armchair and warm late-afternoon window light. Medium-wide eye-level view; both faces visible. Ordinary interior and natural daylight.",
+      "imageSHA256": "b083dde0c56218297efcceee98adab5817c82089223dc2e96cd91c16c30220f8",
+      "freshNoiseLatent": true,
+      "onlyOriginalCharacterReferencesAndPrompt": true,
+      "styleGuideSentToModel": false,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T10:17:01.264127+00:00",
+      "submitSeconds": 0.48399999999674037,
+      "serverWaitSeconds": 20.79700000002049,
+      "retrievalSeconds": 0.7660000000032596,
+      "clientDeliverySeconds": 22.04700000002049,
+      "stageTimings": {
+        "model": {
+          "stage": "diffusion-model-load",
+          "wallSeconds": 0.3838690151460469,
+          "cudaEventIntervalSeconds": 0.3837599792480469,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.3838690151460469
+        },
+        "clip": {
+          "stage": "text-model-load",
+          "wallSeconds": 0.4165854640305042,
+          "cudaEventIntervalSeconds": 0.4164986877441406,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.4165854640305042
+        },
+        "vae": {
+          "stage": "vae-load",
+          "wallSeconds": 10.261524198111147,
+          "cudaEventIntervalSeconds": 10.254296875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 10.261524198111147
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 2.968095811782405,
+          "cudaEventIntervalSeconds": 2.967802490234375,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 2.968095811782405
+        },
+        "ref0": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.3996151078026742,
+          "cudaEventIntervalSeconds": 0.39952166748046875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.3996151078026742
+        },
+        "ref1": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.9053060468286276,
+          "cudaEventIntervalSeconds": 0.905201416015625,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.9053060468286276
+        },
+        "sampler": {
+          "stage": "sampler",
+          "wallSeconds": 3.131405971944332,
+          "cudaEventIntervalSeconds": 3.13128125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 3.131405971944332
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.5571456861216575,
+          "cudaEventSeconds": 0.5568768920898437,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.5571456861216575
+        }
+      },
+      "graphSHA256": "94550e4659cd2eaff857d01fe91282193a147c67be5a920d76bfeda3e6a5c92a",
+      "file": "original-style-flux-normal.png",
+      "marginalRuntimeCostUSD": 0.007410241666673553,
+      "freshLoadSeconds": 11.061978677287698,
+      "freshReferenceSeconds": 1.3049211546313018,
+      "samplerSeconds": 3.131405971944332,
+      "decodeSeconds": 0.5571456861216575,
+      "phase": "First request for this model, includes fresh loading",
+      "allocatedTotalCostUSD": 0.018045847279686132
+    },
+    {
+      "id": "flux-magical",
+      "scene": "magical",
+      "sceneTitle": "Magical land",
+      "model": "flux",
+      "GPU": "NVIDIA GeForce RTX 5090",
+      "seed": 19051126,
+      "adapterWeight": null,
+      "prompt": "Sharp mature Korean manhwa illustration: angular adult faces, defined cheekbones and eyebrows, narrow expressive eyes, strong clean black ink outlines, crisp two-tone cel shadows, decisive clothing folds, restrained surface texture, rich readable colors, cinematic framing. Fully drawn comic artwork with hard edges and clear expressions. Keep the character identities and clothing from the two original references. One coherent scene with exactly two adults, one of each reference character. Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, stands on the left. Astra, the long black-haired adult woman in her black feathered mantle, stands on the right. They look across an ancient stone bridge over a softly luminous forest toward an elegant citadel with crystal-tipped spires and distant floating rock formations. Subtle glowing runes in the bridge, violet and gold twilight, atmospheric magical landscape. Medium-wide eye-level view; both faces clearly readable. The land is more fantastical while the sharp ink and cel-shaded character drawing stays consistent.",
+      "imageSHA256": "a9016c4a457a74bc08e0d7df4c8642323ad2d6e68614de0da92593e1b3b8ca9f",
+      "freshNoiseLatent": true,
+      "onlyOriginalCharacterReferencesAndPrompt": true,
+      "styleGuideSentToModel": false,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T10:17:23.337645+00:00",
+      "submitSeconds": 0.40600000001722947,
+      "serverWaitSeconds": 4.139999999955762,
+      "retrievalSeconds": 0.9070000000065193,
+      "clientDeliverySeconds": 5.452999999979511,
+      "stageTimings": {
+        "model": {
+          "stage": "diffusion-model-load",
+          "wallSeconds": 0.3838690151460469,
+          "cudaEventIntervalSeconds": 0.3837599792480469,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "clip": {
+          "stage": "text-model-load",
+          "wallSeconds": 0.4165854640305042,
+          "cudaEventIntervalSeconds": 0.4164986877441406,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "vae": {
+          "stage": "vae-load",
+          "wallSeconds": 10.261524198111147,
+          "cudaEventIntervalSeconds": 10.254296875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 0.2800920510198921,
+          "cudaEventIntervalSeconds": 0.2799949645996094,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.2800920510198921
+        },
+        "ref0": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.3996151078026742,
+          "cudaEventIntervalSeconds": 0.39952166748046875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "ref1": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.9053060468286276,
+          "cudaEventIntervalSeconds": 0.905201416015625,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "sampler": {
+          "stage": "sampler",
+          "wallSeconds": 2.350273828022182,
+          "cudaEventIntervalSeconds": 2.350204345703125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 2.350273828022182
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.43982136715203524,
+          "cudaEventSeconds": 0.43975961303710936,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.43982136715203524
+        }
+      },
+      "graphSHA256": "280b33a62f406c6645cd8ededf08210c1a159c7e5be36fb7b271ac2916b2fb01",
+      "file": "original-style-flux-magical.png",
+      "marginalRuntimeCostUSD": 0.001832813888882002,
+      "freshLoadSeconds": 0,
+      "freshReferenceSeconds": 0,
+      "samplerSeconds": 2.350273828022182,
+      "decodeSeconds": 0.43982136715203524,
+      "phase": "Second request for this model, reused loaded model and reference encodings",
+      "allocatedTotalCostUSD": 0.01246841950189458
+    },
+    {
+      "id": "turbo-normal",
+      "scene": "normal",
+      "sceneTitle": "Ordinary study",
+      "model": "sdxl-turbo",
+      "GPU": "NVIDIA GeForce RTX 5090",
+      "seed": 19051125,
+      "adapterWeight": 0.8,
+      "prompt": "Sharp mature Korean manhwa illustration: angular adult faces, defined cheekbones and eyebrows, narrow expressive eyes, strong clean black ink outlines, crisp two-tone cel shadows, decisive clothing folds, restrained surface texture, rich readable colors, cinematic framing. Fully drawn comic artwork with hard edges and clear expressions. Keep the character identities and clothing from the two original references. One coherent scene with exactly two adults, one of each reference character. Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, sits at the left side of a wooden desk. Astra, the long black-haired adult woman in her black feathered mantle, stands at the right. They calmly discuss an open map in a wood-paneled study, with bookshelves, one armchair and warm late-afternoon window light. Medium-wide eye-level view; both faces visible. Ordinary interior and natural daylight.",
+      "imageSHA256": "66250f803461274397665af494d604da05b554d594aeb7949b82d8dba62786bc",
+      "freshNoiseLatent": true,
+      "onlyOriginalCharacterReferencesAndPrompt": true,
+      "styleGuideSentToModel": false,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T10:17:29.449257+00:00",
+      "submitSeconds": 0.5619999999762513,
+      "serverWaitSeconds": 29.54700000002049,
+      "retrievalSeconds": 1.2349999999860302,
+      "clientDeliverySeconds": 31.34399999998277,
+      "stageTimings": {
+        "model": {
+          "component": "checkpoint-load-or-switch",
+          "wallSeconds": 7.065480790100992,
+          "cudaEventSeconds": 7.065404296875,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 7.065480790100992
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 9.378168728901073,
+          "cudaEventIntervalSeconds": 9.289455078125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 9.378168728901073
+        },
+        "adapterLoad": {
+          "stage": "reference-adapter-load",
+          "wallSeconds": 0.042980853002518415,
+          "cudaEventIntervalSeconds": 0.04293699264526367,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.042980853002518415
+        },
+        "adapterApply": {
+          "stage": "reference-vision-encode-and-apply",
+          "wallSeconds": 7.340072204126045,
+          "cudaEventIntervalSeconds": 7.33995654296875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 7.340072204126045
+        },
+        "sampler": {
+          "component": "sampler",
+          "wallSeconds": 2.869956646114588,
+          "cudaEventSeconds": 2.86989794921875,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 2.869956646114588
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.5799426941666752,
+          "cudaEventSeconds": 0.5798174438476562,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.5799426941666752
+        }
+      },
+      "graphSHA256": "0946c70ee64609ddcb96262665fb611083edf8bcf76d8c200f9cfa13532c4044",
+      "file": "original-style-turbo-normal.png",
+      "marginalRuntimeCostUSD": 0.010535066666660875,
+      "freshLoadSeconds": 7.10846164310351,
+      "freshReferenceSeconds": 7.340072204126045,
+      "samplerSeconds": 2.869956646114588,
+      "decodeSeconds": 0.5799426941666752,
+      "phase": "First request for this model, includes fresh loading",
+      "allocatedTotalCostUSD": 0.021170672279673453
+    },
+    {
+      "id": "turbo-magical",
+      "scene": "magical",
+      "sceneTitle": "Magical land",
+      "model": "sdxl-turbo",
+      "GPU": "NVIDIA GeForce RTX 5090",
+      "seed": 19051126,
+      "adapterWeight": 0.8,
+      "prompt": "Sharp mature Korean manhwa illustration: angular adult faces, defined cheekbones and eyebrows, narrow expressive eyes, strong clean black ink outlines, crisp two-tone cel shadows, decisive clothing folds, restrained surface texture, rich readable colors, cinematic framing. Fully drawn comic artwork with hard edges and clear expressions. Keep the character identities and clothing from the two original references. One coherent scene with exactly two adults, one of each reference character. Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, stands on the left. Astra, the long black-haired adult woman in her black feathered mantle, stands on the right. They look across an ancient stone bridge over a softly luminous forest toward an elegant citadel with crystal-tipped spires and distant floating rock formations. Subtle glowing runes in the bridge, violet and gold twilight, atmospheric magical landscape. Medium-wide eye-level view; both faces clearly readable. The land is more fantastical while the sharp ink and cel-shaded character drawing stays consistent.",
+      "imageSHA256": "bf0aabb417cf46ac5df2a6c5ce0463f6be8c9d469dba4f427df34099958095f7",
+      "freshNoiseLatent": true,
+      "onlyOriginalCharacterReferencesAndPrompt": true,
+      "styleGuideSentToModel": false,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T10:18:00.810550+00:00",
+      "submitSeconds": 0.4369999999762513,
+      "serverWaitSeconds": 2.6570000000065193,
+      "retrievalSeconds": 1.2179999999934807,
+      "clientDeliverySeconds": 4.311999999976251,
+      "stageTimings": {
+        "model": {
+          "component": "checkpoint-load-or-switch",
+          "wallSeconds": 7.065480790100992,
+          "cudaEventSeconds": 7.065404296875,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 0.3585412569809705,
+          "cudaEventIntervalSeconds": 0.35832464599609376,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.3585412569809705
+        },
+        "adapterLoad": {
+          "stage": "reference-adapter-load",
+          "wallSeconds": 0.042980853002518415,
+          "cudaEventIntervalSeconds": 0.04293699264526367,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "adapterApply": {
+          "stage": "reference-vision-encode-and-apply",
+          "wallSeconds": 7.340072204126045,
+          "cudaEventIntervalSeconds": 7.33995654296875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "sampler": {
+          "component": "sampler",
+          "wallSeconds": 1.0263782229740173,
+          "cudaEventSeconds": 1.026243408203125,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 1.0263782229740173
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.5626331029925495,
+          "cudaEventSeconds": 0.5625728149414062,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.5626331029925495
+        }
+      },
+      "graphSHA256": "2f8cc0d25738c7443a97c99e9d9f902fff74d2d01f659fc99543ec08122bec0d",
+      "file": "original-style-turbo-magical.png",
+      "marginalRuntimeCostUSD": 0.0014493111111031289,
+      "freshLoadSeconds": 0,
+      "freshReferenceSeconds": 0,
+      "samplerSeconds": 1.0263782229740173,
+      "decodeSeconds": 0.5626331029925495,
+      "phase": "Second request for this model, reused loaded model and reference encodings",
+      "allocatedTotalCostUSD": 0.012084916724115706
+    }
+  ],
+  "samePromptAcrossModelsPerScene": true,
+  "onlyOriginalCharacterReferencesAndPrompt": true,
+  "originalReferenceFilesUnmodified": true,
+  "styleGuideImageSentToModels": false,
+  "sourceSceneInputUsed": false,
+  "allStartFromNoise": true,
+  "postGenerationEdits": false,
+  "rawWorkerPNGBytes": true,
+  "outputResolution": [
+    1280,
+    720
+  ],
+  "actualSteps": 4,
+  "GPU": "NVIDIA GeForce RTX 5090",
+  "GPUAndDiskHourlyUSD": 1.21,
+  "bootAndSetupThroughReadySeconds": 114.68049836158752,
+  "sharedReferenceUploadTiming": {
+    "sharedUploadAndExactByteVerifySeconds": 8.219000000040978,
+    "referenceCount": 2
+  },
+  "totalGPUAndDiskUpperUSD": 0.06376985578536987,
+  "runtimeAllocatedUSD": 0.021227433333319556,
+  "sharedStartupAndOverheadUSD": 0.04254242245205031,
+  "sharedOverheadPerImageUSD": 0.010635605613012578,
+  "APIUSD": 0,
+  "allOwnedTestGPUsDeleted": true,
+  "maximumAllowedTaskUSD": 0.25,
+  "generationCalls": 4,
+  "rerolls": 0,
+  "productionSettingsChanged": false,
+  "voiceEstimateChanged": false,
+  "timingCaveat": "Native node timings use synchronized wall/event intervals. Cached stages are marked and contribute zero fresh-stage time; lazy device transfers can be included. Delivery includes submission, server wait and retrieval/validation. This is four samples, with first-model loading versus a second request, not a sustained-throughput benchmark.",
+  "costCaveat": "GPU and disk are billed by time. Per-image marginal allocations use measured delivery time; allocated totals additionally split shared startup, overhead and any failed-start charges equally across four images. These allocations sum to the conservative recorded total and are not provider per-image invoices.",
+  "receipts": [
+    {
+      "attempt": "attempt-01",
+      "GPU": "NVIDIA GeForce RTX 5090",
+      "generatedPNGs": 4,
+      "costUSD": 0.06376985578536987,
+      "deleted": true
+    }
+  ],
+  "visualReview": {
+    "method": "Direct visual inspection of the four untouched worker outputs on a two-by-two comparison sheet.",
+    "conclusion": "FLUX kept the two main characters and distinguished the ordinary study from the magical landscape, using clear ink contours and cel-style shading. SDXL Turbo duplicated the characters and carried over the fiery portrait mood instead of following the requested scenes. Its raw outputs remain visible as failed tests. Style acceptance is still your choice; no production setting was changed.",
+    "images": {
+      "flux-normal": "Two main characters at a map-covered desk in an ordinary wood-paneled study. The clean outlines and cel-style shadows follow the written style direction; Vaan is left and Astra right.",
+      "flux-magical": "Two main characters on a stone bridge, with glowing runes, a luminous distant castle, violet twilight and floating rock formations. It adds fantasy scenery while retaining the drawn line-and-shadow treatment.",
+      "turbo-normal": "Failed scene/cast test: four figures instead of two, repeated male identities and an imported fiery portrait mood. It does not produce the requested two-character map discussion reliably.",
+      "turbo-magical": "Failed scene/cast test: three figures instead of two, mixed character appearances and no clear bridge/forest/citadel landscape. The original portrait mood dominates the scene prompt."
+    },
+    "productionApproval": false,
+    "postGenerationImageEdits": false
+  }
+}
