@@ -115,11 +115,11 @@
     "GPUUSDThisCorrection": 0,
     "productionProjectsOrHelperChanged": false,
     "voiceEstimateChanged": false,
-    "latestExamplesReport": "./pipeline-face-detail-20261105.html",
+    "latestExamplesReport": "./pipeline-astra-face-20261105.html",
     "latestExamplesGenerated": true,
     "latestExampleCount": 2,
     "latestExamplesStyleAcceptedByUser": false,
-    "latestExamplesGPUAndDiskUSD": 0.040557388121551935
+    "latestExamplesGPUAndDiskUSD": 0.0222646256658766
   },
   "promptConstruction": {
     "reuseExactBaselineStyleBlock": true,
@@ -128,5 +128,14 @@
     "doNotCopyJonathanChristopherSceneIntoVaanScenes": true,
     "onlyOriginalCharacterReferenceImagesAndWrittenPrompt": true,
     "instruction": "Reuse the recovered style block, not the source shot narrative. Current chapter facts supply characters, action, setting, camera and lighting. Apply only the small world-specific colour suffix."
+  },
+  "selection": {
+    "baseReport": "./pipeline-style-examples-20261105.html#flux-baseline",
+    "usePromptBeforeAllFaceDetailChanges": true,
+    "VaanFacialInstructionsRetained": true,
+    "AstraFacialRefinementPendingUserChoice": true,
+    "addedAllFaceDetailInstruction": false,
+    "forcedCloseupCamera": false,
+    "fantasyColoursApproved": false
   }
 }
