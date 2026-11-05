@@ -2,6 +2,33 @@ import copy,unittest
 from scene_reference_binding import compose
 from studio_data import new_project,character
 class SceneReferenceBinding(unittest.TestCase):
+ def test_short_names_bind_to_the_actual_reference_before_the_later_cast_description(self):
+  p,s,refs=self.fixture();p['characters'][0]['name']='Mira Haven';p['characters'][1]['name']='Leon Vale'
+  text='Leon grips Mira\'s collar. Characters: Mira Haven / Leon Vale.'
+  result=compose(p,s,text,refs)
+  self.assertIn('Leon Vale (the person from image 2) grips Mira Haven (the person from image 1)',result)
+  self.assertEqual(result.count('Mira Haven (the person'),1)
+ def test_full_names_win_and_ambiguous_aliases_and_hyphenated_common_words_stay_unbound(self):
+  p,s,refs=self.fixture();p['characters'][0]['name']='Vaan Astra';p['characters'][1]['name']='Astra Elysia'
+  result=compose(p,s,'Astra watches Vaan. Astra Elysia turns.',refs)
+  self.assertIn('Astra watches Vaan Astra (the person from image 1)',result)
+  self.assertIn('Astra Elysia (the person from image 2) turns',result)
+  p['characters'][0]['name']='Rose Haven'
+  result=compose(p,s,'Rose-colored lighting. rose petals. Rose looks up.',refs)
+  self.assertIn('Rose-colored lighting. rose petals. Rose Haven (the person from image 1) looks up.',result)
+ def test_automatic_binding_is_opt_in_multi_identity_and_manual_safe(self):
+  from scene_reference_binding import bind_automatic
+  p,s,refs=self.fixture();text='Leon points at Mira.';before=copy.deepcopy((p,s,refs))
+  self.assertIsNone(bind_automatic(p,s,text,refs));p['settings']['automaticReferenceBinding']=True
+  self.assertIn('Leon (the person from image 2)',bind_automatic(p,s,text,refs))
+  self.assertIsNone(bind_automatic(p,s,text,refs[:1]))
+  for key in ('prompt','referenceImages'):
+   s['manual']={key:True};self.assertIsNone(bind_automatic(p,s,text,refs))
+  self.assertEqual(refs,before[2])
+ def test_single_word_full_name_does_not_consume_a_lowercase_common_noun(self):
+  p,s,refs=self.fixture();p['characters'][0]['name']='Rose';p['characters'][1]['name']='Leon Vale'
+  result=compose(p,s,'A rose lies on the desk. Leon greets Rose.',refs)
+  self.assertIn('A rose lies on the desk. Leon Vale (the person from image 2) greets Rose (the person from image 1).',result)
  def fixture(self):
   p=new_project();a=character('Mira');b=character('Leon');p['characters']=[a,b];s={'chapterId':p['chapters'][0]['id'],'characters':[{'id':a['id'],'appearanceState':{}},{'id':b['id'],'appearanceState':{}}],'manual':{},'prompt':'Original saved prose'};return p,s,[{'characterId':a['id']},{'characterId':b['id']}]
  def test_names_bind_to_actual_image_slots_even_when_narrative_order_is_reversed(self):

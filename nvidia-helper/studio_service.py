@@ -4992,7 +4992,10 @@ class StudioService:
             if provider.id in ("native-flux", "comfyui") and (
                 references or request["operation"] == "edit"
             ):
-                request["prompt"] = reference_prompt(
+                from scene_reference_binding import bind_automatic
+                bound=(bind_automatic(p,shot,request['prompt'],ref_metadata)
+                    if request['operation']=='generate' and not options.get('_repairPrompt') else None)
+                request["prompt"] = bound if bound is not None else reference_prompt(
                     p, shot, ref_metadata, request["operation"]
                 ) + " " + request["prompt"]
             elif provider.id in ('native-flux','comfyui'):

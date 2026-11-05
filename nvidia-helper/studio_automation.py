@@ -47,7 +47,7 @@ def repair_operation(project, shot, provider):
     previous_failed=(shot.get('automaticRepairAttempts',0)>0
         and bool(qc.get('shotSpecSignature'))
         and shot.get('automaticRepairSpec')==qc['shotSpecSignature'])
-    if fresh_scene_repair(project['settings'],qc,previous_failed):return 'generate'
+    if fresh_scene_repair(project.get('settings',{}),qc,previous_failed):return 'generate'
     caps=(provider.getModelCapabilities(shot['imageModel'])
           if shot.get('imageModel') and hasattr(provider,'getModelCapabilities') else provider.getCapabilities())
     if not caps.get('supportsImageEditing'):return 'generate'
