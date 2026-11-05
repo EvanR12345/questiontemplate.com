@@ -1,0 +1,295 @@
+{
+  "title": "Face detail: baseline and clearer magical-world colours",
+  "date": "2026-11-05",
+  "model": "FLUX.2 Klein4B FP8",
+  "originalReferences": [
+    {
+      "character": "Vaan Astra",
+      "file": "original-vaan.png",
+      "sha256": "9f95c050854daabdb626d3c7055018c56751f41dbe8f50fc767e62edad6537c3",
+      "sourceFile": "vaan astra.webp",
+      "preprocessing": "Unchanged saved original bytes. No crop, restyle, cleanup or conversion for this test."
+    },
+    {
+      "character": "Astra Elysia",
+      "file": "original-astra.png",
+      "sha256": "b5cbd27fae86a9d3ee82209c42ef9e95a41c331c46333a2bfdbbf6dccd9814dc",
+      "sourceFile": "astra elysia.png",
+      "preprocessing": "Unchanged saved original bytes. No crop, restyle, cleanup or conversion for this test."
+    }
+  ],
+  "stylePromptExact": "Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage.",
+  "sourceStyleTargetSHA256": "111ba1034bad14394c4211df1c178a9b057f359867520770673f57eb3a37014a",
+  "sameOriginalReferencesSceneAndSeed": true,
+  "onlyWorldColourSuffixChanges": true,
+  "scenes": {
+    "baseline": {
+      "title": "Detailed faces \u00b7 baseline colours",
+      "seed": 849389944,
+      "scenePrompt": "Use image 1 as the identity reference for Vaan Astra. Preserve his face and permanent traits; the current story appearance controls hair, clothes and pose. Use image 2 as the identity reference for Astra Elysia. Preserve her face and permanent traits; the current scene appearance controls clothes and pose. Vaan turns toward Astra in startled recognition as she stands in the open bedroom doorway. Characters: Vaan Astra, one clean-shaven young adult man, violet hair and golden eyes in this life, black and gold tailored coat and white gloves; Astra Elysia, one adult woman, long black hair, black tailored clothes and feathered mantle. Exactly these two people. Camera: tight chest-up two-shot, slightly low angle. Both heads and shoulders fill the frame; Vaan foreground left, Astra at the doorway right. Show both faces at readable three-quarter angles, with clear eyes and cheek structure. Crop out lower bodies and most furniture. Faces are the focal point, not the room. Location: the existing luxurious bedroom, silk-covered four-poster bed, battle tapestries, stained-glass windows, reddish-brown desk and velvet armchair. Lighting: amber window light models their faces and clothing, with cooler blue sky notes outside the windows. Facial rendering priority: detailed drawn upper and lower eyelid contours, defined inner eye corners, clearly separated irises and pupils, expressive brow muscles, a shaped nose bridge and nostril planes, defined lips and mouth corners, layered cel midtones on the cheekbones, under the nose and beneath the jaw. Use purposeful fine ink and age-appropriate expression creases, not smooth blank face patches. Vaan is startled, with raised brows and slight tension around his eyes and mouth; Astra has an intent, controlled expression with defined lids and brows. Keep their reference identities and youthful adult facial proportions. No artificial aging, deep old-age wrinkles or photographic pores. Preserve the original full-colour manhwa drawing style and baseline warm skin colours. Style: Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage. Production constraints: Use only the people selected for this shot. Preserve their canonical identity and current scene clothing. Fully illustrated 2D manhwa, one continuous landscape scene at one moment. No title text, labels, captions, borders, collage or extra important people.",
+      "worldColourSuffix": "Use the baseline drawing style unchanged. Let the current scene determine lighting and props. For comparable daylight interiors, retain warm amber highlights, warm wood and skin tones, cooler blue sky/window notes, clear colour separation and strong but smoothly modelled cel shadows. Do not flatten the drawing or force a different palette onto a scene with different story lighting.",
+      "prompt": "Use image 1 as the identity reference for Vaan Astra. Preserve his face and permanent traits; the current story appearance controls hair, clothes and pose. Use image 2 as the identity reference for Astra Elysia. Preserve her face and permanent traits; the current scene appearance controls clothes and pose. Vaan turns toward Astra in startled recognition as she stands in the open bedroom doorway. Characters: Vaan Astra, one clean-shaven young adult man, violet hair and golden eyes in this life, black and gold tailored coat and white gloves; Astra Elysia, one adult woman, long black hair, black tailored clothes and feathered mantle. Exactly these two people. Camera: tight chest-up two-shot, slightly low angle. Both heads and shoulders fill the frame; Vaan foreground left, Astra at the doorway right. Show both faces at readable three-quarter angles, with clear eyes and cheek structure. Crop out lower bodies and most furniture. Faces are the focal point, not the room. Location: the existing luxurious bedroom, silk-covered four-poster bed, battle tapestries, stained-glass windows, reddish-brown desk and velvet armchair. Lighting: amber window light models their faces and clothing, with cooler blue sky notes outside the windows. Facial rendering priority: detailed drawn upper and lower eyelid contours, defined inner eye corners, clearly separated irises and pupils, expressive brow muscles, a shaped nose bridge and nostril planes, defined lips and mouth corners, layered cel midtones on the cheekbones, under the nose and beneath the jaw. Use purposeful fine ink and age-appropriate expression creases, not smooth blank face patches. Vaan is startled, with raised brows and slight tension around his eyes and mouth; Astra has an intent, controlled expression with defined lids and brows. Keep their reference identities and youthful adult facial proportions. No artificial aging, deep old-age wrinkles or photographic pores. Preserve the original full-colour manhwa drawing style and baseline warm skin colours. Style: Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage. Production constraints: Use only the people selected for this shot. Preserve their canonical identity and current scene clothing. Fully illustrated 2D manhwa, one continuous landscape scene at one moment. No title text, labels, captions, borders, collage or extra important people. World colour treatment: Use the baseline drawing style unchanged. Let the current scene determine lighting and props. For comparable daylight interiors, retain warm amber highlights, warm wood and skin tones, cooler blue sky/window notes, clear colour separation and strong but smoothly modelled cel shadows. Do not flatten the drawing or force a different palette onto a scene with different story lighting."
+    },
+    "magic-colours": {
+      "title": "Detailed faces \u00b7 clearer fantasy colours",
+      "seed": 849389944,
+      "scenePrompt": "Use image 1 as the identity reference for Vaan Astra. Preserve his face and permanent traits; the current story appearance controls hair, clothes and pose. Use image 2 as the identity reference for Astra Elysia. Preserve her face and permanent traits; the current scene appearance controls clothes and pose. Vaan turns toward Astra in startled recognition as she stands in the open bedroom doorway. Characters: Vaan Astra, one clean-shaven young adult man, violet hair and golden eyes in this life, black and gold tailored coat and white gloves; Astra Elysia, one adult woman, long black hair, black tailored clothes and feathered mantle. Exactly these two people. Camera: tight chest-up two-shot, slightly low angle. Both heads and shoulders fill the frame; Vaan foreground left, Astra at the doorway right. Show both faces at readable three-quarter angles, with clear eyes and cheek structure. Crop out lower bodies and most furniture. Faces are the focal point, not the room. Location: the existing luxurious bedroom, silk-covered four-poster bed, battle tapestries, stained-glass windows, reddish-brown desk and velvet armchair. Lighting: amber window light models their faces and clothing, with cooler blue sky notes outside the windows. Facial rendering priority: detailed drawn upper and lower eyelid contours, defined inner eye corners, clearly separated irises and pupils, expressive brow muscles, a shaped nose bridge and nostril planes, defined lips and mouth corners, layered cel midtones on the cheekbones, under the nose and beneath the jaw. Use purposeful fine ink and age-appropriate expression creases, not smooth blank face patches. Vaan is startled, with raised brows and slight tension around his eyes and mouth; Astra has an intent, controlled expression with defined lids and brows. Keep their reference identities and youthful adult facial proportions. No artificial aging, deep old-age wrinkles or photographic pores. Preserve the original full-colour manhwa drawing style and baseline warm skin colours. Style: Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage. Production constraints: Use only the people selected for this shot. Preserve their canonical identity and current scene clothing. Fully illustrated 2D manhwa, one continuous landscape scene at one moment. No title text, labels, captions, borders, collage or extra important people.",
+      "worldColourSuffix": "For this comparison make the magical-world environmental colour difference clearly visible: richer cool teal and blue-violet stained-glass/window light across background walls, deep plum and indigo environmental shadows, and restrained gold light accents. Keep warm natural skin colours and readable facial planes, with the same expressive ink and cel shading as the baseline. The cool magical environment contrasts with the warmer amber-brown baseline room. Maintain the same bedroom, camera, people and story objects; this is colour and lighting only, without new fantasy scenery, particles, symbols, neon effects or a blanket purple tint.",
+      "prompt": "Use image 1 as the identity reference for Vaan Astra. Preserve his face and permanent traits; the current story appearance controls hair, clothes and pose. Use image 2 as the identity reference for Astra Elysia. Preserve her face and permanent traits; the current scene appearance controls clothes and pose. Vaan turns toward Astra in startled recognition as she stands in the open bedroom doorway. Characters: Vaan Astra, one clean-shaven young adult man, violet hair and golden eyes in this life, black and gold tailored coat and white gloves; Astra Elysia, one adult woman, long black hair, black tailored clothes and feathered mantle. Exactly these two people. Camera: tight chest-up two-shot, slightly low angle. Both heads and shoulders fill the frame; Vaan foreground left, Astra at the doorway right. Show both faces at readable three-quarter angles, with clear eyes and cheek structure. Crop out lower bodies and most furniture. Faces are the focal point, not the room. Location: the existing luxurious bedroom, silk-covered four-poster bed, battle tapestries, stained-glass windows, reddish-brown desk and velvet armchair. Lighting: amber window light models their faces and clothing, with cooler blue sky notes outside the windows. Facial rendering priority: detailed drawn upper and lower eyelid contours, defined inner eye corners, clearly separated irises and pupils, expressive brow muscles, a shaped nose bridge and nostril planes, defined lips and mouth corners, layered cel midtones on the cheekbones, under the nose and beneath the jaw. Use purposeful fine ink and age-appropriate expression creases, not smooth blank face patches. Vaan is startled, with raised brows and slight tension around his eyes and mouth; Astra has an intent, controlled expression with defined lids and brows. Keep their reference identities and youthful adult facial proportions. No artificial aging, deep old-age wrinkles or photographic pores. Preserve the original full-colour manhwa drawing style and baseline warm skin colours. Style: Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage. Production constraints: Use only the people selected for this shot. Preserve their canonical identity and current scene clothing. Fully illustrated 2D manhwa, one continuous landscape scene at one moment. No title text, labels, captions, borders, collage or extra important people. World colour treatment: For this comparison make the magical-world environmental colour difference clearly visible: richer cool teal and blue-violet stained-glass/window light across background walls, deep plum and indigo environmental shadows, and restrained gold light accents. Keep warm natural skin colours and readable facial planes, with the same expressive ink and cel shading as the baseline. The cool magical environment contrasts with the warmer amber-brown baseline room. Maintain the same bedroom, camera, people and story objects; this is colour and lighting only, without new fantasy scenery, particles, symbols, neon effects or a blanket purple tint."
+    }
+  },
+  "files": [
+    {
+      "id": "flux-face-baseline",
+      "model": "flux",
+      "GPU": "NVIDIA GeForce RTX 5090",
+      "seed": 849389944,
+      "prompt": "Use image 1 as the identity reference for Vaan Astra. Preserve his face and permanent traits; the current story appearance controls hair, clothes and pose. Use image 2 as the identity reference for Astra Elysia. Preserve her face and permanent traits; the current scene appearance controls clothes and pose. Vaan turns toward Astra in startled recognition as she stands in the open bedroom doorway. Characters: Vaan Astra, one clean-shaven young adult man, violet hair and golden eyes in this life, black and gold tailored coat and white gloves; Astra Elysia, one adult woman, long black hair, black tailored clothes and feathered mantle. Exactly these two people. Camera: tight chest-up two-shot, slightly low angle. Both heads and shoulders fill the frame; Vaan foreground left, Astra at the doorway right. Show both faces at readable three-quarter angles, with clear eyes and cheek structure. Crop out lower bodies and most furniture. Faces are the focal point, not the room. Location: the existing luxurious bedroom, silk-covered four-poster bed, battle tapestries, stained-glass windows, reddish-brown desk and velvet armchair. Lighting: amber window light models their faces and clothing, with cooler blue sky notes outside the windows. Facial rendering priority: detailed drawn upper and lower eyelid contours, defined inner eye corners, clearly separated irises and pupils, expressive brow muscles, a shaped nose bridge and nostril planes, defined lips and mouth corners, layered cel midtones on the cheekbones, under the nose and beneath the jaw. Use purposeful fine ink and age-appropriate expression creases, not smooth blank face patches. Vaan is startled, with raised brows and slight tension around his eyes and mouth; Astra has an intent, controlled expression with defined lids and brows. Keep their reference identities and youthful adult facial proportions. No artificial aging, deep old-age wrinkles or photographic pores. Preserve the original full-colour manhwa drawing style and baseline warm skin colours. Style: Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage. Production constraints: Use only the people selected for this shot. Preserve their canonical identity and current scene clothing. Fully illustrated 2D manhwa, one continuous landscape scene at one moment. No title text, labels, captions, borders, collage or extra important people. World colour treatment: Use the baseline drawing style unchanged. Let the current scene determine lighting and props. For comparable daylight interiors, retain warm amber highlights, warm wood and skin tones, cooler blue sky/window notes, clear colour separation and strong but smoothly modelled cel shadows. Do not flatten the drawing or force a different palette onto a scene with different story lighting.",
+      "imageSHA256": "c1a22bb111f09caf0c27885abdb790d8ee14e19206eacad13860fbdbdeeb7754",
+      "scene": "baseline",
+      "sceneTitle": "Detailed faces \u00b7 baseline colours",
+      "freshNoiseLatent": true,
+      "onlyOriginalCharacterReferencesAndPrompt": true,
+      "sourceSceneInputUsed": false,
+      "styleGuideSentToModel": false,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T11:21:41.886542+00:00",
+      "submitSeconds": 0.32900000002700835,
+      "serverWaitSeconds": 22.29599999997299,
+      "retrievalSeconds": 1.0940000000409782,
+      "clientDeliverySeconds": 23.719000000040978,
+      "stageTimings": {
+        "model": {
+          "stage": "diffusion-model-load",
+          "wallSeconds": 0.7526013249880634,
+          "cudaEventIntervalSeconds": 0.75251611328125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.7526013249880634
+        },
+        "clip": {
+          "stage": "text-model-load",
+          "wallSeconds": 0.32489336299477145,
+          "cudaEventIntervalSeconds": 0.32477621459960937,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.32489336299477145
+        },
+        "vae": {
+          "stage": "vae-load",
+          "wallSeconds": 11.68155352899339,
+          "cudaEventIntervalSeconds": 11.6801103515625,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 11.68155352899339
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 2.6584932550031226,
+          "cudaEventIntervalSeconds": 2.65842236328125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 2.6584932550031226
+        },
+        "ref0": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.5033053380029742,
+          "cudaEventIntervalSeconds": 0.50290087890625,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.5033053380029742
+        },
+        "ref1": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.895915346001857,
+          "cudaEventIntervalSeconds": 0.8955787963867188,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.895915346001857
+        },
+        "sampler": {
+          "stage": "sampler",
+          "wallSeconds": 3.0795779030013364,
+          "cudaEventIntervalSeconds": 3.079522705078125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 3.0795779030013364
+        },
+        "decode": {
+          "stage": "decode",
+          "wallSeconds": 0.7004000099987024,
+          "cudaEventIntervalSeconds": 0.603255126953125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.7004000099987024
+        }
+      },
+      "graphSHA256": "8a2f350ff488c5e5e5fd546b1780e7aa2e61f87584da0c43993f87f00d0aeaab",
+      "file": "face-detail-baseline.png",
+      "marginalRuntimeCostUSD": 0.007972219444458218,
+      "freshLoadSeconds": 12.759048216976225,
+      "freshReferenceSeconds": 1.3992206840048311,
+      "samplerSeconds": 3.0795779030013364,
+      "decodeSeconds": 0.7004000099987024,
+      "allocatedTotalCostUSD": 0.023227564894122525
+    },
+    {
+      "id": "flux-face-magic",
+      "model": "flux",
+      "GPU": "NVIDIA GeForce RTX 5090",
+      "seed": 849389944,
+      "prompt": "Use image 1 as the identity reference for Vaan Astra. Preserve his face and permanent traits; the current story appearance controls hair, clothes and pose. Use image 2 as the identity reference for Astra Elysia. Preserve her face and permanent traits; the current scene appearance controls clothes and pose. Vaan turns toward Astra in startled recognition as she stands in the open bedroom doorway. Characters: Vaan Astra, one clean-shaven young adult man, violet hair and golden eyes in this life, black and gold tailored coat and white gloves; Astra Elysia, one adult woman, long black hair, black tailored clothes and feathered mantle. Exactly these two people. Camera: tight chest-up two-shot, slightly low angle. Both heads and shoulders fill the frame; Vaan foreground left, Astra at the doorway right. Show both faces at readable three-quarter angles, with clear eyes and cheek structure. Crop out lower bodies and most furniture. Faces are the focal point, not the room. Location: the existing luxurious bedroom, silk-covered four-poster bed, battle tapestries, stained-glass windows, reddish-brown desk and velvet armchair. Lighting: amber window light models their faces and clothing, with cooler blue sky notes outside the windows. Facial rendering priority: detailed drawn upper and lower eyelid contours, defined inner eye corners, clearly separated irises and pupils, expressive brow muscles, a shaped nose bridge and nostril planes, defined lips and mouth corners, layered cel midtones on the cheekbones, under the nose and beneath the jaw. Use purposeful fine ink and age-appropriate expression creases, not smooth blank face patches. Vaan is startled, with raised brows and slight tension around his eyes and mouth; Astra has an intent, controlled expression with defined lids and brows. Keep their reference identities and youthful adult facial proportions. No artificial aging, deep old-age wrinkles or photographic pores. Preserve the original full-colour manhwa drawing style and baseline warm skin colours. Style: Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage. Production constraints: Use only the people selected for this shot. Preserve their canonical identity and current scene clothing. Fully illustrated 2D manhwa, one continuous landscape scene at one moment. No title text, labels, captions, borders, collage or extra important people. World colour treatment: For this comparison make the magical-world environmental colour difference clearly visible: richer cool teal and blue-violet stained-glass/window light across background walls, deep plum and indigo environmental shadows, and restrained gold light accents. Keep warm natural skin colours and readable facial planes, with the same expressive ink and cel shading as the baseline. The cool magical environment contrasts with the warmer amber-brown baseline room. Maintain the same bedroom, camera, people and story objects; this is colour and lighting only, without new fantasy scenery, particles, symbols, neon effects or a blanket purple tint.",
+      "imageSHA256": "44b041c0892bba01da8a8f12571735c5fe5b75ff283bda670280da9312d46954",
+      "scene": "magic-colours",
+      "sceneTitle": "Detailed faces \u00b7 clearer fantasy colours",
+      "freshNoiseLatent": true,
+      "onlyOriginalCharacterReferencesAndPrompt": true,
+      "sourceSceneInputUsed": false,
+      "styleGuideSentToModel": false,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T11:22:05.618433+00:00",
+      "submitSeconds": 0.5939999999827705,
+      "serverWaitSeconds": 4.311999999976251,
+      "retrievalSeconds": 1.2660000000032596,
+      "clientDeliverySeconds": 6.171999999962281,
+      "stageTimings": {
+        "model": {
+          "stage": "diffusion-model-load",
+          "wallSeconds": 0.7526013249880634,
+          "cudaEventIntervalSeconds": 0.75251611328125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "clip": {
+          "stage": "text-model-load",
+          "wallSeconds": 0.32489336299477145,
+          "cudaEventIntervalSeconds": 0.32477621459960937,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "vae": {
+          "stage": "vae-load",
+          "wallSeconds": 11.68155352899339,
+          "cudaEventIntervalSeconds": 11.6801103515625,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 0.4161407010105904,
+          "cudaEventIntervalSeconds": 0.4160018005371094,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.4161407010105904
+        },
+        "ref0": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.5033053380029742,
+          "cudaEventIntervalSeconds": 0.50290087890625,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "ref1": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.895915346001857,
+          "cudaEventIntervalSeconds": 0.8955787963867188,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "sampler": {
+          "stage": "sampler",
+          "wallSeconds": 2.53904034900188,
+          "cudaEventIntervalSeconds": 2.53886474609375,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 2.53904034900188
+        },
+        "decode": {
+          "stage": "decode",
+          "wallSeconds": 0.4426746700046351,
+          "cudaEventIntervalSeconds": 0.44258856201171876,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.4426746700046351
+        }
+      },
+      "graphSHA256": "8c896ea6edf6beef1aaef4093dc576523c4ddd540829c355405b4f882cbea449",
+      "file": "face-detail-magic-colours.png",
+      "marginalRuntimeCostUSD": 0.0020744777777651,
+      "freshLoadSeconds": 0,
+      "freshReferenceSeconds": 0,
+      "samplerSeconds": 2.53904034900188,
+      "decodeSeconds": 0.4426746700046351,
+      "allocatedTotalCostUSD": 0.01732982322742941
+    }
+  ],
+  "rawWorkerPNGs": true,
+  "postprocessing": false,
+  "freshNoiseForBoth": true,
+  "styleOrSourceSceneImageUsed": false,
+  "sameSampling": {
+    "steps": 4,
+    "CFG": 1,
+    "sampler": "euler",
+    "scheduler": "flux2",
+    "outputResolution": [
+      1280,
+      720
+    ]
+  },
+  "GPU": "NVIDIA GeForce RTX 5090",
+  "GPUAndDiskHourlyUSD": 1.21,
+  "bootAndSetupThroughReadySeconds": 79.48896837234497,
+  "referenceUploadTiming": {
+    "sharedUploadAndExactByteVerifySeconds": 5.172000000020489,
+    "referenceCount": 2
+  },
+  "totalGPUAndDiskUpperUSD": 0.040557388121551935,
+  "sharedStartupAndOverheadUSD": 0.03051069089932862,
+  "generationCalls": 2,
+  "rerolls": 0,
+  "APIUSD": 0,
+  "allOwnedTestGPUsDeleted": true,
+  "styleAcceptedByUser": false,
+  "productionDefaultsChanged": false,
+  "voiceEstimateChanged": false,
+  "timingAndCostNote": "First request includes model/text/reference loading. Second request reuses those stages, but sampler and decode execute freshly. Delivery includes submission, server wait, PNG retrieval and validation. Allocated totals add one half of shared startup/overhead to each marginal delivery-time cost; these sum to the conservative recorded total, not separate per-image invoices.",
+  "receipts": [
+    {
+      "attempt": "attempt-01",
+      "GPU": "NVIDIA GeForce RTX 5090",
+      "costUSD": 0.040557388121551935,
+      "generatedPNGs": 2,
+      "deleted": true
+    }
+  ],
+  "faceDetailInstruction": "Facial rendering priority: detailed drawn upper and lower eyelid contours, defined inner eye corners, clearly separated irises and pupils, expressive brow muscles, a shaped nose bridge and nostril planes, defined lips and mouth corners, layered cel midtones on the cheekbones, under the nose and beneath the jaw. Use purposeful fine ink and age-appropriate expression creases, not smooth blank face patches. Vaan is startled, with raised brows and slight tension around his eyes and mouth; Astra has an intent, controlled expression with defined lids and brows. Keep their reference identities and youthful adult facial proportions. No artificial aging, deep old-age wrinkles or photographic pores. Preserve the original full-colour manhwa drawing style and baseline warm skin colours.",
+  "framingChange": "Tight chest-up two-shot; both faces large and readable in three-quarter view.",
+  "magicColourInstruction": "For this comparison make the magical-world environmental colour difference clearly visible: richer cool teal and blue-violet stained-glass/window light across background walls, deep plum and indigo environmental shadows, and restrained gold light accents. Keep warm natural skin colours and readable facial planes, with the same expressive ink and cel shading as the baseline. The cool magical environment contrasts with the warmer amber-brown baseline room. Maintain the same bedroom, camera, people and story objects; this is colour and lighting only, without new fantasy scenery, particles, symbols, neon effects or a blanket purple tint.",
+  "baselinePaletteKept": true,
+  "previousMagicDifferenceTooSubtle": true,
+  "visualReview": {
+    "method": "Side-by-side inspection of both raw outputs; baseline also inspected at full 1280x720.",
+    "observations": "Both outputs retain two main characters in the bedroom, with larger faces and more pronounced brow/eye/nose shading than the earlier wide examples. The camera is closer, but neither fully obeys the requested chest-up crop. The fantasy-colour version has a clearly cooler, darker teal/blue-violet environment than the amber baseline; it is a stronger comparison and not a claim of the final preferred amount. Pose, clothing and furniture details also shift between these independent generations. Vaan gains a conspicuous earring not explicitly requested. Fine facial detail is still stylized, so the target match remains for the user to judge.",
+    "baselinePaletteKeptAsPreference": true,
+    "faceDetailImprovementConfoundedByCloserFraming": true,
+    "styleAcceptedByUser": false,
+    "postGenerationEdits": false,
+    "rerolls": 0
+  }
+}
