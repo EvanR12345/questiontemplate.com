@@ -1,0 +1,866 @@
+{
+  "title": "Character references plus prompt only: raw fresh-noise comparison",
+  "date": "2026-11-05",
+  "preferredLook": "01 FLUX",
+  "samePromptAcrossModels": true,
+  "sameCharacterReferenceFiles": true,
+  "referenceCount": 3,
+  "noSceneImageInput": true,
+  "noSeparateStyleImageInput": true,
+  "noInputImageOutputLatent": true,
+  "noOutputPostprocessing": true,
+  "prompt": "Exactly three adults: one violet-haired man seated on a bed at left; one short black-haired male butler seated beside a meal table at center; one long black-haired woman standing at right. One of each person. Ornate fantasy bedroom. Black and gold clothes. Mature Korean fantasy manhwa, angular adult faces, narrow eyes, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Single wide scene. Use the three supplied portraits only as character references.",
+  "references": [
+    {
+      "file": "vaan.png",
+      "sha256": "452aea3dc484d1fbc1c5a95774f5dae69a1df7e2fe8cf89848a5a2d6ac4cfa2c",
+      "character": "Vaan: violet-haired man, black and gold coat",
+      "sourceCropBox": [
+        336,
+        144,
+        560,
+        464
+      ],
+      "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+      "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+    },
+    {
+      "file": "aldric.png",
+      "sha256": "b864481de49236ac350229735d106470cc050469ec0f448cdd396e23cbe9ac37",
+      "character": "Aldric: short black-haired male butler in a black suit",
+      "sourceCropBox": [
+        736,
+        368,
+        960,
+        688
+      ],
+      "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+      "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+    },
+    {
+      "file": "astra.png",
+      "sha256": "cd8fcd411e35dafdeb6371b942193597c38b79676febaff563572628808307de",
+      "character": "Astra: long black-haired woman in a black feathered mantle",
+      "sourceCropBox": [
+        928,
+        64,
+        1152,
+        384
+      ],
+      "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+      "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+    }
+  ],
+  "files": [
+    {
+      "id": "flux-a",
+      "model": "flux",
+      "GPU": "NVIDIA GeForce RTX 4090",
+      "seed": 19051115,
+      "adapterWeight": null,
+      "imageSHA256": "45c66ada55b4d92acd2d100daad4518e4342cca110175fc1ab5af1a3504a3954",
+      "prompt": "Exactly three adults: one violet-haired man seated on a bed at left; one short black-haired male butler seated beside a meal table at center; one long black-haired woman standing at right. One of each person. Ornate fantasy bedroom. Black and gold clothes. Mature Korean fantasy manhwa, angular adult faces, narrow eyes, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Single wide scene. Use the three supplied portraits only as character references.",
+      "references": [
+        {
+          "file": "vaan.png",
+          "sha256": "452aea3dc484d1fbc1c5a95774f5dae69a1df7e2fe8cf89848a5a2d6ac4cfa2c",
+          "character": "Vaan: violet-haired man, black and gold coat",
+          "sourceCropBox": [
+            336,
+            144,
+            560,
+            464
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "aldric.png",
+          "sha256": "b864481de49236ac350229735d106470cc050469ec0f448cdd396e23cbe9ac37",
+          "character": "Aldric: short black-haired male butler in a black suit",
+          "sourceCropBox": [
+            736,
+            368,
+            960,
+            688
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "astra.png",
+          "sha256": "cd8fcd411e35dafdeb6371b942193597c38b79676febaff563572628808307de",
+          "character": "Astra: long black-haired woman in a black feathered mantle",
+          "sourceCropBox": [
+            928,
+            64,
+            1152,
+            384
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        }
+      ],
+      "freshNoiseLatent": true,
+      "onlyCharacterReferencesAndPrompt": true,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T09:31:24.209391+00:00",
+      "clientDeliverySeconds": 17.07799999997951,
+      "submitSeconds": 0.5310000000172295,
+      "serverWaitSeconds": 15.155999999959022,
+      "retrievalSeconds": 1.3910000000032596,
+      "stageTimings": {
+        "model": {
+          "stage": "diffusion-model-load",
+          "wallSeconds": 0.03147314500529319,
+          "cudaEventIntervalSeconds": 0.03142774391174316,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.03147314500529319
+        },
+        "clip": {
+          "stage": "text-model-load",
+          "wallSeconds": 0.42102296103257686,
+          "cudaEventIntervalSeconds": 0.42096142578125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.42102296103257686
+        },
+        "vae": {
+          "stage": "vae-load",
+          "wallSeconds": 4.2632377030095086,
+          "cudaEventIntervalSeconds": 4.26307177734375,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 4.2632377030095086
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 2.7456581050064415,
+          "cudaEventIntervalSeconds": 2.7455908203125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 2.7456581050064415
+        },
+        "ref0": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.20184859598521143,
+          "cudaEventIntervalSeconds": 0.20172706604003907,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.20184859598521143
+        },
+        "ref1": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.7194194829789922,
+          "cudaEventIntervalSeconds": 0.7193106079101562,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.7194194829789922
+        },
+        "ref2": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.6175995130324736,
+          "cudaEventIntervalSeconds": 0.6174910278320312,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.6175995130324736
+        },
+        "sampler": {
+          "stage": "sampler",
+          "wallSeconds": 4.804565531900153,
+          "cudaEventIntervalSeconds": 4.8044521484375,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 4.804565531900153
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.24343085300642997,
+          "cudaEventSeconds": 0.24333334350585936,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.24343085300642997
+        }
+      },
+      "graphSHA256": "fd8b715ba3d66d04eff31792c9c743cced0fc6123611cdfb7f0b4bc4302c860e",
+      "file": "character-flux-a.png",
+      "marginalRuntimeCostUSD": 0.00431693888888371,
+      "freshLoadSeconds": 4.715733809047379,
+      "freshReferenceSeconds": 1.5388675919966772,
+      "samplerSeconds": 4.804565531900153,
+      "decodeSeconds": 0.24343085300642997
+    },
+    {
+      "id": "flux-b",
+      "model": "flux",
+      "GPU": "NVIDIA GeForce RTX 4090",
+      "seed": 19051116,
+      "adapterWeight": null,
+      "imageSHA256": "2bee2aed2e090ce521410fb789a4d92d924a41969fb720d3d84f40686264c686",
+      "prompt": "Exactly three adults: one violet-haired man seated on a bed at left; one short black-haired male butler seated beside a meal table at center; one long black-haired woman standing at right. One of each person. Ornate fantasy bedroom. Black and gold clothes. Mature Korean fantasy manhwa, angular adult faces, narrow eyes, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Single wide scene. Use the three supplied portraits only as character references.",
+      "references": [
+        {
+          "file": "vaan.png",
+          "sha256": "452aea3dc484d1fbc1c5a95774f5dae69a1df7e2fe8cf89848a5a2d6ac4cfa2c",
+          "character": "Vaan: violet-haired man, black and gold coat",
+          "sourceCropBox": [
+            336,
+            144,
+            560,
+            464
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "aldric.png",
+          "sha256": "b864481de49236ac350229735d106470cc050469ec0f448cdd396e23cbe9ac37",
+          "character": "Aldric: short black-haired male butler in a black suit",
+          "sourceCropBox": [
+            736,
+            368,
+            960,
+            688
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "astra.png",
+          "sha256": "cd8fcd411e35dafdeb6371b942193597c38b79676febaff563572628808307de",
+          "character": "Astra: long black-haired woman in a black feathered mantle",
+          "sourceCropBox": [
+            928,
+            64,
+            1152,
+            384
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        }
+      ],
+      "freshNoiseLatent": true,
+      "onlyCharacterReferencesAndPrompt": true,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T09:31:41.303519+00:00",
+      "clientDeliverySeconds": 8.202999999979511,
+      "submitSeconds": 0.5630000000237487,
+      "serverWaitSeconds": 5.875,
+      "retrievalSeconds": 1.7649999999557622,
+      "stageTimings": {
+        "model": {
+          "stage": "diffusion-model-load",
+          "wallSeconds": 0.03147314500529319,
+          "cudaEventIntervalSeconds": 0.03142774391174316,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "clip": {
+          "stage": "text-model-load",
+          "wallSeconds": 0.42102296103257686,
+          "cudaEventIntervalSeconds": 0.42096142578125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "vae": {
+          "stage": "vae-load",
+          "wallSeconds": 4.2632377030095086,
+          "cudaEventIntervalSeconds": 4.26307177734375,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 2.7456581050064415,
+          "cudaEventIntervalSeconds": 2.7455908203125,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "ref0": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.20184859598521143,
+          "cudaEventIntervalSeconds": 0.20172706604003907,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "ref1": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.7194194829789922,
+          "cudaEventIntervalSeconds": 0.7193106079101562,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "ref2": {
+          "stage": "reference-vae-encode",
+          "wallSeconds": 0.6175995130324736,
+          "cudaEventIntervalSeconds": 0.6174910278320312,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "sampler": {
+          "stage": "sampler",
+          "wallSeconds": 4.500694578047842,
+          "cudaEventIntervalSeconds": 4.50060400390625,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 4.500694578047842
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.1653630150249228,
+          "cudaEventSeconds": 0.1652711944580078,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.1653630150249228
+        }
+      },
+      "graphSHA256": "776c5043775392f95ced8f3e003cf4b80cabded20293dcdb43337a5daee8b4fb",
+      "file": "character-flux-b.png",
+      "marginalRuntimeCostUSD": 0.0020735361111059317,
+      "freshLoadSeconds": 0,
+      "freshReferenceSeconds": 0,
+      "samplerSeconds": 4.500694578047842,
+      "decodeSeconds": 0.1653630150249228
+    },
+    {
+      "id": "turbo-main",
+      "model": "sdxl-turbo",
+      "GPU": "NVIDIA GeForce RTX 4090",
+      "seed": 19051115,
+      "adapterWeight": 0.8,
+      "imageSHA256": "7ff5c66489f0dffcfe80edaf3ac6c42ed89c4563c839b756336e190961f3b0b4",
+      "prompt": "Exactly three adults: one violet-haired man seated on a bed at left; one short black-haired male butler seated beside a meal table at center; one long black-haired woman standing at right. One of each person. Ornate fantasy bedroom. Black and gold clothes. Mature Korean fantasy manhwa, angular adult faces, narrow eyes, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Single wide scene. Use the three supplied portraits only as character references.",
+      "references": [
+        {
+          "file": "vaan.png",
+          "sha256": "452aea3dc484d1fbc1c5a95774f5dae69a1df7e2fe8cf89848a5a2d6ac4cfa2c",
+          "character": "Vaan: violet-haired man, black and gold coat",
+          "sourceCropBox": [
+            336,
+            144,
+            560,
+            464
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "aldric.png",
+          "sha256": "b864481de49236ac350229735d106470cc050469ec0f448cdd396e23cbe9ac37",
+          "character": "Aldric: short black-haired male butler in a black suit",
+          "sourceCropBox": [
+            736,
+            368,
+            960,
+            688
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "astra.png",
+          "sha256": "cd8fcd411e35dafdeb6371b942193597c38b79676febaff563572628808307de",
+          "character": "Astra: long black-haired woman in a black feathered mantle",
+          "sourceCropBox": [
+            928,
+            64,
+            1152,
+            384
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        }
+      ],
+      "freshNoiseLatent": true,
+      "onlyCharacterReferencesAndPrompt": true,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T09:31:50.101508+00:00",
+      "clientDeliverySeconds": 18.21899999998277,
+      "submitSeconds": 0.5309999999590218,
+      "serverWaitSeconds": 15.594000000040978,
+      "retrievalSeconds": 2.0939999999827705,
+      "stageTimings": {
+        "model": {
+          "component": "checkpoint-load-or-switch",
+          "wallSeconds": 2.289069095044397,
+          "cudaEventSeconds": 2.28882275390625,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 2.289069095044397
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 3.4679754129610956,
+          "cudaEventIntervalSeconds": 3.467822998046875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 3.4679754129610956
+        },
+        "adapterLoad": {
+          "stage": "reference-adapter-load",
+          "wallSeconds": 0.03589235700201243,
+          "cudaEventIntervalSeconds": 0.03580518341064453,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 0.03589235700201243
+        },
+        "adapterApply": {
+          "stage": "reference-vision-encode-and-apply",
+          "wallSeconds": 3.4888960600364953,
+          "cudaEventIntervalSeconds": 3.488844482421875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 3.4888960600364953
+        },
+        "sampler": {
+          "component": "sampler",
+          "wallSeconds": 3.5798360250191763,
+          "cudaEventSeconds": 3.579657958984375,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 3.5798360250191763
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.24299324594903737,
+          "cudaEventSeconds": 0.24279023742675782,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.24299324594903737
+        }
+      },
+      "graphSHA256": "abaae6bd3a9a450581e1338620a83b10f6cbb7cc9b3e6fe489d11fea9a350f04",
+      "file": "character-turbo-main.png",
+      "marginalRuntimeCostUSD": 0.0046053583333289785,
+      "freshLoadSeconds": 2.3249614520464092,
+      "freshReferenceSeconds": 3.4888960600364953,
+      "samplerSeconds": 3.5798360250191763,
+      "decodeSeconds": 0.24299324594903737
+    },
+    {
+      "id": "turbo-b",
+      "model": "sdxl-turbo",
+      "GPU": "NVIDIA GeForce RTX 4090",
+      "seed": 19051116,
+      "adapterWeight": 0.8,
+      "imageSHA256": "e166d526f417d6118e5fb74a1081adb902135f9feb45770158ddfbc794774855",
+      "prompt": "Exactly three adults: one violet-haired man seated on a bed at left; one short black-haired male butler seated beside a meal table at center; one long black-haired woman standing at right. One of each person. Ornate fantasy bedroom. Black and gold clothes. Mature Korean fantasy manhwa, angular adult faces, narrow eyes, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Single wide scene. Use the three supplied portraits only as character references.",
+      "references": [
+        {
+          "file": "vaan.png",
+          "sha256": "452aea3dc484d1fbc1c5a95774f5dae69a1df7e2fe8cf89848a5a2d6ac4cfa2c",
+          "character": "Vaan: violet-haired man, black and gold coat",
+          "sourceCropBox": [
+            336,
+            144,
+            560,
+            464
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "aldric.png",
+          "sha256": "b864481de49236ac350229735d106470cc050469ec0f448cdd396e23cbe9ac37",
+          "character": "Aldric: short black-haired male butler in a black suit",
+          "sourceCropBox": [
+            736,
+            368,
+            960,
+            688
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "astra.png",
+          "sha256": "cd8fcd411e35dafdeb6371b942193597c38b79676febaff563572628808307de",
+          "character": "Astra: long black-haired woman in a black feathered mantle",
+          "sourceCropBox": [
+            928,
+            64,
+            1152,
+            384
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        }
+      ],
+      "freshNoiseLatent": true,
+      "onlyCharacterReferencesAndPrompt": true,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T09:32:08.342727+00:00",
+      "clientDeliverySeconds": 4.23499999998603,
+      "submitSeconds": 0.375,
+      "serverWaitSeconds": 1.8439999999827705,
+      "retrievalSeconds": 2.0160000000032596,
+      "stageTimings": {
+        "model": {
+          "component": "checkpoint-load-or-switch",
+          "wallSeconds": 2.289069095044397,
+          "cudaEventSeconds": 2.28882275390625,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 3.4679754129610956,
+          "cudaEventIntervalSeconds": 3.467822998046875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "adapterLoad": {
+          "stage": "reference-adapter-load",
+          "wallSeconds": 0.03589235700201243,
+          "cudaEventIntervalSeconds": 0.03580518341064453,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "adapterApply": {
+          "stage": "reference-vision-encode-and-apply",
+          "wallSeconds": 3.4888960600364953,
+          "cudaEventIntervalSeconds": 3.488844482421875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "sampler": {
+          "component": "sampler",
+          "wallSeconds": 0.9038281809771433,
+          "cudaEventSeconds": 0.9037061157226562,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.9038281809771433
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.16803112206980586,
+          "cudaEventSeconds": 0.1679457244873047,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.16803112206980586
+        }
+      },
+      "graphSHA256": "40c7f6b96005cbf3690507819f3b98dd49becae9ae3ea902b1e44bae067cc6cd",
+      "file": "character-turbo-b.png",
+      "marginalRuntimeCostUSD": 0.0010705138888853576,
+      "freshLoadSeconds": 0,
+      "freshReferenceSeconds": 0,
+      "samplerSeconds": 0.9038281809771433,
+      "decodeSeconds": 0.16803112206980586
+    },
+    {
+      "id": "turbo-low",
+      "model": "sdxl-turbo",
+      "GPU": "NVIDIA GeForce RTX 4090",
+      "seed": 19051115,
+      "adapterWeight": 0.5,
+      "imageSHA256": "8f14f924f52682864e1108323f665ee4e4a0f651bd0821b8b0612e4b12127577",
+      "prompt": "Exactly three adults: one violet-haired man seated on a bed at left; one short black-haired male butler seated beside a meal table at center; one long black-haired woman standing at right. One of each person. Ornate fantasy bedroom. Black and gold clothes. Mature Korean fantasy manhwa, angular adult faces, narrow eyes, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Single wide scene. Use the three supplied portraits only as character references.",
+      "references": [
+        {
+          "file": "vaan.png",
+          "sha256": "452aea3dc484d1fbc1c5a95774f5dae69a1df7e2fe8cf89848a5a2d6ac4cfa2c",
+          "character": "Vaan: violet-haired man, black and gold coat",
+          "sourceCropBox": [
+            336,
+            144,
+            560,
+            464
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "aldric.png",
+          "sha256": "b864481de49236ac350229735d106470cc050469ec0f448cdd396e23cbe9ac37",
+          "character": "Aldric: short black-haired male butler in a black suit",
+          "sourceCropBox": [
+            736,
+            368,
+            960,
+            688
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "astra.png",
+          "sha256": "cd8fcd411e35dafdeb6371b942193597c38b79676febaff563572628808307de",
+          "character": "Astra: long black-haired woman in a black feathered mantle",
+          "sourceCropBox": [
+            928,
+            64,
+            1152,
+            384
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        }
+      ],
+      "freshNoiseLatent": true,
+      "onlyCharacterReferencesAndPrompt": true,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T09:32:12.597013+00:00",
+      "clientDeliverySeconds": 5.89100000000326,
+      "submitSeconds": 0.375,
+      "serverWaitSeconds": 4.01600000000326,
+      "retrievalSeconds": 1.5,
+      "stageTimings": {
+        "model": {
+          "component": "checkpoint-load-or-switch",
+          "wallSeconds": 2.289069095044397,
+          "cudaEventSeconds": 2.28882275390625,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 3.4679754129610956,
+          "cudaEventIntervalSeconds": 3.467822998046875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "adapterLoad": {
+          "stage": "reference-adapter-load",
+          "wallSeconds": 0.03589235700201243,
+          "cudaEventIntervalSeconds": 0.03580518341064453,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "adapterApply": {
+          "stage": "reference-vision-encode-and-apply",
+          "wallSeconds": 2.272953736013733,
+          "cudaEventIntervalSeconds": 2.272859619140625,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 2.272953736013733
+        },
+        "sampler": {
+          "component": "sampler",
+          "wallSeconds": 0.8596812080359086,
+          "cudaEventSeconds": 0.85959765625,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.8596812080359086
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.16433504305314273,
+          "cudaEventSeconds": 0.1642523193359375,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.16433504305314273
+        }
+      },
+      "graphSHA256": "8bcc2519b4d2915a47989377ba3bef9727444494a42a96e057fe9a07d69819a0",
+      "file": "character-turbo-low.png",
+      "marginalRuntimeCostUSD": 0.001489113888889713,
+      "freshLoadSeconds": 0,
+      "freshReferenceSeconds": 2.272953736013733,
+      "samplerSeconds": 0.8596812080359086,
+      "decodeSeconds": 0.16433504305314273
+    },
+    {
+      "id": "turbo-high",
+      "model": "sdxl-turbo",
+      "GPU": "NVIDIA GeForce RTX 4090",
+      "seed": 19051115,
+      "adapterWeight": 1.1,
+      "imageSHA256": "35f08aa3247c825ed9bd937f7859a1b794bd5c08ba76c242d1e43bff74519adb",
+      "prompt": "Exactly three adults: one violet-haired man seated on a bed at left; one short black-haired male butler seated beside a meal table at center; one long black-haired woman standing at right. One of each person. Ornate fantasy bedroom. Black and gold clothes. Mature Korean fantasy manhwa, angular adult faces, narrow eyes, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Single wide scene. Use the three supplied portraits only as character references.",
+      "references": [
+        {
+          "file": "vaan.png",
+          "sha256": "452aea3dc484d1fbc1c5a95774f5dae69a1df7e2fe8cf89848a5a2d6ac4cfa2c",
+          "character": "Vaan: violet-haired man, black and gold coat",
+          "sourceCropBox": [
+            336,
+            144,
+            560,
+            464
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "aldric.png",
+          "sha256": "b864481de49236ac350229735d106470cc050469ec0f448cdd396e23cbe9ac37",
+          "character": "Aldric: short black-haired male butler in a black suit",
+          "sourceCropBox": [
+            736,
+            368,
+            960,
+            688
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        },
+        {
+          "file": "astra.png",
+          "sha256": "cd8fcd411e35dafdeb6371b942193597c38b79676febaff563572628808307de",
+          "character": "Astra: long black-haired woman in a black feathered mantle",
+          "sourceCropBox": [
+            928,
+            64,
+            1152,
+            384
+          ],
+          "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+          "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+        }
+      ],
+      "freshNoiseLatent": true,
+      "onlyCharacterReferencesAndPrompt": true,
+      "noPostprocessing": true,
+      "actualSteps": 4,
+      "nativeResolution": [
+        1280,
+        720
+      ],
+      "startedUTC": "2026-11-05T09:32:18.504079+00:00",
+      "clientDeliverySeconds": 6.438000000023749,
+      "submitSeconds": 0.4850000000442378,
+      "serverWaitSeconds": 4.436999999976251,
+      "retrievalSeconds": 1.5160000000032596,
+      "stageTimings": {
+        "model": {
+          "component": "checkpoint-load-or-switch",
+          "wallSeconds": 2.289069095044397,
+          "cudaEventSeconds": 2.28882275390625,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "text": {
+          "stage": "text-encode",
+          "wallSeconds": 3.4679754129610956,
+          "cudaEventIntervalSeconds": 3.467822998046875,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "adapterLoad": {
+          "stage": "reference-adapter-load",
+          "wallSeconds": 0.03589235700201243,
+          "cudaEventIntervalSeconds": 0.03580518341064453,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": true,
+          "freshWallSeconds": 0
+        },
+        "adapterApply": {
+          "stage": "reference-vision-encode-and-apply",
+          "wallSeconds": 2.6112904300680384,
+          "cudaEventIntervalSeconds": 2.61112255859375,
+          "method": "Synchronized native node call; event interval is not GPU utilization.",
+          "cached": false,
+          "freshWallSeconds": 2.6112904300680384
+        },
+        "sampler": {
+          "component": "sampler",
+          "wallSeconds": 0.978392540011555,
+          "cudaEventSeconds": 0.9783126220703126,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.978392540011555
+        },
+        "decode": {
+          "component": "vae-decode",
+          "wallSeconds": 0.17806896392721683,
+          "cudaEventSeconds": 0.17786390686035156,
+          "basis": "synchronized native call; CUDA event interval, not utilization",
+          "cached": false,
+          "freshWallSeconds": 0.17806896392721683
+        }
+      },
+      "graphSHA256": "62e0a3ad23e21d329129e2a3f94151b85824b1528eff0e858ec05762fcb6dab1",
+      "file": "character-turbo-high.png",
+      "marginalRuntimeCostUSD": 0.0016273833333393366,
+      "freshLoadSeconds": 0,
+      "freshReferenceSeconds": 2.6112904300680384,
+      "samplerSeconds": 0.978392540011555,
+      "decodeSeconds": 0.17806896392721683
+    }
+  ],
+  "bothActualSteps": 4,
+  "outputResolution": [
+    1280,
+    720
+  ],
+  "IPAdapterPluginCommit": "a0f451a5113cf9becb0847b92884cb10cbdec0ef",
+  "GPU": "NVIDIA GeForce RTX 4090",
+  "GPUAndDiskHourlyUSD": 0.91,
+  "throughReadySeconds": 111.17821192741394,
+  "sharedCharacterUploadTiming": {
+    "sharedUploadAndExactByteVerifySeconds": 4.187000000034459,
+    "referenceCount": 3
+  },
+  "characterOnlyRentalCostUpperUSD": 0.04529591988126437,
+  "priorSupersededReferenceTestUSD": 0.08538881844878196,
+  "priorFailed5090BootUSD": 0.06118549644682142,
+  "allPriorCorrectionCostsUSD": 0.14657431489560338,
+  "wholeCorrectionCostUpperUSD": 0.19187023477686777,
+  "characterOnlySharedStartupAndOverheadCostUSD": 0.030113075436831345,
+  "APIUSD": 0,
+  "allCorrectionGPUsDeleted": true,
+  "productionDefaultsChanged": false,
+  "voiceEstimateChanged": false,
+  "timingCaveat": "Observed native node wall and CUDA-event intervals. Cached node receipts are marked and excluded from fresh-stage totals. Stage boundaries can include lazy device transfers. Client delivery includes submission, server wait and output retrieval. Marginal runtime costs exclude the separately listed shared startup/overhead. This small test is not a sustained-throughput benchmark.",
+  "methods": {
+    "flux": "FLUX.2 Klein4B FP8, three VAE reference-latent conditions, EmptyFlux2LatentImage, RandomNoise and four-step full sampling.",
+    "sdxl-turbo": "SDXL Turbo FP16, IP-Adapter Plus SDXL ViT-H, three portrait images concatenated as reference embeddings, EmptyLatentImage and random noise. Four-step full trailing schedule, Comfy CFG1 conditional only. No ControlNet, init image, scene/style reference or output edits."
+  },
+  "visualReview": {
+    "method": "Direct visual review of all six raw outputs at contact-sheet scale; first FLUX output also inspected at full 1280x720.",
+    "conclusion": "FLUX kept the three main characters and generated new compositions in the requested manhwa direction. SDXL Turbo still duplicated or mixed characters at every tested reference strength, including malformed figures. Its raw results are shown as failed tests, not approved production images. Matching character references and a style prompt improved the comparison but did not make the models equally reliable or stylistically identical.",
+    "images": {
+      "flux-a": "Three main characters, with the violet-haired man left, black-haired butler center and black-haired woman right. A new composition, generated without a full-scene input. Style acceptance remains your choice.",
+      "flux-b": "Three main characters in another newly composed bedroom scene. The requested left/center/right roles remain recognizable. Style acceptance remains your choice.",
+      "turbo-main": "Failed: repeated male faces, unwanted extra figures and a malformed/headless uniformed torso. It does not preserve the intended three-character cast.",
+      "turbo-b": "Failed: extra people and repeated/mixed identities. The purple hair, costume details and three-character arrangement are not reliably retained.",
+      "turbo-low": "Failed: lowering reference weight still produces extra people and incorrect character appearances.",
+      "turbo-high": "Failed: stronger references produce repeated similar male faces and mix the woman's feathered clothing into the wrong character. The requested cast and arrangement are lost."
+    },
+    "productionApproval": false,
+    "postGenerationImageEdits": false
+  }
+}
