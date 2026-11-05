@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "status": "ACTIVE_STYLE_BRIEF_AWAITING_NEW_RENDER_VALIDATION",
+  "date": "2026-11-05",
+  "allowedImageModels": [
+    "flux2-klein-4b"
+  ],
+  "model": "FLUX.2 Klein 4B FP8",
+  "inputContract": {
+    "originalCharacterReferencesOnly": true,
+    "textPromptOnlyBeyondCharacterReferences": true,
+    "styleTargetPictureIsHumanReferenceOnly": true,
+    "fullSceneImageInput": false,
+    "separateStyleImageInput": false,
+    "outputLatent": "empty plus fresh random noise",
+    "postGenerationImageEdits": false,
+    "keepRawOutputs": true,
+    "recordPerPhotoTimesSettingsAndCosts": true
+  },
+  "target": {
+    "shotId": "shot-58bf63776cbf431c",
+    "label": "Before this round",
+    "gallery": "./pipeline-image-repairs-20261104.html?release=photos-fixed-20261104",
+    "image": "./pipeline-image-repairs-20261104/111ba1034bad14394c4211df.png",
+    "imageSHA256": "111ba1034bad14394c4211df1c178a9b057f359867520770673f57eb3a37014a",
+    "matchesUserAttachmentByteForByte": true
+  },
+  "baselineStylePromptExact": "Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage.",
+  "worldSuffixes": {
+    "ordinaryLife": "Use the baseline drawing style unchanged. Let the current scene determine lighting and props. For comparable daylight interiors, retain warm amber highlights, warm wood and skin tones, cooler blue sky/window notes, clear colour separation and strong but smoothly modelled cel shadows. Do not flatten the drawing or force a different palette onto a scene with different story lighting.",
+    "vaanMagicWorld": "This is Vaan\u2019s life in the magical world, not a different illustration style. Keep the baseline ink, expressive faces, rendering detail, cel shading, contrast and overall colour balance unchanged. Make only the environmental colour accents slightly richer or more jewel-toned where appropriate, with restrained violet, teal or gold hints and only story-supported magical light. The change is subtle colour treatment. Keep the location, architecture, props and events specified by the story; do not add castles, floating islands, crystals, glowing runes or other fantasy objects merely to signal the world. No overall purple wash."
+  },
+  "sampling": {
+    "width": 1280,
+    "height": 720,
+    "steps": 4,
+    "guidance": 1,
+    "sampler": "euler",
+    "scheduler": "flux2",
+    "denoisingStrength": 1,
+    "loras": [],
+    "controlnets": []
+  },
+  "originalGenerationSeed": 849389944,
+  "originalGenerationPromptExact": "Use image 1 as the identity reference for Jonathan Turner. Preserve face and permanent traits; the shot's current appearance controls clothing and pose. Use image 2 as the identity reference for Christopher Davis. Preserve face and permanent traits; the shot's current appearance controls clothing and pose. Jonathan notices Christopher's glare and grins before continuing his taunt.. Characters: Jonathan Turner; face: clean-shaven, refined facial features; naturalHair: blond; eyes: crystal blue; outfit: neat white suit / Christopher Davis; face: black beard, slightly wrinkled face; naturalHair: black; skin: light; distinguishingMarks: healed scar on LEFT side, from cheek to eyebrow; outfit: Stripped of his clothes.; injury: His face is a bloody mess; his limbs are pierced with knives, and cuts and blood cover his body.; posture: Falls to his knees.; restraint: His limbs are tied.; status: Captured.. Camera: medium close-up, low angle. Jonathan fills the foreground, with kneeling Christopher visible behind him.. Location: Jonathan\u2019s room on the upper floor of the ship. Expression and pose: Jonathan's grin turns cruel; Leaning toward Christopher from his chair. Lighting: Amber light sharpens Jonathan's grin. Style: Korean full-color fantasy manhwa: crisp ink line art, cel shading, expressive drawn eyes and faces, vibrant colors and magical glows, richly illustrated environments, 2D animation keyframe aesthetic. No photographic skin, live action, 3D render or four-panel collage.. Production constraints: Use only the people selected for this shot. Preserve their canonical identity and the current scene clothing. Fully illustrated 2D fantasy manhwa; no photographic skin, title text, labels, captions, borders or collage.. One continuous landscape scene at one moment. Preserve identity and current clothing; only stated story changes override them. No extra important people, duplicate bodies, collage, borders or text.",
+  "provenance": [
+    {
+      "imageSHA256": "111ba1034bad14394c4211df1c178a9b057f359867520770673f57eb3a37014a",
+      "operation": "edit",
+      "imageFile": "shot-58bf63776cbf431c-ca5e164647ab4cb2-a0.png",
+      "seed": 849389944,
+      "workflow": "flux2-klein-reference-3-4",
+      "references": [
+        {
+          "path": "references/1dce90e671154917.png",
+          "kind": "face",
+          "characterId": "char-ae97ccff0d5a46d9"
+        },
+        {
+          "path": "references/aa9160b2f2d6430b.png",
+          "kind": "face",
+          "characterId": "char-ae3788d702d5452a"
+        }
+      ]
+    },
+    {
+      "imageSHA256": "c1ad0923c565b3fe705fbf3c877ae2c8080dac31e803fc54b429ea5e8a5bb834",
+      "operation": "edit",
+      "imageFile": "shot-58bf63776cbf431c-eadf847063254c13-a0.png",
+      "seed": 849389944,
+      "workflow": "flux2-klein-reference-3-4",
+      "references": [
+        {
+          "path": "references/1dce90e671154917.png",
+          "kind": "face",
+          "characterId": "char-ae97ccff0d5a46d9"
+        },
+        {
+          "path": "references/aa9160b2f2d6430b.png",
+          "kind": "face",
+          "characterId": "char-ae3788d702d5452a"
+        }
+      ]
+    },
+    {
+      "imageSHA256": "bd1068eda2ae1781efd64ab7e18333fb89f36d5c441612a179120cfa3a203fa7",
+      "operation": "generate",
+      "imageFile": "shot-58bf63776cbf431c-4320871e158a4bb9-a0.png",
+      "seed": 849389944,
+      "workflow": "flux2-klein-reference-2-4",
+      "references": [
+        {
+          "path": "references/1dce90e671154917.png",
+          "kind": "face",
+          "characterId": "char-ae97ccff0d5a46d9"
+        },
+        {
+          "path": "references/aa9160b2f2d6430b.png",
+          "kind": "face",
+          "characterId": "char-ae3788d702d5452a"
+        }
+      ]
+    }
+  ],
+  "diagnosis": [
+    "The recent audition replaced the original style block with a new angular-face, two-tone, restrained-texture description. That was a style change, not a reuse of the requested source prompt.",
+    "The source explicitly used amber lighting and a richly illustrated 2D animation-keyframe style. The recent study scene and simplified wording did not reproduce that full combination.",
+    "The magical-land test invented a bridge, distant citadel, runes and floating rocks and pushed violet twilight. The requested change is only a subtle fantasy colour treatment for Vaan\u2019s magical-world life.",
+    "The selected image passed through two source-preserving repairs. It is not proof that a fresh character-reference-only generation will exactly reproduce the same appearance. New renders must be judged against the target."
+  ],
+  "validation": {
+    "sourcePromptRecovered": true,
+    "targetFileExactMatch": true,
+    "newStyleRenderValidated": false,
+    "GPUUSDThisCorrection": 0,
+    "productionProjectsOrHelperChanged": false,
+    "voiceEstimateChanged": false
+  },
+  "promptConstruction": {
+    "reuseExactBaselineStyleBlock": true,
+    "charactersActionSettingCameraAndLightingFromCurrentShot": true,
+    "worldColourSuffixFromCurrentStoryLife": true,
+    "doNotCopyJonathanChristopherSceneIntoVaanScenes": true,
+    "onlyOriginalCharacterReferenceImagesAndWrittenPrompt": true,
+    "instruction": "Reuse the recovered style block, not the source shot narrative. Current chapter facts supply characters, action, setting, camera and lighting. Apply only the small world-specific colour suffix."
+  }
+}

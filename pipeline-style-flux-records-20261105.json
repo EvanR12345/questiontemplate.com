@@ -1,0 +1,614 @@
+{
+  "status": "FLUX_ONLY_HISTORICAL_DISPLAY",
+  "activeStyleBrief": "./pipeline-image-style.json",
+  "records": {
+    "pipeline-original-style-20261105.html": [
+      {
+        "id": "flux-normal",
+        "scene": "normal",
+        "sceneTitle": "Ordinary study",
+        "model": "flux",
+        "GPU": "NVIDIA GeForce RTX 5090",
+        "seed": 19051125,
+        "adapterWeight": null,
+        "prompt": "Sharp mature Korean manhwa illustration: angular adult faces, defined cheekbones and eyebrows, narrow expressive eyes, strong clean black ink outlines, crisp two-tone cel shadows, decisive clothing folds, restrained surface texture, rich readable colors, cinematic framing. Fully drawn comic artwork with hard edges and clear expressions. Keep the character identities and clothing from the two original references. One coherent scene with exactly two adults, one of each reference character. Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, sits at the left side of a wooden desk. Astra, the long black-haired adult woman in her black feathered mantle, stands at the right. They calmly discuss an open map in a wood-paneled study, with bookshelves, one armchair and warm late-afternoon window light. Medium-wide eye-level view; both faces visible. Ordinary interior and natural daylight.",
+        "imageSHA256": "b083dde0c56218297efcceee98adab5817c82089223dc2e96cd91c16c30220f8",
+        "freshNoiseLatent": true,
+        "onlyOriginalCharacterReferencesAndPrompt": true,
+        "styleGuideSentToModel": false,
+        "noPostprocessing": true,
+        "actualSteps": 4,
+        "nativeResolution": [
+          1280,
+          720
+        ],
+        "startedUTC": "2026-11-05T10:17:01.264127+00:00",
+        "submitSeconds": 0.48399999999674037,
+        "serverWaitSeconds": 20.79700000002049,
+        "retrievalSeconds": 0.7660000000032596,
+        "clientDeliverySeconds": 22.04700000002049,
+        "stageTimings": {
+          "model": {
+            "stage": "diffusion-model-load",
+            "wallSeconds": 0.3838690151460469,
+            "cudaEventIntervalSeconds": 0.3837599792480469,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.3838690151460469
+          },
+          "clip": {
+            "stage": "text-model-load",
+            "wallSeconds": 0.4165854640305042,
+            "cudaEventIntervalSeconds": 0.4164986877441406,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.4165854640305042
+          },
+          "vae": {
+            "stage": "vae-load",
+            "wallSeconds": 10.261524198111147,
+            "cudaEventIntervalSeconds": 10.254296875,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 10.261524198111147
+          },
+          "text": {
+            "stage": "text-encode",
+            "wallSeconds": 2.968095811782405,
+            "cudaEventIntervalSeconds": 2.967802490234375,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 2.968095811782405
+          },
+          "ref0": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.3996151078026742,
+            "cudaEventIntervalSeconds": 0.39952166748046875,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.3996151078026742
+          },
+          "ref1": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.9053060468286276,
+            "cudaEventIntervalSeconds": 0.905201416015625,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.9053060468286276
+          },
+          "sampler": {
+            "stage": "sampler",
+            "wallSeconds": 3.131405971944332,
+            "cudaEventIntervalSeconds": 3.13128125,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 3.131405971944332
+          },
+          "decode": {
+            "component": "vae-decode",
+            "wallSeconds": 0.5571456861216575,
+            "cudaEventSeconds": 0.5568768920898437,
+            "basis": "synchronized native call; CUDA event interval, not utilization",
+            "cached": false,
+            "freshWallSeconds": 0.5571456861216575
+          }
+        },
+        "graphSHA256": "94550e4659cd2eaff857d01fe91282193a147c67be5a920d76bfeda3e6a5c92a",
+        "file": "original-style-flux-normal.png",
+        "marginalRuntimeCostUSD": 0.007410241666673553,
+        "freshLoadSeconds": 11.061978677287698,
+        "freshReferenceSeconds": 1.3049211546313018,
+        "samplerSeconds": 3.131405971944332,
+        "decodeSeconds": 0.5571456861216575,
+        "phase": "First request for this model, includes fresh loading",
+        "allocatedTotalCostUSD": 0.018045847279686132,
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/b57ea817c1d954360ae1c903524e412f8bf3f636/original-style-flux-normal.png"
+      },
+      {
+        "id": "flux-magical",
+        "scene": "magical",
+        "sceneTitle": "Magical land",
+        "model": "flux",
+        "GPU": "NVIDIA GeForce RTX 5090",
+        "seed": 19051126,
+        "adapterWeight": null,
+        "prompt": "Sharp mature Korean manhwa illustration: angular adult faces, defined cheekbones and eyebrows, narrow expressive eyes, strong clean black ink outlines, crisp two-tone cel shadows, decisive clothing folds, restrained surface texture, rich readable colors, cinematic framing. Fully drawn comic artwork with hard edges and clear expressions. Keep the character identities and clothing from the two original references. One coherent scene with exactly two adults, one of each reference character. Vaan, the dark wavy-haired young man in the black and gold coat and white gloves, stands on the left. Astra, the long black-haired adult woman in her black feathered mantle, stands on the right. They look across an ancient stone bridge over a softly luminous forest toward an elegant citadel with crystal-tipped spires and distant floating rock formations. Subtle glowing runes in the bridge, violet and gold twilight, atmospheric magical landscape. Medium-wide eye-level view; both faces clearly readable. The land is more fantastical while the sharp ink and cel-shaded character drawing stays consistent.",
+        "imageSHA256": "a9016c4a457a74bc08e0d7df4c8642323ad2d6e68614de0da92593e1b3b8ca9f",
+        "freshNoiseLatent": true,
+        "onlyOriginalCharacterReferencesAndPrompt": true,
+        "styleGuideSentToModel": false,
+        "noPostprocessing": true,
+        "actualSteps": 4,
+        "nativeResolution": [
+          1280,
+          720
+        ],
+        "startedUTC": "2026-11-05T10:17:23.337645+00:00",
+        "submitSeconds": 0.40600000001722947,
+        "serverWaitSeconds": 4.139999999955762,
+        "retrievalSeconds": 0.9070000000065193,
+        "clientDeliverySeconds": 5.452999999979511,
+        "stageTimings": {
+          "model": {
+            "stage": "diffusion-model-load",
+            "wallSeconds": 0.3838690151460469,
+            "cudaEventIntervalSeconds": 0.3837599792480469,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "clip": {
+            "stage": "text-model-load",
+            "wallSeconds": 0.4165854640305042,
+            "cudaEventIntervalSeconds": 0.4164986877441406,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "vae": {
+            "stage": "vae-load",
+            "wallSeconds": 10.261524198111147,
+            "cudaEventIntervalSeconds": 10.254296875,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "text": {
+            "stage": "text-encode",
+            "wallSeconds": 0.2800920510198921,
+            "cudaEventIntervalSeconds": 0.2799949645996094,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.2800920510198921
+          },
+          "ref0": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.3996151078026742,
+            "cudaEventIntervalSeconds": 0.39952166748046875,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "ref1": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.9053060468286276,
+            "cudaEventIntervalSeconds": 0.905201416015625,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "sampler": {
+            "stage": "sampler",
+            "wallSeconds": 2.350273828022182,
+            "cudaEventIntervalSeconds": 2.350204345703125,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 2.350273828022182
+          },
+          "decode": {
+            "component": "vae-decode",
+            "wallSeconds": 0.43982136715203524,
+            "cudaEventSeconds": 0.43975961303710936,
+            "basis": "synchronized native call; CUDA event interval, not utilization",
+            "cached": false,
+            "freshWallSeconds": 0.43982136715203524
+          }
+        },
+        "graphSHA256": "280b33a62f406c6645cd8ededf08210c1a159c7e5be36fb7b271ac2916b2fb01",
+        "file": "original-style-flux-magical.png",
+        "marginalRuntimeCostUSD": 0.001832813888882002,
+        "freshLoadSeconds": 0,
+        "freshReferenceSeconds": 0,
+        "samplerSeconds": 2.350273828022182,
+        "decodeSeconds": 0.43982136715203524,
+        "phase": "Second request for this model, reused loaded model and reference encodings",
+        "allocatedTotalCostUSD": 0.01246841950189458,
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/b57ea817c1d954360ae1c903524e412f8bf3f636/original-style-flux-magical.png"
+      }
+    ],
+    "pipeline-style-audition-20261105.html": [
+      {
+        "id": "flux-a",
+        "model": "flux",
+        "GPU": "NVIDIA GeForce RTX 4090",
+        "seed": 19051115,
+        "adapterWeight": null,
+        "imageSHA256": "45c66ada55b4d92acd2d100daad4518e4342cca110175fc1ab5af1a3504a3954",
+        "prompt": "Exactly three adults: one violet-haired man seated on a bed at left; one short black-haired male butler seated beside a meal table at center; one long black-haired woman standing at right. One of each person. Ornate fantasy bedroom. Black and gold clothes. Mature Korean fantasy manhwa, angular adult faces, narrow eyes, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Single wide scene. Use the three supplied portraits only as character references.",
+        "references": [
+          {
+            "file": "vaan.png",
+            "sha256": "452aea3dc484d1fbc1c5a95774f5dae69a1df7e2fe8cf89848a5a2d6ac4cfa2c",
+            "character": "Vaan: violet-haired man, black and gold coat",
+            "sourceCropBox": [
+              336,
+              144,
+              560,
+              464
+            ],
+            "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+            "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+          },
+          {
+            "file": "aldric.png",
+            "sha256": "b864481de49236ac350229735d106470cc050469ec0f448cdd396e23cbe9ac37",
+            "character": "Aldric: short black-haired male butler in a black suit",
+            "sourceCropBox": [
+              736,
+              368,
+              960,
+              688
+            ],
+            "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+            "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+          },
+          {
+            "file": "astra.png",
+            "sha256": "cd8fcd411e35dafdeb6371b942193597c38b79676febaff563572628808307de",
+            "character": "Astra: long black-haired woman in a black feathered mantle",
+            "sourceCropBox": [
+              928,
+              64,
+              1152,
+              384
+            ],
+            "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+            "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+          }
+        ],
+        "freshNoiseLatent": true,
+        "onlyCharacterReferencesAndPrompt": true,
+        "noPostprocessing": true,
+        "actualSteps": 4,
+        "nativeResolution": [
+          1280,
+          720
+        ],
+        "startedUTC": "2026-11-05T09:31:24.209391+00:00",
+        "clientDeliverySeconds": 17.07799999997951,
+        "submitSeconds": 0.5310000000172295,
+        "serverWaitSeconds": 15.155999999959022,
+        "retrievalSeconds": 1.3910000000032596,
+        "stageTimings": {
+          "model": {
+            "stage": "diffusion-model-load",
+            "wallSeconds": 0.03147314500529319,
+            "cudaEventIntervalSeconds": 0.03142774391174316,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.03147314500529319
+          },
+          "clip": {
+            "stage": "text-model-load",
+            "wallSeconds": 0.42102296103257686,
+            "cudaEventIntervalSeconds": 0.42096142578125,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.42102296103257686
+          },
+          "vae": {
+            "stage": "vae-load",
+            "wallSeconds": 4.2632377030095086,
+            "cudaEventIntervalSeconds": 4.26307177734375,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 4.2632377030095086
+          },
+          "text": {
+            "stage": "text-encode",
+            "wallSeconds": 2.7456581050064415,
+            "cudaEventIntervalSeconds": 2.7455908203125,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 2.7456581050064415
+          },
+          "ref0": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.20184859598521143,
+            "cudaEventIntervalSeconds": 0.20172706604003907,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.20184859598521143
+          },
+          "ref1": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.7194194829789922,
+            "cudaEventIntervalSeconds": 0.7193106079101562,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.7194194829789922
+          },
+          "ref2": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.6175995130324736,
+            "cudaEventIntervalSeconds": 0.6174910278320312,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 0.6175995130324736
+          },
+          "sampler": {
+            "stage": "sampler",
+            "wallSeconds": 4.804565531900153,
+            "cudaEventIntervalSeconds": 4.8044521484375,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 4.804565531900153
+          },
+          "decode": {
+            "component": "vae-decode",
+            "wallSeconds": 0.24343085300642997,
+            "cudaEventSeconds": 0.24333334350585936,
+            "basis": "synchronized native call; CUDA event interval, not utilization",
+            "cached": false,
+            "freshWallSeconds": 0.24343085300642997
+          }
+        },
+        "graphSHA256": "fd8b715ba3d66d04eff31792c9c743cced0fc6123611cdfb7f0b4bc4302c860e",
+        "file": "character-flux-a.png",
+        "marginalRuntimeCostUSD": 0.00431693888888371,
+        "freshLoadSeconds": 4.715733809047379,
+        "freshReferenceSeconds": 1.5388675919966772,
+        "samplerSeconds": 4.804565531900153,
+        "decodeSeconds": 0.24343085300642997,
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/f73f2a47b9c5caa1433d4da6ede9e96636fa7bb2/character-flux-a.png"
+      },
+      {
+        "id": "flux-b",
+        "model": "flux",
+        "GPU": "NVIDIA GeForce RTX 4090",
+        "seed": 19051116,
+        "adapterWeight": null,
+        "imageSHA256": "2bee2aed2e090ce521410fb789a4d92d924a41969fb720d3d84f40686264c686",
+        "prompt": "Exactly three adults: one violet-haired man seated on a bed at left; one short black-haired male butler seated beside a meal table at center; one long black-haired woman standing at right. One of each person. Ornate fantasy bedroom. Black and gold clothes. Mature Korean fantasy manhwa, angular adult faces, narrow eyes, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Single wide scene. Use the three supplied portraits only as character references.",
+        "references": [
+          {
+            "file": "vaan.png",
+            "sha256": "452aea3dc484d1fbc1c5a95774f5dae69a1df7e2fe8cf89848a5a2d6ac4cfa2c",
+            "character": "Vaan: violet-haired man, black and gold coat",
+            "sourceCropBox": [
+              336,
+              144,
+              560,
+              464
+            ],
+            "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+            "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+          },
+          {
+            "file": "aldric.png",
+            "sha256": "b864481de49236ac350229735d106470cc050469ec0f448cdd396e23cbe9ac37",
+            "character": "Aldric: short black-haired male butler in a black suit",
+            "sourceCropBox": [
+              736,
+              368,
+              960,
+              688
+            ],
+            "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+            "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+          },
+          {
+            "file": "astra.png",
+            "sha256": "cd8fcd411e35dafdeb6371b942193597c38b79676febaff563572628808307de",
+            "character": "Astra: long black-haired woman in a black feathered mantle",
+            "sourceCropBox": [
+              928,
+              64,
+              1152,
+              384
+            ],
+            "sourceSHA256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+            "preprocessing": "Portrait crop only; no recoloring, filters, cleanup or new image generation."
+          }
+        ],
+        "freshNoiseLatent": true,
+        "onlyCharacterReferencesAndPrompt": true,
+        "noPostprocessing": true,
+        "actualSteps": 4,
+        "nativeResolution": [
+          1280,
+          720
+        ],
+        "startedUTC": "2026-11-05T09:31:41.303519+00:00",
+        "clientDeliverySeconds": 8.202999999979511,
+        "submitSeconds": 0.5630000000237487,
+        "serverWaitSeconds": 5.875,
+        "retrievalSeconds": 1.7649999999557622,
+        "stageTimings": {
+          "model": {
+            "stage": "diffusion-model-load",
+            "wallSeconds": 0.03147314500529319,
+            "cudaEventIntervalSeconds": 0.03142774391174316,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "clip": {
+            "stage": "text-model-load",
+            "wallSeconds": 0.42102296103257686,
+            "cudaEventIntervalSeconds": 0.42096142578125,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "vae": {
+            "stage": "vae-load",
+            "wallSeconds": 4.2632377030095086,
+            "cudaEventIntervalSeconds": 4.26307177734375,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "text": {
+            "stage": "text-encode",
+            "wallSeconds": 2.7456581050064415,
+            "cudaEventIntervalSeconds": 2.7455908203125,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "ref0": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.20184859598521143,
+            "cudaEventIntervalSeconds": 0.20172706604003907,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "ref1": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.7194194829789922,
+            "cudaEventIntervalSeconds": 0.7193106079101562,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "ref2": {
+            "stage": "reference-vae-encode",
+            "wallSeconds": 0.6175995130324736,
+            "cudaEventIntervalSeconds": 0.6174910278320312,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": true,
+            "freshWallSeconds": 0
+          },
+          "sampler": {
+            "stage": "sampler",
+            "wallSeconds": 4.500694578047842,
+            "cudaEventIntervalSeconds": 4.50060400390625,
+            "method": "Synchronized native node call; event interval is not GPU utilization.",
+            "cached": false,
+            "freshWallSeconds": 4.500694578047842
+          },
+          "decode": {
+            "component": "vae-decode",
+            "wallSeconds": 0.1653630150249228,
+            "cudaEventSeconds": 0.1652711944580078,
+            "basis": "synchronized native call; CUDA event interval, not utilization",
+            "cached": false,
+            "freshWallSeconds": 0.1653630150249228
+          }
+        },
+        "graphSHA256": "776c5043775392f95ced8f3e003cf4b80cabded20293dcdb43337a5daee8b4fb",
+        "file": "character-flux-b.png",
+        "marginalRuntimeCostUSD": 0.0020735361111059317,
+        "freshLoadSeconds": 0,
+        "freshReferenceSeconds": 0,
+        "samplerSeconds": 4.500694578047842,
+        "decodeSeconds": 0.1653630150249228,
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/f73f2a47b9c5caa1433d4da6ede9e96636fa7bb2/character-flux-b.png"
+      }
+    ],
+    "pipeline-style-audition-20261105-archive.html": [
+      {
+        "file": "flux-01.png",
+        "styleId": "01",
+        "name": "Mature manhwa",
+        "model": "flux",
+        "sha256": "c2d566df3835c410b3951beb6d5c0bb591f145331814f6be18b0f19b56a76084",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. Mature Korean fantasy manhwa, sharply drawn angular jawlines and cheekbones, smaller realistic eyes, long straight noses, lean adult proportions, crisp fine ink, restrained rich colors, controlled hard-edged shadows. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-01.png"
+      },
+      {
+        "file": "flux-02.png",
+        "styleId": "02",
+        "name": "Ink noir",
+        "model": "flux",
+        "sha256": "a6f972eb816e8e0d64ad55cd3fe8c707d2a11195789370a08770131ee5094491",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. Black-and-white ink noir graphic novel, angular adult faces, stark black shadow shapes, sharp white highlights, dry-brush edges, dramatic chiaroscuro, expressive economical ink contours, no gray airbrush softness. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-02.png"
+      },
+      {
+        "file": "flux-03.png",
+        "styleId": "03",
+        "name": "Engraved fantasy",
+        "model": "flux",
+        "sha256": "b0b539031ff21f54481f93a8bc85c42f1642655df5e139454186106cdad0d8ba",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. Antique fantasy engraving with intricate crosshatching, sharp pen-cut contours, narrow adult faces, realistic long facial proportions, sepia paper with restrained purple and gold color accents, etched textures and precise architectural lines. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-03.png"
+      },
+      {
+        "file": "flux-04.png",
+        "styleId": "04",
+        "name": "Painted realism",
+        "model": "flux",
+        "sha256": "c4ee6a6611d839cc35130b75fad609465337ad485a296e28bd5c767cff71246a",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. Semi-realistic painted fantasy illustration, natural adult facial anatomy, defined angular bone structure and narrow eyes, realistic nose and mouth proportions, directional oil-brush planes, muted earth colors, painterly fabric and natural light. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-04.png"
+      },
+      {
+        "file": "flux-05.png",
+        "styleId": "05",
+        "name": "Clear-line comic",
+        "model": "flux",
+        "sha256": "23bf4707f15f757e1128aa4c153af9cd0a7952129e9345a77d4cf8cffe3dd983",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. European clear-line adventure comic, precise thin uniform outlines, geometric angular faces, realistic adult bodies, clean flat color fields, restrained shadows, architectural clarity, sophisticated limited palette, straight decisive shapes. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-05.png"
+      },
+      {
+        "file": "flux-06.png",
+        "styleId": "06",
+        "name": "Sharp cel animation",
+        "model": "flux",
+        "sha256": "10522b38ad91e7f28984802ac1a819c1795acf9a986c13705cde9957d25ad1e3",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. Mature hand-drawn cel animation, sharp long faces and straight noses, compact eyes, lean adult figures, angular clothing folds, hard two-tone shadow shapes, cinematic warm backlight and deep cool shadows, precise colored ink. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-06.png"
+      },
+      {
+        "file": "flux-07.png",
+        "styleId": "07",
+        "name": "Gothic illustration",
+        "model": "flux",
+        "sha256": "dd38f91ac6586cf104ca9938c73ccf3c4d22b6627ee1494635b3f0feb97f463b",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. Dark gothic fantasy illustration, sharply modeled adult faces, elongated elegant silhouettes, severe tailored shapes, detailed feather and fabric textures, deep jewel-tone shadows, dramatic stained-glass rim light, finely drawn expressive realism. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-07.png"
+      },
+      {
+        "file": "flux-08.png",
+        "styleId": "08",
+        "name": "Watercolor and pen",
+        "model": "flux",
+        "sha256": "3d6e9c95d8152e84e487a8c8d9bf15f30f993d5ba99c91dcc264400c82116010",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. Architectural pen and watercolor illustration, sharp angular ink-drawn adult faces, realistic facial proportions, expressive broken pen lines, transparent watercolor washes on textured paper, crisp focal faces, loose atmospheric room details. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-08.png"
+      },
+      {
+        "file": "flux-09.png",
+        "styleId": "09",
+        "name": "Adventure graphic novel",
+        "model": "flux",
+        "sha256": "e2ff508d3308b6fe234df5f981ff07a87eb643c12243719f789f71d59525d718",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. Serious full-color adventure graphic novel, bold decisive black ink, rugged angular adult facial planes, natural eye sizes and adult anatomy, flat graphic shadows with subtle paper texture, desaturated cinematic colors and clearly separated silhouettes. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-09.png"
+      },
+      {
+        "file": "flux-10.png",
+        "styleId": "10",
+        "name": "Angular screen print",
+        "model": "flux",
+        "sha256": "73118e98edc4481740b285bce38266895c64020892fc5d0f8f7cbff5a64d400c",
+        "width": 1280,
+        "height": 720,
+        "prompt": "Restyle image 1 completely in this drawing style. Sophisticated angular screen-print illustration, strongly geometric adult faces and silhouettes, five-color palette of charcoal, ivory, oxblood, violet and ochre, flat interlocking shape planes, sparse halftone texture, strong straight contours. Exactly three distinct adults in the same composition: violet-haired golden-eyed man in a black-and-gold coat and white gloves seated on the bed at left; short dark-haired male butler in a black suit and white shirt seated low beside the meal table at center-right; long black-haired woman in a black feathered mantle standing at right. Preserve the ornate bedroom, furniture, camera, positions and clothing. Redraw facial shapes with clear cheekbones, longer faces and narrower eyes. Keep the image fully illustrated. No added people, text, panels, borders or collage.",
+        "imageURL": "https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/e69155855de34388f52e0f7b92dbef5b22beffdc/flux-10.png"
+      }
+    ]
+  }
+}
