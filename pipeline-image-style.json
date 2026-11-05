@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "ACTIVE_STYLE_BRIEF_AWAITING_NEW_RENDER_VALIDATION",
+  "status": "EXAMPLES_GENERATED_AWAITING_USER_STYLE_APPROVAL",
   "date": "2026-11-05",
   "allowedImageModels": [
     "flux2-klein-4b"
@@ -114,7 +114,12 @@
     "newStyleRenderValidated": false,
     "GPUUSDThisCorrection": 0,
     "productionProjectsOrHelperChanged": false,
-    "voiceEstimateChanged": false
+    "voiceEstimateChanged": false,
+    "latestExamplesReport": "./pipeline-style-examples-20261105.html",
+    "latestExamplesGenerated": true,
+    "latestExampleCount": 2,
+    "latestExamplesStyleAcceptedByUser": false,
+    "latestExamplesGPUAndDiskUSD": 0.03700112504164378
   },
   "promptConstruction": {
     "reuseExactBaselineStyleBlock": true,
