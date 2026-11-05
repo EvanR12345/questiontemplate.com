@@ -115,11 +115,11 @@
     "GPUUSDThisCorrection": 0,
     "productionProjectsOrHelperChanged": false,
     "voiceEstimateChanged": false,
-    "latestExamplesReport": "./pipeline-style-examples-20261105.html",
+    "latestExamplesReport": "./pipeline-face-detail-20261105.html",
     "latestExamplesGenerated": true,
     "latestExampleCount": 2,
     "latestExamplesStyleAcceptedByUser": false,
-    "latestExamplesGPUAndDiskUSD": 0.03700112504164378
+    "latestExamplesGPUAndDiskUSD": 0.040557388121551935
   },
   "promptConstruction": {
     "reuseExactBaselineStyleBlock": true,
