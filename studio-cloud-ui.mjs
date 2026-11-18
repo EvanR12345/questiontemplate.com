@@ -151,7 +151,11 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
           if(transferring.has(job.id))return;transferring.add(job.id);
           try{
             while(active()&&!['COMPLETE','CANCELLED'].includes(job.status)){
-              job=await api('publish',{project:p.id,operation:'next',options:{id:job.id}});
+              try{job=await api('publish',{project:p.id,operation:'next',options:{id:job.id}});}
+              catch(error){
+                if(active())await reload().catch(()=>{});
+                throw error;
+              }
               if(!active())return;
               if($('publishProgress'))$('publishProgress').textContent=`${job.title} · ${Math.round(100*job.uploaded/job.total)}% · ${job.status}`;
             }

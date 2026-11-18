@@ -242,3 +242,27 @@ test('a failed earlier refresh cannot replace a newer successful file list',asyn
     assert.equal(dom.nodes.get('cloudSync').disabled,false);
   }finally{globalThis.document=original;}
 });
+
+test('a failed chunk exposes the saved upload for immediate resume',async()=>{
+  const dom=filesDOM(),original=globalThis.document,previousConfirm=globalThis.confirm;
+  globalThis.document=dom.document;globalThis.confirm=()=>true;
+  try{
+    const p={...project,id:'pr-6666666666666666'};
+    const job={id:'saved-upload',title:'Story',uploaded:0,total:100,status:'UPLOADING'};
+    const calls=[];
+    const base=dashboardAPI({files:[video('story.mp4')],publisher:{configured:true,connected:true}});
+    const api=async(path,body)=>{
+      if(path!=='publish')return base(path);
+      calls.push(body.operation);
+      if(body.operation==='next')throw Error('Transfer interrupted');
+      return job;
+    };
+    await wireFiles({...options(p,api),reload:async()=>{
+      dom.reset();
+      await wireFiles(options({...p,publishing:[job]},api));
+    }});
+    await assert.rejects(dom.nodes.get('publishStart').onclick(),/Transfer interrupted/);
+    assert.match(dom.nodes.get('publisherControls').innerHTML,/data-upload-resume="saved-upload"/);
+    assert.deepEqual(calls,['start','next','status']);
+  }finally{globalThis.document=original;globalThis.confirm=previousConfirm;}
+});

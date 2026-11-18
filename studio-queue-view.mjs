@@ -28,7 +28,15 @@ const seconds = n => Number.isFinite(n) && n >= 0 ? n : 0;
 export function queueJobHTML(job) {
   const stopped = ['FAILED','CANCELLED','INTERRUPTED'].includes(job.status);
   const cloud = job.kind === 'render-cloud';
-  return `<div class="queue-job"><span>${escape(job.kind)} · ${escape(job.status)} · ${escape(job.message)}</span>${job.status==='QUEUED'?`<button data-job-priority="${escape(job.id)}">Prioritize</button>`:''}${cloud&&stopped?'<button data-job-cloud-review>Open cloud render</button>':!cloud&&['FAILED','CANCELLED'].includes(job.status)?`<button data-job-retry="${escape(job.id)}">Retry same seed</button>`:''}</div>`;
+  const guidance = job.kind === 'produce-story' && stopped ? job.retryGuidance : null;
+  let action = '';
+  if (job.status === 'QUEUED') action = `<button data-job-priority="${escape(job.id)}">Prioritize</button>`;
+  else if (cloud && stopped) action = '<button data-job-cloud-review>Open cloud render</button>';
+  else if (!guidance && ['FAILED','CANCELLED'].includes(job.status)) {
+    const label = job.kind === 'image' ? 'Retry same seed' : 'Retry job';
+    action = `<button data-job-retry="${escape(job.id)}">${label}</button>`;
+  }
+  return `<div class="queue-job"><span>${escape(job.kind)} · ${escape(job.status)} · ${escape(job.message)}${guidance?`<br>${escape(guidance)}`:''}</span>${action}</div>`;
 }
 
 export function timingSummaryHTML(run) {

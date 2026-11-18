@@ -1,6 +1,7 @@
 """Persistent production jobs: audio, directing, shot generation, QC and renders."""
 
 import base64, copy, hashlib, io, json, math, os, re, secrets, sqlite3, threading, time, traceback, wave
+from collections import OrderedDict
 from contextlib import nullcontext
 from contextvars import ContextVar
 from pathlib import Path
@@ -37,6 +38,10 @@ from studio_voice_provider import identity as voice_identity, selected as voice_
 
 
 _local_image_service = ContextVar('local_image_service', default=None)
+_DENSE_RETRY_GUIDANCE = (
+    'Dense quality checks cannot resume for this attempt. Review the saved receipts, '
+    'then choose Generate full video in this project to start a new run.'
+)
 
 
 class JobCancelled(Exception):
@@ -101,6 +106,7 @@ class StudioService:
         from studio_execution import ExecutionJournal
         self.execution_journal = ExecutionJournal(self.store.root / 'executions.sqlite3')
         self.active_executions = {}
+        self._retry_receipt_stamps = OrderedDict()
         self.db = sqlite3.connect(
             self.store.root / "jobs.sqlite3", check_same_thread=False
         )
@@ -569,6 +575,63 @@ class StudioService:
         p['settings'].setdefault('engagement',{}).update(metadata)
         return p
 
+    @staticmethod
+    def _retry_receipt_stamp(path):
+        stat = path.stat()
+        return (stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns)
+
+    def _settled_retry_receipt(self, path, inspect, polling, sidecars=()):
+        # Snapshot hints can reuse unchanged settled receipts. Retry authority
+        # always rereads, and SQLite sidecars can change independently of the DB.
+        if not polling or any(sidecar.exists() for sidecar in sidecars):
+            return inspect()
+        try:
+            stamp = self._retry_receipt_stamp(path)
+        except FileNotFoundError:
+            return inspect()
+        cache = self._retry_receipt_stamps
+        if cache.get(path) == stamp:
+            cache.move_to_end(path)
+            return True
+        settled = inspect()
+        if (settled and self._retry_receipt_stamp(path) == stamp
+                and not any(sidecar.exists() for sidecar in sidecars)):
+            cache[path] = stamp
+            cache.move_to_end(path)
+            # The 1,100 history rows can each reference two receipts.
+            if len(cache) > 2200:
+                cache.popitem(last=False)
+        return settled
+
+    def dense_retry_guidance(self, job, settled_projects, *, polling=False):
+        if job['kind'] != 'produce-story' or job['status'] not in ('FAILED','CANCELLED'):
+            return None
+        from studio_deferred_qc import DeferredQC
+        from cost_control import SpendLedger
+        project = job['project']
+        try:
+            folder = self.store.folder(project)
+            descriptors = DeferredQC.path_for(folder,job['id'])
+            sidecars = tuple(descriptors.with_name(descriptors.name+suffix) for suffix in ('-wal','-journal')) if polling else ()
+            if not self._settled_retry_receipt(
+                    descriptors,lambda:DeferredQC.requires_new_parent(descriptors),polling,sidecars):
+                return None
+            if project not in settled_projects:
+                journal = getattr(self,'execution_journal',None)
+                if journal and journal.unresolved_project(project):
+                    settled_projects[project] = False
+                else:
+                    path = folder/'api-cost-ledger.json'
+                    def inspect_ledger():
+                        ledger = SpendLedger.read_snapshot(path)
+                        return not (ledger['requests'] or ledger.get('halted'))
+                    settled_projects[project] = self._settled_retry_receipt(path,inspect_ledger,polling)
+        except (OSError,ValueError,TypeError,KeyError,sqlite3.Error):
+            return None
+        if settled_projects[project]:
+            return _DENSE_RETRY_GUIDANCE
+        return None
+
     def snapshot(self):
         with self.cv:
             rows = [
@@ -599,7 +662,11 @@ class StudioService:
                 if group["kind"] == "image":
                     project["image"][group["status"]] = group["total"]
             samples = {}
+            settled_projects = {}
             for row in rows:
+                guidance = self.dense_retry_guidance(row,settled_projects,polling=True)
+                if guidance:
+                    row['retryGuidance'] = guidance
                 raw = row.pop("payload")
                 # Only image settings and render work receipts participate in queue timing.
                 payload = json.loads(raw) if raw else {}
@@ -1129,22 +1196,39 @@ class StudioService:
                     (' AND project=?' if project else ''),(project,) if project else ()
                 )
             elif action == "retry":
+                settled_projects = {}
                 if job:
-                    target=self.db.execute('SELECT kind FROM jobs WHERE id=?',(job,)).fetchone()
+                    target=self.db.execute('SELECT id,project,kind,status FROM jobs WHERE id=?',(job,)).fetchone()
                     if target and target['kind']=='render-cloud':
                         raise ValueError('Cloud rentals are not replayed through Retry. Reconcile the saved result and start a new explicitly capped request.')
+                    guidance = self.dense_retry_guidance(target,settled_projects) if target else None
+                    if guidance:
+                        raise ValueError(guidance)
                 available = (
                     1000
                     - self.db.execute(
                         "SELECT count(*) FROM jobs WHERE status IN ('QUEUED','RUNNING')"
                     ).fetchone()[0]
                 )
-                self.db.execute(
-                    "UPDATE jobs SET status='QUEUED',message='Retrying with saved seed' WHERE id IN (SELECT id FROM jobs WHERE status IN ('FAILED','CANCELLED') AND kind!='render-cloud'"
+                candidates = self.db.execute(
+                    "SELECT id,project,kind,status FROM jobs WHERE status IN ('FAILED','CANCELLED') AND kind!='render-cloud'"
                     + (" AND id=?" if job else "")
-                    + " ORDER BY priority DESC,created LIMIT ?)",
-                    (job, available) if job else (available,),
+                    + " ORDER BY priority DESC,created",
+                    (job,) if job else (),
                 )
+                retry_ids = []
+                skipped = False
+                for candidate in candidates:
+                    if len(retry_ids) >= available:
+                        break
+                    if not job and self.dense_retry_guidance(candidate,settled_projects):
+                        skipped = True
+                        continue
+                    retry_ids.append((candidate['id'],))
+                candidates.close()
+                if skipped and not retry_ids:
+                    return self.snapshot()
+                self.db.executemany("UPDATE jobs SET status='QUEUED',message='Retrying with saved seed' WHERE id=?",retry_ids)
                 self.paused = False
             elif action == "priority":
                 self.db.execute(

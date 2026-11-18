@@ -7,11 +7,14 @@ import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 
 DESCRIPTOR_LIMIT=8192
 DESCRIPTOR_MAX_BYTES=4096
 DESCRIPTOR_BYTES=DESCRIPTOR_LIMIT*DESCRIPTOR_MAX_BYTES
 DISK_HEADROOM=256*2**20
+INVALID_PARENT_STATES=frozenset({'FAILED','STALE','CANCELLED'})
+SETTLED_PARENT_STATES=INVALID_PARENT_STATES|{'PENDING','COMPLETE'}
 
 
 def capacity_preflight(project,shots,folder,max_repairs):
@@ -27,10 +30,26 @@ def capacity_preflight(project,shots,folder,max_repairs):
 
 
 class DeferredQC:
+    @staticmethod
+    def path_for(folder,parent):
+        name=hashlib.sha256(parent.encode()).hexdigest()[:24]
+        return Path(folder)/('dense-qc-'+name+'.sqlite')
+
+    @staticmethod
+    def requires_new_parent(path):
+        """Inspect saved descriptors without creating or recovering the queue."""
+        try:
+            if not path.is_file():return False
+            with closing(sqlite3.connect(path.absolute().as_uri()+'?mode=ro',uri=True,timeout=0)) as db:
+                states={status for status, in db.execute('SELECT DISTINCT status FROM tasks')}
+        except (OSError,sqlite3.Error):
+            return False
+        # PENDING descriptors have not claimed a remote operation.
+        return states <= SETTLED_PARENT_STATES and not states.isdisjoint(INVALID_PARENT_STATES)
+
     def __init__(self,folder,parent,recover=None):
         self.lock=threading.Lock()
-        name=hashlib.sha256(parent.encode()).hexdigest()[:24]
-        self.path=Path(folder)/('dense-qc-'+name+'.sqlite')
+        self.path=self.path_for(folder,parent)
         self.db=sqlite3.connect(self.path,check_same_thread=False)
         self.db.execute('PRAGMA synchronous=FULL');self.db.execute('PRAGMA cache_size=-256')
         self.db.execute('CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, payload TEXT NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL, execution TEXT, updated REAL NOT NULL)')
@@ -118,7 +137,7 @@ class DenseReviews:
         self.queue=DeferredQC(overlap.root.store.folder(overlap.project),overlap.parent,self._recover)
         try:
             counts=self.queue.snapshot()['counts']
-            if any(counts.get(name) for name in ('FAILED','STALE','CANCELLED')):
+            if INVALID_PARENT_STATES.intersection(counts):
                 raise RuntimeError('This dense QC job has failed or superseded work. Reconcile ownership and explicitly start a new job; no rental started.')
             pending=self.queue.pending_tasks()
             if pending:
@@ -260,7 +279,7 @@ class DenseReviews:
     def drain(self):
         while True:
             self.check();state=self.queue.snapshot()['counts']
-            if any(state.get(name) for name in ('UNKNOWN','STALE','FAILED','CANCELLED')):
+            if INVALID_PARENT_STATES.intersection(state) or state.get('UNKNOWN'):
                 raise RuntimeError('Dense QC has unresolved or superseded work; no rendering or replacement admitted.')
             if not state.get('PENDING') and not state.get('CLAIMED'):break
             self.owner.gate(self.owner.main_context,'Waiting for saved image quality checks')

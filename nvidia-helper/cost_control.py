@@ -138,8 +138,10 @@ class SpendLedger:
         state['liabilityUSD'] = (state['spentNanoUSD'] + sum(r['reservedNanoUSD'] for r in outstanding)) / 1e9
         return state
 
-    def _read(self):
-        state = json.loads(self.path.read_text(encoding='utf-8-sig')) if self.path.exists() else {'spentUSD': 0, 'receipts': [], 'pending': None}
+    @staticmethod
+    def read_snapshot(path):
+        """Read an atomically published ledger without opening its writer lock."""
+        state = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {'spentUSD': 0, 'receipts': [], 'pending': None}
         version_two = state.get('schemaVersion') == 2 if isinstance(state, dict) else False
         previous_pending = state.get('pending') if isinstance(state, dict) else None
         if not isinstance(state, dict) or state.get('schemaVersion', 1) not in (1, 2) or not isinstance(state.get('receipts'), list):
@@ -171,12 +173,15 @@ class SpendLedger:
             if _nanos(row['reservedUSD']) != maximum:
                 raise ValueError('Inconsistent API request reservation; reconcile before dispatch.')
         state['schemaVersion'] = 2
-        view = self._view(state)
+        view = SpendLedger._view(state)
         if version_two and previous_pending != view['pending']:
             # An older helper can preserve `requests` yet overwrite only its
             # legacy pending slot. Never silently hide that extra liability.
             raise ValueError('Inconsistent API pending reservation; reconcile possible older-writer changes before dispatch.')
         return view
+
+    def _read(self):
+        return self.read_snapshot(self.path)
 
     def load(self):
         with self._guard():

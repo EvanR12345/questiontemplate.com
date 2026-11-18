@@ -5,11 +5,24 @@ import {updateHTML,queuePart,renderTimingHistory,timingPageHTML,timingSummaryHTM
 test('cloud attempts expose review instead of an unsupported paid retry',()=>{
   for(const status of ['FAILED','CANCELLED','INTERRUPTED']){
     const html=queueJobHTML({id:'a',kind:'render-cloud',status,message:'Saved result needs review'});
-    assert.match(html,/Open cloud render/);assert.doesNotMatch(html,/Retry same seed|Prioritize/);
+    assert.match(html,/Open cloud render/);assert.doesNotMatch(html,/Retry same seed|Retry job|Prioritize/);
   }
   assert.match(queueJobHTML({id:'b',kind:'image',status:'FAILED',message:'<test>'}),/Retry same seed/);
   assert.match(queueJobHTML({id:'b',kind:'image',status:'FAILED',message:'<test>'}),/&lt;test&gt;/);
   assert.match(queueJobHTML({id:'b',kind:'image',status:'QUEUED'}),/Prioritize/);
+});
+
+test('stopped Dense attempts with recovery guidance direct users to a fresh full run',()=>{
+  const retryGuidance='Review saved receipts, then choose Generate full video in this project.';
+  for(const status of ['FAILED','CANCELLED']){
+    const html=queueJobHTML({id:'dense',kind:'produce-story',status,message:'Original failure',retryGuidance});
+    assert.match(html,/Original failure/);
+    assert.match(html,/receipts.*Generate full video/);
+    assert.doesNotMatch(html,/data-job-retry|<button/);
+    assert.match(queueJobHTML({id:'older',kind:'produce-story',status}),/>Retry job</);
+    assert.match(queueJobHTML({id:'render',kind:'render-full',status}),/>Retry job</);
+  }
+  assert.match(queueJobHTML({id:'queued',kind:'produce-story',status:'QUEUED',retryGuidance}),/Prioritize/);
 });
 
 class Element {

@@ -370,18 +370,59 @@ class RenderIntegrationTests(unittest.TestCase):
             p['settings']['watermark']={'enabled':True,'type':'text','text':'Studio'}
             folder=store.folder(p['id']);audio=folder/'outro.wav'
             with wave.open(str(audio),'wb') as wav:
-                wav.setparams((1,2,24000,0,'NONE','not compressed'));wav.writeframes(b'\0'*24000*2)
+                tone=array('h',(round(8000*math.sin(2*math.pi*800*i/24000)) for i in range(24000)))
+                wav.setparams((1,2,24000,0,'NONE','not compressed'));wav.writeframes(tone.tobytes())
             before=sha(audio);r=VideoRenderer(store,{'ffmpeg':os.environ['STUDIO_TEST_FFMPEG']})
             gate=lambda *a:None
-            r.run(['-f','lavfi','-i','color=c=purple:s=640x360:r=60:d=70','-f','lavfi','-i','sine=frequency=200:sample_rate=24000:duration=70',*r.encoding(p),'-g','120','-c:a','aac','-ac','1','-shortest',str(folder/'source.mp4')],gate,folder/'fixture.log')
-            result=r.engagement_export(p,{'path':'source.mp4','duration':70,'signature':'fixture'},gate)
+            source=folder/'source.mp4'
+            r.run(['-f','lavfi','-i','color=c=purple:s=640x360:r=60:d=70','-f','lavfi','-i','sine=frequency=200:sample_rate=48000:duration=70',*r.encoding(p),'-g','120','-c:a','aac','-ac','2','-shortest',str(source)],gate,folder/'fixture.log')
+            base={'path':source.name,'duration':70,'signature':'fixture'}
+            original=sha(source)
+            result=r.engagement_export(p,base,gate)
             self.assertEqual(result['duration'],75);self.assertEqual(len(result['engagementEvents']),1);self.assertEqual(sha(audio),before)
             self.assertEqual(len(list(folder.glob('watermarked-*.mp4'))),0)
             self.assertTrue(result['watermarkIdentity']['settings']['enabled'])
+            target=store.asset(p['id'],result['path'])
+            self.assertEqual(r.engagement_export(p,base,gate)['path'],result['path'])
+            self.assertEqual(sha(source),original)
             parts=r.split_export(p,result,gate,1);self.assertEqual(len(parts),2)
             self.assertAlmostEqual(sum(x['duration'] for x in parts),75,delta=.2)
             for part in parts:self.assertTrue(store.asset(p['id'],part['path']).is_file())
-            decoded=subprocess.run([os.environ['STUDIO_TEST_FFMPEG'],'-hide_banner','-i',str(store.asset(p['id'],result['path'])),'-f','null','-'],check=True,capture_output=True)
+            decoded=subprocess.run([r.executable(),'-hide_banner','-xerror','-i',str(target),'-f','null','-'],check=True,capture_output=True)
             self.assertIn('60 fps',decoded.stderr.decode(errors='replace'))
+            ending=subprocess.check_output([r.executable(),'-v','error','-xerror','-ss','70.25','-i',str(target),
+                '-map','0:a:0','-t','0.5','-ac','1','-ar','24000','-f','s16le','pipe:1'])
+            samples=array('h',ending)
+            self.assertEqual(len(samples),12000)
+            self.assertGreater(max(samples),4000)
+
+    def test_outro_reuses_legacy_lossless_story_audio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store=ProjectStore(tmp);p=store.save(new_project())
+            p['settings']['video'].update(width=640,height=360,fps=30)
+            p['settings']['watermark']={'enabled':False}
+            p['settings']['engagement'].update(outroEnabled=True,outroAudioPath='outro.wav',outroDuration=5)
+            p['settings']['engagement']['outroAudioSignature']=audio_signature(p)
+            folder=store.folder(p['id']);audio=folder/'outro.wav';source=folder/'story.mp4'
+            r=VideoRenderer(store,{'ffmpeg':os.environ['STUDIO_TEST_FFMPEG']})
+            gate=lambda *a:None
+            r.run(['-f','lavfi','-i','sine=frequency=800:sample_rate=24000:duration=1',str(audio)],
+                  gate,folder/'outro-fixture.log')
+            r.run(['-f','lavfi','-i','color=c=blue:s=640x360:r=30:d=2','-f','lavfi','-i',
+                   'sine=frequency=200:sample_rate=44100:duration=2',*r.encoding(p),'-c:a','alac',
+                   str(source)],gate,folder/'story-fixture.log')
+            original=sha(source);spoken=sha(audio)
+            result=r.engagement_export(p,{'path':source.name,'duration':2,'signature':'fixture'},gate)
+            target=folder/result['path']
+            self.assertEqual(result['duration'],7)
+            self.assertEqual((sha(source),sha(audio)),(original,spoken))
+            subprocess.run([r.executable(),'-v','error','-xerror','-i',str(target),'-f','null','-'],
+                           capture_output=True,check=True)
+            for timestamp in ('1.7','2.2'):
+                raw=subprocess.check_output([r.executable(),'-v','error','-xerror','-ss',timestamp,'-i',str(target),
+                    '-map','0:a:0','-t','0.2','-ac','1','-ar','24000','-f','s16le','pipe:1'])
+                samples=array('h',raw)
+                self.assertEqual(len(samples),4800)
+                self.assertGreater(max(samples),2000)
 
 if __name__=='__main__':unittest.main()

@@ -9,6 +9,7 @@ from render_queue import render_unique_clips
 from studio_audio import probe as probe_audio
 
 SUPPORTED_MOTIONS = {'static','slow zoom in','slow zoom out','pan left','pan right','pan up','pan down'}
+AAC_LC_FRAME_SAMPLES = 1024
 
 def effective_motion(shot, video):
     """Project motion adds movement to AI holds, preserving explicit shot edits."""
@@ -1140,6 +1141,68 @@ class VideoRenderer:
             "renderTimingScope": "reused-base" if reused_full else timing_scope,
         },gate)
 
+    def aac_splice_info(self, path):
+        """Identify the fixed-frame AAC tracks that can be joined by packet copy."""
+        sibling = Path(self.executable()).with_name('ffprobe.exe' if os.name == 'nt' else 'ffprobe')
+        ffprobe = str(sibling) if sibling.is_file() else shutil.which('ffprobe')
+        if not ffprobe:
+            return None
+        try:
+            probe = subprocess.run([ffprobe, '-v', 'error', '-select_streams', 'a:0',
+                '-read_intervals', '%+#1', '-show_packets', '-show_streams',
+                '-show_entries', 'packet=dts,duration',
+                '-show_data_hash', 'sha256', '-of', 'json', str(path)],
+                capture_output=True, check=True, timeout=30,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            data = json.loads(probe.stdout)
+            stream, first = data['streams'][0], data['packets'][0]
+            rate, channels = int(stream['sample_rate']), int(stream['channels'])
+            duration = int(stream['duration_ts'])
+            frame = AAC_LC_FRAME_SAMPLES
+            frames = (duration + frame - 1) // frame
+            if (stream['codec_name'] == 'aac' and stream['profile'] == 'LC' and
+                    stream['start_pts'] == 0 and stream['time_base'] == f'1/{rate}' and
+                    (channels, stream['channel_layout']) in ((1, 'mono'), (2, 'stereo')) and
+                    first['dts'] == -frame and first['duration'] == frame and
+                    frames > 0 and int(stream['nb_frames']) == frames + 1):
+                return rate, channels, stream['extradata_hash'], frames
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError, IndexError):
+            pass
+        return None
+
+    def join_engagement_outro(self, decorated, outro, audio, target, duration, outro_duration, story_aac, gate):
+        input_bytes = decorated.stat().st_size + outro.stat().st_size
+        outro_aac = self.aac_splice_info(outro) if story_aac else None
+        if outro_aac and outro_aac[:3] == story_aac[:3]:
+            rate, _, _, frames = story_aac
+            frame = AAC_LC_FRAME_SAMPLES
+            # The MP4 duration can end inside the last AAC packet. Keep the
+            # full packet and place the new track's priming packet after it.
+            join = max(frames + 1, math.ceil(duration * rate / frame)) * frame / rate
+            if abs(join - duration) <= 2 * frame / rate:
+                self.require_output_space(target, input_bytes)
+                listing = self.concat_listing([decorated, outro], target.with_suffix('.concat.txt'),
+                                              [join, outro_duration])
+                self.run(['-xerror', '-copyts', '-f', 'concat', '-safe', '0', '-i', str(listing),
+                          '-map', '0:v:0', '-map', '0:a:0', '-c', 'copy',
+                          '-avoid_negative_ts', 'disabled', '-movflags', '+faststart', str(target)],
+                         gate, target.with_suffix('.log'))
+                return
+        # Other codecs, layouts and timestamp conventions need one continuous
+        # audio encode. Decode both originals and retain all their samples.
+        self.require_output_space(target, input_bytes, duration + outro_duration)
+        listing = self.concat_listing([decorated, outro], target.with_suffix('.concat.txt'),
+                                      [duration, outro_duration])
+        graph = ';'.join(
+            f'[{index}:a:0]aresample=48000,apad=whole_len={round(length * 48000)},asetpts=N/SR/TB[{label}]'
+            for index, length, label in ((1, duration, 'story'), (2, outro_duration, 'ending'))
+        ) + ';[story][ending]concat=n=2:v=0:a=1[a]'
+        self.run(['-xerror', '-copyts', '-f', 'concat', '-safe', '0', '-i', str(listing),
+                  '-i', str(decorated), '-i', str(audio), '-filter_complex', graph,
+                  '-map', '0:v:0', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+                  '-avoid_negative_ts', 'disabled', '-movflags', '+faststart', str(target)],
+                 gate, target.with_suffix('.log'))
+
     def engagement_export(self, p, result, gate, namespace='full'):
         from studio_engagement import settings, schedule, card, ding, audio_signature
         s=settings(p)
@@ -1203,20 +1266,40 @@ class VideoRenderer:
             decorated=self.store.asset(p['id'],self.watermark_export(p,result,gate)['path'])
         target=decorated
         if s['outroEnabled']:
-            outro=folder/f'outro-{signature[:20]}.mp4'
+            legacy_outro=folder/f'outro-{signature[:20]}.mp4'
+            identity=identity | {'outroMuxVersion':1}
+            signature=digest(identity)
             spoken=probe_audio(audio,self.executable())['duration']
             outro_duration=max(s['outroDuration'],spoken+.5)
-            if not self.cached_asset(p['id'], outro):
-                visual=outro.with_suffix('.png'); card(p,visual,outro=True)
-                inputs=['-loop','1','-i',str(visual),'-i',str(audio)]
-                if branding.get('enabled',True):
-                    mark=outro.with_name(outro.stem+'-watermark.png');bitmap(p,self.store,mark);bx,by=coordinates(p)
-                    inputs+=['-i',str(mark),'-filter_complex_threads','1','-filter_complex',f'[0:v][2:v]overlay=x={bx}:y={by}:eof_action=repeat:format=auto[v]', '-map','[v]','-map','1:a:0']
-                self.run([*inputs,'-af','apad',
-                    '-t',str(outro_duration),*self.encoding(p),'-c:a','aac','-b:a','128k',
-                    '-ar','24000','-ac','1','-movflags','+faststart',str(outro)],gate,outro.with_suffix('.log'))
             target=folder/f'complete-{signature[:20]}.mp4'
-            if not self.cached_asset(p['id'], target): self.concat([decorated,outro],target,gate,target.with_suffix('.log'),[duration,outro_duration])
+            if not self.cached_asset(p['id'], target):
+                story_aac=self.aac_splice_info(decorated)
+                outro=folder/f'outro-{signature[:20]}.mp4'
+                if not self.cached_asset(p['id'], outro):
+                    audio_index=1
+                    if self.cached_asset(p['id'], legacy_outro):
+                        inputs=['-i',str(legacy_outro)]
+                        video_options=['-map','0:v:0','-c:v','copy']
+                    else:
+                        visual=outro.with_suffix('.png');card(p,visual,outro=True)
+                        inputs=['-loop','1','-i',str(visual)]
+                        video_options=['-map','0:v:0',*self.encoding(p)]
+                        if branding.get('enabled',True):
+                            mark=outro.with_name(outro.stem+'-watermark.png');bitmap(p,self.store,mark);bx,by=coordinates(p)
+                            inputs+=['-i',str(mark)]
+                            audio_index=2
+                            video_options=['-filter_complex_threads','1','-filter_complex',
+                                           f'[0:v][1:v]overlay=x={bx}:y={by}:eof_action=repeat:format=auto[v]',
+                                           '-map','[v]',*self.encoding(p)]
+                    audio_options=['-an']
+                    if story_aac:
+                        rate, channels, _, _=story_aac
+                        inputs+=['-i',str(audio)]
+                        audio_options=['-map',f'{audio_index}:a:0','-af','apad','-c:a','aac','-profile:a','aac_low',
+                                       '-b:a','128k','-ar',str(rate),'-ac',str(channels)]
+                    self.run([*inputs,*video_options,*audio_options,'-t',str(outro_duration),
+                              '-movflags','+faststart',str(outro)],gate,outro.with_suffix('.log'))
+                self.join_engagement_outro(decorated,outro,audio,target,duration,outro_duration,story_aac,gate)
             duration+=outro_duration
         final=result | {'path':target.name,'duration':duration,'signature':signature,
                          'engagementEvents':events,'engagementIdentity':identity,'narrationRender':result,'watermarkIdentity':branding,

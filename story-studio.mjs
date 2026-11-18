@@ -1,5 +1,5 @@
-import {updateHTML,queuePart,renderTimingHistory,queueJobHTML} from './studio-queue-view.mjs?v=queue-recovery-20261017';
-import {createWorkspaceTools} from './studio-workspace.mjs?v=queue-recovery-20261017';
+import {updateHTML,queuePart,renderTimingHistory,queueJobHTML} from './studio-queue-view.mjs?v=dense-retry-20261118';
+import {chapterStage,createWorkspaceTools} from './studio-workspace.mjs?v=queue-recovery-20261017';
 import {createProductionTools} from './studio-production-tools.mjs?v=queue-perf-20261016';
 import {workspaceGuideHTML,organizeSettings,organizeFileTools,openStudioGuide} from './studio-guide.mjs?v=tools-20261016';
 import {VOICE_MODELS,NARRATOR,DEFAULT_VOICE_SCRIPT,voicesFor,voiceCards,mountVoicePicker,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=kaggle-fallback-20261026';
@@ -20,7 +20,7 @@ import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
 import {rendererPlacement,chapterDisplayStatus} from './studio-render-status.mjs?v=grounding-20261011';
 import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=dense-lease-20261118';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaCapability, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=playback-expiry-20261118';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaCapability, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=private-delivery-20261118';
 import {
   loadProjectState,
   saveStudioProject,
@@ -510,20 +510,42 @@ function stats() {
 }
 function refreshBackgroundSummary() {
   const chapterLookup = new Map(project.chapters.map(chapter=>[chapter.id,chapter]));
-  for (const button of root.querySelectorAll("[data-chapter]")) {
-    const chapter = chapterLookup.get(button.dataset.chapter);
+  for (const button of root.querySelectorAll("[data-ws-chapter]")) {
+    const chapter = chapterLookup.get(button.dataset.wsChapter);
     if (!chapter) continue;
-    button.querySelector("strong").textContent = chapter.name;
-    button.querySelector("small").textContent =
-      chapterDisplayStatus(project,chapter) +
-      (chapter.continuityNeedsReview ? " · review continuity" : "");
+    const name = button.querySelector("strong"), stage = button.querySelector("small");
+    if (name.textContent !== chapter.name) {
+      name.textContent = chapter.name;
+      button.parentElement.querySelector("[data-ws-select]")?.setAttribute("aria-label", "Select " + chapter.name);
+    }
+    const label = chapterStage(chapter);
+    if (stage.textContent !== label) stage.textContent = label;
   }
+  const chapter = ch();
+  const heading = root.querySelector(".chapter-heading h2");
+  if (heading && heading.textContent !== chapter.name) heading.textContent = chapter.name;
   const subtitle = root.querySelector(".chapter-heading .subtitle");
   if (subtitle)
-    subtitle.textContent = `${chapterDisplayStatus(project,ch())} · ${project.settings.image.model} · ${project.settings.image.workflow}`;
+    subtitle.textContent = `${chapterDisplayStatus(project,chapter)} · ${project.settings.image.model} · ${project.settings.image.workflow}`;
+
+  // The polling guard has already verified that these controls are clean and unfocused.
+  // Update the mounted values before awaiting the browser checkpoint; the next edit
+  // must start from the same revision as the in-memory project.
+  const chapterName = $("#chapterName"), story = $("#chapterStory");
+  if (chapterName && chapterName.value !== chapter.name) chapterName.value = chapter.name;
+  if (story && story.value !== chapter.sourceText) {
+    story.value = chapter.sourceText;
+    $("#wordCount").textContent = wordStats(story.value);
+  }
+  const narration = $("#narrationScript");
+  if (narration) {
+    const script = chapter.cleanNarrationText || cleanText(chapter.sourceText, chapter.name);
+    if (narration.value !== script) narration.value = script;
+    $("#narrationMode").value = chapter.narrationMode;
+    $("#includeChapterHeading").checked = chapter.includeChapterLabel;
+  }
   const summary = root.querySelector("#productionContent > .stats");
   if (summary) summary.outerHTML = stats();
-  // Update progress without replacing the story/narration editor or its selection.
 }
 function render() {
   const plannerLink=$('#studioPlannerLink');
@@ -1056,7 +1078,7 @@ function wire() {
           throw Error('Before generation: '+issues.join(' '));
         }
         queue=await api('jobs',{project:targetProject,kind:'produce-story',options:{...planned,preflightRevision:readiness.revision}});
-        note('Full video queued. Keep the shared helper running. Pause, cancel or retry here; completed work is saved and reused.');
+        note('Full video queued. Keep the shared helper running. Use the production queue to pause, cancel or check progress. Completed work is saved and reused.');
       }finally{startingProduction.delete(targetProject);renderQueue();}
     });
   $("#productionConnect").onclick = () => action(connectHelper);
@@ -2194,20 +2216,24 @@ async function poll() {
     if (!dirty && !project._unsynced && project.id === requestedProjectId &&
         tab !== "settings" && !editorHasFocus()) {
       const revision = await api("revision?id=" + requestedProjectId);
-      if (revision.revision !== project.revision && project.id === requestedProjectId && !dirty && !editorHasFocus()) {
+      if (revision.revision !== project.revision && project.id === requestedProjectId &&
+          !dirty && tab !== "settings" && !editorHasFocus()) {
         const latest = await api("project?id=" + requestedProjectId);
         if (canApplyBackgroundProject(project,latest,{
           requestedId:requestedProjectId,dirty,
-          editing:editorHasFocus(),
+          editing:tab === "settings" || editorHasFocus(),
         })) {
+          const adoptedTab = tab;
+          const chaptersChanged = latest.chapters.length !== project.chapters.length ||
+            latest.chapters.some((chapter,index) => chapter.id !== project.chapters[index].id);
+          const redraw = chaptersChanged || ["review", "cast", "timeline"].includes(adoptedTab);
           project = latest;
+          if (redraw) render();
+          else refreshBackgroundSummary();
           await cache();
-          if (["review", "cast", "timeline"].includes(tab)) render();
-          else {
-            refreshBackgroundSummary();
+          if (!redraw && project === latest && tab === adoptedTab && !dirty && !editorHasFocus())
             $("#productionSaveState").textContent =
               "Background results saved · " + chapterDisplayStatus(project,ch());
-          }
         }
       }
     }
