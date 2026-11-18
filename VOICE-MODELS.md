@@ -48,7 +48,8 @@ or a guarantee of long-story consistency. Listen to the auditions before choosin
 4. Preview a short voice sample. Each request creates a private notebook, with
    Internet and a T4 accelerator requested through Kaggle's official CLI. The
    notebook downloads only its selected model into ephemeral Kaggle scratch.
-5. The notebook saves one mono PCM WAV and actual passage timing metadata.
+5. The notebook saves mono Opus and measured passage timings. A grouped job
+   writes a separate Opus file for each chapter.
    Studio downloads and validates these before selecting the result. Its existing
    cloud archive then stores normal audio assets with other project files.
 

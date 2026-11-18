@@ -66,3 +66,34 @@ test('rejects an overlength full story before any YouTube request while keeping 
   assert.equal(response.status,400);assert.match((await response.json()).error,/Choose a saved video part/);assert.equal(calls,0);
   assert.ok(env.STUDIO.data.has(`studio/manifests/${project}.json`));
 });
+
+test('stored export versions, earlier chapter renders and their parts retain the YouTube duration limit',async()=>{
+  const long={path:'story.mp4',duration:43215};
+  const oldSplit={path:'earlier-full.mp4',duration:90000,parts:[long]};
+  for(const savedProject of [
+    {exports:{patreon:long}},
+    {renderHistory:[long]},
+    {renderHistory:[oldSplit]},
+    {chapters:[{renderHistory:[long]}]},
+  ]){
+    const env=fixture();
+    env.STUDIO.data.get(`studio/manifests/${project}.json`).value.project=savedProject;
+    let providerCalls=0;
+    const response=await handle(request(env,'/uploads/start',{project,path:'story.mp4',title:'Saved edition'}),
+      env,async()=>{providerCalls++;throw Error('Unexpected provider request');});
+    const body=await response.json();
+    assert.equal(providerCalls,0);
+    assert.equal(response.status,400);
+    assert.match(body.error,/Choose a saved video part/);
+  }
+});
+
+test('a short part of an earlier long export remains eligible',async()=>{
+  const env=fixture(),saved=env.STUDIO.data.get(`studio/manifests/${project}.json`).value;
+  saved.project={renderHistory:[{path:'earlier-full.mp4',duration:50000,parts:[{path:'story.mp4',duration:7200}]}]};
+  const response=await handle(request(env,'/uploads/start',{project,path:'story.mp4',title:'Saved part'}),env,async url=>
+    url.includes('/token')?Response.json({access_token:'fixture'}):
+      new Response(null,{headers:{Location:'https://www.googleapis.com/upload/youtube/v3/videos?upload_id=fixture'}}));
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).status,'UPLOADING');
+});

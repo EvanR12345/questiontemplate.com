@@ -63,12 +63,16 @@ def reconcile(config,path,client=None):
 
 
 class RunpodClient:
-    def __init__(self,config):self.config=config
+    def __init__(self,config,action_key_reader=None):
+        self.config=config;self.action_key_reader=action_key_reader
+    def action_key(self):
+        if self.action_key_reader:return self.action_key_reader()
+        return Path(self.config['runpodActionKeyFile']).read_text(encoding='utf-8-sig').strip()
     def gpu_catalog(self):
         """Read live regional stock with the explicitly configured CLI credential."""
         cli=Path(self.config.get('runpodCLI',''))
         if not cli.is_file():raise ManagedGPUError('Configured Runpod inventory CLI is unavailable.')
-        try:key=Path(self.config['runpodActionKeyFile']).read_text(encoding='utf-8-sig').strip()
+        try:key=self.action_key()
         except (OSError,KeyError):raise ManagedGPUError('Existing private inventory credential is unavailable.') from None
         if not key.startswith('rpa_'):raise ManagedGPUError('Invalid private inventory credential.')
         environment=os.environ.copy();environment['RUNPOD_API_KEY']=key
@@ -90,7 +94,7 @@ class RunpodClient:
             # Reads keep their configured REST key and normalized pod contract.
             cli=Path(self.config.get('runpodCLI',''))
             if not cli.is_file():raise ManagedGPUError('Configured Runpod control CLI is unavailable.')
-            try:key=Path(self.config['runpodActionKeyFile']).read_text(encoding='utf-8-sig').strip()
+            try:key=self.action_key()
             except OSError:raise ManagedGPUError('Existing private worker control credential is unavailable.') from None
             if not key.startswith('rpa_'):raise ManagedGPUError('Invalid private worker control credential.')
             environment=os.environ.copy();environment['RUNPOD_API_KEY']=key

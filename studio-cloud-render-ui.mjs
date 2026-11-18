@@ -49,9 +49,10 @@ export async function wireCloudRender({p,api,action,active,open,enabled,capabili
   const marketplace=capabilities.backend==='marketplace';
   if($('cloudRenderBudgetLabel'))$('cloudRenderBudgetLabel').hidden=!marketplace;
   if($('cloudRenderPlan'))$('cloudRenderPlan').onclick=()=>action(async()=>{
-    const plan=await api('cloud-render-plan?project='+encodeURIComponent(p.id));
+    const query=new URLSearchParams({project:p.id,destination:$('cloudRenderDestination').value});
+    const plan=await api('cloud-render-plan?'+query);
     if(!mounted())return;
-    $('cloudRenderPlanResult').textContent=`${(plan.durationSeconds/60).toFixed(1)} minutes · ${plan.chapterCount} chapters · ~${(plan.estimatedOutputBytes/2**30).toFixed(2)} GiB output planning allowance · ${plan.recommendedDiskGB} GB recommended worker disk (configured ${plan.configuredDiskGB} GB) · no laptop MP4. ${plan.estimateKind}. ${plan.withinVerifiedDuration?'Within tested duration.':'Longer than the verified duration: validation required.'} ${plan.missingCloudInputs?plan.missingCloudInputs+' inputs still need cloud saving.':''}`;
+    $('cloudRenderPlanResult').textContent=`${(plan.durationSeconds/60).toFixed(1)} minutes · ${plan.chapterCount} chapters · ~${(plan.estimatedOutputBytes/2**30).toFixed(2)} GiB output planning allowance · ${plan.recommendedDiskGB} GB recommended worker disk (configured ${plan.configuredDiskGB} GB) · no laptop MP4. ${plan.estimateKind}. ${plan.withinVerifiedDuration===null?'Final duration needs the saved outro audio.':plan.withinVerifiedDuration?'Within tested duration.':'Longer than the verified duration: validation required.'} ${plan.missingCloudInputs?plan.missingCloudInputs+' inputs still need cloud saving.':''}`;
   });
   if(!enabled){view.textContent=capabilities.reason||'Cloud rendering is not connected yet. No local rendering starts from this button.';return;}
   start.textContent=marketplace?(capabilities.longExportVerified?'Render saved story in cloud · 720p30':'Render cloud preview · 720p30'):'Render full story in cloud';

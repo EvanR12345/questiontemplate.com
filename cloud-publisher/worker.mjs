@@ -16,6 +16,17 @@ async function token(env,fetcher){
   if(!r.ok)throw Error('YouTube authorization expired. Reconnect your channel.');
   return (await r.json()).access_token;
 }
+function savedVideoDuration(project,path){
+  const editions=[
+    project?.render,...Object.values(project?.exports??{}),...(project?.renderHistory??[]).slice().reverse(),
+    ...(project?.chapters??[]).flatMap(chapter=>[chapter.render,...(chapter.renderHistory??[]).slice().reverse()]),
+  ];
+  for(const edition of editions){
+    if(edition?.path===path&&Number.isFinite(edition.duration))return edition.duration;
+    const part=edition?.parts?.find(item=>item?.path===path&&Number.isFinite(item.duration));
+    if(part)return part.duration;
+  }
+}
 async function publicJob(job){return {id:job.id,project:job.project,path:job.path,title:job.title,privacy:job.actualPrivacy??job.privacy,actualPrivacy:job.actualPrivacy??null,total:job.total,uploaded:job.uploaded,status:job.status,videoId:job.videoId??null};}
 async function acknowledge(response,job){
   if(response.status===308){
@@ -89,8 +100,7 @@ export async function handle(request,env,fetcher=fetch){
       if(!pid(body.project)||typeof body.path!=='string')throw Error('Choose a saved project video.');
       const manifest=await read(env.STUDIO,'studio/manifests/'+body.project+'.json');const file=manifest?.value.files?.[body.path];
       if(!file||!body.path.endsWith('.mp4')||file.key!==`studio/assets/${body.project}/${file.sha256}/${body.path}`)throw Error('Upload the completed video to cloud storage first.');
-      const renders=[manifest.value.project?.render,...(manifest.value.project?.chapters??[]).map(c=>c.render),...(manifest.value.project?.render?.parts??[])];
-      const duration=renders.find(r=>r?.path===body.path)?.duration;
+      const duration=savedVideoDuration(manifest.value.project,body.path);
       if(!Number.isSafeInteger(file.bytes)||file.bytes<=0)throw Error('Cloud video size is invalid.');
       if(file.bytes>256000000000||duration>43200)throw Error('YouTube accepts up to 12 hours or 256 GB per video. Choose a saved video part instead.');
       const head=await env.STUDIO.head(file.key);if(!head||head.size!==file.bytes||head.customMetadata?.sha256!==file.sha256)throw Error('Cloud video verification failed.');

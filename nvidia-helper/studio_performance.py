@@ -13,6 +13,20 @@ import time
 
 VERSION = 1
 
+RENDER_TIMING_VERSION = 3
+FRESH_RENDER_SCOPE = {'Render chapter':'fresh-chapter', 'Assemble full video':'fresh-assembly'}
+
+def render_timing_details(stage, result):
+    """Describe this invocation even when its returned file carries older render metadata."""
+    if stage not in FRESH_RENDER_SCOPE or not isinstance(result, dict):
+        return {}
+    reused = result.get('reused') is True
+    scope = 'reused-base' if reused else result.get('renderTimingScope', 'unverified')
+    details = {'renderTimingScope':scope,'reused':reused}
+    if stage == 'Assemble full video':
+        details['fullAssemblyPolicy'] = result.get('fullAssemblyPolicy','format-guarded-original-audio-v1')
+    return details
+
 class HostExecutionClock:
     """Detect long gaps in host execution, not ordinary network/API waiting.
 
@@ -172,7 +186,8 @@ def profile_for(stage, project, config, details=None):
     elif stage in ('Render chapter','Assemble full video'):
         backend=details.get('renderBackend',config.get('performanceRenderBackend',config.get('renderBackend','cpu')))
         profile.update(width=video.get('width'),height=video.get('height'),fps=video.get('fps'),
-            renderTimingVersion=2,renderer=backend,renderWorkers=1 if backend=='native' else config.get('renderWorkers',2),
+            renderTimingVersion=RENDER_TIMING_VERSION,renderTimingScope=details.get('renderTimingScope', FRESH_RENDER_SCOPE[stage]),
+            renderer=backend,renderWorkers=1 if backend=='native' else config.get('renderWorkers',2),
             crf=video.get('crf'),fit=video.get('imageFit'),
             motion=video.get('motionMode'),zoomAmount=video.get('zoomAmount',.06),motionEasing=video.get('motionEasing','smooth'),
             watermark=signature(settings.get('watermark',{})),engagement=signature(settings.get('engagement',{})),
@@ -255,6 +270,11 @@ class PerformanceStore:
             identity=signature(profile)
             retained=self.db.execute('SELECT COUNT(*) FROM observations WHERE profile_hash=? AND units_kind=?',
                 (identity,units['kind'])).fetchone()[0]
+            expected_scope = FRESH_RENDER_SCOPE.get(profile.get('stage'))
+            if expected_scope and (profile.get('renderTimingVersion') != RENDER_TIMING_VERSION or
+                                   profile.get('renderTimingScope') != expected_scope):
+                return {'status':'UNKNOWN','seconds':None,'costUSD':None,'samples':0,'runs':0,'retained':retained,
+                    'note':'The saved work scope does not establish a fresh render-stage timing.'}
             usable=[dict(r) for r in self.db.execute('SELECT * FROM observations WHERE profile_hash=? AND units_kind=? '
                 "AND status='COMPLETE' AND reused=0 AND pending=0 AND paused=0 AND finished BETWEEN ? AND ? "
                 'ORDER BY finished DESC LIMIT 30',(identity,units['kind'],now-90*86400,now))]

@@ -2,6 +2,7 @@
 
 import base64, copy, hashlib, io, json, math, os, re, secrets, sqlite3, threading, time, traceback, wave
 from contextlib import nullcontext
+from contextvars import ContextVar
 from pathlib import Path
 from studio_data import *
 from studio_image_workers import make_comfy_provider
@@ -22,16 +23,20 @@ from image_provider import (
 from studio_render import VideoRenderer
 from studio_gpu_render import create_renderer
 from studio_render_progress import FrameProgress
+from studio_queue_image_recovery import current_receipt, run_queued_image, select_image, claim_image, manual_selection_changed, ImageRecoveryRequired
 from studio_analysis_inputs import analysis_input_signature as exact_analysis_input_signature
-from studio_qc import decision as qc_decision, production_status, automatic_repairs, repair_budget_reason, check_level, should_check, policy as qc_policy, review_settings_signature, review_settings_stale
+from studio_qc import decision as qc_decision, valid_acceptance, production_status, automatic_repairs, repair_budget_reason, check_level, should_check, policy as qc_policy, review_settings_signature, review_settings_stale
 from prompt_quality import generation_measurements
 from story_grounding import apply_environment_event, set_environment_location, visual_environment, require_owners
 from production_trace import ProductionTrace
 from prompt_preflight import require_shot
 from queue_estimates import remaining_time, timing_profile
-from studio_performance import PerformanceStore,profile_for,observation_units,signature as performance_signature,host_execution_gaps,host_interruption_details
+from studio_performance import PerformanceStore,profile_for,observation_units,signature as performance_signature,host_execution_gaps,host_interruption_details,FRESH_RENDER_SCOPE,render_timing_details
 from narration_audio import VERSION as AUDIO_DELIVERY_VERSION, FLOW_VERSION, audio_segments, effect_pcm, create_connected_audio, speech_pcm
 from studio_voice_provider import identity as voice_identity, selected as voice_engine, location as voice_location, catalogue as voice_catalogue, KaggleVoice, KaggleQuotaExhausted
+
+
+_local_image_service = ContextVar('local_image_service', default=None)
 
 
 class JobCancelled(Exception):
@@ -107,6 +112,7 @@ class StudioService:
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)"
         )
+        self.db.execute('CREATE TABLE IF NOT EXISTS queued_image_receipts(job TEXT PRIMARY KEY, receipt TEXT NOT NULL)')
         # Keep long histories cheap to inspect without dropping pending work.
         self.db.execute("CREATE INDEX IF NOT EXISTS jobs_created ON jobs(created DESC)")
         self.db.execute("CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status)")
@@ -151,6 +157,7 @@ class StudioService:
                         'paused':job.get('pausedDuringAttempt',False),
                         'performanceProfile':job.get('performanceProfile'),
                         'performanceUnits':job.get('performanceUnits'),
+                        **{key:job[key] for key in ('renderTimingScope','fullAssemblyPolicy','reused') if key in job},
                         'performanceRun':job['id'],
                         'performanceId':performance_signature({'job':job['id'],'started':job['started']})})
 
@@ -203,7 +210,10 @@ class StudioService:
                             s = get_shot(p, c["id"], item["shot"])
                         except StopIteration:
                             continue
-                        if state != "COMPLETE":
+                        if state == "INTERRUPTED":
+                            if s.get('status') in ('QUEUED','PAUSED','GENERATING'):
+                                set_status(s, production_status(p,s,self.store) if s.get('imagePath') and not s.get('generationStale') else 'READY_FOR_IMAGES')
+                        elif state != "COMPLETE":
                             set_status(s, (
                                 "PAUSED"
                                 if state == "QUEUED" and self.paused
@@ -239,6 +249,9 @@ class StudioService:
                             for s in shots
                         ):
                             set_status(c, "COMPLETE")
+                        elif c.get('status') in ('QUEUED','PAUSED','GENERATING') and any(
+                                r['chapter']==cid and r['status']=='INTERRUPTED' for r in items):
+                            set_status(c, 'READY_FOR_IMAGES')
                 if (not timing_changed
                         and all(present and item.get('status') == previous
                                 for item, present, previous in previous_statuses.values())):
@@ -259,9 +272,8 @@ class StudioService:
         A declared catalogue is not live readiness. The production lease and
         generation path still perform real model/workflow checks before use.
         """
-        from studio_runpod_cache import configured as cache_configured
-        managed = self.config.get('runpodManagedPodId') or self.config.get('runpodPreparedPodIds') or cache_configured(self.config)
-        if key=='comfyui' and managed:
+        from studio_gpu_broker import gpu_configured
+        if key=='comfyui' and gpu_configured(self.config):
             lease_path=self.store.root/'.managed-rental.json'
             try:state=json.loads(lease_path.read_text(encoding='utf-8')) if lease_path.exists() else {}
             except (OSError,ValueError):state={'status':'UNKNOWN'}
@@ -275,6 +287,7 @@ class StudioService:
 
     def health(self):
         import shutil, subprocess
+        from studio_gpu_broker import gpu_configured
 
         hardware = {"gpu": self.audio.gpu, "vramGB": 4, "ramGB": 8}
         try:
@@ -337,7 +350,8 @@ class StudioService:
             "sourceVisualOverlapAvailable":True,
             "leanFactBeatsAvailable":True,
             "maxDirectorTasks":8,
-            "managedGPU":{'cacheImageLease':__import__('studio_runpod_cache').public_descriptor(self.config),'configured':bool(self.config.get('runpodManagedPodId') or self.config.get('runpodPreparedPodIds') or self.config.get('runpodImageCacheEnabled')),
+            "managedGPU":{'cacheImageLease':__import__('studio_runpod_cache').public_descriptor(self.config),'configured':gpu_configured(self.config),
+                          'holdsGPUForQC':self.config.get('studioDenseLeaseContinuity',True) is True,
                           'modelCopies':getattr(self.providers['comfyui'],'model_copies',1),
                           'requestSlots':getattr(self.providers['comfyui'],'client_capacity',1),
                           'audioLookahead':self.config.get('studioAudioLookahead',True) is not False,
@@ -560,7 +574,12 @@ class StudioService:
             rows = [
                 dict(r)
                 for r in self.db.execute(
-                    "SELECT id,project,chapter,shot,kind,status,message,priority,created,started,seconds,attempt,seed,CASE WHEN kind='image' THEN payload ELSE '{}' END AS payload FROM jobs WHERE status IN ('QUEUED','RUNNING') OR id IN (SELECT id FROM jobs ORDER BY created DESC LIMIT 1100) ORDER BY created DESC"
+                    """SELECT id,project,chapter,shot,kind,status,message,priority,created,started,seconds,attempt,seed,
+                              CASE WHEN kind='image' OR (kind IN ('render-chapter','render-full')
+                                        AND instr(payload,'"_renderTimingScope"')>0) THEN payload END AS payload
+                         FROM jobs WHERE status IN ('QUEUED','RUNNING')
+                            OR id IN (SELECT id FROM jobs ORDER BY created DESC LIMIT 1100)
+                        ORDER BY created DESC"""
                 )
             ]
             counts = {
@@ -582,9 +601,14 @@ class StudioService:
             samples = {}
             for row in rows:
                 raw = row.pop("payload")
-                # Other job profiles depend only on kind; their saved requests
-                # can contain large chapter plans that polling need not parse.
-                row["timingProfile"] = timing_profile(row['kind'], json.loads(raw) if row['kind']=='image' else {})
+                # Only image settings and render work receipts participate in queue timing.
+                payload = json.loads(raw) if raw else {}
+                row["timingProfile"] = timing_profile(row['kind'], payload)
+                if row['kind'] in ('render-chapter','render-full'):
+                    row['renderTimingScope'] = payload.get('_renderTimingScope','unverified')
+                    expected = 'fresh-chapter' if row['kind']=='render-chapter' else 'fresh-assembly'
+                    if row['renderTimingScope'] != expected:
+                        continue
                 kind = row['timingProfile']
                 value = row['seconds']
                 if (row['status']=='COMPLETE' and type(value) in (int,float)
@@ -608,6 +632,21 @@ class StudioService:
                     if hasattr(self,'execution_journal') else []),
                 "storage": self.storage.status(),
             }
+
+    def local_image_conflict(self, project):
+        settings=project['settings']
+        image=settings['image']
+        if settings.get('economyPanels'):
+            return 'Economy panels require the cloud ComfyUI workflow.'
+        if image.get('fallbackEnabled') and (image.get('fallback') or {}).get('provider')=='comfyui':
+            return 'A cloud fallback is selected for this local image run. Choose a local fallback or disable it.'
+        for chapter in project['chapters']:
+            if not chapter['sourceText'].strip():continue
+            for scene in chapter['scenes']:
+                for shot in scene['shots']:
+                    if shot.get('imageProvider')=='comfyui' and not self.saved_image_ready(project,shot):
+                        return 'A saved shot still requires its cloud image provider. Select that workflow or update the shot for local production.'
+        return None
 
     def production_readiness(self, pid, options=None):
         """Read-only checks before the first potentially paid production stage."""
@@ -668,18 +707,32 @@ class StudioService:
         review_context={'files':{},'reviews':{},'chapters':{c['id']:c for c in p['chapters']},
                         'intro':{s['id'] for s in p['intro'].get('shots',[])}}
         blocking_reviews=[s for s in saved_shots if s.get('imagePath') and not s.get('generationStale')
-                      and s.get('qc',{}).get('pass') is False
-                      and s.get('qc',{}).get('status')!='PENDING'
+                      and (s.get('qc',{}).get('pass') is False or s.get('qc',{}).get('criticalStoryBlockers'))
                       and self.store.has_asset(pid,s['imagePath'])
-                      and qc_decision(p,s,self.store,review_context)['blocking']]
-        review_flags=[s for s in blocking_reviews if not automatic_repairs(p['settings'],s.get('qc',{}))]
-        if unattended and any(s.get('imagePath') and qc_decision(p,s,self.store,review_context)['blocking'] for s in saved_shots): images_needed=True
-        check('saved-visual-reviews',not review_flags or unattended,
-              'Saved major findings will be repaired automatically within the saved caps; warnings remain visible.' if unattended and blocking_reviews else
-              f'{len(review_flags)} saved images need review before the full video can finish. Review or explicitly repair those shots first; completed images and findings stay saved.'
-              if review_flags else 'No saved visual findings currently block the full video.')
+                      and (decision:=qc_decision(p,s,self.store,review_context))['disposition']=='review'
+                      and decision['blocking']]
+        from studio_qc import asset_hash
+        def reference_digest(project_id, path):
+            return asset_hash(self.store, project_id, path, review_context)
+        review_flags=[shot for shot in blocking_reviews
+                      if self.automatic_repair_blocker(p, shot, reference_digest=reference_digest)]
+        images_needed |= len(review_flags) < len(blocking_reviews)
+        if review_flags:
+            message=f'{len(review_flags)} saved images need review before the full video can finish.'
+            if not p['settings'].get('maxImageRetries',2):
+                message+=' The zero-retry limit disables automatic replacements.'
+        elif blocking_reviews:
+            message='Saved major findings will be repaired automatically within the saved caps and retry limit.'
+        else:
+            message='No saved visual findings currently block the full video.'
+        check('saved-visual-reviews',not review_flags,message)
         from studio_gpu_broker import gpu_configured
-        managed=gpu_configured(self.config)
+        managed_images=gpu_configured(self.config)
+        managed=provider_name=='comfyui' and managed_images
+        if managed_images and provider_name!='comfyui':
+            conflict=self.local_image_conflict(p)
+            check('local-image-routing',not conflict,conflict or 'The saved image plan can run locally.')
+        rental_control='managed' if managed else 'external' if provider_name=='comfyui' else 'local'
         if images_needed:
             if (selected_strategy=='align' or managed) and provider_name=='comfyui':
                 try:
@@ -733,8 +786,11 @@ class StudioService:
         storage=self.storage.status(pid)
         check('archive',storage.get('enabled') and storage.get('provider')=='Google Cloud Storage',
               'Permanent project and media archive must be connected to Google storage.')
-        check('rental',managed,'Studio starts only the configured stopped pod at image dispatch and confirms shutdown before rendering. Keep this helper and laptop awake: the deadline watchdog runs here; network failure can delay shutdown.' if managed else
-              'A paused Studio queue does not stop a manually rented GPU. Keep its rental window bounded.',False)
+        if rental_control=='local':
+            check('rental',True,'The selected image provider runs on the helper.',False)
+        else:
+            check('rental',managed,'Studio manages the image GPU under the saved limits. Keep the helper awake while its rental watchdog is running.' if managed else
+                  'A paused Studio queue does not stop a manually rented GPU. Keep its rental window bounded.',False)
         check('strategy',True,LABELS[selected_strategy]+'. Uncalibrated alignment plans chapters first.',False)
         level=check_level(p['settings'])
         check('visual-checks',level!='off',
@@ -746,7 +802,7 @@ class StudioService:
         from studio_workspace_report import reference_checks
         checks.extend(reference_checks(self.store,p))
         return {'project':pid,'revision':p['revision'],'ready':all(x['ready'] for x in checks if x['blocking']),
-                'generationStrategy':selected_strategy,'rentalControl':'managed' if managed else 'external',
+                'generationStrategy':selected_strategy,'rentalControl':rental_control,
                 'voiceLocation':voice_location(p['settings']),
                 'renderLocation':'local','checks':checks,'paidRequestsSubmitted':0}
 
@@ -933,6 +989,8 @@ class StudioService:
         return self.snapshot()
 
     def provider(self, id):
+        if id == 'comfyui' and _local_image_service.get() is self:
+            raise ValueError('A cloud image is configured inside this local production run. Check the shot and fallback provider settings.')
         if id not in self.providers:
             raise ValueError("Unknown image provider: " + str(id))
         return self.providers[id]
@@ -1167,6 +1225,8 @@ class StudioService:
                 started = time.time()
                 attempt_pause_epoch=self.pause_epoch
                 job_performance={}
+                reused_image=False
+                claim_image(self.db,job)
                 self.db.execute(
                     "UPDATE jobs SET status='RUNNING',started=?,attempt=attempt+1 WHERE id=?",
                     (started, job["id"]),
@@ -1196,6 +1256,9 @@ class StudioService:
                         'character-reference':'Character reference','intro-image':'Intro images'}.get(job['kind'])
                     if direct_stage:
                         detail={'chapter':get_chapter(p,job['chapter'])['number'] if job['chapter'] else None,'shot':job['shot']}
+                        if direct_stage in FRESH_RENDER_SCOPE:
+                            detail['renderTimingScope']='unverified'
+                            detail['renderBackend']='cpu' if getattr(self.renderer,'allow_legacy_render_reuse',True) else 'native'
                         job_performance={'performanceProfile':profile_for(direct_stage,p,self.config,detail),
                             'performanceUnits':observation_units(direct_stage,p,detail)}
                     self.require_resolved_execution(p['id'],job['kind'])
@@ -1247,10 +1310,7 @@ class StudioService:
                                     self.store.load(p["id"]), job["chapter"], options
                                 )
                     elif job["kind"] == "image":
-                        p=self.begin_queued_image_rental(p,job,options) or p
-                        self.generate(
-                            p, job["chapter"], job["shot"], job["seed"], options
-                        )
+                        reused_image=run_queued_image(self,p,job,options)
                     elif job["kind"] == "qc":
                         self.inspect_shot(p, job["chapter"], job["shot"])
                     elif job["kind"] == "intro-image":
@@ -1349,8 +1409,19 @@ class StudioService:
 
                             if not self.store.mutate(p["id"], chapter_saved):
                                 raise ValueError('Chapter changed during rendering. The completed earlier version is saved in render history. Render the current version when ready.')
+                        if direct_stage in FRESH_RENDER_SCOPE:
+                            work = render_timing_details(direct_stage, result)
+                            job_performance.update(work, performanceProfile=profile_for(direct_stage,p,self.config,detail | work))
                 finally:
                     self.gpu_lock.release()
+            except ImageRecoveryRequired as error:
+                state = "INTERRUPTED"
+                message = str(error)
+                if error.pause_queue:
+                    with self.cv:
+                        self.paused = True
+                        self.db.execute("INSERT OR REPLACE INTO settings VALUES('paused','1')")
+                        self.db.commit()
             except AudioYield:
                 state = "CANCELLED" if job['kind']=='render-cloud' else "QUEUED"
                 message = "Cloud render stopped for Audio; no automatic rental retry" if job['kind']=='render-cloud' else "Paused to free models for Audio"
@@ -1416,7 +1487,7 @@ class StudioService:
                                 )
 
                     self.store.mutate(job["project"], run_finished)
-                if state in ("CANCELLED", "QUEUED", "FAILED"):
+                if state in ("CANCELLED", "QUEUED", "FAILED") or state=="INTERRUPTED" and job['kind']=='image':
                     self.unload_models()
                 with self.cv:
                     elapsed = time.time() - started
@@ -1424,18 +1495,24 @@ class StudioService:
                     self.trace.parent.reset(trace_token)
                     self.db.execute(
                         "UPDATE jobs SET status=?,message=?,seconds=? WHERE id=?",
-                        (state, message, elapsed, job["id"]),
+                        (state, message, None if reused_image else elapsed, job["id"]),
                     )
+                    if 'renderTimingScope' in job_performance:
+                        payload=json.loads(job['payload']) | {'_renderTimingScope':job_performance['renderTimingScope']}
+                        self.db.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(payload),job['id']))
+                    if job['kind']=='image' and state=='COMPLETE':
+                        self.db.execute('DELETE FROM queued_image_receipts WHERE job=?',(job['id'],))
                     self.db.commit()
                     self.current = None
                     self.cancel = False
                     self.cv.notify_all()
-                completion=job | {'started':started, 'seconds':elapsed, 'status':state,
+                completion=job | {'started':started, 'seconds':None if reused_image else elapsed, 'status':state,
                     'pausedDuringAttempt':self.pause_epoch!=attempt_pause_epoch,**job_performance}
                 self.sync_queue_states(job['project'],completion)
+                if reused_image:continue  # Recovery time is not an image generation measurement.
                 self.learn_performance(performance_signature({'job':job['id'],'started':started}),job['id'],
                     job_performance.get('performanceProfile'),job_performance.get('performanceUnits'),elapsed,
-                    {'status':state,'paused':completion['pausedDuringAttempt']},started+elapsed)
+                    {'status':state,'paused':completion['pausedDuringAttempt'],'reused':job_performance.get('reused',False)},started+elapsed)
 
     def production_progress(self, pid, stage, **details):
         """Persist the current stage alongside assets, including between restarts."""
@@ -1534,6 +1611,7 @@ class StudioService:
             # A configured native renderer can explicitly fall back to CPU.
             # Record the backend that actually ran, never the project UI hint.
             details['renderBackend']='cpu' if getattr(self.renderer,'allow_legacy_render_reuse',True) else 'native'
+            details['renderTimingScope']='unverified'
         if stage=='Visual QC':details['reviewTimingScope']='whole-review'
         if stage=='Narration' and len(args)>1 and isinstance(args[1],dict):
             old_audio=copy.deepcopy(args[1].get('audio',{}))
@@ -1567,8 +1645,7 @@ class StudioService:
                       and t.get('chapter')==details.get('chapter') and t.get('finished',0)>=began_at]
             if receipts and all(type(t.get('estimatedUSD')) in (int,float) and not t.get('usagePending') for t in receipts):
                 details.update(estimatedUSD=sum(t['estimatedUSD'] for t in receipts),costRollup=True)
-        if stage=='Assemble full video' and isinstance(result,dict):
-            details['fullAssemblyPolicy']=result.get('fullAssemblyPolicy','format-guarded-original-audio-v1')
+        details.update(render_timing_details(stage, result))
         status=result.get('status') if isinstance(result,dict) else None
         if isinstance(result,dict) and result.get('reused') is True:details['reused']=True
         self.record_timing(
@@ -1653,7 +1730,7 @@ class StudioService:
         return {'history':self.performance.summary(),'forecast':self.performance_forecast(p,accepted),
             'warning':getattr(self,'performance_warning',None),
             'scheduling':p.get('production',{}).get('scheduling'),
-            'note':'Every supported stage/attempt is retained. Failed, reused, paused, incompatible and unresolved samples are excluded from speed calibration. Unknown work stays unknown.'}
+            'note':'Every supported stage/attempt is retained. Fresh speed estimates exclude failed, reused, paused, incompatible and unresolved samples. Older render attempts without a verified work scope stay in history.'}
 
     def prepare_story(self, pid, options):
         """Generate fresh narration and the selected director's complete plan.
@@ -1834,7 +1911,17 @@ class StudioService:
             return self._produce_story(pid,options)
         p=self.store.load(pid)
         if p['settings']['image']['provider']!='comfyui':
-            raise ValueError('Managed rental requires the configured cloud ComfyUI workflow.')
+            if options.get('ownedWorkerReceipt'):
+                raise ValueError('An owned cloud worker requires the configured cloud ComfyUI workflow.')
+            conflict=self.local_image_conflict(p)
+            if conflict:raise ValueError(conflict)
+            # Keep local projects usable on a cloud-capable helper. Per-shot
+            # overrides and fallback attempts must not dispatch unowned cloud work.
+            token = _local_image_service.set(self)
+            try:
+                return self._produce_story(pid,options)
+            finally:
+                _local_image_service.reset(token)
         rental=GPUReservation(self.config,self.store.root/'.managed-rental.json',pid,
             p['settings'].get('cloudWindow',{}),self.providers['comfyui'],self.gate,
             lambda state:self.record_gpu_state(pid,state),owned_startup=options.get('ownedWorkerReceipt'),image_selection={
@@ -1872,7 +1959,8 @@ class StudioService:
         mode=strategy(options)
         def begin(q):
             run=q.setdefault('production',{})
-            control='managed' if getattr(self,'_production_gpu',None) else 'external'
+            control=('managed' if getattr(self,'_production_gpu',None) else
+                     'external' if q['settings']['image']['provider']=='comfyui' else 'local')
             run.update(generationStrategy=mode,generationStrategyLabel=LABELS[mode],rentalControl=control)
             if not getattr(self,'_overlap',None):
                 previous=run.get('scheduling')
@@ -1922,6 +2010,13 @@ class StudioService:
                 generate_panel_story(self,pid,options | p['settings'].get('cloudWindow',{}))
                 p = self.store.load(pid)
         chapters = [c["id"] for c in p["chapters"] if c["sourceText"].strip()]
+        if not dense and p['intro']['enabled']:
+            # A reused intro can be part of the first chapter render. Recheck
+            # newly selected saved images before that render or a rental starts.
+            for shot in p['intro'].get('shots',[]):
+                if (shot.get('imagePath') and self.store.has_asset(pid,shot['imagePath'])
+                        and review_settings_stale(p,shot) and self.saved_review_due(p,shot)):
+                    self.inspect_intro(self.store.load(pid),sampled_only=True,shot_id=shot['id'])
         self.production_progress(
             pid,
             "Preparing full story",
@@ -2128,6 +2223,20 @@ class StudioService:
                 raise RuntimeError('Cloud save deadline reached; the completed video is preserved and archive retry remains queued.')
             time.sleep(.25)
 
+    def automatic_repair_blocker(self, project, shot, *, reference_digest=None):
+        """Explain why a confirmed finding cannot use a saved replacement slot."""
+        if shot.get('manual', {}).get('imagePath'):
+            return 'manual'
+        settings=project['settings']
+        if not automatic_repairs(settings, shot.get('qc', {})):
+            return 'policy'
+        limit=int(settings.get('maxImageRetries', 2))
+        if shot.get('automaticRepairSpec') and shot.get('automaticRepairAttempts', 0)>=limit:
+            signature=self.visual_spec_signature(project, shot, reference_digest=reference_digest)
+            if shot['automaticRepairSpec']==signature:
+                return 'exhausted'
+        return None
+
     def complete_automatic_reviews(self,pid):
         """Repair confirmed findings once under the durable per-shot retry ceiling."""
         p=self.store.load(pid)
@@ -2136,15 +2245,14 @@ class StudioService:
                 for shot in scene['shots']:
                     current=self.store.load(pid);item=get_shot(current,chapter['id'],shot['id'])
                     if not item.get('imagePath') or not qc_decision(current,item,self.store)['blocking']:continue
-                    if item.get('manual',{}).get('imagePath'):
+                    blocker=self.automatic_repair_blocker(current,item)
+                    if blocker=='manual':
                         raise RuntimeError('Automatic review found a major error in a manually locked image; original selection and findings retained.')
-                    qc=item.get('qc',{})
-                    if not automatic_repairs(current['settings'],qc):
+                    if blocker=='policy':
                         raise RuntimeError('Automatic quality checks could not resolve this shot within the selected policy; saved assets and findings retained.')
-                    signature=self.visual_spec_signature(current,item)
-                    used=item.get('automaticRepairAttempts',0) if item.get('automaticRepairSpec')==signature else 0
-                    if used>=current['settings']['maxImageRetries']:
+                    if blocker=='exhausted':
                         raise RuntimeError('Automatic image repair limit reached; saved assets and findings retained.')
+                    qc=item.get('qc',{})
                     self.production_progress(pid,'Repairing confirmed visual errors automatically',shotId=item['id'])
                     self.ensure_production_gpu()
                     provider=self.provider(item['imageProvider'])
@@ -2231,7 +2339,8 @@ class StudioService:
         # Saved intro images may also need their selected checks; generation
         # callbacks enqueue new intro images after their durable receipt closes.
         for shot in p['intro'].get('shots',[]) if p['intro']['enabled'] else []:
-            if shot.get('imagePath') and (review_settings_stale(p,shot) or shot.get('qc',{}).get('status') in (None,'PENDING','UNREVIEWED')):
+            if (shot.get('imagePath') and self.store.has_asset(pid,shot['imagePath'])
+                    and self.saved_review_due(p,shot)):
                 overlap.deferred_qc.enqueue(p,None,shot,overlap.main_context.identity)
 
     def maybe_dense_prewarm(self,project,chapter,prepared,cast,expected):
@@ -2348,11 +2457,8 @@ class StudioService:
             repairs=[]
             for chapter,shot in candidates:
                 if not shot.get('imagePath') or not qc_decision(p,shot,self.store)['blocking']:continue
-                if shot.get('manual',{}).get('imagePath') or not automatic_repairs(p['settings'],shot.get('qc',{})):
-                    continue
-                signature=self.visual_spec_signature(p,shot)
-                used=shot.get('automaticRepairAttempts',0) if shot.get('automaticRepairSpec')==signature else 0
-                if used<p['settings']['maxImageRetries']:repairs.append((chapter,shot))
+                if not self.automatic_repair_blocker(p,shot):
+                    repairs.append((chapter,shot))
             if not repairs:break
             self.ensure_production_gpu()
             try:
@@ -2391,6 +2497,15 @@ class StudioService:
         return bool(review_settings_stale(project,shot) and shot.get('imagePath')
                     and not shot.get('generationStale') and self.store.has_asset(project['id'],shot['imagePath']))
 
+    def saved_review_due(self, project, shot):
+        if not should_check(project,shot) or qc_decision(project,shot,self.store)['disposition']=='accepted':
+            return False
+        qc=shot.get('qc',{})
+        return (type(qc.get('pass')) is not bool or qc.get('status') in (None,'PENDING','UNREVIEWED','UNCHECKED')
+                or review_settings_stale(project,shot) or qc.get('checkedImagePath')!=shot['imagePath']
+                or qc.get('checkedImageSHA256')!=self.store.asset_digest(project['id'],shot['imagePath'])
+                or qc.get('shotSpecSignature')!=self.visual_spec_signature(project,shot))
+
     def retained_production_image(self, project, shot):
         return bool(self.collect_production_reviews(project) and shot.get('imagePath')
             and not shot.get('generationStale')
@@ -2415,7 +2530,7 @@ class StudioService:
             chapter = get_chapter(latest, chid)
             for scene in chapter["scenes"]:
                 for shot in scene["shots"]:
-                    if self.saved_image_ready(latest, shot) or self.retained_production_image(latest,shot):
+                    if self.saved_image_ready(latest, shot) or self.retained_production_image(latest,shot) or self.reviewable_saved_image(latest,shot):
                         continue
                     provider = self.provider(shot["imageProvider"])
                     settings = shot["generationSettings"]
@@ -2477,7 +2592,7 @@ class StudioService:
             for sc in ch["scenes"]
             for shot in sc["shots"]
             for c in shot["characters"]
-            if c["type"] == "main" and not self.saved_image_ready(p,shot)
+            if c["type"] == "main" and not self.saved_image_ready(p,shot) and not self.reviewable_saved_image(p,shot)
         }
         reference_provider = self.provider(p["settings"]["image"]["provider"])
         if reference_provider.getCapabilities().get("maxReferenceImages", 0):
@@ -2510,19 +2625,14 @@ class StudioService:
             if (self.saved_image_ready(p, shot) or self.retained_production_image(p,shot)
                     or self.reviewable_saved_image(p,shot) or dense_saved(p,shot)):
                 if ((getattr(self,'_overlap',None) or p['settings'].get('unattendedProduction') or review_settings_stale(p,shot))
-                        and should_check(p,shot) and qc_decision(p,shot,self.store)['disposition']!='accepted'):
-                    qc=shot.get('qc',{})
-                    asset_hash=hashlib.sha256(self.store.asset(pid,shot['imagePath']).read_bytes()).hexdigest()
-                    if (qc.get('checkedImagePath')!=shot['imagePath'] or qc.get('checkedImageSHA256')!=asset_hash
-                            or qc.get('shotSpecSignature')!=self.visual_spec_signature(p,shot)
-                            or review_settings_stale(p,shot) or qc.get('status') in (None,'PENDING','UNREVIEWED')):
-                        if getattr(self,'_overlap',None):
-                            self._overlap.submit_shot(self.store.load(pid),chid,shot,review_only=True)
-                        else:
-                            review=self.measured_stage(pid,'Visual QC',self.inspect_shot,self.store.load(pid),chid,shot['id'],
-                                                       chapter=ch['number'],shot=shot['id'])
-                            if not review['selected']:
-                                raise RuntimeError('Shot changed during automatic review; current edits and results retained.')
+                        and self.saved_review_due(p,shot)):
+                    if getattr(self,'_overlap',None):
+                        self._overlap.submit_shot(self.store.load(pid),chid,shot,review_only=True)
+                    else:
+                        review=self.measured_stage(pid,'Visual QC',self.inspect_shot,self.store.load(pid),chid,shot['id'],
+                                                   chapter=ch['number'],shot=shot['id'])
+                        if not review['selected']:
+                            raise RuntimeError('Shot changed during automatic review; current edits and results retained.')
                 continue
             if (shot.get('imagePath') and not shot.get('generationStale')
                     and shot.get('qc',{}).get('pass') is False
@@ -2671,19 +2781,27 @@ class StudioService:
 
     @staticmethod
     def narration_signature(project, chapter):
+        from studio_voice_provider import project_anchor
         text=StudioService.narration_text(project,chapter)
+        anchor=project_anchor(project)
         return digest({'text':text,'voice':project['settings']['voice'],'speed':project['settings']['speed'],
+            **({'narratorReference':anchor} if anchor else {}),
             **voice_identity(project['settings']),
             'deliveryVersion':AUDIO_DELIVERY_VERSION,'soundEffects':project['settings'].get('soundEffects','subtle'),
             'narrationDelivery':project['settings'].get('narrationDelivery','standard'),
             'emphasisPhrases':project['settings'].get('emphasisPhrases',[]),'flowVersion':FLOW_VERSION})
 
     def saved_narration_ready(self, project, chapter):
+        from studio_voice_provider import project_anchor,anchor_identity
         audio=chapter.get('audio',{})
-        return bool(audio.get('signature')==self.narration_signature(project,chapter)
-                    and audio.get('path') and self.store.has_asset(project['id'],audio['path']))
+        if not audio.get('path') or not self.store.has_asset(project['id'],audio['path']):return False
+        if audio.get('signature')==self.narration_signature(project,chapter):return True
+        anchor=project_anchor(project)
+        return bool(anchor and anchor==anchor_identity(audio.get('voiceAnchor')) and
+                    audio.get('signature')==self.narration_signature(project|{'voiceAnchors':{}},chapter))
 
     def narration(self, p, ch):
+        from studio_voice_provider import project_anchor,anchor_identity
         def narration_input(project,chapter):
             fields=('sourceText','name','narrationMode','includeChapterLabel')
             values={key:chapter.get(key) for key in fields}
@@ -2691,6 +2809,7 @@ class StudioService:
             return digest({'chapter':values,**voice_identity(project['settings']),'voice':{key:project['settings'].get(key) for key in
                 ('voice','speed','soundEffects','narrationDelivery','emphasisPhrases')}})
         expected_input=narration_input(p,ch)
+        expected_anchor=project_anchor(p)
         text=self.narration_text(p,ch)
         if not text.strip():raise ValueError('Paste chapter narration first.')
         signature=self.narration_signature(p,ch)
@@ -2700,11 +2819,11 @@ class StudioService:
         folder.mkdir(exist_ok=True)
         def prepare_text(q):
             current=get_chapter(q,ch['id'])
-            if narration_input(q,current)!=expected_input:
+            if narration_input(q,current)!=expected_input or project_anchor(q)!=expected_anchor:
                 raise ValueError('Narration inputs changed before generation; current text retained.')
             current.update(cleanNarrationText=text)
         self.store.mutate(p['id'],prepare_text)
-        from studio_voice_batches import grouped_narration
+        from studio_voice_batches import grouped_narration,chapter_membership
         self._last_voice_group=None
         grouped=grouped_narration(self,p,ch)
         result = grouped or self.create_selected_audio(
@@ -2716,8 +2835,13 @@ class StudioService:
             p['settings'].get('narrationDelivery', 'standard'),
             p['settings'].get('emphasisPhrases', []),
             settings=p['settings'],
-            project=p,
+            project=p,chapter=chapter_membership(self,p,ch,signature),
         )
+        generated_anchor=result.get('voiceAnchor')
+        if generated_anchor:
+            generated_anchor=dict(generated_anchor,path=Path(generated_anchor['path']).relative_to(
+                self.store.folder(p['id'])).as_posix())
+            result['voiceAnchor']=generated_anchor
         result.update(
             signature=signature,
             textDigest=digest(text),
@@ -2731,10 +2855,14 @@ class StudioService:
 
         def audio_saved(q):
             current=get_chapter(q,ch['id'])
-            if narration_input(q,current)!=expected_input:
+            live_anchor=project_anchor(q)
+            adopted=expected_anchor is None and live_anchor==anchor_identity(generated_anchor)
+            if narration_input(q,current)!=expected_input or (live_anchor!=expected_anchor and not adopted):
                 current.setdefault('audioHistory',[]).append(result | {'selected':False,
                     'reason':'Narration inputs changed while audio was generated; current text/audio retained.'})
                 return False
+            if expected_anchor is None and generated_anchor:
+                q.setdefault('voiceAnchors',{}).setdefault(voice_engine(q['settings']),generated_anchor)
             if current.get('audio',{}).get('path') and current['audio'].get('path')!=result.get('path'):
                 current.setdefault('audioHistory',[]).append(copy.deepcopy(current['audio']) | {'selected':False,'reason':'Earlier chapter narration'})
             get_chapter(q, ch["id"]).update(
@@ -2805,7 +2933,7 @@ class StudioService:
         root._voice_quota_until=time.monotonic()+1800
         return True
 
-    def create_selected_audio(self,text,voice,speed,target,effects='subtle',delivery='standard',emphasis=(),settings=None,preview=False,project=None):
+    def create_selected_audio(self,text,voice,speed,target,effects='subtle',delivery='standard',emphasis=(),settings=None,preview=False,project=None,chapter=None):
         settings=dict(settings or {})
         if voice_location(settings)=='local':
             return self.create_audio(text,voice,speed,target,effects,delivery,emphasis)
@@ -2829,6 +2957,9 @@ class StudioService:
         if not preview and self.voice_quota_fallback_active(settings):return local_fallback()
         settings.update(speed=speed,soundEffects=effects,voice=voice)
         reference=None;engine=voice_engine(settings)
+        if project and chapter and not preview:
+            from studio_voice_batches import restore_chapter_receipts
+            restore_chapter_receipts(self.store,project['id'],Path(target),chapter)
         if project and engine in ('dia-1.6b','fish-s2-pro'):
             anchor=project.get('voiceAnchors',{}).get(engine)
             if anchor:
@@ -2836,11 +2967,11 @@ class StudioService:
                 if len(raw)>8*1024*1024:raise ValueError('Generated voice reference exceeds 8 MiB.')
                 reference={'audio':base64.b64encode(raw).decode(),'text':anchor['text']}
         try:
-            result=KaggleVoice(self.config).generate(text,target,settings,self.gate,preview=preview,reference=reference)
+            result=KaggleVoice(self.config).generate(text,target,settings,self.gate,preview=preview,reference=reference,chapter=chapter)
         except KaggleQuotaExhausted:
             if preview or not self.remember_voice_quota(settings):raise
             return local_fallback()
-        if project and result.get('voiceAnchor'):
+        if project and not chapter and result.get('voiceAnchor'):
             anchor=dict(result['voiceAnchor']);anchor['path']=str(Path(anchor['path']).relative_to(self.store.folder(project['id']))).replace('\\','/')
             self.store.mutate(project['id'],lambda p:p.setdefault('voiceAnchors',{}).setdefault(engine,anchor))
             project.setdefault('voiceAnchors',{}).setdefault(engine,anchor)
@@ -3096,7 +3227,7 @@ class StudioService:
             checked_spec=self.visual_spec_signature(p,shot)
             existing=shot.get('qc',{})
             if qc_decision(p,shot,self.store)['disposition']=='accepted':continue
-            if (existing.get('checkedImagePath')==checked_path
+            if (type(existing.get('pass')) is bool and existing.get('checkedImagePath')==checked_path
                     and existing.get('checkedImageSHA256')==checked_digest
                     and existing.get('shotSpecSignature')==checked_spec
                     and not review_settings_stale(p,shot)
@@ -4931,6 +5062,17 @@ class StudioService:
         preflight = require_shot(p, shot,new_image=True)
         expected_spec = self.visual_spec_signature(p, shot)
         expected_path = shot.get('imagePath','')
+        receipt=current_receipt.get()
+        def user_selection_changed(current, reviewing_project=None):
+            if not receipt:
+                return False
+            if manual_selection_changed(current,shot):
+                return True
+            if current.get('qcOverride')==shot.get('qcOverride'):
+                return False
+            # A reviewer may accept the candidate itself while its QC is in flight.
+            # The matching QC finding and that explicit acceptance can both commit.
+            return reviewing_project is None or not valid_acceptance(reviewing_project,current,self.store)
         def selected_digest(project):
             current=get_shot(project,chid,sid)
             selected=current.get('imagePath')
@@ -5034,13 +5176,31 @@ class StudioService:
             self.check_cloud_budget(p, provider)
             if p['settings'].get('unattendedProduction') and (options.get('budgetedQCRepair') or attempt>0):
                 self.reserve_automatic_repair(p['id'],chid,sid,expected_spec)
+            queued_path=receipt.dispatch(provider.id,attempt,expected_spec,expected_path,expected_image_digest,
+                                         shot.get('qcOverride'),qc,shot.get('imageSelectionRevision')) if receipt else None
+            provider_error = None
             try:
                 with self.trace.span(p['id'], 'Image backend', {'chapter': ch['number'], 'shot': sid,
                                                                'provider': provider.id, 'model': settings['model'], 'seed': seed}):
-                    result = provider.generateImage(request, self.checkpoint)
-            except (JobCancelled, AudioYield, ImageAdmissionBlocked, RemoteGenerationUncertain):
+                    try:
+                        result = provider.generateImage(request, self.checkpoint)
+                    except Exception as error:
+                        provider_error = error
+                        raise
+            except RemoteGenerationUncertain as error:
+                if receipt:raise ImageRecoveryRequired(str(error)+' Reconcile the interrupted request before starting another image.',pause_queue=True) from error
                 raise
             except Exception as e:
+                if receipt:
+                    # Comfy wraps unresolved POSTs in RemoteGenerationUncertain,
+                    # except for a legacy single-slot interrupt. Errors from
+                    # trace finalization cannot attest to the provider outcome.
+                    if (provider.id=='comfyui' and not isinstance(e,ImageAdmissionBlocked)
+                            and (e is not provider_error or not isinstance(provider,ComfyImageProvider) or isinstance(e,InterruptedError))):
+                        raise ImageRecoveryRequired('The image request has no confirmed outcome. Check its queue and history before continuing.',pause_queue=True) from e
+                    receipt.confirm_retry_safe()
+                if isinstance(e,(JobCancelled,AudioYield,ImageAdmissionBlocked)):
+                    raise
                 attempts.append(
                     {
                         "attempt": attempt,
@@ -5087,8 +5247,7 @@ class StudioService:
                 continue
             folder = self.store.folder(p["id"]) / chid
             folder.mkdir(exist_ok=True)
-            filename = f"{sid}-{uid()}-a{attempt}.png"
-            path = folder / filename
+            path = self.store.asset_local(p['id'],queued_path) if queued_path else folder / f"{sid}-{uid()}-a{attempt}.png"
             tmp = path.with_suffix(".partial.png")
             with self.trace.span(p['id'], 'Save image', {'chapter': ch['number'], 'shot': sid}):
                 result.pop("pil").save(tmp, "PNG")
@@ -5129,6 +5288,7 @@ class StudioService:
                 "fallbackUsed": fallback_used,
                 "imageSHA256":hashlib.sha256(path.read_bytes()).hexdigest(),
             }
+            if receipt:metadata['queueJobId']=receipt.job['id']
             if getattr(self,'execution_context',None):
                 metadata['executionId']=self.execution_context.identity
             attempts.append(metadata)
@@ -5138,35 +5298,13 @@ class StudioService:
                 s = get_shot(latest, chid, sid)
                 if (s.get('imagePath','') != expected_path
                         or selected_digest(latest)!=expected_image_digest
+                        or user_selection_changed(s)
                         or self.visual_spec_signature(latest, s) != expected_spec):
                     s.setdefault('history', []).append({'imagePath':relative,'metadata':metadata,
                         'qc':{'status':'UNREVIEWED','pass':None},'selected':False,
                         'reason':'Shot or selected image changed during generation; current selection preserved.'})
                     return False
-                if s.get("imagePath"):
-                    s.setdefault('history',[]).append(
-                        {
-                            "imagePath": s["imagePath"],
-                            "metadata": s.get("imageMetadata", {}),
-                            "qc": s.get("qc", {}),
-                        }
-                    )
-                s.update(
-                    imagePath=relative,
-                    imageMetadata=metadata,
-                    referenceImages=ref_metadata,
-                    sourceImagePath=metadata.get('sourceImagePath') or '',
-                    retryCount=attempt,
-                    status="QC",
-                    qc=copy.deepcopy(qc),
-                    generationError="",
-                )
-                s["generationStale"] = (
-                    s["prompt"] != shot["prompt"]
-                    or s["imageModel"] != settings["model"]
-                )
-                get_chapter(latest, chid)["renderStale"] = True
-                latest["renderStale"] = True
+                select_image(latest,s,relative,metadata,qc,s["prompt"]!=shot["prompt"] or s["imageModel"]!=settings["model"])
                 return True
 
             sidecar=path.with_suffix('.json')
@@ -5197,11 +5335,15 @@ class StudioService:
                 current_shot = get_shot(current,chid,sid)
                 if (current_shot.get('imagePath','') != expected_path
                         or selected_digest(current)!=expected_image_digest
+                        or user_selection_changed(current_shot,current)
                         or self.visual_spec_signature(current,current_shot) != expected_spec
                         or qc.get("reviewSettingsSignature",review_settings_signature(current["settings"]))!=review_settings_signature(current["settings"])):
                     self.store.mutate(p['id'],lambda latest:self.retain_stale_qc(
-                        get_shot(latest,chid,sid),qc,relative))
+                        get_shot(latest,chid,sid),qc,relative,
+                        preserve_current=user_selection_changed(get_shot(latest,chid,sid),latest)))
                     return {'status':'SUPERSEDED','imagePath':relative,'selected':False}
+                if receipt and valid_acceptance(current,current_shot,self.store):
+                    break  # Preserve the review and avoid buying an automatic repair.
             if (
                 (qc.get("pass") is False or qc.get('criticalStoryBlockers'))
                 and (qc.get("action") != "review" or p['settings'].get('unattendedProduction'))
@@ -5246,10 +5388,11 @@ class StudioService:
             s = get_shot(latest, chid, sid)
             if (s.get('imagePath','') != expected_path
                     or selected_digest(latest)!=expected_image_digest
+                    or user_selection_changed(s,latest)
                     or self.visual_spec_signature(latest,s) != expected_spec
                     or qc.get("reviewSettingsSignature",review_settings_signature(latest["settings"]))!=review_settings_signature(latest["settings"])):
-                self.retain_stale_qc(s,qc,relative)
-                return
+                self.retain_stale_qc(s,qc,relative,preserve_current=user_selection_changed(s,latest))
+                return False
             s.update(
                 qc=qc,
                 retryHistory=attempts,
@@ -5268,7 +5411,9 @@ class StudioService:
                 else "READY_FOR_IMAGES"
             )
 
-        self.store.mutate(p["id"], complete)
+        completed = self.store.mutate(p["id"], complete)
+        if receipt and completed is False:
+            return {'status':'SUPERSEDED','imagePath':relative,'selected':False}
         current = self.store.load(p["id"])
         if (qc_decision(current,get_shot(current,chid,sid),self.store)["blocking"]
                 and qc.get('status')!='PENDING' and not options.get('_collectReview')):
@@ -5282,14 +5427,17 @@ class StudioService:
             and not qc_decision(project,shot,self.store)["blocking"]
             and (shot.get("status") in ("COMPLETE","PASSED") or shot.get("qc",{}).get("pass") is False))
 
-    def visual_spec_signature(self, project, shot):
+    def visual_spec_signature(self, project, shot, *, reference_digest=None):
         from studio_render_inputs import visual_spec_signature
-        return visual_spec_signature(project, shot, self.store, self.renderer)
+        return visual_spec_signature(project, shot, self.store, self.renderer,
+                                     reference_digest=reference_digest)
 
     @staticmethod
-    def retain_stale_qc(shot, qc, image_path):
+    def retain_stale_qc(shot, qc, image_path, *, preserve_current=False):
         shot.setdefault('qcHistory',[]).append({'qc':qc,'imagePath':image_path,'selected':False,
             'reason':'Shot changed during review; result is for the earlier image/specification.'})
+        if preserve_current:
+            return
         # A newer check or an explicit manual QC decision belongs to the user.
         # Otherwise the changed image/specification requires a new review.
         current_qc = shot.get('qc',{})

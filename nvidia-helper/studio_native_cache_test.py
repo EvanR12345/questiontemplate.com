@@ -1,15 +1,18 @@
 """Offline owner/broker/native contract tests; no provider credentials or calls."""
 import copy
 import hashlib
+import io
 import json
 from pathlib import Path
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from types import SimpleNamespace
 import unittest
+import urllib.error
 from unittest.mock import Mock,patch
 
 ROOT=Path(__file__).resolve().parent
@@ -88,6 +91,22 @@ def fake_live(job,counter,unknown=False):
         raise AssertionError('No other provider route allowed')
     def arm(state):state['watchdogArmed']=True;job.save(state)
     job.api=api;job.arm=arm;job.scheduled=Mock();job.setup_handoff=lambda state:{'status':'MOCK_ACK_RUNNING'}
+
+
+def scoped_transport(job,counter,expected_key,requests):
+    """HTTP boundary with account-scoped 404s; nothing leaves the process."""
+    fake_live(job,counter);backend=job.api;del job.api
+    def respond(request,timeout):
+        route=request.full_url.split('/v2',1)[1];method=request.get_method()
+        original=request.get_header('Authorization')=='Bearer '+expected_key
+        requests.append((original,method,route))
+        try:
+            if not original:raise owner.APIError(404)
+            reply=backend(route,json.loads(request.data) if request.data else None,method)
+        except owner.APIError as error:
+            raise urllib.error.HTTPError(request.full_url,error.status,'fixture',{},io.BytesIO(b'{}')) from None
+        return io.BytesIO(json.dumps(reply).encode())
+    return respond
 
 
 def competing_worker(spec):
@@ -176,10 +195,57 @@ class CacheIntegrationTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):job.launch(job.folder/'native-admission.json')
         self.assertEqual(owner.read(self.f.state/'spend-ledger.json')['spentByProject'][self.f.project],.20)
         self.assertIsNotNone(cache.pending_reason(self.f.config,self.f.path))
-        with self.assertRaises(Exception):self.f.prepare()
+        with patch.object(owner,'local_ports_free',side_effect=AssertionError('A competing store must not bind the active tunnel ports')):
+            with self.assertRaises(cache.ManagedGPUError):self.f.prepare()
         self.assertEqual(counter.read_text().count('ONE_MOCK_POST'),1)
         with patch.object(broker.GPUReservation,'make',side_effect=AssertionError('alternate provider must not be touched')):
             with self.assertRaises(Exception):broker.GPUReservation(self.f.config,self.f.path,self.f.project,self.f.budget,Mock(),Mock()).ensure()
+    def test_rotated_action_credential_cannot_close_or_replace_an_acknowledged_allocation(self):
+        key=Path(self.f.config['runpodActionKeyFile']);original=key.read_text()
+        job=self.f.prepare();posts=self.f.root/'posts';requests=[]
+        self.assertNotIn(original,(job.folder/'plan.json').read_text())
+        transport=scoped_transport(job,posts,original,requests)
+        with patch.object(owner.urllib.request,'urlopen',transport):
+            job.launch(job.folder/'native-admission.json')
+            key.write_text('different synthetic account');count=len(requests)
+            with self.assertRaisesRegex(ValueError,'credential changed'):job.cleanup()
+            self.assertEqual(len(requests),count)
+            self.assertFalse(job.state().get('deletionVerified'));job.scheduled.assert_not_called()
+            with self.assertRaises(cache.ManagedGPUError):self.f.prepare()
+            key.write_text(original);closed=job.cleanup()
+            self.assertTrue(closed['get404Verified']);self.assertTrue(closed['guardRetiredVerified'])
+            self.assertEqual(sum(method=='DELETE' for _,method,_ in requests),1)
+            self.assertEqual(posts.read_text().splitlines(),['ONE_MOCK_POST'])
+            self.assertNotEqual(self.f.prepare().plan['jobId'],job.plan['jobId'])
+
+    def test_missing_allocation_file_cannot_rebind_an_existing_paid_intent(self):
+        job=self.f.prepare();posts=self.f.root/'posts';fake_live(job,posts)
+        owner.write(job.folder/'create-intent.json',{'planSHA256':owner.sha(job.folder/'plan.json')})
+        with self.assertRaisesRegex(ValueError,'no replay'):job.launch(job.folder/'native-admission.json')
+        self.assertFalse(job.state_path.exists());self.assertFalse(posts.exists())
+        with self.assertRaisesRegex(ValueError,'remains UNKNOWN'):job.cleanup()
+
+    def test_legacy_credential_requires_exact_positive_ownership_before_accepting_404(self):
+        job=self.f.prepare();key=Path(self.f.config['runpodActionKeyFile']);original=key.read_text()
+        del job.plan['actionCredentialSHA256']
+        owner.write(job.folder/'plan.json',job.plan)
+        digest=owner.sha(job.folder/'plan.json');name='studio-two-copy-5090-012345abcdef';pid='fixturepod123'
+        registry=job.root/'active-owner.json';owner.write(registry,owner.read(registry)|{'planSHA256':digest})
+        owner.write(job.folder/'create-intent.json',{'planSHA256':digest,'name':name})
+        owner.write(job.folder/'create-ack.json',{'planSHA256':digest,'requestedName':name,'podId':pid})
+        job.save({'planSHA256':digest,'name':name,'podId':pid,'providerAttempted':True,'startedEpoch':time.time()})
+        requests=[];transport=scoped_transport(job,self.f.root/'posts',original,requests)
+        with patch.object(owner.urllib.request,'urlopen',transport):
+            key.write_text('different synthetic account')
+            with self.assertRaisesRegex(ValueError,'Unbound legacy credential'):job.get_owned(job.state())
+            key.write_text(original);self.assertEqual(job.get_owned(job.state())['id'],pid)
+            resumed=owner.Job(job.root,job.plan['jobId']);count=len(requests)
+            key.write_text('different synthetic account')
+            with self.assertRaisesRegex(ValueError,'credential changed'):resumed.get_owned(resumed.state())
+            self.assertEqual(len(requests),count)
+            key.write_text(original);resumed.api('/pods/'+pid,method='DELETE')
+            self.assertIsNone(resumed.get_owned(resumed.state()))
+
     def test_ack_recovers_after_allocation_state_write_failure_and_deletes_exactly(self):
         job=self.f.prepare();counter=self.f.root/'counter';fake_live(job,counter)
         real_save=job.save
@@ -275,6 +341,9 @@ class CacheIntegrationTests(unittest.TestCase):
             controller.owned=True
         with patch.object(cache,'prepare_job',return_value=job),patch.object(native.ProductionGPU,'ensure',ensure):lease.ensure()
         self.assertTrue(lease.owned);job.launch.assert_called_once()
+        Path(self.f.config['runpodActionKeyFile']).write_text('different synthetic account')
+        with self.assertRaisesRegex(ValueError,'credential changed'):
+            lease.client.action_key()
     def test_native_bootstrap_refuses_missing_cache_proof_before_worker_confirmation(self):
         config=self.f.config|{'runpodManagedPodId':'fixturepod123','runpodPreparedPodIds':['fixturepod123'],
             'runpodBootstrapKleinPodIds':['fixturepod123'],'runpodRequireMountedCache':True}
@@ -320,6 +389,75 @@ class CacheIntegrationTests(unittest.TestCase):
             self.assertFalse(cache.public_descriptor(config)['normalBrokerLiveValidated'])
         changed=copy.deepcopy(proof);changed['moduleSHA256']['studio_cache_owner.py']='0'*64;dump(path,changed)
         self.assertFalse(cache.public_descriptor(config)['normalBrokerLiveValidated'])
+    def test_superseded_launcher_leaves_tunnel_ports_available_to_new_owner(self):
+        old=self.f.prepare();posts=self.f.root/'posts';fake_live(old,posts)
+        checked=threading.Event();resume=threading.Event();bound_or_finished=threading.Event();release=threading.Event()
+        exists=Path.exists;bind=socket.socket.bind;errors=[]
+        def checked_state(path):
+            result=exists(path)
+            if path==old.state_path and threading.current_thread() is worker and not checked.is_set():
+                checked.set()
+                if not resume.wait(10):raise TimeoutError('Old launcher was not resumed')
+            return result
+        def hold_stale_binding(sock,address):
+            result=bind(sock,address)
+            if threading.current_thread() is worker:
+                bound_or_finished.set()
+                if not release.wait(10):raise TimeoutError('Old port probe was not released')
+            return result
+        def launch_old():
+            try:old.launch(old.folder/'native-admission.json')
+            except Exception as error:errors.append(error)
+            finally:bound_or_finished.set()
+        worker=threading.Thread(target=launch_old)
+        with patch.object(Path,'exists',checked_state),patch.object(socket.socket,'bind',hold_stale_binding):
+            worker.start()
+            try:
+                self.assertTrue(checked.wait(10))
+                self.assertEqual(old.cleanup()['status'],'NO_ALLOCATION')
+                new=self.f.prepare();fake_live(new,posts);resume.set()
+                self.assertTrue(bound_or_finished.wait(10))
+                self.assertEqual(new.launch(new.folder/'native-admission.json')['status'],'MOCK_ACK_RUNNING')
+            finally:
+                resume.set();release.set();worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(errors),1);self.assertIsInstance(errors[0],ValueError)
+        self.assertEqual(posts.read_text().splitlines(),['ONE_MOCK_POST'])
+
+    def test_port_occupied_after_reservation_blocks_create_without_spend(self):
+        import urllib.parse
+        job=self.f.prepare();posts=self.f.root/'posts';fake_live(job,posts)
+        with socket.socket() as occupied:
+            occupied.bind(('127.0.0.1',urllib.parse.urlparse(self.f.config['comfyEndpoint']).port))
+            with self.assertRaisesRegex(ValueError,'ports occupied'):
+                job.launch(job.folder/'native-admission.json')
+        self.assertFalse(posts.exists())
+        job.cleanup()
+        self.assertEqual(owner.read(job.root/'spend-ledger.json')['spentByProject'][self.f.project],0)
+
+    def test_frozen_guard_cannot_release_owner_during_create_intent_commit(self):
+        job=self.f.prepare();counter=self.f.root/'posts';fake_live(job,counter)
+        original_write=owner.write
+        # Run the independent guard that was frozen when the job was reserved.
+        # Pause immediately before the one durable create-intent write.
+        guard=[sys.executable,'-B','-c',
+               "import importlib.util,sys;from unittest.mock import Mock;"
+               "s=importlib.util.spec_from_file_location('guard',sys.argv[1]);g=importlib.util.module_from_spec(s);"
+               "s.loader.exec_module(g);g.Job.scheduled=Mock();sys.argv=sys.argv[1:];g.main()",
+               str(job.plan['guardSourcePath']),'cleanup','--root',str(job.root),'--job',job.plan['jobId']]
+        def write(path,value,exclusive=False):
+            if Path(path).name=='create-intent.json':
+                result=subprocess.run(guard,capture_output=True,text=True,timeout=20)
+                self.assertNotEqual(result.returncode,0,result.stdout)
+                self.assertEqual(json.loads(result.stdout)['status'],'UNCONFIRMED_LIABILITY_RETAINED')
+                self.assertIsNotNone(cache.pending_reason(self.f.config,self.f.path))
+            return original_write(path,value,exclusive)
+        with patch.object(owner,'write',write):
+            job.launch(job.folder/'native-admission.json')
+        self.assertEqual(counter.read_text().splitlines(),['ONE_MOCK_POST'])
+        self.assertTrue(job.cleanup()['get404Verified'])
+        self.assertIsNone(cache.pending_reason(self.f.config,self.f.path))
+
     def test_real_two_process_admission_across_stores_permits_one_mock_post(self):
         barrier=self.f.root/'go';counter=self.f.root/'posts';processes=[]
         try:

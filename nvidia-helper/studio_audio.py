@@ -80,9 +80,12 @@ def probe(path, ffmpeg=None):
     # Read-only compatibility for saved recordings; never creates a WAV file.
     if Path(path).suffix.lower() == '.wav':
         import wave
-        with wave.open(str(path), 'rb') as legacy:
-            return {'duration': legacy.getnframes()/legacy.getframerate(),
-                    'sampleRate': legacy.getframerate(), 'channels': legacy.getnchannels(), 'codec': 'pcm_s16le'}
+        try:
+            with wave.open(str(path), 'rb') as legacy:
+                return {'duration': legacy.getnframes()/legacy.getframerate(),
+                        'sampleRate': legacy.getframerate(), 'channels': legacy.getnchannels(), 'codec': 'pcm_s16le'}
+        except (wave.Error, EOFError):
+            pass  # Use FFprobe below for supported non-PCM WAV containers.
     if Path(path).suffix.lower() == '.opus':
         # Opus uses a fixed 48 kHz granule clock, regardless of input rate.
         # Read exact end padding/pre-skip without requiring another executable.

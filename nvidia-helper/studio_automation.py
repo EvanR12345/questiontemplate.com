@@ -8,8 +8,9 @@ def run_settings(settings):
     result = copy.deepcopy(settings)
     result.update(unattendedProduction=True, appearanceHandling='Automatic')
     if result.get('qcCheckLevel') != 'off':
-        result.update(automaticRepair=True, qcRepairBudgetMode='project-cap')
-        result['maxImageRetries'] = max(1, int(result.get('maxImageRetries', 2)))
+        retry_limit = int(result.get('maxImageRetries', 2))
+        result.update(automaticRepair=retry_limit > 0, qcRepairBudgetMode='project-cap',
+                      maxImageRetries=retry_limit)
     return result
 
 

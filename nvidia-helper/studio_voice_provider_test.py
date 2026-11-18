@@ -204,6 +204,120 @@ class VoiceProviderTest(unittest.TestCase):
         self.assertEqual(identity({'voiceEngine':'kokoro-82m','voiceCompute':'local'}),{})
         self.assertEqual(identity({'voiceEngine':'kokoro-82m','voiceCompute':'kaggle'})['voiceCompute'],'kaggle')
 
+    def test_group_recovery_preserves_original_notebook_at_each_publication_boundary(self):
+        import ast
+        for boundary in ('before-admission','submission-uncertain','after-notebook',
+                         'before-first-chapter','before-first-receipt','after-first-chapter','legacy-split'):
+            with self.subTest(boundary=boundary),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory)
+                cfg={'kaggleUsername':'testowner','kaggleVerifiedModels':['qwen3-tts-1.7b']}
+                settings={'voiceEngine':'qwen3-tts-1.7b','qwenSpeaker':'Ryan'}
+                provider=KaggleVoice(cfg)
+                first={'id':'one','signature':'v1','text':'The gate opens.','target':str(root/'one'/'v1.opus')}
+                second={'id':'two','signature':'v1','text':'We enter.','target':str(root/'two'/'v1.opus')}
+                items=[first,second]
+                reference={'audio':'YXVkaW8=','text':'Reference.'}
+                admissions=[]
+                def run(args,**kw):
+                    action=args[1]
+                    if action=='status':return 'complete'
+                    folder=Path(args[args.index('-p')+1])
+                    if action=='pull':
+                        (folder/'kernel-metadata.json').write_text(json.dumps({'is_private':True}))
+                    else:
+                        with (folder/'voice_job.py').open(encoding='utf-8') as code:
+                            req=ast.literal_eval(code.readline().removeprefix('REQUEST = '))
+                        if action=='push':
+                            admissions.append([i['chapterId'] for i in req['parts']])
+                            if boundary=='submission-uncertain':raise ValueError('Timed out')
+                        if action=='output':
+                            signature=next(j['signature'] for j in (json.loads(f.read_text()) for f in
+                                folder.parent.glob('*.opus.kaggle.json')) if folder.name.endswith(j['signature'][:16]))
+                            output={'signature':signature,'model':req['model'],'duration':len(req['parts']),
+                                'setupAndModelLoadSeconds':77,'speechGenerationSeconds':20,'sentences':[],'chapterAudio':[]}
+                            for i,part in enumerate(req['parts']):
+                                filename=f'chapter-{i:03d}.opus'
+                                (folder/filename).write_text(part['text']+req['qwenSpeaker'],encoding='utf-8')
+                                output['sentences'].append(dict(index=i,text=part['text'],start=i,end=i+1))
+                                output['chapterAudio'].append(dict(id=part['chapterId'],first=i,last=i+1,path=filename))
+                            (folder/'result.json').write_text(json.dumps(output))
+                    return 'Kernel version successfully pushed.'
+                def gate(message):
+                    if message.startswith('Saving completed chapter') and (boundary=='before-first-chapter' or
+                        boundary in ('after-first-chapter','legacy-split') and Path(first['target']).with_suffix('.voice-ready.json').exists()):
+                        raise InterruptedError('simulated stop')
+                original_write=provider._write
+                def write(path,value):
+                    if (path.name.endswith('.publication.json') and
+                        (boundary=='after-notebook' and 'outputs' in value or
+                         boundary=='before-admission' and 'outputs' not in value) or
+                        boundary=='before-first-receipt' and path.name.endswith('.voice-ready.json')):
+                        raise InterruptedError('simulated stop')
+                    original_write(path,value)
+                with patch.object(KaggleVoice,'health',return_value={'reason':''}),patch.object(provider,'_run',side_effect=run), \
+                        patch('studio_audio.probe',return_value={'codec':'opus','channels':1,'duration':1}):
+                    with patch.object(provider,'_write',side_effect=write),self.assertRaises((InterruptedError,ValueError)):
+                        provider.generate_many(items,settings,gate,reference=reference)
+                    if boundary=='submission-uncertain':
+                        with self.assertRaisesRegex(ValueError,'reconciliation'):
+                            provider.generate_many([second],settings,lambda m:None,reference=reference)
+                        self.assertEqual(admissions,[['one','two']])
+                        continue
+                    if boundary=='legacy-split':
+                        # Emulate a checkout made before grouped publication records existed.
+                        next((root/'.voice-groups').glob('*.publication.json')).unlink()
+                        legacy=provider.generate_many(items,settings,lambda m:None,reference=reference)
+                        self.assertEqual(admissions,[['one','two']])
+                        self.assertEqual(Path(legacy[1]['path']).read_text(),'We enter.Ryan')
+                        self.assertEqual(legacy[1]['voiceBatch']['chapters'],2)
+                        continue
+                    changed=dict(first,signature='v2',text='The gate is closed.',target=str(root/'one'/'v2.opus'))
+                    results=provider.generate_many([changed,second],settings,lambda m:None,reference=reference)
+                self.assertEqual(admissions,[['one','two']] if boundary=='before-admission' else [['one','two'],['one']])
+                self.assertEqual(Path(results[1]['path']).read_text(),'We enter.Ryan')
+                self.assertEqual(Path(results[0]['path']).read_text(),'The gate is closed.Ryan')
+                self.assertEqual(results[1]['voiceBatch']['chapters'],2)
+                self.assertEqual(results[1]['voiceBatch']['groupSetupSeconds'],77)
+                self.assertEqual(results[1]['sentences'][0]['start'],0)
+
+    def test_interrupted_group_checks_original_bytes_and_voice_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            provider=KaggleVoice({})
+            p=new_project()
+            p['settings'].update(voiceEngine='qwen3-tts-1.7b',qwenSpeaker='Ryan')
+            ch=p['chapters'][0]
+            ch['sourceText']='First chapter.'
+            def item():
+                signature=StudioService.narration_signature(p,ch)
+                return {'id':ch['id'],'signature':signature,'text':ch['sourceText'],
+                        'target':str(root/'chapter'/(signature[:12]+'.opus'))}
+            original=item()
+            calls=[]
+            def generate(text,target,settings,gate,parts_override,**kw):
+                calls.append(settings['qwenSpeaker'])
+                folder=target.parent/target.stem
+                folder.mkdir()
+                asset=folder/'chapter-000.opus'
+                asset.write_bytes(settings['qwenSpeaker'].encode())
+                return {'duration':1,'sentences':[{'index':0,'text':text,'start':0,'end':1}],
+                        'chapterAudio':[{'path':str(asset)}]}
+            with patch.object(provider,'_generate',side_effect=generate):
+                with self.assertRaises(InterruptedError):
+                    provider.generate_many([original],p['settings'],Mock(side_effect=InterruptedError))
+                staged=next((root/'.voice-groups').glob('*/chapter-000.opus'))
+                staged.write_bytes(b'truncated')
+                with self.assertRaisesRegex(ValueError,'checksum'):
+                    provider.generate_many([original],p['settings'],lambda m:None)
+                self.assertFalse(Path(original['target']).exists())
+                p['settings']['qwenSpeaker']='Aiden'
+                changed=item()
+                self.assertNotEqual(original['signature'],changed['signature'])
+                result=provider.generate_many([changed],p['settings'],lambda m:None)
+            self.assertEqual(calls,['Ryan','Aiden'])
+            self.assertEqual(Path(result[0]['path']).read_bytes(),b'Aiden')
+            self.assertEqual(staged.read_bytes(),b'truncated')
+
     def test_result_mismatch_cannot_overwrite_saved_audio(self):
         with tempfile.TemporaryDirectory() as directory:
             target=Path(directory)/'audio.wav';target.write_bytes(b'original')

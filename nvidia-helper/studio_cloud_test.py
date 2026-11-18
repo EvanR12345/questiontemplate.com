@@ -199,6 +199,48 @@ class CloudSaveTests(unittest.TestCase):
         self.assertEqual(self.store.asset(self.p['id'],'art.png').read_bytes(),expected)
         self.store.mutate(self.p['id'],lambda p:p.update(name='Newer'))
         with self.assertRaisesRegex(ValueError,'Both copies retained'):self.a.restore(self.p['id'])
+    def test_divergent_helpers_preserve_both_editions_regardless_of_revision_order(self):
+        pid=self.p['id']
+        self.a.sync(pid)
+        with tempfile.TemporaryDirectory() as folder:
+            other_store=ProjectStore(folder)
+            other=R2Archive(other_store,Path(folder)/'no-config',self.obj,start_worker=False)
+            base=other_store.load(pid)
+            chosen=self.store.mutate(pid,lambda p:p.update(notes='Chosen independently on A'))
+            self.a.sync(pid)
+            other_store.mutate(pid,lambda p:p['chapters'][0].update(name='B chapter'))
+            local=other_store.mutate(pid,lambda p:p['chapters'][0].update(sourceText='Unsynchronized B text'))
+            self.assertLess(base['revision'], chosen['revision'])
+            self.assertGreater(local['revision'], chosen['revision'])
+            # Reopen B with its durable acknowledgement, as after a helper restart.
+            other=R2Archive(other_store,Path(folder)/'no-config',self.obj,start_worker=False)
+            with self.assertRaisesRegex(ValueError,'conflict'):
+                other.sync(pid)
+            self.assertEqual(other.manifest(pid,True)[0]['project'],chosen)
+            self.store.mutate(pid,lambda p:p.update(name='A project'))
+            cloud=self.store.mutate(pid,lambda p:p.update(notes='Another A edit'))
+            self.a.sync(pid)
+            self.assertGreater(cloud['revision'],local['revision'])
+            with self.assertRaisesRegex(ValueError,'conflict'):
+                other.restore(pid)
+            self.assertEqual(other_store.load_local(pid),local)
+            self.assertEqual(other.manifest(pid,True)[0]['project'],cloud)
+
+    def test_preupgrade_sync_journal_detects_remote_advance_and_allows_ordinary_local_save(self):
+        pid=self.p['id']
+        self.a.sync(pid)
+        self.a.states[pid].pop('sharedProjectSHA256')
+        self.store.mutate(pid,lambda p:p.update(name='Normal local edit'))
+        self.assertTrue(self.a.sync(pid))
+        state=self.a.states[pid];state.pop('sharedProjectSHA256')
+        base,etag=self.a.manifest(pid,True)
+        foreign=copy.deepcopy(base);foreign['project']['revision']+=1;foreign['project']['notes']='Cloud edition'
+        self.obj.put_json(f'studio/manifests/{pid}.json',foreign,etag=etag)
+        self.store.mutate(pid,lambda p:p.update(name='Offline A'))
+        self.store.mutate(pid,lambda p:p.update(notes='Offline B'))
+        with self.assertRaisesRegex(ValueError,'conflict'):self.a.sync(pid)
+        self.assertEqual(self.a.manifest(pid,True)[0]['project'],foreign['project'])
+
     def test_complete_restart_restores_project_from_cloud(self):
         self.a.sync(self.p['id'])
         with tempfile.TemporaryDirectory() as new:

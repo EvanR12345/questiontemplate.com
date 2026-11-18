@@ -89,9 +89,7 @@ class CloudRenderJob:
             if state.get('revision')!=project['revision']:
                 raise ValueError('Project changed before the render started. Submit its current revision.')
             self.store=ProjectStore(self.scratch/'studio')
-            archive=R2Archive(self.store,self.scratch/'absent-config.json');archive.close()
-            archive.objects=self.objects;archive.enabled=True;self.store.archive=archive
-            archive.restore(self.project_id)
+            archive=R2Archive(self.store,self.scratch/'absent-config.json',self.objects,start_worker=False)
             self.files=dict(state.get('files',{}))
             # Reuse only verified immutable checkpoints from this job/snapshot.
             merged=dict(original['files'])
@@ -102,7 +100,11 @@ class CloudRenderJob:
                 self.store.asset_local(self.project_id,name)
                 merged[name]=record
             frozen=original | {'files':merged}
-            archive.manifest=lambda pid,fresh=False:(frozen,original_etag)
+            archive.manifest=lambda pid,refresh=False:(frozen,original_etag)
+            archive.restore(self.project_id)
+            # The original manifest remains the before-image for publication.
+            # Render settings and cache revisions belong to the local working copy.
+            project=self.store.load_local(self.project_id)
             project['settings'].setdefault('engagement',{})['exportDestination']=destination
             self.store.save(project)
             project=self.store.load(self.project_id)

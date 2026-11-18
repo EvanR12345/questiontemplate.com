@@ -14,6 +14,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from pathlib import Path
+from studio_data import digest
 from urllib.parse import quote
 from immutable_upload import frozen_body, SourceChangedAfterUpload
 
@@ -291,6 +292,17 @@ class R2Archive:
             self.manifests[pid] = (json.loads(data) if data else None, etag)
         return self.manifests[pid]
 
+    def changed_since_shared_project(self, pid, project):
+        """Revision counters can advance independently on two offline helpers."""
+        with self.cv:
+            state = self.states.get(pid, {})
+            fingerprint = state.get('sharedProjectSHA256')
+            revision = state.get('revision')
+        if fingerprint:
+            return fingerprint != digest(project)
+        # Existing upload journals record the last acknowledged revision.
+        return type(revision) is int and revision != project['revision']
+
     def sync(self, pid):
         folder = self.store.folder(pid)
         with self.store.lock:
@@ -299,7 +311,8 @@ class R2Archive:
         old, etag = self.manifest(pid, True)
         if old and old['project']['revision'] > project['revision']:
             raise ValueError('Cloud project is newer. Reload it before overwriting; both copies retained.')
-        if old and old['project']['revision'] == project['revision'] and old['project'] != project:
+        if old and old['project'] != project and (old['project']['revision'] == project['revision']
+                or self.changed_since_shared_project(pid, old['project'])):
             raise ValueError('Cloud and helper revisions conflict. Both copies retained for review.')
         records = dict(old.get('files',{})) if old else {}
         video_references=project_video_paths(project)
@@ -345,12 +358,12 @@ class R2Archive:
                 and type(old.get('savedAt')) in (int,float) and math.isfinite(old['savedAt'])):
             manifest['savedAt']=old['savedAt']
         else:
-            from studio_data import digest
             history=digest({'project':project,'files':records})[:16]
             if cancelled():raise RuntimeError('Cloud archive stopped before publication; local files retained.')
             self.objects.put_json(f'studio/history/{pid}/{project["revision"]}-{history}.json',manifest)
             if cancelled():raise RuntimeError('Cloud archive stopped before publication; local files retained.')
             self.objects.put_json(f'studio/manifests/{pid}.json',manifest,etag,create=old is None)
+        shared_fingerprint = digest(project)
         self.manifests.pop(pid,None)
         with self.cv:self.staged_assets.pop(pid,None)
         # Invalidate after any concurrent catalogue refresh finishes; otherwise
@@ -359,7 +372,7 @@ class R2Archive:
         with self.store.lock:
             changed = (folder/'project.json').read_bytes() != snapshot
             with self.cv:
-                self.states[pid] = {'status':'PENDING' if changed else 'SYNCED','revision':project['revision'],'savedAt':manifest['savedAt'],
+                self.states[pid] = {'status':'PENDING' if changed else 'SYNCED','revision':project['revision'],'sharedProjectSHA256':shared_fingerprint,'savedAt':manifest['savedAt'],
                     'files':len(records),'bytes':sum(x['bytes'] for x in records.values()),'lastUploadBytes':uploaded,'error':''}
                 self.persist()
             if changed:self.enqueue(pid)
@@ -378,11 +391,14 @@ class R2Archive:
             local=folder/'project.json'
             if local.exists():
                 current=self.store.load_local(pid)
-                if current['revision']>project['revision'] or (current['revision']==project['revision'] and current!=project):
+                if current != project and (current['revision'] >= project['revision'] or self.changed_since_shared_project(pid, current)):
                     raise ValueError('Unsaved or conflicting helper changes exist. Both copies retained; cloud reload was cancelled.')
             temp=folder/'project.cloud.tmp'; temp.write_text(json.dumps(project,ensure_ascii=False),encoding='utf-8')
             temp.replace(folder/'project.json')
             (folder/'revision.json').write_text(json.dumps({'revision':project['revision'],'updated':project['updated']}),encoding='utf-8')
+            with self.cv:
+                self.states.setdefault(pid, {})['sharedProjectSHA256'] = digest(project)
+                self.persist()
         return project
 
     def asset_record(self, pid, name):

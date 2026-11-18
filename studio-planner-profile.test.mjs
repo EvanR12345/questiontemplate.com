@@ -99,6 +99,13 @@ test('automatic completion shows repairs without inventing a measured replacemen
  assert.match(profileSummary(p),/automatic completion and bounded repairs/);
 });
 
+test('following a zero-retry project keeps Practical QC and drops a stale repair allowance',()=>{
+ const p=profile();p.settings.unattendedProduction=true;p.settings.automaticRepair=true;p.settings.maxImageRetries=0;
+ const result=plannerSettings({...DEFAULTS,retries:7},p,evidence);
+ assert.equal(result.config.retries,0);assert.equal(result.config.qc,'practical');
+ assert.match(result.warnings.join(' '),/zero-retry limit/);
+ assert.match(profileSummary(p),/zero repairs/);
+});
 test('following a single ComfyUI production queue cannot retain proposed scheduling or a two-copy benchmark',()=>{
  const p=profile();p.imageExecution={backend:'comfyui-api',gpuLanes:1,multipleModelCopiesVerified:false};
  const result=plannerSettings({...DEFAULTS,policy:'proposed',executionMode:'hybrid',imageWorkers:'best'},p,evidence);

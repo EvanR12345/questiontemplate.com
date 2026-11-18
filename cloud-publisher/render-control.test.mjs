@@ -78,3 +78,59 @@ test('a quickly started worker cannot be regressed to queued by the launch respo
   const cancelled=await renderControl('/renders/cancel',env,{id:body.id});
   assert.equal(cancelled.cancelRequested,true);assert.equal(cancelled.status,'RENDERING');
 });
+
+test('transient responses preserve the project lock until an observed terminal result',async()=>{
+  for(const code of [408,500,502,503,504]){
+    const {env,body}=await fixture();let starts=0;
+    const submit=async()=>{starts++;return new Response(null,{status:code});};
+    const access=async()=> 'fixture';
+    const other={...body,id:'b'.repeat(32)};
+    const start=value=>renderControl('/renders/start',env,value,submit,access);
+    assert.equal((await start(body)).status,'SUBMISSION_UNKNOWN');
+    assert.equal((await start(body)).status,'SUBMISSION_UNKNOWN');
+    await assert.rejects(start(other),/already has/);
+    await renderControl('/renders/cancel',env,{id:body.id});
+    await assert.rejects(start(other),/already has/);
+    assert.equal(starts,1);
+
+    const key='studio/render-jobs/'+body.id+'.json',record=await env.STUDIO.get(key);
+    const state=await record.json();state.status='CANCELLED';
+    await env.STUDIO.put(key,JSON.stringify(state),{onlyIf:{etagMatches:record.etag}});
+    assert.equal((await start(other)).status,'SUBMISSION_UNKNOWN');
+    assert.equal(starts,2);
+  }
+});
+test('a 502 or lost response after a worker claim preserves the active render',async()=>{
+  for(const lost of [false,true]){
+    const {env,body}=await fixture();let starts=0;
+    const submit=async()=>{
+      starts++;const key='studio/render-jobs/'+body.id+'.json',record=await env.STUDIO.get(key);
+      const state=await record.json();state.status='RENDERING';
+      await env.STUDIO.put(key,JSON.stringify(state),{onlyIf:{etagMatches:record.etag}});
+      if(lost)throw Error('response lost');
+      return new Response(null,{status:502});
+    };
+    const access=async()=> 'fixture';
+    assert.equal((await renderControl('/renders/start',env,body,submit,access)).status,'RENDERING');
+    await assert.rejects(renderControl('/renders/start',env,{...body,id:'b'.repeat(32)},submit,access),/already has/);
+    assert.equal(starts,1);
+  }
+});
+test('submission receipt respects a simultaneous worker status write and a definitive rejection',async()=>{
+  for(const code of [200,403]){
+    const {env,body}=await fixture(),put=env.STUDIO.put.bind(env.STUDIO);
+    const key='studio/render-jobs/'+body.id+'.json';
+    env.STUDIO.put=async(k,text,options)=>{
+      if(k===key&&['QUEUED','FAILED'].includes(JSON.parse(text).status)){
+        const record=await env.STUDIO.get(key),state=await record.json();state.status='RESTORING';
+        await put(key,JSON.stringify(state),{onlyIf:{etagMatches:record.etag}});
+      }
+      return put(k,text,options);
+    };
+    const state=await renderControl('/renders/start',env,body,async()=>new Response(null,{status:code}),async()=> 'fixture');
+    assert.equal(state.status,'RESTORING');
+  }
+  const {env,body}=await fixture();
+  const rejected=await renderControl('/renders/start',env,body,async()=>new Response(null,{status:403}),async()=> 'fixture');
+  assert.equal(rejected.status,'FAILED');assert.equal(rejected.errorType,'CloudRunRequestRejected');
+});

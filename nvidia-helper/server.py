@@ -273,7 +273,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/publisher':self.reply(200,studio.publisher.status())
                     elif path=='/studio/vimeo':self.reply(200,studio.vimeo.health() | {'jobs':studio.vimeo.jobs(query['project'][0])} if query.get('project') else studio.vimeo.health(verify=query.get('verify',['false'])[0]=='true'))
                     elif path=='/studio/cloud-render-capabilities':self.reply(200,studio.cloud_renders.capabilities())
-                    elif path=='/studio/cloud-render-plan':self.reply(200,studio.cloud_renders.plan(studio.store.load(query['project'][0])))
+                    elif path=='/studio/cloud-render-plan':self.reply(200,studio.cloud_renders.plan(studio.store.load(query['project'][0]),query.get('destination',[None])[0]))
                     elif path=='/studio/gpu-providers':
                         from studio_gpu_providers import provider_status
                         self.reply(200,provider_status(studio.config,refresh=query.get('refresh',['false'])[0]=='true'))
@@ -399,7 +399,33 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     from studio_production_preset import recommended_settings
                     p['settings']=recommended_settings(p['settings'])
                 return studio.store.save(p)
-            if path=='/studio/import':return studio.store.save(body['project'])
+            if path=='/studio/import':
+                from studio_data import ProjectNotFound
+                snapshot=body['project']
+                for key in ('_unsynced','_offlineChapterEdits','_connectionPlaceholder'):
+                    snapshot.pop(key,None)
+                with studio.store.lock:
+                    if body.get('onlyIfMissing'):
+                        try:studio.store.load(snapshot['id'])
+                        except ProjectNotFound:pass
+                        else:raise ValueError('This story arrived on the helper while reconnecting. Reconnect to compare it with your browser draft.')
+                    return studio.store.save(snapshot)
+            if path=='/studio/sync-offline' and 'snapshot' in body:
+                snapshot=body['snapshot']
+                expected=body.get('expectedRevision')
+                if (not isinstance(snapshot,dict) or snapshot.get('id')!=body.get('project')
+                        or type(expected) is not int or expected<0 or snapshot.get('revision')!=expected):
+                    raise ValueError('Invalid saved draft revision.')
+                with studio.store.lock:
+                    from studio_data import ProjectNotFound
+                    try:latest=studio.store.load(body['project'])
+                    except ProjectNotFound:
+                        if expected!=0:raise ValueError('The helper copy is missing. Export your browser draft to restore this project explicitly.') from None
+                        return studio.store.save(snapshot)
+                    if latest['revision']!=expected:
+                        raise ValueError('This draft and the helper both changed. Export your browser draft to compare versions. Both copies are retained.')
+                    return studio.store.save(snapshot,expected=expected)
+
             if path=='/studio/storage-sync':
                 if not studio.storage.enabled:raise ValueError('Connect private cloud storage before cloud saving.')
                 projects=[body['project']] if body.get('project') else [p['id'] for p in studio.store.list_local()]
@@ -497,7 +523,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             if path=='/studio/upload':
                 from PIL import Image
                 raw=base64.b64decode(body['data'].split(',',1)[-1]);img=Image.open(io.BytesIO(raw));img.thumbnail((1536,1536));name='references/'+uid()+'.png';target=studio.store.asset(pid,name);target.parent.mkdir(exist_ok=True);img.convert('RGBA' if body.get('purpose')=='watermark' else 'RGB').save(target,'PNG');return {'path':name}
-            def change(p):
+            def change(p, path=path, body=body):
                 from studio_action_history import snapshot
                 history_before=snapshot(p)
                 scope=body.get('scope','project');id=body.get('id');action=body.get('action','patch')
@@ -510,7 +536,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif scope=='person':target=next(c for c in get_chapter(p,body['chapter'])['people'] if c['id']==id)
                     else:raise ValueError('Unknown editor scope.')
                     patch=body['patch']
-                    if not isinstance(patch,dict) or any(k in ('id','schemaVersion','revision','created') for k in patch):raise ValueError('Cannot edit stable identity fields.')
+                    if not isinstance(patch,dict) or any(k in ('id','schemaVersion','revision','created','imageSelectionRevision') for k in patch):raise ValueError('Cannot edit stable identity fields.')
                     changed={k:v for k,v in patch.items() if target.get(k)!=v}
                     if not changed:
                         from studio_data import UNCHANGED
@@ -519,6 +545,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     previous_intro=copy.deepcopy(p['intro'])
                     previous_prompt=target.get('prompt','');previous_handoff=copy.deepcopy(target.get('handoff',{}));previous_video=copy.deepcopy(p['settings'].get('video',{}));previous_watermark=copy.deepcopy(p['settings'].get('watermark',{}));previous_engagement=copy.deepcopy(p['settings'].get('engagement',{}))
                     target.update(patch)
+                    if scope=='shot' and 'imagePath' in changed:
+                        from studio_action_history import mark_image_selection
+                        mark_image_selection(target)
                     if changed and scope in ('shot','scene','chapter'):get_chapter(p,id if scope=='chapter' else body['chapter'])['renderStale']=True;p['renderStale']=True
                     if scope=='project' and 'settings' in changed:
                         from studio_qc import retain_review_settings
@@ -605,7 +634,31 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                 else:raise ValueError('Unknown studio endpoint.')
                 from studio_action_history import record
                 record(p,history_before,f"{scope}: {action if path!='/studio/edit' else ', '.join(changed)}")
-            studio.store.mutate(pid,change)
+            if path=='/studio/sync-offline':
+                fields={'sourceText','name','cleanNarrationText','narrationMode','includeChapterLabel'}
+                def apply_edits(project):
+                    from studio_data import UNCHANGED
+                    changed=False
+                    for edit in body['edits']:
+                        if not isinstance(edit,dict):raise ValueError('Invalid offline chapter edit.')
+                        before,values=edit.get('before'),edit.get('values')
+                        if (not isinstance(before,dict) or not isinstance(values,dict)
+                                or before.keys()!=values.keys() or not values.keys()<=fields):
+                            raise ValueError('Invalid offline chapter edit.')
+                        chapter=get_chapter(project,edit['id'])
+                        for field in values:
+                            if not isinstance(values[field],bool if field=='includeChapterLabel' else str):
+                                raise ValueError('Invalid offline chapter field.')
+                            if chapter.get(field) not in (before[field],values[field]):
+                                raise ValueError('The same chapter field changed on the helper. Export your browser draft to compare versions. Both copies are retained.')
+                        if any(chapter.get(k)!=v for k,v in values.items()):
+                            change(project, '/studio/edit', {'scope':'chapter','id':chapter['id'],'patch':values})
+                            changed=True
+                    return None if changed else UNCHANGED
+                if not isinstance(body.get('edits'),list):raise ValueError('Expected offline chapter edits.')
+                studio.store.mutate(pid,apply_edits)
+            else:
+                studio.store.mutate(pid,change)
             if path=='/studio/warning' and body.get('action')=='update':
                 latest=studio.store.load(pid);warning=next(x for x in latest['warnings'] if x['id']==body['id'])
                 for chapter in latest['chapters']:

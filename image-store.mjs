@@ -38,6 +38,48 @@ export const saveProjectState = state => operation('projects', 'readwrite', stor
 export const loadProjectState = () => operation('projects', 'readonly', store => store.get('active'));
 export const saveImageBlob = (id, blob) => operation('images', 'readwrite', store => store.put(blob, id));
 export const loadImageBlob = id => operation('images', 'readonly', store => store.get(id));
-export const saveStudioProject = project => operation('projects', 'readwrite', store => store.put(project, 'studio:' + project.id));
+const projectSummary = project => ({
+  id: project.id,
+  name: project.name,
+  revision: project.revision,
+  chapters: project.chapters.length,
+  unsynced: Boolean(project._unsynced),
+});
+export const saveStudioProject = project => operation('projects', 'readwrite', store => {
+  store.put(projectSummary(project), 'summary:' + project.id);
+  return store.put(project, 'studio:' + project.id);
+});
 export const loadStudioProject = id => operation('projects', 'readonly', store => store.get('studio:' + id));
 export const listStudioProjects = async () => (await operation('projects', 'readonly', store => store.getAll())).filter(p => p?.schemaVersion === 1 && p?.chapters);
+
+
+// Older databases contain only full project records. Index each missing summary
+// once, reading the current project in the same transaction as the index write.
+function indexLegacyProject(key) {
+  return operation('projects', 'readwrite', store => {
+    const result = {};
+    const request = store.get(key);
+    request.onsuccess = () => {
+      const project = request.result;
+      if (project?.schemaVersion !== 1 || !Array.isArray(project.chapters)) return;
+      result.result = projectSummary(project);
+      store.put(result.result, 'summary:' + project.id);
+    };
+    return result;
+  });
+}
+
+export async function listStudioProjectSummaries() {
+  const range = prefix => IDBKeyRange.bound(prefix, prefix + '\uffff');
+  const [keys, summaries] = await Promise.all([
+    operation('projects', 'readonly', store => store.getAllKeys(range('studio:'))),
+    operation('projects', 'readonly', store => store.getAll(range('summary:'))),
+  ]);
+  const byId = new Map(summaries.map(summary => [summary.id, summary]));
+  const result = [];
+  for (const key of keys) {
+    const summary = byId.get(key.slice('studio:'.length)) || await indexLegacyProject(key);
+    if (summary) result.push(summary);
+  }
+  return result;
+}

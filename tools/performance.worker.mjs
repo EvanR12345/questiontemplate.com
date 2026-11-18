@@ -9,9 +9,9 @@ const paragraph='The lights went out at exactly midnight. Maya heard three slow 
 const text=paragraph.repeat(6);
 let ack, busy=false;
 self.onmessage=({data})=>{if(data.type==='ack')ack?.();if(data.type==='run'&&!busy)void run(data);};
-async function run({key,mode}){
+async function run({key,mode,format,bitrate}){
   busy=true;
-  const metrics={mode,textCharacters:text.length,setupMs:0,normalizationMs:0,phonemizeMs:0,requestMs:0,downloadValidationMs:0,encodeMs:0,encodeSetupMs:0,gateMs:0,checkpointWaitMs:0,loopbackHealthMs:[],sections:[],audioSeconds:0};
+  const metrics={mode,format,bitrate,textCharacters:text.length,setupMs:0,normalizationMs:0,phonemizeMs:0,requestMs:0,downloadValidationMs:0,encodeMs:0,encodeSetupMs:0,gateMs:0,checkpointWaitMs:0,loopbackHealthMs:[],sections:[],audioSeconds:0};
   try{
     const setup=performance.now();const info=await nativeHealth(key);await nativeRequest('/prepare',key,{voice:'am_michael'});await loadLexicon('a');
     const tokenizer=nativeTokenizer(info.vocab),rules=pronunciationRules('');metrics.gpu=info.gpu;metrics.setupMs=performance.now()-setup;
@@ -31,7 +31,7 @@ async function run({key,mode}){
     const started=performance.now();
     for await(const {batch,audio} of streamSynthesis(batches(),render,{gate,prefetch:mode==='overlap'})){
       if(!batch.ids){processed+=batch.text.length;continue;}
-      if(!encoder){const start=performance.now();encoder=await createEncoder('mp3',48);metrics.encodeSetupMs+=performance.now()-start;}
+      if(!encoder){const start=performance.now();encoder=await createEncoder(format,bitrate);metrics.encodeSetupMs+=performance.now()-start;}
       const start=performance.now();const bytes=encoder.encode(audio,1);metrics.encodeMs+=performance.now()-start;processed+=batch.text.length;partFrames+=audio.length;totalFrames+=audio.length;emit(bytes,audio.length);
       postMessage({type:'progress',processed,seconds:totalFrames/SAMPLE_RATE});if(partFrames>=PART_SECONDS*SAMPLE_RATE)await closePart();
     }

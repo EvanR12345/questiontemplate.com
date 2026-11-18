@@ -13,6 +13,22 @@ test('design description and real parameter bounds are enforced',()=>{
   assert.throws(()=>auditionRequest(model,{mode:'design',description:'Warm',text:'Hello',language:'English',parameters:{seed:1.1}}),/Seed/);
   assert.throws(()=>auditionRequest(model,{mode:'design',description:'Warm',text:'Hello',language:'English',parameters:{seed:101}}),/Seed/);
 });
+test('an audition uses only the selected mode’s inputs while drafts may keep hidden values',()=>{
+  const catalog={...model,modes:[{id:'default'},{id:'clone',requiresReference:true,allowsDescription:true},{id:'preset',allowsDescription:true}],
+    parameters:[{id:'speaker',type:'select',label:'Speaker',modes:['preset'],options:['ryan'],default:'ryan'}]};
+  const values={text:'Hello',language:'English',description:'Quiet speech',referenceId:'saved',parameters:{speaker:'ryan'}};
+  const plain=auditionRequest(catalog,{...values,mode:'default'});
+  assert.equal(plain.description,'');
+  assert.equal('referenceId' in plain,false);
+  assert.deepEqual(plain.parameters,{});
+  const clone=auditionRequest(catalog,{...values,mode:'clone'});
+  assert.equal(clone.description,'Quiet speech');
+  assert.equal(clone.referenceId,'saved');
+  const preset=auditionRequest(catalog,{...values,mode:'preset'});
+  assert.equal(preset.description,'Quiet speech');
+  assert.deepEqual(preset.parameters,{speaker:'ryan'});
+  assert.equal('referenceId' in preset,false);
+});
 test('30 second projection scales generation and adds startup once',()=>{
   const cost=previewCosts({hourlyUSD:3.6,generationSeconds:10,audioSeconds:20,loadSeconds:5,startupSeconds:300});
   assert.equal(cost.warm30USD,.015);assert.equal(cost.modelLoad30USD,.02);assert.equal(cost.cold30USD,.32);

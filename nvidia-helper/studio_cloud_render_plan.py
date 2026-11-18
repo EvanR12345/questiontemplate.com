@@ -1,5 +1,6 @@
 """Read-only resource planning; projections never count as verified exports."""
 import math
+from studio_engagement import settings as engagement_settings
 
 MIB=2**20
 GIB=2**30
@@ -16,14 +17,13 @@ def render_plan(project,source_bytes=0,config=None):
         durations.append(duration)
         shots+=sum(len(s['shots']) for s in chapter.get('scenes',[]))
     if not durations:raise ValueError('A saved chapter is required.')
-    intro=project['intro'];engagement=project['settings'].get('engagement',{})
+    intro=project['intro'];engagement=engagement_settings(project)
     intro_seconds=float(intro.get('duration',15)) if intro.get('enabled') else 0
     count=len(chapters) if intro.get('placement')=='every_chapter' else 1
     duration=sum(durations)+intro_seconds*count
     # This is an upper planning allowance; the renderer uses the actual intro
     # audio duration and can end sooner when endOnNarration is enabled.
-    destination=engagement.get('exportDestination','youtube')
-    if engagement.get('outroEnabled') and destination!='patreon':
+    if engagement['outroEnabled']:
         duration+=max(float(engagement.get('outroDuration',15)),float(engagement.get('outroAudioDuration',0))+.5)
     if not math.isfinite(duration):
         raise ValueError('Invalid total export duration.')

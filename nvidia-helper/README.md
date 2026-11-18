@@ -23,7 +23,7 @@ See [STUDIO-IMPLEMENTATION.md](https://questiontemplate.com/STUDIO-IMPLEMENTATIO
 3. Studio: paste your story, Analyze, review Cast and Layout, then Draw.
 4. Select Volume for large batches, then Generate missing or Generate all.
 
-The optional bundled `web/` directory remains available as a local fallback at `http://127.0.0.1:8765/app/`. The launcher opens the public website. Localhost API endpoints require pairing and restrict cross-origin access to questiontemplate.com and localhost. The service binds to 127.0.0.1 only.
+The optional bundled `web/` directory remains available as a local fallback at `http://127.0.0.1:8765/app/`. Build the downloadable archive from a Git checkout with `python tools/build-helper.py` at the repository root. The archive includes Studio, Audio, Voice Lab, the planner and their local browser dependencies. Historical research gallery photos and externally hosted model downloads still use the network. The launcher opens the public website. Localhost API endpoints require pairing and restrict cross-origin access to questiontemplate.com and localhost. The service binds to 127.0.0.1 only.
 
 ## Original panel image queue
 

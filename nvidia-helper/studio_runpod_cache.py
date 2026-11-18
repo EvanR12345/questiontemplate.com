@@ -69,7 +69,7 @@ def pending_reason(config,native_path):
             active=owner.read(registry);label=active['jobId']
             if not isinstance(label,str) or '/' in label or '\\' in label:return 'Invalid cached GPU owner requires reconciliation.'
             path=root/'jobs'/label/'allocation.json'
-            state=owner.read(path) if path.exists() else {}
+            state=owner.Job(root,label).state() if path.exists() else {}
             if not all(state.get(k) is True for k in ('deletionVerified','settlementVerified','guardRetiredVerified','nativeFinalizedVerified')):
                 return 'An earlier cached GPU owner or UNKNOWN must be reconciled before new work.'
     except (OSError,ValueError,KeyError,TypeError):
@@ -150,7 +150,6 @@ def prepare_job(config,path,project,budget,gate):
     profile_path,profile,root=private_profile(config,path)
     source,current=_project(path,project)
     workflow=owner.supported_project_config(current,config)
-    owner.local_ports_free(config)
     cap=budget.get('gpuBudgetUSD');requested=budget.get('gpuPreviouslySpentUSD',0)
     saved=current.get('settings',{}).get('cloudWindow',{})
     if cap!=saved.get('gpuBudgetUSD') or requested!=saved.get('gpuPreviouslySpentUSD',0):
@@ -160,6 +159,7 @@ def prepare_job(config,path,project,budget,gate):
     for field in ('runpodActionKeyFile','runpodSSHKeyFile'):
         if not isinstance(config.get(field),str) or not Path(config[field]).is_file():
             raise ManagedGPUError('Existing private Runpod control and SSH paths required.')
+    credential_digest=owner.key_digest(owner.action_key(config))
     with owner.ownership_lock(root):
         # Directory creation can materialize a Windows MSIX filesystem alias.
         # Resolve again under the same lock before persisting any owner pointer.
@@ -169,6 +169,8 @@ def prepare_job(config,path,project,budget,gate):
             active=owner.read(registry);old=owner.Job(root,active['jobId']);old_state=old.state() if old.state_path.exists() else {}
             if not all(old_state.get(k) is True for k in ('deletionVerified','settlementVerified','guardRetiredVerified','nativeFinalizedVerified')):
                 raise ManagedGPUError('Earlier cached allocation/UNKNOWN or unsettled spend blocks new creation.')
+        # A rejected competitor must never bind the current owner's tunnel ports.
+        owner.local_ports_free(config)
         native=owner.read(path) if Path(path).exists() else {}
         ledger=owner.read(root/'spend-ledger.json') if (root/'spend-ledger.json').exists() else {}
         values=[requested,native.get('spentByProject',{}).get(project,0),ledger.get('spentByProject',{}).get(project,0)]
@@ -189,6 +191,7 @@ def prepare_job(config,path,project,budget,gate):
               'nativeStatePath':str(Path(path).resolve()),'projectPolicySHA256':owner.policy_digest(current),
               'profilePath':str(profile_path),'profileSHA256':owner.sha(profile_path),
               'configSourcePath':str(config_path),'configSourceSHA256':owner.sha(config_path),
+              'actionCredentialSHA256':credential_digest,
               'workflowPath':str(workflow),'workflowSHA256':owner.sha(workflow),
               'guardSourcePath':str(guard),'guardSourceSHA256':owner.sha(guard),
               'gpuAndDiskCapUSD':cap,'previousGPUUpperUSD':previous,'shutdownReserveUSD':reserve,
@@ -247,7 +250,8 @@ class CachedProductionGPU(ProductionGPU):
         try:
             handoff=self.cache_job.launch(self.cache_job.folder/'native-admission.json')
             self.config=owner.read(handoff['runtimeConfigPath']);self.pod=handoff['podId']
-            self.client=RunpodClient(self.config);self.owned_startup=handoff['ownedWorkerReceipt']
+            self.client=RunpodClient(self.config,action_key_reader=lambda:self.cache_job.control_credential()[0])
+            self.owned_startup=handoff['ownedWorkerReceipt']
             self.budget=copy.deepcopy(self.budget)|handoff['requiredCloudWindowPatch']
             self.config['runpodRequireMountedCache']=True
             super().ensure()

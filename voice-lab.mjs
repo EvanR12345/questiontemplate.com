@@ -1,6 +1,6 @@
 import {pairingKey,importHelperPairing,helperJson} from './helper-connection.mjs?v=connection-20261009';
 import {nativeRequest} from './native-client.mjs?v=connection-20261009';
-import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=library-20261026';
+import {SAMPLE_SCRIPT,escapeHTML as esc,auditionRequest,previewCosts,usd} from './voice-lab-state.mjs?v=audition-mode-20261118';
 import {preferredReference,referenceSource,jobVoiceName} from './voice-lab-library.mjs?v=library-20261026';
 import {VOICE_BATCH,currentVoiceBatch} from './voice-lab-batch.mjs?v=native-quiet-completed-20261027';
 import {comparisonDeliveryLabel} from './voice-lab-comparisons.mjs?v=native-quiet-completed-20261027';
@@ -13,7 +13,7 @@ const json=(path,body)=>helperJson('/studio/voice-lab'+path,key,body);
 const notice=message=>{$('notice').textContent=message||'';};
 function selectedModel(){return snapshot?.models?.find(model=>model.id===modelId);}
 function formParameters(){const parameters={};document.querySelectorAll('[data-parameter]').forEach(input=>parameters[input.dataset.parameter]=input.type==='checkbox'?input.checked:input.value);return parameters;}
-function saveDraft(){try{if(modelId&&$('parameters').dataset.model===modelId)parameterDrafts[modelId]=formParameters();sessionStorage.setItem(DRAFT_KEY,JSON.stringify({model:modelId,mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,character:{name:$('characterName').value,scene:$('characterScene').value},parameterDrafts}));}catch{}}
+function saveDraft(){if(!snapshot)return;try{if(modelId&&$('parameters').dataset.model===modelId)parameterDrafts[modelId]=formParameters();sessionStorage.setItem(DRAFT_KEY,JSON.stringify({model:modelId,mode:$('mode').value,language:$('language').value,text:$('script').value,description:$('description').value,referenceId:$('reference').value,character:{name:$('characterName').value,scene:$('characterScene').value},parameterDrafts}));}catch{}}
 let draft={};try{draft=JSON.parse(sessionStorage.getItem(DRAFT_KEY)||'{}');}catch{}
 const parameterDrafts=draft.parameterDrafts||{};
 $('script').value=draft.text||'';$('description').value=draft.description||'';modelId=draft.model||'voxcpm2';
@@ -120,7 +120,8 @@ function workerView(){
   const worker=snapshot.worker||{},ready=worker.ready===true;
   $('workerTitle').textContent=ready?'Worker connected':'Worker not ready';
   $('workerDetail').textContent=worker.reason||worker.message||(ready?'Models load on demand.':'Set up and connect the private RunPod worker to generate auditions.');
-  $('workerCost').textContent=Number.isFinite(worker.hourlyUSD)?`${usd(worker.hourlyUSD)} / GPU hour · ${usd(worker.hourlyUSD/60)} / minute of billed worker time`:'';
+  const rateSource=worker.rateSource==='worker'?'Worker quote':'Helper setting';
+  $('workerCost').textContent=Number.isFinite(worker.hourlyUSD)?`${rateSource} · ${usd(worker.hourlyUSD)} / GPU hour · ${usd(worker.hourlyUSD/60)} / minute`:'';
   const modelReady=selectedModel()?.ready===true;
   $('generate').disabled=busy||!ready||!modelReady;
   $('generationHint').textContent=ready&&modelReady?'Submit one audition. Switching models can add loading time.':ready?'This model’s environment has not finished preparing.':'Generation becomes available when the private worker is ready.';
@@ -134,6 +135,14 @@ function jobMetrics(metrics={}){
   if(Number.isFinite(metrics.generationSeconds))items.push(`${metrics.generationSeconds.toFixed(1)}s generation`);
   if(Number.isFinite(metrics.loadSeconds))items.push(`${metrics.loadSeconds.toFixed(1)}s model loading`);
   if(Number.isFinite(metrics.startupSeconds))items.push(`${metrics.startupSeconds.toFixed(1)}s startup / loading`);
+  if(Number.isFinite(metrics.hourlyUSD)){
+    const basis=metrics.rateSource==='worker'?'Worker job quote':metrics.rateSource==='helper'?'Helper estimate when queued':'Historical helper estimate';
+    items.push(`${basis} · ${usd(metrics.hourlyUSD)} / GPU hour`);
+  }
+  if(Number.isFinite(metrics.workerWallSeconds)){
+    const cost=Number.isFinite(metrics.workerEstimatedUSD)?` · ${usd(metrics.workerEstimatedUSD)} estimated compute`:'';
+    items.push(`${metrics.workerWallSeconds.toFixed(1)}s worker wall time${cost}`);
+  }
   const costs=previewCosts(metrics);
   if(costs)items.push(`Estimated 30s synthesis: ${usd(costs.warm30USD)}`,...(costs.modelLoad30USD===null?[]:[`With model loading: ${usd(costs.modelLoad30USD)}`]),...(costs.cold30USD===null?[]:[`With recorded startup: ${usd(costs.cold30USD)}`]));
   return items.map(item=>`<span>${esc(item)}</span>`).join('');
@@ -177,7 +186,8 @@ async function refresh(){
     if(connectionFailure){notice('');connectionFailure=false;}
     if(!snapshot.models.some(model=>model.id===modelId))modelId=snapshot.models[0].id;
     $('lab').hidden=false;$('connectionTitle').textContent='Private helper connected';$('connectionDetail').textContent='The original coach voice and related takes are available through your pairing.';
-    if(first)modelView();referencesView();libraryView();workerView();jobsView();
+    // Restore reference options before modelView persists the initialized form.
+    referencesView();if(first)modelView();libraryView();workerView();jobsView();
   }finally{polling=false;}
 }
 async function act(action){

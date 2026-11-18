@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {selectedStrategy,strategyOptions,strategyDescription,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs';
+import {selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs';
 test('default align persists explicit choices and rejects silent provider fallbacks',()=>{
   assert.equal(selectedStrategy({}),'align');
   for(const id of ['align','fastest','legacy']) assert.equal(selectedStrategy({generationStrategy:id}),id);
@@ -9,6 +9,22 @@ test('default align persists explicit choices and rejects silent provider fallba
   assert.deepEqual(strategyOptions('legacy',false),{generationStrategy:'legacy',overlap:false});
   assert.throws(()=>strategyOptions('align',false),/requires cloud/);
   assert.throws(()=>strategyOptions('invalid',true),/supported/);
+});
+test('dense rental descriptions follow the paired helper policy', () => {
+  for (const display of [
+    holds => strategySummary('dense', true, holds),
+    holds => strategyDescription('dense', true, 2, holds),
+  ]) {
+    assert.match(display(true), /stays rented through the remaining quality checks/);
+    assert.match(display(true), /waiting for checks is billed/);
+    assert.match(display(false), /separate paid rental/);
+    assert.match(display(undefined), /helper does not report whether/);
+  }
+  assert.match(strategySummary('dense', false, true), /needs a supported managed GPU/);
+});
+test('local image projects disclose the executable strategy even when the helper supports cloud',()=>{
+  assert.match(strategySummary('legacy',true,true,'native-flux'),/runs on the helper/);
+  assert.match(strategyDescription('dense',true,2,true,'existing'),/require cloud images/);
 });
 test('live chapter estimates use matching fresh busy intervals once and retain unknown scope',()=>{
   const rows=[10,12,15].map(finished=>({stage:'Image + quality checks',chapter:1,finished,seconds:10,

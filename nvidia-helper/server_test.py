@@ -148,6 +148,27 @@ class BridgeTest(unittest.TestCase):
         self.assertFalse(result['settings']['director']['compactCuts'])
         self.assertEqual(result['settingsHistory'][-1]['settings'],p['settings'])
 
+    def test_health_reports_the_broker_image_configuration_and_dense_lease_policy(self):
+        service = self.server.RequestHandlerClass.studio_service
+        provider = service.providers['comfyui']
+        cases = [
+            ({'runpodManagedPodId': 'fixture'}, True, True),
+            ({'gpuProviderOrder': ['vast'], 'gpuImageVerifiedProviders': ['vast']}, True, True),
+            ({'gpuProviderOrder': ['lium'], 'gpuImageVerifiedProviders': ['lium'],
+              'studioDenseLeaseContinuity': False}, True, False),
+            ({'gpuProviderOrder': ['lium'], 'gpuRenderVerifiedProviders': ['lium']}, False, True),
+            ({'runpodImageCacheEnabled': True}, False, True),
+        ]
+        for config, managed, holds_gpu in cases:
+            with self.subTest(config=config), patch.dict(service.config, config, clear=True), \
+                    patch.object(provider, 'healthCheck', return_value={'installed': False}) as probe:
+                code, _, raw = self.request('/studio/health')
+                self.assertEqual(code, 200, raw)
+                health = json.loads(raw)
+                self.assertIs(health['managedGPU']['configured'], managed)
+                self.assertIs(health['managedGPU']['holdsGPUForQC'], holds_gpu)
+                self.assertEqual(probe.call_count, 0 if managed else 1)
+
     def test_production_readiness_reports_blocks_without_paid_requests(self):
         from unittest.mock import Mock
         service=self.server.RequestHandlerClass.studio_service
@@ -282,6 +303,73 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertNotIn(b'PRIVATE STORY', raw)
         self.assertEqual(json.loads(raw)['spans'][0]['stage'], 'Test stage')
+
+    def test_offline_text_sync_merges_current_assets_atomically_and_can_retry(self):
+        from studio_data import new_chapter
+        store=self.server.RequestHandlerClass.studio_service.store
+        p=new_project()
+        p['chapters'].append(new_chapter(2))
+        first,second=p['chapters']
+        first['sourceText']='Original first.'
+        second['sourceText']='Original second.'
+        p=store.save(p)
+        def new_work(latest):
+            latest['chapters'][0]['render']={'path':'finished-after-disconnect.mp4'}
+            latest['chapters'][1]['sourceText']='Another human edit.'
+        store.mutate(p['id'],new_work)
+        newer=store.load(p['id'])
+        edits=[{'id':ch['id'],'before':{'sourceText':ch['sourceText']},'values':{'sourceText':'Browser edit.'}}
+               for ch in (first,second)]
+        sync=lambda fields:self.request('/studio/sync-offline',{'project':p['id'],'edits':fields})
+        code,_,_=sync(edits)
+        self.assertNotEqual(code,200)
+        self.assertEqual(store.load(p['id']),newer)
+        self.assertEqual(sync(edits[:1])[0],200)
+        merged=store.load(p['id'])
+        ch=merged['chapters'][0]
+        self.assertEqual(ch['cleanNarrationText'],'Browser edit.')
+        self.assertTrue(ch['renderStale'])
+        self.assertEqual(ch['render'],newer['chapters'][0]['render'])
+        self.assertEqual(merged['chapters'][1],newer['chapters'][1])
+        self.assertEqual(sync(edits[:1])[0],200)
+        self.assertEqual(store.load(p['id']),merged)
+
+    def test_legacy_browser_sync_requires_matching_revision_without_changing_file_import(self):
+        store=self.server.RequestHandlerClass.studio_service.store
+        saved=store.save(new_project())
+        payload={'project':saved['id'],'snapshot':saved,'expectedRevision':saved['revision']}
+        store.mutate(saved['id'],lambda p:p.update(name='New helper edition'))
+        newer=store.load(saved['id'])
+        self.assertNotEqual(self.request('/studio/sync-offline',payload)[0],200)
+        self.assertEqual(store.load(saved['id']),newer)
+        payload.update(snapshot=newer | {'name':'Edited offline'},expectedRevision=newer['revision'])
+        self.assertEqual(self.request('/studio/sync-offline',payload)[0],200)
+        self.assertEqual(store.load(saved['id'])['name'],'Edited offline')
+
+    def test_file_import_clears_browser_state_and_reconnect_cannot_replace_a_new_arrival(self):
+        store=self.server.RequestHandlerClass.studio_service.store
+        draft=new_project('One offline story')
+        draft.update(_unsynced=True,_offlineChapterEdits=[],_connectionPlaceholder=True)
+        self.assertEqual(self.request('/studio/import',{'project':draft,'onlyIfMissing':True})[0],200)
+        saved=store.load(draft['id'])
+        self.assertFalse(any(key in saved for key in ('_unsynced','_offlineChapterEdits','_connectionPlaceholder')))
+        newer=store.mutate(draft['id'],lambda p:p.update(name='Changed on helper'))
+        self.assertNotEqual(self.request('/studio/import',{'project':draft,'onlyIfMissing':True})[0],200)
+        self.assertEqual(store.load(draft['id']),newer)
+        self.assertEqual(self.request('/studio/import',{'project':draft})[0],200)
+        self.assertEqual(store.load(draft['id'])['name'],draft['name'])
+
+    def test_explicit_sync_of_a_new_offline_project_before_first_helper_save(self):
+        store=self.server.RequestHandlerClass.studio_service.store
+        draft=new_project('Created offline')
+        payload={'project':draft['id'],'expectedRevision':0,'snapshot':draft}
+        self.assertEqual(self.request('/studio/sync-offline',payload)[0],200)
+        self.assertEqual(store.load(draft['id'])['name'],draft['name'])
+        restored=new_project('Previously saved on another helper')
+        restored['revision']=2
+        payload.update(project=restored['id'],expectedRevision=2,snapshot=restored)
+        self.assertNotEqual(self.request('/studio/sync-offline',payload)[0],200)
+        self.assertFalse((store.folder(restored['id'])/'project.json').exists())
 
     def setUp(self):
         self.engine = FakeEngine()

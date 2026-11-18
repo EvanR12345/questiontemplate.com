@@ -9,6 +9,7 @@ import argparse
 import base64
 from contextlib import contextmanager
 import datetime
+import errno
 import hashlib
 import importlib.util
 import ipaddress
@@ -38,6 +39,11 @@ def read_bound(path,digest):
     if hashlib.sha256(raw).hexdigest()!=digest:raise ValueError('Bound private source changed')
     return json.loads(raw.decode('utf-8-sig'))
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def action_key(config):
+    key=Path(config['runpodActionKeyFile']).read_text('utf-8-sig').strip()
+    if not key:raise ValueError('Existing private cloud control credential required')
+    return key
+def key_digest(key):return hashlib.sha256(key.encode('utf-8')).hexdigest()
 def write(path,value,exclusive=False):
     path=Path(path).resolve()
     path.parent.mkdir(parents=True,exist_ok=True)
@@ -61,12 +67,19 @@ def ownership_lock(root):
     if stream.seek(0,os.SEEK_END)==0:stream.write(b'0');stream.flush()
     stream.seek(0);locked=False
     try:
-        if os.name=='nt':
-            import msvcrt
-            msvcrt.locking(stream.fileno(),msvcrt.LK_NBLCK,1)
-        else:
-            import fcntl
-            fcntl.flock(stream.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+        until=time.monotonic()+5
+        while True:
+            try:
+                if os.name=='nt':
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(),msvcrt.LK_NBLCK,1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+                break
+            except OSError as error:
+                if error.errno not in (errno.EAGAIN,errno.EACCES,errno.EDEADLK) or time.monotonic()>=until:raise
+                time.sleep(.025)
         locked=True;yield
     finally:
         if locked:
@@ -356,6 +369,12 @@ class Job:
             value['podId']=ack['podId']
         elif (self.folder/'create-intent.json').exists() and not value.get('definitivelyRejected'):
             value['providerAttempted']=True
+        # A frozen, pre-update watchdog cannot distinguish an account-scoped
+        # 404. An observed identity failure outlives its later closure writes.
+        if value.get('deletionVerified') and (self.folder/'legacy-control-unresolved.json').exists():
+            value.update(status='LEGACY_CONTROL_IDENTITY_UNRESOLVED',deletionVerified=False,
+                         get404Verified=False,settlementVerified=False,guardRetiredVerified=False,nativeFinalizedVerified=False)
+            value.pop('deletedAtEpoch',None)
         return value
     def save(self,value,exclusive=False):write(self.state_path,value,exclusive)
     def claim(self):
@@ -363,25 +382,59 @@ class Job:
         # unresolved create is never a reason to rent another worker.
         with ownership_lock(self.root):
             registry=self.root/'active-owner.json'
-            if registry.exists():
-                prior=read(registry);label=prior.get('jobId','')
-                if not re.fullmatch(r'[a-z0-9][a-z0-9-]{3,47}',label):raise ValueError('Invalid previous launcher owner')
-                path=self.root/'jobs'/label/'allocation.json'
-                same=(label==self.plan['jobId'] and prior.get('planSHA256')==sha(self.folder/'plan.json'))
-                if not same and (not path.exists() or not all(read(path).get(k) for k in ('deletionVerified','settlementVerified','guardRetiredVerified','nativeFinalizedVerified'))):
-                    raise ValueError('Another launcher allocation/UNKNOWN remains unresolved')
+            prior=read(registry)
+            if prior.get('jobId')!=self.plan['jobId'] or prior.get('planSHA256')!=sha(self.folder/'plan.json'):
+                raise ValueError('Cached launch no longer owns its reserved admission')
             write(registry,{'jobId':self.plan['jobId'],'planSHA256':sha(self.folder/'plan.json'),
                             'status':'ACTIVE','atEpoch':time.time()})
+    def control_credential(self):
+        config=read_bound(self.plan['configSourcePath'],self.plan['configSourceSHA256'])
+        key=action_key(config);expected=self.plan.get('actionCredentialSHA256')
+        proof_path=self.folder/'legacy-control-identity.json'
+        if expected is None and proof_path.exists():
+            proof=read(proof_path)
+            if proof.get('planSHA256')!=sha(self.folder/'plan.json'):raise ValueError('Legacy control identity belongs to a different plan')
+            expected=proof['actionCredentialSHA256']
+        if expected is not None and key_digest(key)!=expected:
+            self.fence_legacy_control()
+            raise ValueError('Cached GPU control credential changed; restore the original credential to reconcile the owned allocation.')
+        return key,expected is not None
+    def fence_legacy_control(self):
+        if 'actionCredentialSHA256' not in self.plan and (self.folder/'create-ack.json').exists():
+            with ownership_lock(self.root):
+                digest=sha(self.folder/'plan.json');active=read(self.root/'active-owner.json')
+                if active.get('jobId')!=self.plan['jobId'] or active.get('planSHA256')!=digest:
+                    raise ValueError('Superseded legacy owner cannot reconcile a newer reservation')
+                write(self.folder/'legacy-control-unresolved.json',{'planSHA256':digest})
+    def bind_legacy_control(self,key):
+        # A legacy plan has no key digest. Save one only with positive proof
+        # of ownership, or under the job lock before its first create intent.
+        path=self.folder/'legacy-control-identity.json'
+        proof={'planSHA256':sha(self.folder/'plan.json'),'actionCredentialSHA256':key_digest(key)}
+        try:write(path,proof,exclusive=True)
+        except FileExistsError:
+            if read(path)!=proof:raise ValueError('Conflicting legacy control credential; allocation remains unresolved')
     def api(self,path,body=None,method='GET'):
         if not path.startswith('/') or '..' in path:raise ValueError('Invalid provider route')
-        cfg=read(self.plan['configSourcePath']);key=Path(cfg['runpodActionKeyFile']).read_text('utf-8-sig').strip()
+        key,bound=self.control_credential()
+        if not bound and method!='GET':
+            raise ValueError('Unproven legacy control credential; allocation remains unresolved')
         request=urllib.request.Request('https://api.runpod.io/v2'+path,
             data=json.dumps(body).encode() if body is not None else None,
             headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method=method)
         try:
             with urllib.request.urlopen(request,timeout=20) as response:
-                raw=response.read();return json.loads(raw) if raw else {}
+                raw=response.read();value=json.loads(raw) if raw else {}
+            if not bound and method=='GET' and path.startswith('/pods/'):
+                state=self.state();pid=self.exact(state)
+                if path!='/pods/'+pid or value.get('id')!=pid or value.get('name')!=state['name']:
+                    raise ValueError('Legacy control credential could not prove ownership of the exact pod')
+                self.bind_legacy_control(key)
+            return value
         except urllib.error.HTTPError as error:
+            if not bound and error.code==404 and method=='GET' and path.startswith('/pods/'):
+                self.fence_legacy_control()
+                raise ValueError('Unbound legacy credential returned 404; allocation remains unresolved') from None
             raw=error.read(8000).decode(errors='replace').replace(key,'[redacted]')
             # Detail never enters stdout or the job's public receipts.
             write(self.folder/('api-error-'+uuid.uuid4().hex+'.private.json'),{'status':error.code,'detail':raw})
@@ -432,9 +485,7 @@ class Job:
                 'ports':['22/tcp'],'startSsh':True,'startJupyter':False,'env':{'PUBLIC_KEY':public}}
         profile=self.verify_profile();raw=cloud_expiry_source(profile)
         if raw is not None:
-            config=read_bound(self.plan['configSourcePath'],self.plan['configSourceSHA256'])
-            key=Path(config['runpodActionKeyFile']).read_text('utf-8-sig').strip()
-            if not key:raise ValueError('Existing private cloud control credential required')
+            key,_=self.control_credential()
             values={'name':state['name'],'nonce':self.plan['jobId'],'created':state['startedEpoch'],
                     'deadline':self.plan['deadlineEpoch']}
             if (not finite(values['created']) or not finite(values['deadline'])
@@ -536,7 +587,6 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
     def launch(self,release_path):
         release=read(release_path);profile_data=self.verify_release(release)
         if self.state_path.exists():raise ValueError('Durable allocation intent exists; no replay')
-        local_ports_free(read_bound(self.plan['configSourcePath'],self.plan['configSourceSHA256']))
         volume=self.api('/network-volumes/'+self.plan['volumeId'])
         if any(volume.get(k)!=v for k,v in {'id':profile_data['volumeId'],'name':profile_data['volumeName'],'size':80,'dataCenter':'EU-RO-1','type':'STANDARD'}.items()):raise ValueError('Actual retained volume changed')
         quote=self.api('/catalog/gpus/'+urllib.parse.quote(GPU,safe='')+'?include=AVAILABILITY&product=POD&cloud=SECURE&count=1&minCudaVersion=12.8')
@@ -552,26 +602,24 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
                'taskName':'QuestionTemplate-CachedJob-Expire-'+token,'releaseSHA256':sha(release_path),
                'actualCatalogPriceUSD':price,'setupDeadlineEpoch':min(now+110,self.plan['deadlineEpoch']-90),
                'planSHA256':sha(self.folder/'plan.json')}
-        self.claim();self.save(state,exclusive=True)
+        # Lock only this allocation while arming and committing its one intent.
+        # Cleanup can still run during a stalled provider POST or SSH handoff.
+        initialized=False
         try:
-            self.arm(state);self.guard(state)
-            config=read(self.plan['configSourcePath']);public=Path(config['runpodSSHKeyFile']+'.pub').read_text('utf-8').strip()
-            body=self.create_body(state,public)
-            # Original continuous clock and cap are never rebased at POST/setup.
-            state=self.state();self.guard(state)
-            if not state.get('watchdogArmed') or state.get('deletionVerified'):raise ValueError('Create admission lost its independent guard')
-            self.verify_release(release)
-            local_ports_free(read_bound(self.plan['configSourcePath'],self.plan['configSourceSHA256']))
-            write(self.folder/'create-intent.json',{'name':state['name'],'planSHA256':state['planSHA256'],
-                  'startedEpoch':state['startedEpoch'],'bodySHA256':hashlib.sha256(json.dumps(body,sort_keys=True).encode()).hexdigest(),
-                  'maximumPOSTs':1},exclusive=True)
-            state.update(status='CREATE_SUBMITTING_UNKNOWN',providerAttempted=True);self.save(state)
+            with ownership_lock(self.folder):
+                if any(path.exists() for path in (self.state_path,self.folder/'create-intent.json',self.folder/'create-ack.json')):
+                    raise ValueError('Durable allocation intent exists; no replay')
+                self.claim();self.save(state,exclusive=True);initialized=True
+                body=self.arm_create_intent(state,release)
             try:
                 reply=self.api('/pods',body,'POST')
                 if not isinstance(reply.get('id'),str) or not re.fullmatch(r'[a-z0-9]{8,40}',reply['id']):raise ValueError('Create acknowledgement lacks exact identity')
+                # Persist the exact reply before waiting on cleanup or mutable state.
                 write(self.folder/'create-ack.json',{'podId':reply['id'],'requestedName':state['name'],
                       'planSHA256':state['planSHA256'],'atEpoch':time.time()},exclusive=True)
-                state=self.state();state['podId']=reply['id'];state['status']='CREATE_ACKNOWLEDGED';self.save(state)
+                with ownership_lock(self.folder):
+                    state=self.state();self.guard(state)
+                    state['podId']=reply['id'];state['status']='CREATE_ACKNOWLEDGED';self.save(state)
             except BaseException as error:
                 state=self.state()
                 if isinstance(error,APIError) and error.status in (400,403,409,422) and error.code in ('bad_request','forbidden','conflict','unprocessable_entity','validation_error','definite_client_rejection'):
@@ -585,9 +633,12 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
             if created_datetime.tzinfo is None:raise ValueError('Provider creation time requires an explicit zone')
             created=created_datetime.timestamp()
             if not finite(created) or abs(created-state['startedEpoch'])>30:raise ValueError('Actual creation clock differs from owned intent')
-            state=self.state();state['actualCreatedEpoch']=created;state['status']='ALLOCATED';self.save(state)
+            with ownership_lock(self.folder):
+                state=self.state();self.guard(state)
+                state['actualCreatedEpoch']=created;state['status']='ALLOCATED';self.save(state)
             return self.setup_handoff(state)
         except BaseException:
+            if not initialized:raise
             state=self.state()
             if state.get('podId') or not state.get('providerAttempted') or state.get('definitivelyRejected'):
                 self.cleanup()
@@ -595,6 +646,22 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
                 state['status']='UNKNOWN_CREATE_MANUAL_RECONCILIATION_REQUIRED';self.save(state)
                 self.settle(state)
             raise
+    def arm_create_intent(self,state,release):
+        key,bound=self.control_credential()
+        if not bound:self.bind_legacy_control(key)
+        self.arm(state);self.guard(state)
+        config=read(self.plan['configSourcePath']);public=Path(config['runpodSSHKeyFile']+'.pub').read_text('utf-8').strip()
+        body=self.create_body(state,public)
+        # Original continuous clock and cap are never rebased at POST/setup.
+        state=self.state();self.guard(state)
+        if not state.get('watchdogArmed') or state.get('deletionVerified'):raise ValueError('Create admission lost its independent guard')
+        self.verify_release(release)
+        local_ports_free(read_bound(self.plan['configSourcePath'],self.plan['configSourceSHA256']))
+        write(self.folder/'create-intent.json',{'name':state['name'],'planSHA256':state['planSHA256'],
+              'startedEpoch':state['startedEpoch'],'bodySHA256':hashlib.sha256(json.dumps(body,sort_keys=True).encode()).hexdigest(),
+              'maximumPOSTs':1},exclusive=True)
+        state.update(status='CREATE_SUBMITTING_UNKNOWN',providerAttempted=True);self.save(state)
+        return body
     def ssh_args(self,pod):
         endpoint=pod.get('ssh',{}).get('direct') or {};host=endpoint.get('host');ipaddress.ip_address(host)
         if endpoint.get('username')!='root' or type(endpoint.get('port')) is not int or not 0<endpoint['port']<65536:raise ValueError('Exact direct SSH not ready')
@@ -653,10 +720,15 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
                       nativeRequiredModel='flux2-klein-4b',nativeModelCopies=2)
         if cloud_proof is not None:
             result.update(cloudResidentExpiryConfigured=True,cloudResidentExpiryArmed=True)
-        write(self.folder/'handoff.json',result,exclusive=True)
-        state=self.state();state.update(status='HANDOFF_RUNNING',handoffEpoch=time.time());self.save(state)
+        with ownership_lock(self.folder):
+            state=self.state();self.guard(state)
+            write(self.folder/'handoff.json',result,exclusive=True)
+            state.update(status='HANDOFF_RUNNING',handoffEpoch=time.time());self.save(state)
         return result
     def cleanup(self):
+        with ownership_lock(self.folder):
+            return self._cleanup()
+    def _cleanup(self):
         if not self.state_path.exists():
             if any((self.folder/name).exists() for name in ('create-intent.json','create-ack.json')):
                 raise ValueError('Missing allocation state with paid intent remains UNKNOWN')
@@ -676,6 +748,8 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
             state.update(status='NO_ALLOCATION',deletionVerified=True);self.save(state);self.settle(state)
             state['settlementVerified']=True;self.save(state);self.scheduled(state,True)
             return self.finalize_native(state)
+        # Install the legacy fence before waiting for account-scoped GET.
+        self.fence_legacy_control()
         pod=self.get_owned(state)
         if pod is not None:
             try:self.api('/pods/'+state['podId'],method='DELETE')
@@ -692,7 +766,10 @@ Get-ScheduledTask -TaskName NAME|Select-Object TaskName,State,@{n='Execute';e={$
             'cacheVolumeDeleted':False,'invoiceVerified':False})
         self.settle(state)
         state['settlementVerified']=True;self.save(state)
-        self.scheduled(state,True);return self.finalize_native(state)
+        self.scheduled(state,True);closed=self.finalize_native(state)
+        if 'actionCredentialSHA256' not in self.plan:
+            (self.folder/'legacy-control-unresolved.json').unlink(missing_ok=True)
+        return closed
     def adopted_or_closed(self,state):
         path=Path(self.plan['nativeStatePath'])
         if not path.exists():return False,False

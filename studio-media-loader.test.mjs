@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {cachedMediaCapability,cachedMediaLink} from './studio-cloud-ui.mjs';
 import {createMediaLoader} from './studio-media-loader.mjs';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const node=(path,tagName='IMG')=>({dataset:{asset:path},tagName,isConnected:true});
@@ -21,6 +22,18 @@ test('expired playback link renews once and restores position, speed and active 
   video.currentTime=0;video.emit('loadedmetadata');await tick();
   assert.equal(video.currentTime,7421);assert.equal(video.playbackRate,1.25);assert.equal(video.plays,1);
   video.emit('error');await tick();assert.equal(requests.length,2);
+});
+
+test('a network-error pause from the media element preserves active playback intent',async()=>{
+  let clock=0,release;
+  const video=player();
+  const loader=createMediaLoader({Observer:null,now:()=>clock,resolve:async(path,pid,{refresh})=>
+    refresh?await new Promise(resolve=>{release=resolve;}):'original'});
+  loader.load(root([video]),'project');await tick();
+  video.emit('playing');video.currentTime=3601.5;clock=3610000;
+  video.error={code:2};video.emit('error');video.emit('pause');await tick();
+  release('renewed');await tick();video.error=null;video.currentTime=0;video.emit('loadedmetadata');
+  assert.equal(video.currentTime,3601.5);assert.equal(video.plays,1);
 });
 
 test('paused playback stays paused and a late renewal cannot update a different project',async()=>{
@@ -103,4 +116,35 @@ test('late visibility callbacks cannot disconnect the current view observer',asy
   assert.deepEqual(observers[1].removed,[]);assert.deepEqual(calls,[]);
   observers[1].callback([{target:image,isIntersecting:true}]);await tick();
   assert.deepEqual(calls,['fresh']);assert.equal(image.src,'fresh');
+});
+
+test('reopening a local or cloud preview honors the original capability expiry',async()=>{
+  const endpoints=[
+    ['http://127.0.0.1:8765/studio/media?ticket=',55],
+    ['https://storage.googleapis.com/example/story.mp4?X-Goog-Signature=',44],
+    ['https://example.r2.cloudflarestorage.com/story.mp4?X-Amz-Signature=',44],
+  ];
+  for(const [prefix,reopenMinute] of endpoints){
+    const cache=new Map();let clock=0,issued=0,link;
+    const api=async()=>{
+      if(!link||link.expires*1000<=clock)link={url:prefix+(++issued),expires:clock/1000+3600};
+      return link;
+    };
+    await cachedMediaLink(cache,'story','story.mp4',api,()=>clock);
+    clock=reopenMinute*60000;
+    const video=player(),loader=createMediaLoader({Observer:null,now:()=>clock,resolve:(path,project,{refresh})=>{
+      if(refresh)cache.delete(project+'/'+path);
+      return cachedMediaCapability(cache,project,path,api,()=>clock);
+    }});
+    loader.load(root([video]),'story');await tick();
+    assert.equal(video.src,prefix+'1');
+    video.emit('playing');video.currentTime=3859;video.playbackRate=1.5;
+    video.emit('error');await tick();assert.equal(video.loads,0);
+    clock=3601000;video.emit('error');video.emit('error');await tick();
+    assert.equal(video.src,prefix+'2');assert.equal(video.loads,1);
+    video.currentTime=0;video.emit('loadedmetadata');
+    assert.equal(video.currentTime,3859);assert.equal(video.playbackRate,1.5);assert.equal(video.plays,1);
+    video.emit('error');await tick();assert.equal(video.loads,1);
+    loader.clear();
+  }
 });

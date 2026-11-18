@@ -10,3 +10,10 @@
 !studio_branding.py
 !studio_engagement.py
 !render_queue.py
+!studio_audio.py
+!immutable_upload.py
+!studio_director_limits.py
+!studio_video_settings.py
+!studio_render_inputs.py
+!studio_voice_provider.py
+!studio_automation.py

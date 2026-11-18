@@ -92,7 +92,8 @@ class ExactTransportTest(unittest.TestCase):
         self.assertEqual(cache.snapshot()['entries'],0)
 
     def test_full_content_hash_invalidates_same_length_replacement(self):
-        a=png(color='red');b=png(color='blue');self.assertEqual(len(a),len(b))
+        a=png(color='red',compress_level=0);b=png(color='blue',compress_level=0)
+        self.assertEqual(len(a),len(b))
         cache=transport.QCImageTransport();first=cache.convert(data(a));second=cache.convert(data(b))
         self.assertNotEqual(first,second);self.assertEqual(cache.snapshot()['entries'],2)
 

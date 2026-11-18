@@ -47,6 +47,20 @@ class SnapshotTest(unittest.TestCase):
         self.assertNotIn(timing_profile('image',{}),state['averageSecondsByKind'])
         self.assertTrue(all('payload' not in row for row in state['jobs']))
 
+    def test_render_queue_keeps_job_elapsed_and_only_learns_from_verified_fresh_work(self):
+        add(self.service,'old','render-full',seconds=.05)
+        add(self.service,'restored','render-full',seconds=.07,payload={'_renderTimingScope':'reused-base'})
+        add(self.service,'composite','render-full',seconds=71,payload={'_renderTimingScope':'includes-chapter-render'})
+        add(self.service,'waiting','render-full','QUEUED',seconds=None)
+        state=self.service.snapshot()
+        self.assertEqual(state['etaStatus'],'INSUFFICIENT_HISTORY')
+        self.assertEqual(next(j for j in state['jobs'] if j['id']=='old')['seconds'],.05)
+        add(self.service,'new','render-full',seconds=6,payload={'_renderTimingScope':'fresh-assembly'})
+        state=self.service.snapshot()
+        self.assertEqual(state['etaSampleCountsByProfile']['render-full'],1)
+        self.assertEqual(state['etaSeconds'],6)
+        self.assertEqual(state['averageSecondsByKind']['render-full'],6)
+
     def test_old_pending_job_stays_visible_after_history_window(self):
         add(self.service,'old-waiting',status='QUEUED',created=-1)
         for i in range(1200):add(self.service,str(i),created=i)
@@ -57,9 +71,10 @@ class SnapshotTest(unittest.TestCase):
 
     def test_nonimage_payload_is_not_parsed_or_exposed_during_polling(self):
         add(self.service,'narration','narration',payload={'unused':'x'*100000})
+        add(self.service,'legacy','render-full',payload={'unused':'x'*100000})
         with patch('studio_service.json.loads',side_effect=AssertionError('Unneeded payload parse')):
             state=self.service.snapshot()
-        self.assertEqual(state['jobs'][0]['timingProfile'],'narration')
+        self.assertEqual({j['timingProfile'] for j in state['jobs']},{'narration','render-full'})
         self.assertNotIn('unused',str(state))
 
     def test_real_restart_marks_cloud_work_interrupted_without_requeueing_it(self):

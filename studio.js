@@ -300,8 +300,12 @@ async function restore() {
     $('#rate').value = job.speed; $('#volume').value = job.volume; $('#format').value = 'opus'; $('#bitrate').value = [64, 128, 256].includes(job.bitrate) ? job.bitrate : 64; $('#engine').value = job.engine;
     $('#pronunciation').value = job.pronunciation || '';
     initializeRun(job, parts); outputs(); formatOutputs(); $('#recovery').hidden = true; setFullDownload(!job.complete);
-    $('#resumeSaved').hidden = job.complete || job.processed >= job.text.length;
-    $('#recordingNote').textContent = job.complete ? 'Saved recording restored. Your downloads are ready.' : 'Saved parts restored. Resume to generate the remaining text.';
+    const canResume = !job.complete && job.processed < job.text.length && job.format === 'opus';
+    $('#resumeSaved').hidden = !canResume;
+    if (job.complete) $('#recordingNote').textContent = 'Saved recording restored. Your downloads are ready.';
+    else if (canResume) $('#recordingNote').textContent = 'Saved parts restored. Resume to generate the remaining text.';
+    else if (job.format !== 'opus') $('#recordingNote').textContent = 'Your original parts are ready to download. Use the remaining text for a new Opus recording.';
+    else $('#recordingNote').textContent = 'Your saved parts are ready to download.';
     status('Saved recording restored.'); updateRecording();
   } catch { status('Saved recording could not be opened.'); }
 }

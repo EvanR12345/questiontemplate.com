@@ -10,9 +10,9 @@ class PreparedChapters(VideoRenderer):
     def __init__(self,*args):super().__init__(*args);self.calls=[]
     def chapter(self,p,ch,gate):
         return {'path':f'chapter-{ch["number"]}.mp4','duration':ch['audio']['duration'],'signature':str(ch['number'])}
-    def run(self,args,gate,log,multiple_outputs=False):
+    def run(self,args,gate,log,multiple_outputs=False,*,narration=None):
         self.calls.append(list(args))
-        return super().run(args,gate,log,multiple_outputs)
+        return super().run(args,gate,log,multiple_outputs,narration=narration)
 
 
 def fixture(root,ffmpeg=None,fps=30,audio_rate=24000):
@@ -99,6 +99,16 @@ class FullMuxCommandTest(unittest.TestCase):
                 p['intro']['enabled']=False;p['settings']['video']['fps']=60
                 self.assertEqual(renderer.full_mux_forecast(p)['eligibility'],'unsupported')
 
+    def test_cumulative_pcm_boundary_drift_selects_decoded_join_and_updates_forecast(self):
+        with tempfile.TemporaryDirectory() as root:
+            store, p, renderer = fixture(root)
+            folder = store.folder(p['id'])
+            paths = [folder / ch['audio']['path'] for ch in p['chapters']] * 6
+            durations = [.625] * len(paths)
+            self.assertEqual(renderer.narration_join(paths, durations, 30), ('decoded', 1))
+            self.assertFalse(renderer.direct_full_mux_supported(p['settings']['video'], paths, durations))
+            self.assertEqual(renderer.narration_join(paths[:2], [.617, .617], 30), ('original', None))
+
     def test_failed_fresh_mux_keeps_chapters_and_does_not_publish_complete_story(self):
         with tempfile.TemporaryDirectory() as root:
             store,p,renderer=fixture(root)
@@ -123,6 +133,114 @@ class FullMuxCommandTest(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('STUDIO_TEST_FFMPEG'),'Set STUDIO_TEST_FFMPEG for real media verification')
 class FullMuxMediaTest(unittest.TestCase):
+    @staticmethod
+    def as_opus(folder, chapter, ffmpeg):
+        source = folder / chapter['audio']['path']
+        target = source.with_suffix('.opus')
+        subprocess.run([ffmpeg, '-v', 'error', '-y', '-i', str(source), '-c:a', 'libopus',
+                        '-b:a', '128k', str(target)], check=True, capture_output=True, timeout=30)
+        chapter['audio']['path'] = target.name
+
+    def assert_chapter_tones(self, path, duration, tones):
+        ffmpeg = os.environ['STUDIO_TEST_FFMPEG']
+        raw = subprocess.check_output([ffmpeg, '-v', 'error', '-i', str(path), '-map', '0:a:0',
+                                       '-ar', '24000', '-ac', '1', '-f', 's16le', '-'], timeout=30)
+        # AAC may expose one extra output packet of decoder padding.
+        self.assertAlmostEqual(len(raw) / 48000, duration, delta=.05)
+        for offset, hz in tones:
+            start = round(offset * 24000) * 2
+            samples = [x for (x,) in struct.iter_unpack('<h', raw[start:start + 4800])]
+            self.assertEqual(len(samples), 2400)
+            angle = math.tau * hz / 24000
+            real = sum(x * math.cos(i * angle) for i, x in enumerate(samples))
+            imag = sum(x * math.sin(i * angle) for i, x in enumerate(samples))
+            self.assertGreater(2 * math.hypot(real, imag) / len(samples), 2000, (offset, hz))
+
+    def test_mixed_saved_audio_preserves_later_chapters_and_supersedes_bad_cache(self):
+        ffmpeg = os.environ['STUDIO_TEST_FFMPEG']
+        for opus_index in (0, 1):
+            with self.subTest(opusChapter=opus_index), tempfile.TemporaryDirectory() as root:
+                store, p, renderer = fixture(root, ffmpeg)
+                folder = store.folder(p['id'])
+                self.as_opus(folder, p['chapters'][opus_index], ffmpeg)
+                p = store.save(p)
+                sources = {path: path.read_bytes() for path in folder.iterdir()
+                           if path.suffix in ('.wav', '.opus')}
+                previous = story_path(store, p)
+                previous.write_bytes(b'preserved previous export')
+                result = renderer.full(p, lambda *_: None)
+                final = store.asset(p['id'], result['path'])
+                self.assertNotEqual(previous, final)
+                self.assertEqual(previous.read_bytes(), b'preserved previous export')
+                self.assert_chapter_tones(final, 1.2, [(.2, 430), (.8, 560)])
+                self.assertTrue(all(path.read_bytes() == before for path, before in sources.items()))
+                with patch.object(renderer, 'run') as encoder:
+                    repeat = renderer.full(store.load(p['id']), lambda *_: None)
+                encoder.assert_not_called()
+                self.assertTrue(repeat['reused'])
+
+    def test_real_opus_intro_preserves_following_legacy_wav_chapters(self):
+        ffmpeg = os.environ['STUDIO_TEST_FFMPEG']
+        with tempfile.TemporaryDirectory() as root:
+            store, p, renderer = fixture(root, ffmpeg)
+            p['intro'].update(enabled=True, duration=10, audioPath='audio-1.wav',
+                              placement='full_story_only', showTitle=False)
+            p = store.save(p)
+            self.assertEqual(renderer.full_mux_forecast(p)['eligibility'], 'unsupported')
+            result = renderer.full(p, lambda *_: None)
+            self.assert_chapter_tones(store.asset(p['id'], result['path']), 11.2,
+                                      [(.2, 430), (10.2, 430), (10.8, 560)])
+
+    def test_mixed_mux_cancellation_reaps_decoders_and_preserves_completed_inputs(self):
+        ffmpeg = os.environ['STUDIO_TEST_FFMPEG']
+        with tempfile.TemporaryDirectory() as root:
+            store, p, renderer = fixture(root, ffmpeg)
+            folder = store.folder(p['id'])
+            self.as_opus(folder, p['chapters'][1], ffmpeg)
+            p = store.save(p)
+            processes = []
+            real_popen = subprocess.Popen
+            def capture(*args, **kwargs):
+                process = real_popen(*args, **kwargs)
+                processes.append(process)
+                return process
+            seen_audio = False
+            def cancel(message):
+                nonlocal seen_audio
+                if seen_audio:
+                    raise RuntimeError('Fixture cancelled during audio decode')
+                seen_audio = message == 'Joining chapter narration'
+            with patch.object(subprocess, 'Popen', side_effect=capture):
+                with self.assertRaisesRegex(RuntimeError, 'Fixture cancelled'):
+                    renderer.full(p, cancel)
+            self.assertTrue(seen_audio)
+            self.assertTrue(all(proc.poll() is not None for proc in processes))
+            self.assertFalse(list(folder.glob('*.writing.*')))
+            self.assertFalse(list(folder.glob('*.partial.mp4')))
+            self.assertTrue((folder / 'chapter-1.mp4').is_file())
+            self.assertTrue((folder / 'audio-2.opus').is_file())
+
+    def test_eighty_opus_chapters_keep_last_marker_and_bounded_command_size(self):
+        ffmpeg = os.environ['STUDIO_TEST_FFMPEG']
+        with tempfile.TemporaryDirectory() as root:
+            store, p, renderer = fixture(root, ffmpeg)
+            folder = store.folder(p['id'])
+            for ch in p['chapters']:
+                self.as_opus(folder, ch, ffmpeg)
+            for index in range(2, 80):
+                template = p['chapters'][index % 2]
+                ch = new_chapter(index + 1)
+                for field in ('sourceText', 'cleanNarrationText', 'audio'):
+                    ch[field] = copy.deepcopy(template[field])
+                os.link(folder / f'chapter-{template["number"]}.mp4', folder / f'chapter-{ch["number"]}.mp4')
+                p['chapters'].append(ch)
+            p = store.save(p)
+            result = renderer.full(p, lambda *_: None)
+            self.assert_chapter_tones(store.asset(p['id'], result['path']), 48.,
+                [(i * .6 + .2, (430, 560)[i % 2]) for i in (0, 1, 37, 60, 79)])
+            # Sources are supplied via a concat list, even with high chapter counts.
+            self.assertLess(max(map(len, renderer.calls)), 40)
+
     def test_real_aac_chapters_keep_frames_pcm_and_packet_timestamps(self):
         ffmpeg=os.environ['STUDIO_TEST_FFMPEG']
         probe=os.environ.get('STUDIO_TEST_FFPROBE') or str(Path(ffmpeg).with_name('ffprobe.exe' if os.name=='nt' else 'ffprobe'))

@@ -58,6 +58,11 @@ class CloudRenderTests(unittest.TestCase):
         recipe=(root/'cloud-render.Dockerfile').read_text(encoding='utf-8')
         copy_line=recipe.split('COPY ',1)[1].split('./',1)[0].replace('\\',' ')
         names=copy_line.split()
+        context=(root/'.dockerignore').read_text(encoding='utf-8').splitlines()
+        self.assertEqual(context[0], '**')
+        self.assertEqual((root/'.gcloudignore').read_text().splitlines(), ['#!include:.dockerignore', '!.dockerignore'])
+        self.assertEqual({name.removeprefix('!') for name in context[1:]},
+                         set(names) | {'cloud-render-build.yaml', 'cloud-render.Dockerfile'})
         self.assertIn('studio_video_settings.py',names)
         self.assertIn('studio_render_inputs.py',names)
         self.assertIn('studio_voice_provider.py',names)
@@ -66,8 +71,8 @@ class CloudRenderTests(unittest.TestCase):
             environment=os.environ.copy();environment.pop('PYTHONPATH',None)
             result=subprocess.run([sys.executable,'-B','-c',
                 'import studio_cloud_render, studio_render_inputs; '
-                'from studio_data import new_project, ProjectStore; '
-                'p=new_project("Isolated container import"); '
+                'from studio_data import new_project, ProjectStore, validate_project; '
+                'p=validate_project(new_project("Isolated container import")); '
                 's=ProjectStore("scratch"); '
                 'studio_render_inputs.render_submission_signature(p,s)'],
                 cwd=folder,env=environment,capture_output=True,text=True,timeout=30)

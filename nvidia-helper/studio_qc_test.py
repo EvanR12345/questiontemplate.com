@@ -87,6 +87,33 @@ class PracticalQCTest(unittest.TestCase):
         self.p['settings'].update(maxImageRetries=3,qcSampleEvery=8,automaticRepair=False)
         self.assertEqual(before,review_settings_signature(self.p['settings']))
 
+    def test_reselecting_an_unchecked_image_requires_review_before_render(self):
+        from studio_qc import should_check
+        self.shot.update(status='COMPLETE',qc={'status':'UNCHECKED','pass':None,'checkLevel':'off'})
+        raw=copy.deepcopy(self.shot['qc'])
+        renderer=VideoRenderer(self.store,{})
+        for level in ('practical','strict','sampled'):
+            with self.subTest(level=level):
+                self.p['settings']['qcCheckLevel']=level
+                self.assertTrue(should_check(self.p,self.shot))
+                result=decision(self.p,self.shot,self.store)
+                self.assertTrue(result['blocking'])
+                self.assertEqual(result['disposition'],'pending')
+                with patch.object(renderer,'run') as encoder:
+                    with self.assertRaisesRegex(ValueError,'needs review'):
+                        renderer.chapter(self.p,self.p['chapters'][0],lambda *_:None)
+                    encoder.assert_not_called()
+        self.p['settings'].update(qcCheckLevel='sampled',qcSampleEvery=20)
+        other=copy.deepcopy(self.shot)
+        for index in range(100):
+            other['id']=f'unselected-{index}'
+            if not should_check(self.p,other):break
+        self.assertFalse(should_check(self.p,other))
+        self.assertFalse(decision(self.p,other,self.store)['blocking'])
+        self.p['settings']['qcCheckLevel']='off'
+        self.assertFalse(decision(self.p,self.shot,self.store)['blocking'])
+        self.assertEqual(self.shot['qc'],raw)
+
     def test_explicit_user_acceptance_survives_review_policy_change(self):
         from studio_qc import retain_review_settings
         accepted=self.accept();shot=get_shot(accepted,self.chid,self.sid)

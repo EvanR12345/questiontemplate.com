@@ -96,18 +96,25 @@ export async function renderControl(path,env,body,fetcher=fetch,access=federated
     response=await fetcher('https://run.googleapis.com/v2/'+config.job+':run',{
       method:'POST',redirect:'manual',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
       body:JSON.stringify({overrides:{taskCount:1,containerOverrides:[{env:[{name:'STUDIO_RENDER_JOB_ID',value:body.id}]}]}})});
-  }catch{return publicState(saved.value);}
-  const current=await read(env.STUDIO,key);
-  if(!response.ok){
-    current.value.status='FAILED';current.value.stage='Google rejected the render request; no fallback started';
-    current.value.errorType='CloudRunRequestRejected';await write(env.STUDIO,key,current.value,current.etag);
-    return publicState(current.value);
+  }catch{
+    // A timeout may arrive after the job started. Read its current receipt below.
   }
-  // Worker may already have claimed the request while the HTTP reply arrives.
-  // Only change submission state, never regress RESTORING/RENDERING/COMPLETE.
-  if(current.value.status==='SUBMISSION_UNKNOWN'){
+  const current=await read(env.STUDIO,key);
+  if(current.value.status!=='SUBMISSION_UNKNOWN'||!response)return publicState(current.value);
+  const rejected=[400,401,403,404,405,412,413,415,422,429].includes(response.status);
+  if(!response.ok&&!rejected)return publicState(current.value);
+  if(rejected){
+    current.value.status='FAILED';current.value.stage='Google rejected the render request; no fallback started';
+    current.value.errorType='CloudRunRequestRejected';
+  }else{
     current.value.status='QUEUED';current.value.stage='Waiting for Google render worker';
-    await write(env.STUDIO,key,current.value,current.etag);
+  }
+  try{await write(env.STUDIO,key,current.value,current.etag);}
+  catch(error){
+    // The worker can claim or complete while this receipt is being written.
+    const latest=await read(env.STUDIO,key);
+    if(latest&&latest.etag!==current.etag)return publicState(latest.value);
+    throw error;
   }
   return publicState(current.value);
 }

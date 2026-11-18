@@ -1,6 +1,6 @@
 """Bounded-memory FFmpeg assembly with cached chapters and separate intro."""
 
-import copy, hashlib, json, math, os, shutil, subprocess, time, wave
+import copy, hashlib, json, math, os, shutil, subprocess, threading, time, wave
 from pathlib import Path
 from studio_qc import decision as qc_decision
 from studio_data import digest
@@ -173,7 +173,50 @@ class VideoRenderer:
                      gate, self.store.folder(project_id) / 'audition-export.log')
         return {'exportPath':destination.name, 'exportCodec':label, 'exportBitrate':bitrate*1000}
 
-    def run(self, args, gate, log, multiple_outputs=False):
+    @staticmethod
+    def wait_for_ffmpeg(process, gate):
+        while process.poll() is None:
+            gate("Rendering video")
+            try:
+                process.wait(timeout=.15)
+            except subprocess.TimeoutExpired:
+                pass
+
+    @staticmethod
+    def stop_ffmpeg(process):
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+    def feed_narration(self, destination, segments, channels, gate, log):
+        """One decoder feeds the muxer at a time. No PCM file or open input per chapter."""
+        rate = 48000
+        elapsed = 0.
+        written = 0
+        for path, duration in segments:
+            gate("Joining chapter narration")
+            elapsed += duration
+            end = round(elapsed * rate)
+            samples = end - written
+            written = end
+            decoder = subprocess.Popen([
+                self.executable(), "-hide_banner", "-loglevel", "error", "-nostdin", "-xerror",
+                "-i", str(path), "-map", "0:a:0", "-af",
+                f"aresample={rate},apad=whole_len={samples},atrim=end_sample={samples}",
+                "-ac", str(channels), "-c:a", "pcm_f32le", "-f", "f32le", "pipe:1",
+            ], stdout=destination, stderr=log, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            try:
+                self.wait_for_ffmpeg(decoder, gate)
+                if decoder.returncode:
+                    raise RuntimeError("FFmpeg could not join the chapter narration. Original audio and completed videos are retained.")
+            finally:
+                self.stop_ffmpeg(decoder)
+
+    def run(self, args, gate, log, multiple_outputs=False, *, narration=None):
         # Cache names become visible only after FFmpeg succeeds. A cancelled
         # intro, WAV or concatenation must never be reused as a complete asset.
         destination = Path(args[-1])
@@ -185,22 +228,18 @@ class VideoRenderer:
             with Path(log).open("wb") as output:
                 proc = subprocess.Popen(
                     [self.executable(), "-hide_banner", "-nostdin", "-y", *staged_args],
+                    stdin=subprocess.PIPE if narration else None,
                     stdout=output,
                     stderr=output,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
                 try:
-                    while proc.poll() is None:
-                        gate("Rendering video")
-                        time.sleep(0.15)
-                except BaseException:
-                    proc.terminate()
-                    try:
-                        proc.wait(5)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait()
-                    raise
+                    if narration:
+                        with proc.stdin:
+                            self.feed_narration(proc.stdin, *narration, gate, output)
+                    self.wait_for_ffmpeg(proc, gate)
+                finally:
+                    self.stop_ffmpeg(proc)
             if proc.returncode:
                 detail=Path(log).read_text(errors='replace')[-1400:]
                 if 'No space left on device' in detail:
@@ -397,7 +436,8 @@ class VideoRenderer:
             and (old.get('renderIdentity') in (signature, previous_signature) or
                  self.allow_legacy_render_reuse and old.get('signature') == legacy_signature and all(s['motion'] == 'static' for s in visual_shots) and self.legacy_is_current(old_path, assets))
         ):
-            return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4",'reused':True}
+            return old | {'renderIdentity': signature, 'downloadName': f"chapter-{ch['number']:03d}.mp4",
+                          'reused':True,'renderTimingScope':'reused-base'}
         clip_jobs = []
         # A prior cloud run may have archived this exact chapter even when its
         # original project selection was retained. Recover by content identity
@@ -407,7 +447,7 @@ class VideoRenderer:
             return {'path':recovered.relative_to(self.store.folder(p['id'])).as_posix(),
                 'signature':signature,'renderIdentity':signature,'duration':ch['audio']['duration'],
                 'created':time.time(),'downloadName':f"chapter-{ch['number']:03d}.mp4",
-                'settingsSnapshot':capture_video_settings(p,ch),'reused':True}
+                'settingsSnapshot':capture_video_settings(p,ch),'reused':True,'renderTimingScope':'reused-base'}
         unique_jobs = {}
         durations = []
         for index, s in enumerate(shots):
@@ -448,6 +488,7 @@ class VideoRenderer:
             unique_jobs.setdefault(name,job)
             clip_jobs.append((name,unique_jobs[name]))
             durations.append(duration)
+        cached_clips = threading.Event()
         def render_clip(job, worker_gate):
             clip = Path(job['clip'])
             if self.asset_identity(p['id'],job['sourceAsset'])!=job['sourceDigest']:
@@ -460,8 +501,11 @@ class VideoRenderer:
                     raise ValueError('A source photo changed during rendering. Its stale clip was not cached; previous videos are retained.')
                 clip.with_suffix('.partial.mp4').replace(clip)
                 self.completed_output(clip)
+            else:
+                cached_clips.set()
             return clip
         clips = self.render_clips(p,clip_jobs,render_clip,gate,v)
+        fresh_chapter = len(unique_jobs) == len(shots) and not cached_clips.is_set()
         # Each incoming crossfade blends from the previous shot's final frame.
         # Only two clips are decoded at once, and every boundary keeps its own
         # transition. The fade occupies the incoming shot's first 250 ms, so
@@ -502,6 +546,8 @@ class VideoRenderer:
                     )
                     temporary.replace(target)
                     self.completed_output(target)
+                else:
+                    fresh_chapter = False
                 assembled.append(target)
             else:
                 assembled.append(clip)
@@ -512,6 +558,7 @@ class VideoRenderer:
         # Reuse existing silent assemblies. For new chapters, concatenate and
         # attach narration in one stream-copy pass, avoiding a second full video.
         if visual.is_file() and visual.stat().st_size:
+            fresh_chapter = False
             visual_input = ['-i',str(visual)]
         else:
             listing = self.concat_listing(assembled,destination.with_suffix('.concat.txt'))
@@ -557,6 +604,7 @@ class VideoRenderer:
             "created": time.time(),
             "downloadName": f"chapter-{ch['number']:03d}.mp4",
             "settingsSnapshot": capture_video_settings(p, ch),
+            "renderTimingScope": "fresh-chapter" if fresh_chapter else "reused-chapter-inputs",
         }
 
     def watermark_export(self, p, result, gate):
@@ -672,6 +720,7 @@ class VideoRenderer:
         return result | {
             "downloadName": base["downloadName"],
             "introDuration": self.intro_duration(p),
+            "renderTimingScope": "chapter-with-intro",
             "narrationRender": base,
         }
 
@@ -831,23 +880,37 @@ class VideoRenderer:
         return destination
 
     @staticmethod
-    def direct_full_mux_supported(video, sources, durations):
-        """Only the media envelope with verified packet/pixel parity may skip remux.
-
-        AAC priming plus output clipping differs for lower-rate audio/high fps.
-        Unknown headers and other formats keep the original two-pass assembly.
-        Intro eligibility uses its original PCM source, before the Opus sidecar.
-        """
-        if (video.get('width'),video.get('height'),video.get('fps'))!=(1280,720,30):return False
-        if not sources or len(sources)!=len(durations):return False
-        for source,duration in zip(sources,durations):
-            if source is None or Path(source).suffix.lower()!='.wav' or duration<.5:return False
+    def aligned_wave_format(paths, durations, fps):
+        """A packet join needs one PCM format and chapter starts aligned within a frame."""
+        if not paths or len(paths) != len(durations):
+            return None
+        lengths = {}
+        formats = set()
+        for path in dict.fromkeys(paths):
+            if path is None or Path(path).suffix.lower() != '.wav':
+                return None
             try:
-                with wave.open(str(source),'rb') as audio:
-                    if (audio.getframerate(),audio.getnchannels(),audio.getsampwidth(),audio.getcomptype())!=(24000,1,2,'NONE'):
-                        return False
-            except (OSError,ValueError,wave.Error,EOFError):return False
-        return True
+                with wave.open(str(path), 'rb') as source:
+                    rate = source.getframerate()
+                    formats.add((rate, source.getnchannels(), source.getsampwidth(), source.getcomptype()))
+                    lengths[path] = source.getnframes() / rate
+            except (OSError, ValueError, wave.Error, EOFError):
+                return None
+        if len(formats) != 1:
+            return None
+        drift = 0.
+        for path, seconds in zip(paths[:-1], durations):
+            drift += lengths[path] - seconds
+            if abs(drift) > 1 / fps:
+                return None
+        return formats.pop()
+
+    @staticmethod
+    def direct_full_mux_supported(video, sources, durations):
+        """Only the media envelope with verified packet/pixel parity may skip remux."""
+        if (video.get('width'),video.get('height'),video.get('fps'))!=(1280,720,30):return False
+        if any(duration < .5 for duration in durations):return False
+        return VideoRenderer.aligned_wave_format(sources, durations, 30) == (24000, 1, 2, 'NONE')
 
     def full_mux_forecast(self, project):
         """Read local headers only; forecasting must never restore cloud assets."""
@@ -870,14 +933,32 @@ class VideoRenderer:
             if not path.is_file():missing=True
             sources.append(path);durations.append(duration)
         if missing:return result
-        if self.direct_full_mux_supported(video,sources,durations):
+        if not project.get('intro', {}).get('enabled') and self.direct_full_mux_supported(video,sources,durations):
             return result | {'eligibility':'verified','effectivePolicy':'direct-concat-original-audio-v1'}
         return result | {'eligibility':'unsupported'}
+
+    def narration_join(self, paths, durations, fps):
+        """FFconcat copies the first input's codec parameters to all subsequent packets."""
+        if len(paths) == 1:
+            return 'original', None
+        if self.aligned_wave_format(paths, durations, fps) is not None:
+            return 'original', None
+        unique = dict.fromkeys(paths)
+        audio = {path: probe_audio(path, self.config.get('ffmpeg')) for path in unique}
+        channels = max(info['channels'] for info in audio.values())
+        if (all(path.suffix.lower() == '.opus' and info['channels'] == 1 for path, info in audio.items())
+                and all(abs(audio[path]['duration'] - seconds) <= 1 / 48000
+                        for path, seconds in zip(paths, durations))):
+            # The default Opus container duration includes encoder pre-skip.
+            # Set the decoded timeline explicitly so later chapters stay in time.
+            return 'timed-opus', None
+        return 'decoded', channels
 
     def full(self, p, gate, publication_project=None):
         files = []
         audios = []
         audio_sources = []
+        chapter_rendered = False
         durations = []
         duration = 0
 
@@ -926,6 +1007,8 @@ class VideoRenderer:
             # from the project. Guard the original inputs, not these overrides.
             requested_inputs=render_submission_signature(publication_project or p,self.store,self,ch['id'])
             result = self.chapter(p, ch, gate)
+            if not result.get('reused'):
+                chapter_rendered = True
 
             chapter_result = self.watermark_export(p,result,gate)
             def chapter_saved(latest):
@@ -956,25 +1039,35 @@ class VideoRenderer:
             duration += result["duration"]
         if not files:
             raise ValueError("Add and generate a chapter first.")
-        signature = digest(
-            {
-                "fullRendererVersion": 2,
-                "files": [
-                    str(f.relative_to(self.store.folder(p["id"]))) for f in files
-                ],
-                "video": p["settings"]["video"],
-            }
-        )
+        audio_join, channels = self.narration_join(audios, durations, p['settings']['video']['fps'])
+        identity = {
+            "fullRendererVersion": 2,
+            "files": [str(f.relative_to(self.store.folder(p["id"]))) for f in files],
+            "video": p["settings"]["video"],
+        }
+        if audio_join != 'original':
+            # Earlier exports can contain a missing or shifted last chapter.
+            # Leave them accessible and build under a different content identity.
+            identity.update(narrationJoin=audio_join, narrationDurations=durations)
+        signature = digest(identity)
         target = self.store.folder(p["id"]) / f"story-{signature[:12]}.mp4"
         reused_full = self.cached_asset(p['id'], target)
         assembly_policy = 'format-guarded-original-audio-v1'
+        timing_scope = 'fresh-assembly'
+        if chapter_rendered:
+            timing_scope = 'includes-chapter-render'
+        elif p['intro']['enabled']:
+            timing_scope = 'includes-intro'
         if not reused_full:
             # Join original chapter narration once. Copying separate chapter AAC tracks
             # can accumulate encoder padding at chapter boundaries.
             visual = target.with_name(target.stem + "-visual.mp4")
             log = self.store.folder(p["id"]) / "full-render.log"
             reuse_visual = self.cached_asset(p['id'], visual)
-            if not reuse_visual and not self.direct_full_mux_supported(p['settings']['video'],audio_sources,durations):
+            if reuse_visual and timing_scope == 'fresh-assembly':
+                timing_scope = 'reused-visual-assembly'
+            direct = audio_join == 'original' and self.direct_full_mux_supported(p['settings']['video'],audio_sources,durations)
+            if not reuse_visual and not direct:
                 self.concat(files,visual,gate,log,durations,video_only=True)
                 reuse_visual = True
             if reuse_visual:
@@ -995,27 +1088,20 @@ class VideoRenderer:
                 # the PTS/DTS distance used by reordered video frames.
                 video_copy_options = ['-bsf:v','setts=pts=PTS-STARTPTS:dts=DTS-STARTPTS']
                 visual_bytes = sum(path.stat().st_size for path in files)
-            listing = target.with_suffix(".audio.txt")
-            listing.write_text(
-                "\n".join(
-                    "file '"
-                    + str(f.resolve()).replace("\\", "/").replace("'", "'\\''")
-                    + "'"
-                    for f in audios
-                ),
-                encoding="utf-8",
-            )
+            narration_input = {}
+            if audio_join == 'decoded':
+                audio_input = ['-f', 'f32le', '-ar', '48000', '-ac', str(channels), '-i', 'pipe:0']
+                narration_input['narration'] = (zip(audios, durations), channels)
+            else:
+                listing = self.concat_listing(audios, target.with_suffix('.audio.txt'),
+                    durations if audio_join == 'timed-opus' else None)
+                audio_input = ['-f', 'concat', '-safe', '0', '-i', str(listing)]
             temporary = target.with_suffix(".partial.mp4")
             self.require_output_space(temporary,visual_bytes,duration)
             self.run(
                 [
                     *visual_input,
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
-                    "-i",
-                    str(listing),
+                    *audio_input,
                     "-map",
                     "0:v:0",
                     "-map",
@@ -1037,6 +1123,7 @@ class VideoRenderer:
                 ],
                 gate,
                 log,
+                **narration_input,
             )
             temporary.replace(target)
             self.completed_output(target)
@@ -1048,7 +1135,9 @@ class VideoRenderer:
             "created": time.time(),
             "settingsSnapshot": capture_video_settings(p),
             "fullAssemblyPolicy": assembly_policy,
+            "narrationJoin": audio_join,
             "reused": reused_full,
+            "renderTimingScope": "reused-base" if reused_full else timing_scope,
         },gate)
 
     def engagement_export(self, p, result, gate, namespace='full'):
@@ -1057,6 +1146,9 @@ class VideoRenderer:
         if s['outroEnabled'] and callable(getattr(self,'prepare_outro',None)):
             self.prepare_outro(p); s=settings(p)
         events=schedule(p,result['duration'],namespace)
+        if (result.get('renderTimingScope') in ('fresh-chapter','fresh-assembly') and
+                (events or s['outroEnabled'] or s['splitEnabled'] or p['settings'].get('watermark',{}).get('enabled'))):
+            result = result | {'renderTimingScope':'includes-export-effects'}
         if not events and not s['outroEnabled']:
             final=self.watermark_export(p,result,gate) | {'exportDestination':s['exportDestination']}
             if s['splitEnabled']:final=final|{'parts':self.export_parts(p,final,gate,s,namespace)}

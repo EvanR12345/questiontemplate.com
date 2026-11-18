@@ -22,7 +22,7 @@ class LeaseTests(unittest.TestCase):
     def test_paid_qc_tail_keeps_owned_worker_then_stops_after_all_same_checks(self):
         overlap=self.continuous();release=threading.Event();started=threading.Event();seen=[]
         def response(request,**kw):
-            index=len(seen);seen.append(index);raw=self.response(index).getvalue()
+            index=len(seen);seen.append(index);raw=self.response(index, request).getvalue()
             class Response(io.BytesIO):
                 def __iter__(stream):
                     started.set()
@@ -51,7 +51,9 @@ class LeaseTests(unittest.TestCase):
         overlap=CloudStoryOverlap(self.service,self.project,{'overlap':True,'generationStrategy':'dense'})
         seen=[]
         def response(request,**kw):
-            index=len(seen);seen.append(index);return self.response(index,passed=index>=2)
+            review = 'pass' in json.loads(request.data)['text']['format']['schema']['properties']
+            seen.append('review' if review else 'plan')
+            return self.response(len(seen), request, passed=seen.count('review') >= 3)
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
                  patch('studio_service.repair_budget_reason',return_value=None), \
@@ -59,7 +61,7 @@ class LeaseTests(unittest.TestCase):
                  patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
                  patch('openai_director.urllib.request.urlopen',side_effect=response):
                 overlap.main.run_dense_image_phase(self.project['id'])
-            self.assertEqual((len(self.provider.requests),len(seen)),(3,3))
+            self.assertEqual(len(self.provider.requests),3);self.assertEqual(seen,['review','review','plan','review'])
             self.assertEqual((self.rental.starts,self.rental.stops),(1,1))
             shot=self.service.store.load(self.project['id'])['chapters'][0]['scenes'][0]['shots'][0]
             self.assertEqual(shot['automaticRepairAttempts'],2);self.assertTrue(shot['qc']['pass'])

@@ -5,7 +5,7 @@ RUN pip install --no-cache-dir Pillow==11.3.0 'google-cloud-storage>=3.4,<4'
 WORKDIR /opt/studio
 # Explicit source allowlist: no models, local media, project exports or secrets.
 COPY studio_cloud_render.py studio_render.py studio_audio.py studio_data.py studio_storage.py \
-     google_storage.py studio_qc.py studio_branding.py studio_engagement.py \
+     google_storage.py immutable_upload.py studio_qc.py studio_director_limits.py studio_branding.py studio_engagement.py \
      render_queue.py studio_video_settings.py studio_render_inputs.py studio_voice_provider.py studio_automation.py ./
 RUN useradd --uid 10001 --create-home studio && mkdir /work && chown studio:studio /work
 USER studio

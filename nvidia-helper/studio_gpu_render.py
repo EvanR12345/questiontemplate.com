@@ -107,7 +107,7 @@ class NativeVideoRenderer(VideoRenderer):
             self._native=None
             if preparation:preparation.close()
             kernel.close()
-    def run(self,args,gate,log,multiple_outputs=False):
+    def run(self,args,gate,log,multiple_outputs=False,*,narration=None):
         context=self._native
         if context and '-frames:v' in args and args[-1] in context[3]:
             import numpy as np
@@ -134,4 +134,4 @@ class NativeVideoRenderer(VideoRenderer):
                 del source
         if '-c:a' in args and args[args.index('-c:a')+1]=='aac' and '-aac_coder' not in args:
             args=[*args[:-1],'-aac_coder','fast',args[-1]]
-        return super().run(args,gate,log,multiple_outputs)
+        return super().run(args,gate,log,multiple_outputs,narration=narration)

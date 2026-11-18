@@ -466,13 +466,69 @@ class VoiceLabTests(unittest.TestCase):
         selected = self.lab.select(dict(model='voxcpm2', jobId=job['id']))
         self.assertEqual(selected, self.lab.snapshot()['selected'])
 
+    def test_delayed_completion_uses_job_quote_or_its_original_helper_estimate(self):
+        if not self.ffmpeg:
+            self.skipTest('FFmpeg not installed')
+        for quote, expected, source in [(.89, .89, 'worker'), (0, 0, 'worker'),
+                                         (None, 3.6, 'helper')]:
+            with self.subTest(quote=quote):
+                self.config['voiceLabHourlyUSD'] = 3.6
+                job = self.lab.enqueue(self.body())
+                self.lab.tick()
+                self.assertNotIn('helperHourlyUSDAtEnqueue', self.worker.submits[-1])
+                self.complete(job['id'])
+                self.worker.jobs[job['id']]['metrics'].update(hourlyUSD=quote, workerWallSeconds=12)
+                self.config['voiceLabHourlyUSD'] = 9
+                self.lab.tick()
+                metrics = self.lab.job(job['id'])['metrics']
+                self.assertEqual((metrics['hourlyUSD'], metrics['rateSource']), (expected, source))
+                self.assertAlmostEqual(metrics['workerEstimatedUSD'], expected * 12 / 3600)
+                self.assertAlmostEqual(metrics['warm30SecondsComputeUSD'], expected * 4 / metrics['audioSeconds'] * 30 / 3600)
+                self.config['voiceLabHourlyUSD'] = 18
+                self.assertEqual(self.lab.job(job['id'])['metrics'], metrics)
+
+    def test_legacy_pending_audition_does_not_borrow_current_helper_rate(self):
+        if not self.ffmpeg:
+            self.skipTest('FFmpeg not installed')
+        job = self.lab.enqueue(self.body())
+        payload = json.loads(self.lab._get(job['id'])['payload'])
+        del payload['helperHourlyUSDAtEnqueue']
+        self.lab.db.execute('UPDATE jobs SET payload=? WHERE id=?', (json.dumps(payload), job['id']))
+        self.lab.db.commit()
+        self.lab.tick()
+        self.complete(job['id'])
+        self.config['voiceLabHourlyUSD'] = 9
+        self.lab.tick()
+        result = self.lab.job(job['id'])
+        self.assertEqual(result['status'], 'COMPLETED')
+        self.assertIsNone(result['metrics']['hourlyUSD'])
+        self.assertEqual(result['metrics']['rateSource'], 'unknown')
+
+    def test_worker_status_quote_precedes_helper_setting(self):
+        response = self.worker.request('/health')
+        for quote, rate, basis in [(0, 0, 'worker'), (.89, .89, 'worker'), (None, 3.6, 'helper'), (-1, None, 'unknown')]:
+            with self.subTest(quote=quote), patch.object(self.worker, 'request', return_value=response | {'hourlyUSD': quote}):
+                health = self.lab.health()
+                self.assertEqual((health['hourlyUSD'], health['rateSource']), (rate, basis))
+
+    def test_unknown_or_invalid_job_rates_do_not_become_free_or_use_a_new_host(self):
+        self.config['voiceLabHourlyUSD'] = 12
+        old = self.lab._metrics({'workerWallSeconds': 3, 'generationSeconds': 2}, 1)
+        self.assertIsNone(old['hourlyUSD'])
+        self.assertIsNone(old['workerEstimatedUSD'])
+        for invalid in (False, -1, '0', float('nan')):
+            with self.subTest(invalid=invalid):
+                computed = self.lab._metrics({'hourlyUSD': invalid, 'workerWallSeconds': 3}, 1, 12)
+                self.assertIsNone(computed['hourlyUSD'])
+                self.assertEqual(computed['rateSource'], 'unknown')
+
     def test_costs_remain_unknown_without_rate_or_measured_durations(self):
         self.config.pop('voiceLabHourlyUSD')
         metrics = self.lab._metrics({}, 2)
         self.assertIsNone(metrics['warm30SecondsComputeUSD'])
         self.assertIsNone(metrics['cold30SecondsComputeUSD'])
         self.config['voiceLabHourlyUSD'] = 3.6
-        metrics = self.lab._metrics(dict(generationSeconds=2, loadSeconds=3), 2)
+        metrics = self.lab._metrics(dict(generationSeconds=2, loadSeconds=3), 2, self.config['voiceLabHourlyUSD'])
         self.assertIsNotNone(metrics['warm30SecondsComputeUSD'])
         self.assertIsNone(metrics['cold30SecondsComputeUSD'])
 

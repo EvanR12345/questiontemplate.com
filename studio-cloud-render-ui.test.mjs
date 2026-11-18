@@ -68,3 +68,22 @@ test('disconnecting cloud rendering disables previous controls and late replies 
     assert.equal(calls,1);
   }finally{globalThis.document=original;}
 });
+
+test('working space and duration checks follow the selected export version',async()=>{
+  const original=globalThis.document,nodes=new Map();
+  for(const id of ['cloudRenderStatus','cloudRenderStart','cloudRenderRefresh','cloudRenderCancel',
+    'cloudRenderPlan','cloudRenderPlanResult','cloudRenderDestination'])nodes.set(id,{});
+  globalThis.document={getElementById:id=>nodes.get(id)};
+  const calls=[];
+  try{
+    const plan={durationSeconds:130,chapterCount:1,estimatedOutputBytes:12000000,
+      recommendedDiskGB:25,configuredDiskGB:25,withinVerifiedDuration:false,missingCloudInputs:0};
+    await wireCloudRender({p:project,api:async path=>{calls.push(path);return plan;},
+      active:()=>true,action:fn=>fn(),enabled:false});
+    nodes.get('cloudRenderDestination').value='youtube';
+    await nodes.get('cloudRenderPlan').onclick();
+    const params=new URLSearchParams(calls[0].split('?')[1]);
+    assert.equal(params.get('project'),project.id);
+    assert.equal(params.get('destination'),'youtube');
+  }finally{globalThis.document=original;}
+});

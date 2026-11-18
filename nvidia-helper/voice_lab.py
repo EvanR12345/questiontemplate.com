@@ -136,6 +136,15 @@ def _number(value, low=0, high=86400):
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and low <= value <= high else None
 
 
+def _audition_rate(quoted, configured):
+    # A zero quote is a known rate. An invalid quote cannot price this rental.
+    if quoted is not None:
+        rate = _number(quoted, 0, math.inf)
+        return rate, 'worker' if rate is not None else 'unknown'
+    rate = _number(configured, 0, 100)
+    return rate, 'helper' if rate is not None else 'unknown'
+
+
 class VoiceLab:
     def __init__(self, root, config, client=None):
         self.root = (Path(root) / '.voice-lab').resolve()
@@ -215,13 +224,15 @@ class VoiceLab:
             ready = value.get('ready') is True
             prepared = {m['id']: m.get('ready') is True for m in value.get('models', [])
                         if isinstance(m, dict) and m.get('id') in [model['id'] for model in MODELS]}
+            rate, rate_source = _audition_rate(value.get('hourlyUSD'), self.config.get('voiceLabHourlyUSD'))
             return dict(ready=ready, reason='' if ready else 'Voice worker is starting or its models need setup.',
                         model=value.get('activeModel') if value.get('activeModel') in [m['id'] for m in MODELS] else None,
                         startupSeconds=_number(value.get('startupSeconds')), models=prepared,
-                        hourlyUSD=_number(self.config.get('voiceLabHourlyUSD'), 0, 100))
+                        hourlyUSD=rate, rateSource=rate_source)
         except WorkerUnavailable as error:
+            rate, rate_source = _audition_rate(None, self.config.get('voiceLabHourlyUSD'))
             return dict(ready=False, reason=str(error), model=None, startupSeconds=None, models={},
-                        hourlyUSD=_number(self.config.get('voiceLabHourlyUSD'), 0, 100))
+                        hourlyUSD=rate, rateSource=rate_source)
 
     def snapshot(self):
         worker = self.health()
@@ -444,6 +455,8 @@ class VoiceLab:
         if health['models'].get(model['id']) is not True:
             raise WorkerUnavailable('This model is not prepared on the voice worker yet. Complete its setup before auditioning.')
         executable(self.config.get('ffmpeg'))
+        # Keep the legacy estimate for this audition even if collection occurs on a later rental.
+        payload['helperHourlyUSDAtEnqueue'] = _number(self.config.get('voiceLabHourlyUSD'), 0, 100)
         id, now = uuid.uuid4().hex, time.time()
         with self.lock:
             count = self.db.execute("SELECT count(*) FROM jobs WHERE status IN ('QUEUED','SUBMITTING','UNKNOWN','RUNNING','CANCEL_REQUESTED')").fetchone()[0]
@@ -492,14 +505,17 @@ class VoiceLab:
                                 (status, json.dumps(metrics), error, time.time(), id))
             self.db.commit()
 
-    def _metrics(self, source, audio_seconds):
+    def _metrics(self, source, audio_seconds, configured_rate=None):
         if not isinstance(source, dict):
             source = {}
-        metrics = {name: _number(source.get(name)) for name in ('generationSeconds', 'loadSeconds', 'startupSeconds')}
+        metrics = {name: _number(source.get(name)) for name in ('generationSeconds', 'loadSeconds', 'startupSeconds', 'workerWallSeconds')}
         metrics['audioSeconds'] = audio_seconds
-        rate = _number(self.config.get('voiceLabHourlyUSD'), 0, 100)
-        metrics.update(hourlyUSD=rate, warm30SecondsComputeUSD=None, modelLoad30SecondsComputeUSD=None, cold30SecondsComputeUSD=None,
-                       costBasis='Compute estimate from measured clip time and configured hourly rate. Excludes downloads/setup, idle time, storage and transfer. Cold includes recorded worker startup and model load only.')
+        rate, rate_source = _audition_rate(source.get('hourlyUSD'), configured_rate)
+        wall = metrics['workerWallSeconds']
+        metrics.update(hourlyUSD=rate, rateSource=rate_source,
+                       workerEstimatedUSD=rate*wall/3600 if rate is not None and wall is not None else None,
+                       warm30SecondsComputeUSD=None, modelLoad30SecondsComputeUSD=None, cold30SecondsComputeUSD=None,
+                       costBasis='Compute estimate from measured seconds and USD per GPU hour. Excludes downloads/setup, idle time, storage and transfer. Worker wall time includes model loading; the 30-second warm projection uses generation time only.')
         gen, load, startup = metrics['generationSeconds'], metrics['loadSeconds'], metrics['startupSeconds']
         if rate is not None and gen is not None and audio_seconds > 0:
             metrics['warm30SecondsComputeUSD'] = rate * gen / audio_seconds * 30 / 3600
@@ -531,7 +547,8 @@ class VoiceLab:
                     self._update(id, 'CANCELLED')
                     return
                 temporary.replace(target)
-                self._update(id, 'COMPLETED', self._metrics(response.get('metrics'), duration))
+                saved = json.loads(self._get(id)['payload'])
+                self._update(id, 'COMPLETED', self._metrics(response.get('metrics'), duration, saved.get('helperHourlyUSDAtEnqueue')))
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -544,6 +561,7 @@ class VoiceLab:
         try:
             if status == 'QUEUED':
                 payload = json.loads(row['payload'])
+                payload.pop('helperHourlyUSDAtEnqueue', None)
                 if payload.get('referenceId'):
                     with self.lock:
                         ref = self.db.execute('SELECT * FROM refs WHERE id=?', (payload['referenceId'],)).fetchone()

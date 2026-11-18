@@ -13,7 +13,7 @@ import {matchedHTML} from './pipeline-matched.mjs?v=production-components-202610
 import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=production-components-20261031';
 import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=production-components-20261031';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=production-components-20261031';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=zero-retry-20261118';
 import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=production-components-20261031';
 import {denseActive,denseLeaseRetained,imageRentalPercent} from './pipeline-dense.mjs?v=production-components-20261031';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -121,7 +121,10 @@ async function rebuild(){
     config=plan.config;setControls();
     gpuExplorer?.updateProject(config,evidence);
     renderGenerationSpeed();
-    $('batch').nextElementSibling.textContent=plan.groupSize>config.batch?`Long timeline: ${plan.groupSize} images per display group (requested ${config.batch}). Actual image count, model and inference are unchanged.`:'Display grouping only; inference stays unchanged. Long timelines automatically use larger groups.';
+    const groupHelp='Group size sets the scheduling model’s granularity. It can change projected overlap, time and cost. Production sends the same images and checks.';
+    $('batch').nextElementSibling.textContent=plan.groupSize>config.batch
+      ? `This timeline uses groups of ${plan.groupSize} images (requested ${config.batch}). ${groupHelp}`
+      : groupHelp;
     $('sampleField').hidden=config.qc!=='sampled';$('introFields').hidden=!config.intro;
     $('qcPolicyNote').textContent=reviewPolicyNote(config,result,evidence);
     $('modeNote').textContent=productionModeNote(config);

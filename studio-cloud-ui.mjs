@@ -33,22 +33,28 @@ export async function directCloudDownload(projectId,path,name,api,document=globa
   return true;
 }
 export async function cachedMediaLink(cache,projectId,path,api,now=Date.now){
-  if(!path)return '';
+  return (await cachedMediaCapability(cache,projectId,path,api,now)).url;
+}
+export async function cachedMediaCapability(cache,projectId,path,api,now=Date.now){
+  if(!path)return {url:'',expiresAt:null};
   const key=projectId+'/'+path,cached=cache.get(key);
   if(cached?.pending)return cached.pending;
-  if(cached?.expires>now())return cached.url;
+  if(cached?.expires>now())return {url:cached.url,expiresAt:cached.expiresAt};
   const entry={};
   cache.set(key,entry);
   entry.pending=(async()=>{
     try {
       const result=await api('media-link',{project:projectId,path});
-      const expires=Math.min(Number(result.expires)*1000-1000,now()+3000000);
+      const expiry=Number(result.expires)*1000;
+      const capability={url:result.url,expiresAt:Number.isFinite(expiry)&&expiry>0?expiry:null};
+      // The signed link can outlive the local cache entry.
+      const expires=Math.min(expiry-1000,now()+3000000);
       // A reconnect clears tickets. A late reply must not restore an old capability.
       if(cache.get(key)===entry){
-        if(expires>now())cache.set(key,{url:result.url,expires});
+        if(capability.expiresAt!==null&&expires>now())cache.set(key,{...capability,expires});
         else cache.delete(key);
       }
-      return result.url;
+      return capability;
     } catch(error){if(cache.get(key)===entry)cache.delete(key);throw error;}
   })();
   return entry.pending;

@@ -2,6 +2,7 @@
 import copy
 import time
 from studio_data import digest, get_chapter, get_shot
+from studio_action_history import mark_image_selection
 
 SCALARS = ('style', 'layoutMode', 'generationMode', 'voice', 'voiceEngine', 'voiceCompute', 'voiceLocalFallback', 'voiceChapterBatchSize',
            'voiceInstruction', 'qwenSpeaker', 'speed', 'narrationDelivery', 'soundEffects',
@@ -125,6 +126,7 @@ def workspace_change(store, pid, body):
             shot.setdefault('history', []).append({'imagePath': shot.get('imagePath'),
                 'metadata': copy.deepcopy(shot.get('imageMetadata', {})), 'qc': copy.deepcopy(shot.get('qc', {})),
                 'reason': 'Before choosing saved image', 'selected': False})
+            mark_image_selection(shot)
             shot['imagePath'] = selected['imagePath']
             shot['imageMetadata'] = copy.deepcopy(selected.get('metadata') or selected.get('imageMetadata') or {})
             shot['qc'] = {'status': 'UNREVIEWED', 'reason': 'Saved version selected; review current story requirements.'}

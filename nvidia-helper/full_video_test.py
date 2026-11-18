@@ -532,6 +532,50 @@ class FullVideoTest(unittest.TestCase):
         self.service.close()
         self.temp.cleanup()
 
+    def test_local_video_uses_local_images_on_a_managed_cloud_capable_helper(self):
+        from unittest.mock import Mock, patch
+        self.service.config['runpodManagedPodId'] = 'fixture'
+        cloud = Mock()
+        self.service.providers['comfyui'] = cloud
+        with patch('studio_gpu_broker.GPUReservation') as rent:
+            self.service.produce_story(self.project['id'], {})
+            self.service.produce_story(self.project['id'], {})
+        self.assertEqual(self.service.store.load(self.project['id'])['production']['rentalControl'],'local')
+        self.assertEqual(sum(call[0]=='image' for call in self.service.calls),2)
+        rent.assert_not_called()
+        cloud.generateImage.assert_not_called()
+
+    def test_cloud_selection_inside_local_production_cannot_dispatch_unowned_work(self):
+        from unittest.mock import Mock, patch
+        self.service.config['gpuProviderOrder'] = ['vast']
+        self.service.config['gpuImageVerifiedProviders'] = ['vast']
+        cloud = Mock()
+        self.service.providers['comfyui'] = cloud
+        original = self.service.analyze
+        def mixed_plan(project, chapter_id, options):
+            original(project, chapter_id, options)
+            self.service.store.mutate(project['id'], lambda p:
+                get_chapter(p,chapter_id)['scenes'][0]['shots'][0].update(imageProvider='comfyui'))
+        self.service.analyze = mixed_plan
+        with patch('studio_gpu_broker.GPUReservation') as rent:
+            with self.assertRaisesRegex(ValueError,'inside this local production'):
+                self.service.produce_story(self.project['id'], {})
+            rent.assert_not_called()
+        self.assertEqual(cloud.mock_calls, [])
+        self.assertIs(self.service.provider('comfyui'),cloud)
+
+    def test_local_choice_cannot_consume_a_cloud_handoff_or_override_cloud_only(self):
+        from unittest.mock import patch
+        self.service.config['runpodManagedPodId'] = 'fixture'
+        with patch('studio_gpu_broker.GPUReservation') as rent:
+            with self.assertRaisesRegex(ValueError,'owned cloud worker'):
+                self.service.produce_story(self.project['id'], {'ownedWorkerReceipt':{'podId':'fixture'}})
+            self.service.store.mutate(self.project['id'], lambda p:p['settings'].update(cloudImagesOnly=True))
+            with self.assertRaisesRegex(ValueError,'requires cloud images'):
+                self.service.produce_story(self.project['id'], {})
+            self.assertEqual(self.service.calls, [])
+            rent.assert_not_called()
+
     def test_two_chapters_finish_as_one_video_and_reuse_completed_stages(self):
         self.service.produce_story(self.project["id"], {})
         p = self.service.store.load(self.project["id"])

@@ -99,7 +99,16 @@ def completion_report(service, pid):
             issues.append({'intro': True, 'label': 'Intro: ' + (s.get('generationError') or assessment.get('reason') or
                 '; '.join(qc.get('issues', [])) or qc.get('status', 'Review finding')),
                 'blocking': bool(assessment.get('blocking'))})
-    current = bool(p.get('render', {}).get('path')) and not p.get('renderStale')
+    video_path = p.get('render', {}).get('path')
+    availability = 'none'
+    if video_path:
+        try:
+            availability = 'available' if service.store.has_asset(pid, video_path) else 'unavailable'
+        except Exception:
+            # A failed archive lookup cannot establish that the selected file is missing.
+            availability = 'unknown'
+    stale = p.get('renderStale')
+    current = availability == 'available' and not stale
     repairs = {}
     for s in shots:
         for version in [*s.get('history', []), {'imagePath': s.get('imagePath'), 'metadata': s.get('imageMetadata', {})}]:
@@ -108,12 +117,16 @@ def completion_report(service, pid):
                 repairs[meta.get('imageSHA256') or version.get('imagePath') or str(meta.get('time'))] = True
     status = production.get('status', 'NOT_COMPLETE')
     if not current and status == 'COMPLETE':
-        status = 'STALE_EXPORT' if p.get('render', {}).get('path') else 'NOT_COMPLETE'
+        if video_path and stale:
+            status = 'STALE_EXPORT'
+        else:
+            status = {'none': 'NOT_COMPLETE', 'unavailable': 'MISSING_EXPORT',
+                      'unknown': 'EXPORT_UNVERIFIED'}[availability]
     elif current and status in ('NOT_COMPLETE', 'COMPLETE', 'READY', 'PASSED'):
         status = 'COMPLETE'
     return {'project': pid, 'revision': p['revision'], 'generatedAt': time.time(),
         'status': status,
-        'videoPath': p.get('render', {}).get('path'), 'videoCurrent': current,
+        'videoPath': video_path, 'videoCurrent': current, 'videoAvailability': availability,
         'duration': p.get('render', {}).get('duration'),
         'scope': 'All retained project attempts, including failures and previews; not a single-run invoice.',
         'time': {'coveredWorkSeconds': trace.get('summary', {}).get('coveredWallSeconds'),

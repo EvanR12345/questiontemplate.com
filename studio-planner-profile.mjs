@@ -39,9 +39,11 @@ export function plannerSettings(config, profile, evidence) {
     next.introSeconds=profile.intro.duration;next.introImages=profile.introImages||5;
   }
   // A retry ceiling is not a measured replacement percentage.
-  if(!s.automaticRepair)next.retries=0;
+  if(!s.automaticRepair||s.maxImageRetries===0)next.retries=0;
   else warnings.push('Automatic repairs are enabled. Extra attempts remain your scenario allowance; a retry limit is not an error rate.');
-  if(s.unattendedProduction)
+  if(s.unattendedProduction&&s.maxImageRetries===0)
+    warnings.push('The saved zero-retry limit allows initial quality checks and no automatic replacement images.');
+  else if(s.unattendedProduction)
     warnings.push('Full-video automation is enabled: confirmed major errors use bounded repairs within saved caps; minor or uncertain Practical findings remain warnings. Repair work is separate from the initial image burst; the final finish time depends on how many repairs are needed.');
   next.directorTier=d.processingTier||'default';
   const profiles=evidence.directorCalibration?.profiles||[];
@@ -103,7 +105,7 @@ export function plannerSettings(config, profile, evidence) {
     next.repairRounds=Math.min(config.repairRounds||1,Math.max(1,phase.maxRepairRounds));
     const held=next.productionDenseHoldsGPUForQC;
     warnings.push('Installed Dense plans every chapter and prepares intro/references before one initial GPU burst. '+(held?'The saved policy retains one paid GPU lease through required QC and bounded repairs; QC-only waiting bills as idle time, not image work. No extra resume or model reload is assumed per repair round.':'Generation does not wait for QC; the GPU stops before its remaining QC tail.')+' Startup, readiness, transfers and shutdown still bill, so image-pipeline coverage cannot be 100%. Complete-production finish time remains unmeasured; compatible component data and explicitly labelled source-based projections determine this scenario.');
-    warnings.push(next.retries>0?`The ${next.retries}% extra-attempt allowance is spread across up to ${next.repairRounds} assumed repair rounds, not a measured defect rate. ${held?'Reviews and repairs stay on the same paid lease.':'Each nonempty round pays its own startup and shutdown before rechecks.'} Runtime retains each shot's saved ceiling of ${phase.maxRepairRounds} retries.`:
+    if(phase.maxRepairRounds>0)warnings.push(next.retries>0?`The ${next.retries}% extra-attempt allowance is spread across up to ${next.repairRounds} assumed repair rounds, not a measured defect rate. ${held?'Reviews and repairs stay on the same paid lease.':'Each nonempty round pays its own startup and shutdown before rechecks.'} Runtime retains each shot's saved ceiling of ${phase.maxRepairRounds} retries.`:
       `No repair rate is assumed. QC can require additional bounded repairs ${held?'on the same retained paid lease':'in separately billed bursts, each with startup and shutdown'}, up to the saved ${phase.maxRepairRounds} per-shot retry ceiling; their unknown work is excluded from this zero-extra-attempt scenario.`);
   }else if(profile.generationStrategy==='align'&&!profile.timedHistoryReady){
     next.readyChapters=next.chapters;
@@ -167,5 +169,5 @@ export function profileSummary(p) {
   const copies=p.imageExecution?.modelCopies||p.imageExecution?.gpuLanes||1;
   const window=p.generationStrategy==='dense'?(denseCapability(p)?`${p.denseImagePhase.generationTasks} generation tasks; ${p.denseImagePhase.qcTaskSlots} independent QC slots; plan first, ${p.denseImagePhase.holdsGPUForQC?'one paid lease through QC and repairs':'separate rental windows'}`:'Dense unavailable for this helper/setup'):
     p.imageAdmission?.maximumAfterVerification>p.imageTasks?`${p.imageTasks} image/check tasks; up to ${p.imageAdmission.maximumAfterVerification} after worker and RAM verification`:`${p.imageTasks||3} image/check tasks`;
-  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · ${s.unattendedProduction?'automatic completion and bounded repairs':'manual review policy'} · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${window}, ${copies===1?'one GPU lane':copies+' independent model copies on one GPU'} · ${d.processingTier||'default'} processing`;
+  return `${p.name} · saved revision ${p.revision} · ${v.width}×${v.height}/${v.fps} fps · ${v.motionMode||'director'} motion · ${s.voice} / ${s.narrationDelivery||'standard'} · ${i.model}, ${i.steps} steps, guidance ${i.guidance} · ${s.qcCheckLevel} visual checks · ${s.unattendedProduction?s.maxImageRetries===0?'automatic completion with zero repairs':'automatic completion and bounded repairs':'manual review policy'} · intro ${p.intro?.enabled?'On':'Off'} · ${d.parallelism||1} Luna tasks · ${window}, ${copies===1?'one GPU lane':copies+' independent model copies on one GPU'} · ${d.processingTier||'default'} processing`;
 }

@@ -441,8 +441,8 @@ def main():
     token = Path(args.token_file).read_text().strip()
     if not re.fullmatch('[A-Za-z0-9_-]{32,256}', token):
         parser.error('Use a private random bearer token of at least 32 characters.')
-    if args.hourly_usd is not None and (not math.isfinite(args.hourly_usd) or args.hourly_usd <= 0):
-        parser.error('Hourly rate must be the positive quoted rate, or omitted when unknown.')
+    if args.hourly_usd is not None and (not math.isfinite(args.hourly_usd) or args.hourly_usd < 0):
+        parser.error('Hourly rate must be the non-negative quoted rate, or omitted when unknown.')
     root = Path(args.root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     os.chmod(root, 0o700)

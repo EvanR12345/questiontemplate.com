@@ -12,14 +12,18 @@ export function auditionRequest(model, values) {
   if (!model) throw Error('Choose a model.');
   const mode = model.modes.find(item=>(typeof item==='string'?item:item.id)===values.mode);
   if (!mode) throw Error('Choose a supported mode.');
-  const requirements=typeof mode==='string'?{}:mode;
+  const requirements=typeof mode==='string'?{id:mode}:mode;
+  const needsReference=requirements.requiresReference || requirements.id==='clone';
+  const needsDescription=requirements.requiresDescription || requirements.id==='design';
+  const description=needsDescription || requirements.allowsDescription ? String(values.description||'').trim() : '';
   const text=String(values.text||'').trim();
   if (!text || text.length>2500) throw Error('Enter a script of up to 2,500 characters.');
   if (!model.languages.includes(values.language)) throw Error('Choose a supported language.');
-  if (requirements.requiresReference && !values.referenceId) throw Error('Choose a saved voice reference.');
-  if (requirements.requiresDescription && !String(values.description||'').trim()) throw Error('Describe the voice you want to create.');
+  if (needsReference && !values.referenceId) throw Error('Choose a saved voice reference.');
+  if (needsDescription && !description) throw Error('Describe the voice you want to create.');
   const parameters={};
   for (const control of model.parameters||[]) {
+    if (control.modes?.length && !control.modes.includes(values.mode)) continue;
     const value=parameterValue(control,values.parameters?.[control.id]??control.default);
     parameters[control.id]=value;
   }
@@ -29,7 +33,7 @@ export function auditionRequest(model, values) {
     if(!name||name.length>80||/[\r\n:<>]/.test(name)||scene.length>500)throw Error('Check the Drama character name and scene.');
     character={name,scene};
   }
-  return {model:model.id,mode:values.mode,text,language:values.language,description:String(values.description||'').trim(),...(values.referenceId?{referenceId:values.referenceId}:{}),...(character?{character}:{}),parameters};
+  return {model:model.id,mode:values.mode,text,language:values.language,description,...(needsReference?{referenceId:values.referenceId}:{}),...(character?{character}:{}),parameters};
 }
 export function parameterValue(control,raw) {
   if(control.type==='boolean'){

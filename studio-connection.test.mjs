@@ -11,7 +11,7 @@ test('paired empty startup placeholders show loading while real offline drafts r
   assert.equal(connectionLoading({...fixture(),_unsynced:true},true,true),false);
 });
 import {createEditorSave} from './studio-editor-save.mjs';
-import {backupSnapshot} from './studio-project-safety.mjs';
+import {backupSnapshot,rememberOfflineEdit} from './studio-project-safety.mjs';
 const deferred=()=>{let resolve,reject;return {promise:new Promise((yes,no)=>{resolve=yes;reject=no;}),get resolve(){return resolve;},get reject(){return reject;}};};
 const fixture=()=>({id:'pr-0123456789abcdef',revision:3,name:'Fixture',characters:[],settings:{image:{model:'preserve-selected'}},chapters:[{id:'chapter',name:'Chapter',sourceText:'Saved story',scenes:[{shots:[{imagePath:'saved.png'}]}]}]});
 
@@ -28,7 +28,7 @@ test('only an explicit missing project can import a retained local snapshot',asy
   const original={...fixture(),_unsynced:true},calls=[];
   const result=await resolveConnectedProject({project:original,projects:[],api:async(path,body)=>{
     calls.push(path);if(path.startsWith('project?'))throw Object.assign(Error('missing'),{status:404,code:'PROJECT_NOT_FOUND'});
-    assert.equal(body.project._unsynced,undefined);assert.equal(body.project.chapters[0].scenes[0].shots[0].imagePath,'saved.png');
+    assert.equal(body.onlyIfMissing,true);assert.equal(body.project._unsynced,undefined);assert.equal(body.project.chapters[0].scenes[0].shots[0].imagePath,'saved.png');
     return {...body.project,revision:4};
   }});
   assert.deepEqual(calls,['project?id='+original.id,'import']);assert.equal(result.preserveOffline,false);assert.equal(original._unsynced,true);
@@ -90,4 +90,22 @@ test('failed connection and browser checkpoint retain the current editor for eme
   const finished=f.context.startConnection();f.type('Latest unsaved words');
   response.reject(Error('helper not reachable'));await finished;
   assert.equal(f.editor.value,'Latest unsaved words');assert.equal(f.context.project._unsynced,true);assert.equal(f.context.connected,false);
+});
+
+
+test('editing after reconnect checkpoints locally until the complete offline draft is synced',async()=>{
+  const project={...fixture(),_unsynced:true};
+  project.chapters.push({id:'second',sourceText:'Offline correction in chapter two'});
+  const checkpoints=[], status={};
+  const context={project,connected:true,rememberOfflineEdit,health:{storage:{enabled:true}},ch:()=>project.chapters[0],
+    mutate:async()=>assert.fail('Partial draft edit reached the helper before explicit sync'),
+    cache:async()=>checkpoints.push(structuredClone(project)), $:()=>status};
+  const source=fs.readFileSync(new URL('./story-studio.mjs',import.meta.url),'utf8');
+  vm.runInNewContext(source.slice(source.indexOf('async function patch('),source.indexOf('async function action('))+';this.edit=patch;',context);
+  await context.edit('chapter','chapter',{sourceText:'New chapter one'});
+  assert.equal(checkpoints.length,1);
+  assert.equal(checkpoints[0].chapters[0].sourceText,'New chapter one');
+  assert.equal(checkpoints[0].chapters[1].sourceText,'Offline correction in chapter two');
+  assert.equal(checkpoints[0]._unsynced,true);
+  assert.match(status.textContent,/Saved in browser/);
 });

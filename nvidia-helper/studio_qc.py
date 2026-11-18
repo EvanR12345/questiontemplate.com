@@ -71,7 +71,11 @@ def review_settings_signature(settings):
 
 
 def review_settings_stale(project, shot, context=None):
-    signature=shot.get('qc',{}).get('reviewSettingsSignature')
+    qc=shot.get('qc',{})
+    if qc.get('status')=='UNCHECKED' and qc.get('pass') is None:
+        # A shot skipped by Off or by a previous sample has no review to reuse.
+        return should_check(project,shot,context)
+    signature=qc.get('reviewSettingsSignature')
     if not signature:return False
     current=context.get('reviewSettingsSignature') if context is not None else None
     if current is None:

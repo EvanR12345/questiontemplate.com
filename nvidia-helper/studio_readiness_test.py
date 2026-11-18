@@ -1,9 +1,10 @@
 """Readiness must reveal saved production blockers without paid dispatch or edits."""
-import copy, hashlib, shutil, unittest
-from pathlib import Path
+import copy, hashlib, json, shutil, unittest
 from unittest.mock import Mock, patch
 from studio_data import get_shot
+from studio_render import VideoRenderer
 from studio_service import StudioService
+from studio_storage import R2Archive
 import studio_qc_test as qc_fixtures
 
 
@@ -14,6 +15,7 @@ class ReadinessReviewTest(unittest.TestCase):
         self.service=object.__new__(StudioService)
         self.service.store=self.store
         self.service.config={'ffmpeg':__file__}
+        self.service.renderer=VideoRenderer(self.store,self.service.config)
         self.service.audio=Mock();self.service.audio.health.return_value={'backend':'fixture'}
         self.service.execution_journal=Mock();self.service.execution_journal.unresolved_project.return_value=[]
         self.service.storage=Mock();self.service.storage.status.return_value={'enabled':True,'provider':'Google Cloud Storage'}
@@ -30,10 +32,10 @@ class ReadinessReviewTest(unittest.TestCase):
         def apply(p):get_shot(p,self.fixture.chid,self.fixture.sid).update(shot_patch)
         self.store.mutate(self.pid,apply)
 
-    def check(self):
+    def check(self, options=None):
         path=self.store.folder(self.pid)/'project.json'
         before=hashlib.sha256(path.read_bytes()).hexdigest()
-        result=self.service.production_readiness(self.pid)
+        result=self.service.production_readiness(self.pid,options)
         self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),before)
         self.assertEqual(result['paidRequestsSubmitted'],0)
         self.worker.generateImage.assert_not_called();self.service.ensure_production_gpu.assert_not_called()
@@ -105,6 +107,88 @@ class ReadinessReviewTest(unittest.TestCase):
         row=next(c for c in report['checks'] if c['name']=='saved-visual-reviews')
         self.assertTrue(row['ready']);self.assertIn('repaired automatically',row['message'])
         self.assertEqual(self.store.load(self.pid),before)
+        self.service.ensure_production_gpu.assert_not_called()
+
+    def exhaust_saved_retry(self):
+        p=self.store.load(self.pid)
+        shot=get_shot(p,self.fixture.chid,self.fixture.sid)
+        self.change(automaticRepairAttempts=1,automaticRepairSpec=self.service.visual_spec_signature(p,shot))
+
+    def test_consumed_retry_blocks_until_a_new_spec_is_saved(self):
+        self.major()
+        self.store.mutate(self.pid,lambda p:p['settings'].update(maxImageRetries=1))
+        self.exhaust_saved_retry()
+        options={'unattended':True}
+        report=self.check(options)
+        row=next(c for c in report['checks'] if c['name']=='saved-visual-reviews')
+        self.assertFalse(row['ready']);self.assertIn('1 saved images',row['message'])
+        self.assertFalse(report['ready']);self.service.provider.assert_not_called()
+        self.change(prompt='The scene has substantively changed.')
+        self.assertTrue(self.check(options)['ready'])
+        self.worker.healthCheck.assert_called_once()
+
+    def test_manually_locked_major_finding_blocks_unless_explicitly_accepted(self):
+        self.major()
+        self.change(manual={'imagePath':True})
+        options={'unattended':True}
+        self.assertFalse(self.check(options)['ready'])
+        self.service.provider.assert_not_called()
+        self.fixture.accept()
+        self.assertTrue(self.check(options)['ready'])
+        self.service.provider.assert_not_called()
+
+    def test_unattended_pending_quality_can_resume_without_an_image_worker(self):
+        self.change(qc={'status':'PENDING','pass':None})
+        self.assertTrue(self.check({'unattended':True})['ready'])
+        self.service.provider.assert_not_called()
+
+    def test_cloud_only_reference_digest_preserves_consumed_retry_without_restoring(self):
+        self.major()
+        self.store.mutate(self.pid,lambda p:p['settings'].update(maxImageRetries=1))
+        self.change(manual={'referenceImages':True},referenceImages=[{'path':'face.png'}])
+        ref=self.store.asset_local(self.pid,'face.png')
+        ref.write_bytes(b'original reference')
+        self.exhaust_saved_retry()
+        digest=hashlib.sha256(ref.read_bytes()).hexdigest()
+        length=ref.stat().st_size
+        ref.unlink()
+        objects=Mock(provider='Google Cloud Storage',publisher_compatible=False)
+        objects.read.return_value=(json.dumps({'files':{'face.png':{
+            'key':f'studio/assets/{self.pid}/{digest}/face.png','sha256':digest,'bytes':length}}}).encode(),'receipt')
+        archive=R2Archive(self.store,self.store.root/'missing.json',objects=objects,start_worker=False)
+        self.addCleanup(archive.close)
+        with patch.object(self.store,'asset',side_effect=AssertionError('Readiness restored media')):
+            report=self.check({'unattended':True})
+        self.assertFalse(next(c for c in report['checks'] if c['name']=='saved-visual-reviews')['ready'])
+        objects.read.assert_called_once()
+        objects.download.assert_not_called()
+        self.assertFalse(ref.exists())
+
+    def test_local_route_reports_cloud_shot_and_fallback_conflicts_before_launch(self):
+        self.service.config.update(gpuProviderOrder=['lium'],gpuImageVerifiedProviders=['lium'])
+        self.change(imageProvider='comfyui',imagePath='',generationStale=True)
+        report=self.check()
+        row=next(c for c in report['checks'] if c['name']=='local-image-routing')
+        self.assertFalse(report['ready']);self.assertIn('cloud image provider',row['message'])
+        self.change(imageProvider='existing')
+        self.store.mutate(self.pid,lambda p:p['settings']['image'].update(
+            fallbackEnabled=True,fallback={'provider':'comfyui','model':'klein'}))
+        row=next(c for c in self.check()['checks'] if c['name']=='local-image-routing')
+        self.assertFalse(row['ready']);self.assertIn('cloud fallback',row['message'])
+        self.store.mutate(self.pid,lambda p:p['settings']['image'].update(fallbackEnabled=False))
+        self.assertTrue(self.check()['ready'])
+
+    def test_zero_retry_preflight_keeps_checks_and_blocks_only_a_known_blocker(self):
+        self.store.mutate(self.pid,lambda p:p['settings'].update(maxImageRetries=0))
+        report = self.service.production_readiness(self.pid,{'unattended':True})
+        self.assertTrue(report['ready'])
+        self.major()
+        report = self.service.production_readiness(self.pid,{'unattended':True})
+        row = next(c for c in report['checks'] if c['name']=='saved-visual-reviews')
+        self.assertFalse(row['ready'])
+        self.assertIn('zero-retry',row['message'])
+        self.assertFalse(report['ready'])
+        self.assertEqual(report['paidRequestsSubmitted'],0)
         self.service.ensure_production_gpu.assert_not_called()
 
     def test_unattended_invalid_combined_cap_is_blocking_before_paid_work(self):

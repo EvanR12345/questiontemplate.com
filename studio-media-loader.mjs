@@ -4,16 +4,18 @@ export function createMediaLoader({resolve,limit=4,Observer=globalThis.Intersect
   let generation=0,active=0,queue=[],observer;
   let seen=new WeakSet();
   let cleanups=[];
-  function bindPlayback(item){
+  function bindPlayback(item,initialLink){
     const node=item.node;
     if(!['VIDEO','AUDIO'].includes(node.tagName)||!node.addEventListener)return;
-    let issued=now(),recovering=false,applying=false,playing=false,restore;
+    // A new player can receive a ticket issued to an older view.
+    const renewAt=link=>Math.min(link.expiresAt??Infinity,now()+renewAfter);
+    let renewalTime=renewAt(initialLink),recovering=false,applying=false,playing=false,restore;
     const valid=()=>item.generation===generation&&node.isConnected;
     const onPlaying=()=>{playing=true;if(restore&&!applying)restore.playing=true;};
     const onPause=()=>{
-      // A user pause while the capability request is pending wins. Ignore only
-      // the pause caused by replacing src, whose saved state we must restore.
-      if(!applying){playing=false;if(restore)restore.playing=false;}
+      // Chromium also pauses a playing element when a range request fails.
+      // Keep its last playback intent through that error and the src swap.
+      if(!applying&&!node.error){playing=false;if(restore)restore.playing=false;}
     };
     const onMetadata=()=>{
       if(!restore||!applying||!valid())return;
@@ -23,13 +25,13 @@ export function createMediaLoader({resolve,limit=4,Observer=globalThis.Intersect
       if(saved.playing){try{Promise.resolve(node.play()).catch(()=>{node.title='Viewing link renewed. Press Play to continue.';});}catch{node.title='Viewing link renewed. Press Play to continue.';}}
     };
     const onError=()=>{
-      if(!valid()||recovering||now()-issued<renewAfter)return;
+      if(!valid()||recovering||now()<renewalTime)return;
       recovering=true;
       restore={time:Number(node.currentTime)||0,rate:node.playbackRate||1,playing};
       node.title='Renewing your private viewing link…';
-      queue.push({...item,refresh:true,renewed:url=>{
+      queue.push({...item,refresh:true,renewed:link=>{
         if(!valid())return;
-        issued=now();applying=true;node.title='';node.src=url;node.load?.();
+        renewalTime=renewAt(link);applying=true;node.title='';node.src=link.url;node.load?.();
       },failed:error=>{recovering=false;restore=undefined;node.title='Could not renew viewing link: '+error.message;}});
       pump();
     };
@@ -42,15 +44,16 @@ export function createMediaLoader({resolve,limit=4,Observer=globalThis.Intersect
       const item=queue.shift();
       if(item.generation!==generation||!item.node.isConnected)continue;
       active++;
-      Promise.resolve().then(()=>resolve(item.path,item.projectId,{refresh:Boolean(item.refresh)})).then(url=>{
+      Promise.resolve().then(()=>resolve(item.path,item.projectId,{refresh:Boolean(item.refresh)})).then(result=>{
+        const link=typeof result==='string'?{url:result}:result;
         if(item.generation===generation&&item.node.isConnected){
-          if(item.renewed)item.renewed(url);
+          if(item.renewed)item.renewed(link);
           else {
             if(['VIDEO','AUDIO'].includes(item.node.tagName)){
               if(!item.node.hasAttribute?.('preload'))item.node.preload='metadata';
               if(item.node.tagName==='VIDEO')item.node.playsInline=true;
             }
-            bindPlayback(item);item.node.src=url;
+            bindPlayback(item,link);item.node.src=link.url;
           }
         }
       }).catch(error=>{

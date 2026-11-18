@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -148,10 +149,21 @@ class DensePhaseTest(unittest.TestCase):
         return overlap
 
     @staticmethod
-    def response(index,passed=True):
+    def response(index, request, passed=True, **kwargs):
         value={'pass':passed,'issues':[] if passed else ['Wrong essential weapon.'],
             'findings':[] if passed else [{'issue':'Wrong essential weapon.','severity':'major'}],
             'repairPrompt':'' if passed else 'Correct the weapon.','action':'pass' if passed else 'image_edit'}
+        properties = json.loads(request.data)['text']['format']['schema']['properties']
+        if 'subjectObservations' in properties:
+            subjects = properties['subjectObservations']['items']['properties']['subjectId']['enum']
+            value['subjectObservations'] = [
+                {'subjectId': subject, 'restraint': 'not_visible', 'hands': 'not_visible', 'body': 'connected'}
+                for subject in subjects
+            ]
+        if 'pass' not in properties:
+            [(field, definition)] = properties.items()
+            assert field == 'prompt' or definition.get('description', '').startswith('prompt.')
+            value = {field: 'Mira holds the brass key in her hand.'}
         events=[{'type':'response.created','response':{'id':'dense-qc-'+str(index)}},
             {'type':'response.output_text.delta','delta':json.dumps(value)},
             {'type':'response.completed','response':{'id':'dense-qc-'+str(index),'status':'completed','service_tier':'default',
@@ -162,7 +174,7 @@ class DensePhaseTest(unittest.TestCase):
         overlap=self.prepared();release=threading.Event();qc_started=threading.Event();lock=threading.Lock();seen=[]
         def response(request,**kwargs):
             with lock:index=len(seen);seen.append(json.loads(request.data))
-            raw=self.response(index).getvalue()
+            raw=self.response(index, request).getvalue()
             class Response(io.BytesIO):
                 def __iter__(stream):
                     qc_started.set();self.assertTrue(release.wait(8),'QC release fixture timed out')
@@ -222,8 +234,9 @@ class DensePhaseTest(unittest.TestCase):
         overlap=CloudStoryOverlap(self.service,self.project,{'overlap':True,'generationStrategy':'dense'})
         seen=[]
         def response(request,**kwargs):
-            index=len(seen);seen.append(index)
-            return self.response(index,passed=index>=2)
+            review = 'pass' in json.loads(request.data)['text']['format']['schema']['properties']
+            seen.append('review' if review else 'plan')
+            return self.response(len(seen), request, passed=seen.count('review') >= 3)
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
                  patch('studio_service.repair_budget_reason',return_value=None), \
@@ -231,7 +244,7 @@ class DensePhaseTest(unittest.TestCase):
                  patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
                  patch('openai_director.urllib.request.urlopen',side_effect=response):
                 overlap.main.run_dense_image_phase(self.project['id'])
-            self.assertEqual(len(self.provider.requests),3);self.assertEqual(len(seen),3)
+            self.assertEqual(len(self.provider.requests),3);self.assertEqual(seen,['review','review','plan','review'])
             self.assertEqual(self.rental.starts,3);self.assertEqual(self.rental.stops,3)
             shot=self.service.store.load(self.project['id'])['chapters'][0]['scenes'][0]['shots'][0]
             self.assertEqual(shot['automaticRepairAttempts'],2);self.assertTrue(shot['qc']['pass'])
@@ -242,7 +255,7 @@ class DensePhaseTest(unittest.TestCase):
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
                  patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
-                 patch('openai_director.urllib.request.urlopen',return_value=self.response(0)) as request:
+                 patch('openai_director.urllib.request.urlopen',side_effect=partial(self.response, 0)) as request:
                 overlap.main.run_dense_image_phase(self.project['id'])
                 old=overlap.deferred_qc;old.stop_admission();old.pool.shutdown(wait=True)
                 old.queue.db.execute("UPDATE tasks SET status='CLAIMED'");old.queue.db.commit();old.queue.close()
@@ -276,7 +289,7 @@ class DensePhaseTest(unittest.TestCase):
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
                  patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
-                 patch('openai_director.urllib.request.urlopen',return_value=self.response(0)):
+                 patch('openai_director.urllib.request.urlopen',side_effect=partial(self.response, 0)):
                 overlap.main.run_dense_image_phase(self.project['id'])
         finally:overlap.close('COMPLETE')
         def strict_pending(p):
@@ -289,7 +302,7 @@ class DensePhaseTest(unittest.TestCase):
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
                  patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
-                 patch('openai_director.urllib.request.urlopen',return_value=self.response(1)) as request:
+                 patch('openai_director.urllib.request.urlopen',side_effect=partial(self.response, 1)) as request:
                 overlap.main.run_dense_image_phase(self.project['id'])
                 self.assertEqual(request.call_count,1)
             self.assertEqual(len(self.provider.requests),1);self.assertEqual(self.rental.starts,previous_starts)
@@ -313,9 +326,9 @@ class DensePhaseTest(unittest.TestCase):
 
     def test_stale_during_qc_preserves_manual_change_and_cannot_certify_current_shot(self):
         overlap=self.prepared(1);shot=self.project['chapters'][0]['scenes'][0]['shots'][0]
-        def response(*args,**kwargs):
+        def response(request, **kwargs):
             self.service.store.mutate(self.project['id'],lambda p:get_shot(p,self.project['chapters'][0]['id'],shot['id']).update(prompt='Manual newer direction'))
-            return self.response(0)
+            return self.response(0, request)
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
                  patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
@@ -374,7 +387,7 @@ class DensePhaseTest(unittest.TestCase):
             body=json.loads(request.data)
             content=json.loads(body['input'][1]['content'][0]['text'])
             is_intro=content['expectedShot']['narrationSegment']=='Intro fixture narration'
-            raw=self.response(1 if is_intro else 0).getvalue()
+            raw=self.response(1 if is_intro else 0, request).getvalue()
             class Response(io.BytesIO):
                 def __iter__(stream):
                     if is_intro:intro_started.set();self.assertTrue(release.wait(8))
@@ -401,7 +414,7 @@ class DensePhaseTest(unittest.TestCase):
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
                  patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
-                 patch('openai_director.urllib.request.urlopen',return_value=self.response(0)), \
+                 patch('openai_director.urllib.request.urlopen',side_effect=partial(self.response, 0)), \
                  patch.object(journal,'finish',side_effect=unresolved):
                 with self.assertRaises(RuntimeError):overlap.main.run_dense_image_phase(self.project['id'])
             self.assertEqual(overlap.render_futures,{})
@@ -430,9 +443,9 @@ class DensePhaseTest(unittest.TestCase):
             result=original(*args)
             if qc_worker:probed.set();release.set()
             return result
-        def response(*args,**kwargs):
+        def response(request, **kwargs):
             with count_lock:index=len(calls);calls.append(index)
-            return self.response(index)
+            return self.response(index, request)
         overlap.schedule_render=probe
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
@@ -459,7 +472,7 @@ class DensePhaseTest(unittest.TestCase):
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
                  patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
-                 patch('openai_director.urllib.request.urlopen',return_value=self.response(0)),ThreadPoolExecutor(max_workers=1) as pool:
+                 patch('openai_director.urllib.request.urlopen',side_effect=partial(self.response, 0)),ThreadPoolExecutor(max_workers=1) as pool:
                 future=pool.submit(overlap.main.run_dense_image_phase,self.project['id'])
                 try:
                     self.assertTrue(entered.wait(4));self.assertTrue(self.stopped.wait(4))
@@ -469,14 +482,58 @@ class DensePhaseTest(unittest.TestCase):
             self.assertEqual(len(overlap.render_futures),1)
         finally:release.set();overlap.close('COMPLETE')
 
+    def test_dense_reuse_reviews_only_unchecked_or_changed_intro_images(self):
+        from studio_qc import accept_image,review_settings_signature,review_signature
+        overlap=self.prepared(1)
+        store=self.service.store
+        pid=self.project['id']
+        try:
+            project=store.load(pid)
+            chapter_shot=project['chapters'][0]['scenes'][0]['shots'][0]
+            chapter_shot.update(imagePath='canonical.png',status='COMPLETE')
+            intro_shots=[{**copy.deepcopy(chapter_shot),'id':uid('intro-'),'chapterId':None,
+                          'narrationSegment':label} for label in ('unchecked','changed','accepted','current')]
+            project['intro'].update(enabled=True,shots=intro_shots)
+            image_hash=store.asset_digest(pid,'canonical.png')
+            for shot in [chapter_shot,*intro_shots]:
+                shot['qc']={'status':'PASSED','pass':True,'issues':[],'action':'pass',
+                            'checkedImagePath':'canonical.png','checkedImageSHA256':image_hash,
+                            'shotSpecSignature':self.service.visual_spec_signature(project,shot),
+                            'reviewSettingsSignature':review_settings_signature(project['settings'])}
+            intro_shots[0]['qc']={'status':'UNCHECKED','pass':None,'checkLevel':'off'}
+            intro_shots[1]['qc']['checkedImageSHA256']='0'*64
+            intro_shots[2]['qc']=copy.deepcopy(intro_shots[0]['qc'])
+            store.save(project)
+            accepted=intro_shots[2]
+            accept_image(store,pid,None,accepted['id'],{'imagePath':'canonical.png','imageSHA256':image_hash,
+                'reviewSpecSignature':review_signature(project,accepted,store)})
+            review_ids=iter(range(2))
+            def reviewed(request,**kwargs):
+                return self.response(next(review_ids),request)
+            with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
+                 patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \
+                 patch('openai_director.urllib.request.urlopen',side_effect=reviewed) as request:
+                overlap.main.run_dense_image_phase(pid)
+            saved=store.load(pid)['intro']['shots']
+            self.assertEqual(request.call_count,2)
+            self.assertEqual(saved[0]['qc']['status'],'PASSED')
+            self.assertEqual(saved[1]['qc']['checkedImageSHA256'],image_hash)
+            self.assertEqual(saved[2]['qcOverride']['decision'],'accepted')
+            self.assertEqual(saved[2]['qc'],intro_shots[2]['qc'])
+            self.assertEqual(saved[3]['qc'],intro_shots[3]['qc'])
+            self.assertEqual([shot['imagePath'] for shot in saved],['canonical.png']*4)
+            self.assertEqual(self.rental.starts,0)
+            self.assertEqual(self.provider.requests,[])
+        finally:overlap.close('COMPLETE')
+
     def test_intro_images_each_receive_one_check_and_share_the_initial_burst(self):
         overlap=self.prepared(1)
         self.service.store.mutate(self.project['id'],lambda p:p['intro'].update(enabled=True,shots=[
             {**copy.deepcopy(p['chapters'][0]['scenes'][0]['shots'][0]),'id':uid('intro-'),'chapterId':None}
             for _ in range(2)]))
         seen=[]
-        def response(*args,**kwargs):
-            index=len(seen);seen.append(index);return self.response(index)
+        def response(request, **kwargs):
+            index=len(seen);seen.append(index);return self.response(index, request)
         try:
             with patch('studio_service.require_shot',return_value={'status':'PASSED'}), \
                  patch('openai_director.OpenAIDirector.key',return_value='synthetic-key'), \

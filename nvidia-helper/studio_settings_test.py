@@ -95,6 +95,20 @@ class DispatchSettingsTest(unittest.TestCase):
         self.assertTrue(saved['imagePath']);self.assertEqual(saved['qc']['status'],'UNCHECKED')
         self.assertTrue(self.service.store.has_asset(p['id'],saved['imagePath']))
 
+    def test_newly_selected_check_reuses_unchecked_chapter_image_without_gpu(self):
+        p,ch,shot,provider=self.repair_fixture()
+        shot=get_shot(p,ch['id'],shot['id'])
+        shot.update(status='COMPLETE',qc={'status':'UNCHECKED','pass':None,'checkLevel':'off'})
+        p['settings'].update(qcCheckLevel='practical',unattendedProduction=False)
+        self.service.store.save(p)
+        self.service.ensure_production_gpu=Mock(side_effect=AssertionError('Only review work is pending'))
+        self.service.inspect_shot=Mock(return_value={'selected':True})
+        self.service.generate_production_chapter_images(p['id'],ch['id'],0,[ch['id']])
+        self.service.inspect_shot.assert_called_once()
+        self.service.ensure_production_gpu.assert_not_called()
+        provider.generateImage.assert_not_called()
+        self.assertEqual(get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])['imagePath'],'current.png')
+
     def test_changed_qc_policy_during_review_retains_result_without_certifying_new_settings(self):
         from studio_qc import review_settings_signature
         p,ch,shot,provider=self.repair_fixture()

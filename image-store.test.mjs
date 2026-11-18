@@ -63,7 +63,10 @@ test('reopens a closing connection before writing and preserves saved chapters',
   assert.deepEqual(await store.loadStudioProject('story'), project);
   await store.saveStudioProject({ ...project, name: 'Saved production' });
   assert.equal(storage.opens, 2);
-  assert.equal(storage.writes, 2);
+  assert.equal(storage.writes, 4); // Two atomic project/summary pairs.
+  assert.deepEqual(storage.values.get('summary:story'), {
+    id: 'story', name: 'Saved production', revision: undefined, chapters: 2, unsynced: false,
+  });
 });
 
 test('unexpected close and version changes invalidate the cached connection', async () => {

@@ -2,6 +2,7 @@
 import base64,copy,datetime,gzip,hashlib,io,json,math,mimetypes,re,subprocess,threading,time,zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from studio_engagement import settings as engagement_settings
 from studio_runpod import ProductionGPU,ManagedGPUError,bootstrap_diagnostic
 
 SOURCES=('studio_audio.py','studio_voice_provider.py','studio_cloud_inputs.py','studio_cloud_render_plan.py','studio_remote_render_worker.py','studio_render.py','studio_gpu_render.py','studio_gpu_codec.py',
@@ -58,8 +59,8 @@ def render_assets(project):
         for shot in intro.get('shots',[]):paths.add(shot.get('imagePath'))
     watermark=project['settings'].get('watermark',{})
     if watermark.get('enabled') and watermark.get('type')=='image':paths.add(watermark.get('imagePath'))
-    engagement=project['settings'].get('engagement',{})
-    if engagement.get('outroEnabled'):paths.add(engagement.get('outroAudioPath'))
+    engagement=engagement_settings(project)
+    if engagement['outroEnabled']:paths.add(engagement['outroAudioPath'])
     return sorted(p for p in paths if p)
 
 

@@ -1,13 +1,17 @@
 import copy
+import hashlib
+import json
+from pathlib import Path
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from studio_data import new_project, ProjectStore, digest
 from studio_action_history import record, undo
 from studio_workspace import workspace_change
 from studio_workspace_report import reference_checks, completion_report
 from studio_render import VideoRenderer
+from studio_storage import R2Archive
 
 
 class HistoryTest(unittest.TestCase):
@@ -144,6 +148,51 @@ class ReportTest(unittest.TestCase):
         self.assertTrue(r['videoPath']);self.assertFalse(r['videoCurrent'])
         p['renderStale']=False;p['production']['status']='RUNNING'
         self.assertEqual(completion_report(service,p['id'])['status'],'RUNNING')
+
+    def test_report_distinguishes_reachable_missing_and_unverified_selected_export(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=ProjectStore(folder)
+            p=new_project('Test')
+            p.update(render={'path':'saved.mp4','duration':20},renderStale=False,
+                     production={'status':'COMPLETE'})
+            p=store.save(p)
+            pid=p['id']
+            service=SimpleNamespace(store=store,trace_report=lambda _:{'spans':[],'summary':{}})
+            export=store.asset_local(pid,'saved.mp4')
+            contents=b'original export'
+            export.write_bytes(contents)
+            report=completion_report(service,pid)
+            self.assertEqual((report['status'],report['videoCurrent'],report['videoAvailability']),
+                             ('COMPLETE',True,'available'))
+            export.unlink()
+            report=completion_report(service,pid)
+            self.assertEqual((report['status'],report['videoCurrent'],report['videoAvailability']),
+                             ('MISSING_EXPORT',False,'unavailable'))
+            self.assertEqual(report['videoPath'],'saved.mp4')
+            self.assertEqual(report['duration'],20)
+
+            digest=hashlib.sha256(contents).hexdigest()
+            objects=Mock(provider='Google Cloud Storage',publisher_compatible=False)
+            objects.read.return_value=(json.dumps({'files':{'saved.mp4':{
+                'key':f'studio/assets/{pid}/{digest}/saved.mp4','sha256':digest,'bytes':len(contents)}}}).encode(),'receipt')
+            archive=R2Archive(store,Path(folder)/'missing.json',objects=objects,start_worker=False)
+            try:
+                report=completion_report(service,pid)
+                self.assertEqual((report['status'],report['videoCurrent'],report['videoAvailability']),
+                                 ('COMPLETE',True,'available'))
+                objects.read.assert_called_once()
+                self.assertFalse(export.exists())
+                archive.manifests.clear()
+                objects.read.side_effect=OSError('Private archive transport failure')
+                report=completion_report(service,pid)
+                self.assertEqual((report['status'],report['videoCurrent'],report['videoAvailability']),
+                                 ('EXPORT_UNVERIFIED',False,'unknown'))
+                self.assertEqual(report['videoPath'],'saved.mp4')
+                self.assertNotIn('Private archive transport failure',str(report))
+                self.assertEqual(store.load(pid),p)
+                objects.download.assert_not_called()
+            finally:
+                archive.close()
 
     def test_report_exposes_previously_passed_images_that_need_a_new_policy_review(self):
         p=new_project('Test');p['settings']['qcCheckLevel']='strict';c=p['chapters'][0]

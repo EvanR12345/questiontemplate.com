@@ -84,6 +84,45 @@ class CloudJobTest(unittest.TestCase):
         with self.assertRaises(JobCancelled):self.jobs.run(self.project,self.options)
         self.assertEqual(self.calls,[])
 
+    def test_selected_outro_controls_assets_and_verified_duration_for_both_platforms(self):
+        from studio_cloud_pod_render import render_assets
+        from studio_engagement import audio_signature
+        import wave
+        project = self.project
+        project['chapters'][0]['audio']['duration'] = 115
+        project['chapters'][0]['scenes'] = [{'shots': [{'imagePath': 'frame.png'}]}]
+        project['settings']['engagement'].update(exportDestination='youtube',
+            outroEnabled=False, patreonOutroEnabled=True, outroDuration=15, outroAudioPath='outro.wav')
+        project['settings']['engagement']['outroAudioSignature'] = audio_signature(project)
+        with wave.open(str(self.root / 'outro.wav'), 'wb') as audio:
+            audio.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+            audio.writeframes(b'\x00\x00' * 8000 * 17)
+        self.studio.store.asset_local = self.studio.store.asset = lambda _, path: self.root / path
+        self.archive.asset_record = lambda pid, name: {'bytes': 1}
+        self.jobs.capabilities = lambda: {'ready': True, 'maximumDurationSeconds': 120}
+        original = copy.deepcopy(project)
+        youtube = self.jobs.plan(project, 'youtube')
+        self.assertEqual(youtube['durationSeconds'], 115)
+        patreon = self.jobs.plan(project, 'patreon')
+        self.assertEqual(patreon['durationSeconds'], 132.5)
+        self.assertFalse(patreon['withinVerifiedDuration'])
+        self.assertGreater(patreon['estimatedOutputBytes'], youtube['estimatedOutputBytes'])
+        version = self.jobs.render_version(project, 'patreon', verify_outro=True)
+        self.assertIn('outro.wav', render_assets(version))
+        self.assertNotIn('outro.wav', render_assets(project))
+        self.assertEqual(project, original)
+        del self.jobs.validate
+        with patch('studio_qc.decision', return_value={'blocking': False}):
+            with self.assertRaisesRegex(ValueError, 'verified up to 120'):
+                self.jobs.start(project['id'], self.options | {'destination': 'patreon'})
+            self.assertEqual(self.database.execute('SELECT COUNT(*) FROM jobs').fetchone()[0], 0)
+            project['settings']['engagement'].update(outroEnabled=True, patreonOutroEnabled=False)
+            state = self.jobs.start(project['id'], self.options | {'destination': 'patreon'})
+        self.assertEqual(state['status'], 'QUEUED')
+        projected = self.jobs.render_version(project, 'patreon', verify_outro=True)
+        self.assertNotIn('outro.wav', render_assets(projected))
+        self.assertEqual(self.jobs.plan(project, 'patreon')['durationSeconds'], 115)
+
     def test_nonfinite_cap_and_path_traversal_are_rejected_before_work(self):
         for value in (None,True,float('inf'),float('nan'),0,-1,101):
             with self.assertRaises(ValueError):render_options(self.options|{'capUSD':value})

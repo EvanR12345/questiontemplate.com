@@ -7,8 +7,14 @@ import uuid
 
 EXCLUDED = {'actionHistory', 'revision', 'updated', 'created', 'schemaVersion',
             'production', 'exports', 'warnings', 'renderHistory', 'audioHistory',
-            'history', 'timingHistory', 'settingsHistory', 'setupHistory', 'previewRenders'}
+            'history', 'timingHistory', 'settingsHistory', 'setupHistory', 'previewRenders', 'imageSelectionRevision'}
 SECRET = re.compile(r'key|secret|token|password|credential|authorization', re.I)
+
+
+def mark_image_selection(shot):
+    # The bounded Undo ledger can evict older rows. Keep the last explicit choice
+    # on the shot, including a choice that returns to the same image bytes.
+    shot['imageSelectionRevision'] = uuid.uuid4().hex
 
 
 def snapshot(p):
@@ -94,6 +100,15 @@ def undo(p, identity):
             parent[key] = copy.deepcopy(item['before'])
         else:
             del parent[key]
+    # Undo itself is a new manual choice. Only touch shots whose image was
+    # chosen by this action, including a restore to the already selected path.
+    selections = {tuple(item['path'][:6]) for item in entry['changes']
+                  if len(item['path']) >= 7 and item['path'][0:5:2] == ['chapters','scenes','shots']
+                  and (item['path'][6] == 'imagePath' or entry['label'] in ('attach image','restore image'))}
+    for path in selections:
+        exists, shot = read(p, path)
+        if exists:
+            mark_image_selection(shot)
     # Undo never declares a previously rendered file current or revives old QC.
     from studio_qc import retain_review_settings
     retain_review_settings(p, previous_settings)

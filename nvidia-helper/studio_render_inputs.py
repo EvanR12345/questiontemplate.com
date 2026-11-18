@@ -3,7 +3,7 @@ import hashlib
 from studio_data import digest, get_chapter, shot_chapter
 
 
-def visual_spec_signature(project, shot, store, renderer=None):
+def visual_spec_signature(project, shot, store, renderer=None, *, reference_digest=None):
     fields = ('prompt','negativePrompt','imageProvider','imageModel','workflow','characters',
               'camera','location','action','pose','expression','lighting','narrationSegment',
               'continuity','intentionalAppearanceChanges')
@@ -25,11 +25,15 @@ def visual_spec_signature(project, shot, store, renderer=None):
     for ref in references:
         name=ref.get('path')
         if not name:continue
-        path=store.asset(project['id'],name)
-        if not path.is_file():fingerprint={'missing':True}
-        elif callable(getattr(renderer,'asset_identity',None)):
-            fingerprint=renderer.asset_identity(project['id'],name)
-        else:fingerprint=hashlib.sha256(path.read_bytes()).hexdigest()
+        if reference_digest is not None:
+            # Readiness uses local bytes or the verified cloud digest without restoring a file.
+            fingerprint=reference_digest(project['id'],name) or {'missing':True}
+        else:
+            path=store.asset(project['id'],name)
+            if not path.is_file():fingerprint={'missing':True}
+            elif callable(getattr(renderer,'asset_identity',None)):
+                fingerprint=renderer.asset_identity(project['id'],name)
+            else:fingerprint=hashlib.sha256(path.read_bytes()).hexdigest()
         fingerprints.append({'reference':ref,'bytes':fingerprint})
     return digest({'shot':{k:shot.get(k) for k in fields},'settings':settings,
         'source':source,'style':project['settings']['style'],

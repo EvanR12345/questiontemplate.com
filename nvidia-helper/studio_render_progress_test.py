@@ -51,7 +51,7 @@ class ProductionProgressTest(unittest.TestCase):
         self.journal=ExecutionJournal(root/'execution.sqlite3')
         self.context=self.journal.admit('job','p','ch',None,'early-chapter-render',1,'hash',{})
         self.scheduler_checks=[]
-        self.overlap=SimpleNamespace(root=self.service,
+        self.overlap=SimpleNamespace(root=self.service,dense_prewarm=None,
             scheduler=SimpleNamespace(check=lambda:self.scheduler_checks.append(True)),
             progress_keys={},frame_progress=FrameProgress(clock=lambda:self.now[0]),
             coordinator=self.coordinator,journal=self.journal,parent='job')

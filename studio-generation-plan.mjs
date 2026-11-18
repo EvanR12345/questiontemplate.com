@@ -12,9 +12,15 @@ export function strategyOptions(value, eligible, legacyOverlap = false) {
   if (value !== 'legacy' && !eligible) throw Error('Timed generation requires cloud ComfyUI images, Luna and an API spending cap. Choose the existing workflow to use another configuration.');
   return {generationStrategy: value, overlap: value !== 'legacy' || legacyOverlap};
 }
-export function strategyDescription(value,managed=false,modelCopies=1) {
+function denseLeaseDescription(holdsGPUForQC) {
+  if (holdsGPUForQC === true) return 'The GPU stays rented through the remaining quality checks and eligible repair rounds. Time spent waiting for checks is billed.';
+  if (holdsGPUForQC === false) return 'Studio stops the GPU before the remaining quality checks. Each eligible repair round starts a separate paid rental and stops it before rechecking.';
+  return 'This helper does not report whether it keeps the GPU rented during quality checks or starts separate rentals for repairs.';
+}
+export function strategyDescription(value,managed=false,modelCopies=1,holdsGPUForQC,imageProvider='comfyui') {
+  if (imageProvider !== 'comfyui') return strategySummary(value,managed,holdsGPUForQC,imageProvider);
   const detail = value === 'dense'
-    ? `Prepares all chapter plans, intro and required references before one initial image burst. Up to five generation tasks keep the configured image workers supplied while QC uses its own bounded queue and up to four shared API slots. ${managed?'Studio confirms GPU shutdown before the QC tail.':'Dense requires verified managed GPU startup and shutdown; it is unavailable on an externally controlled rental.'} Eligible repairs run in additional bounded batches, each with paid startup and shutdown before rechecks, preserving your existing per-shot retry ceilings. Setup, transfers and shutdown prevent a 100% image-work/rental guarantee. Dense requires eligible managed cloud images, Luna and automatic production.`
+    ? `Prepares all chapter plans, intro and required references before one initial image burst. Up to five generation tasks keep the configured image workers supplied while QC uses its own bounded queue and up to four shared API slots. ${managed?denseLeaseDescription(holdsGPUForQC):'Dense requires a verified managed GPU connection.'} Repairs follow your existing per-shot retry ceilings. Setup, transfers and shutdown prevent a 100% image-work/rental guarantee. Dense requires eligible managed cloud images, Luna and automatic production.`
     : value === 'align'
     ? 'Keeps chapter planning moving, then starts accepted images when matching timing history predicts the planning tail is covered, with a 15-second allowance. Without matching history it plans the chapters first. The allowance is a target, not a guaranteed finish.'
     : value === 'fastest'
@@ -24,8 +30,11 @@ export function strategyDescription(value,managed=false,modelCopies=1) {
   return detail + (managed ? ' Studio starts the configured stopped GPU when images are admitted and confirms shutdown before final story assembly. Ready chapters can render earlier while cloud work continues. Keep the helper and laptop awake for its spending-window watchdog. Rental timing and costs are estimates until verified.' :
     ' GPU rental start and stop remain external. Choosing a timed image-dispatch strategy does not schedule a pod or guarantee lower rental cost.');
 }
-export function strategySummary(value,managed=false) {
-  return (value==='dense'?(managed?'Plan everything first, generate all initial images in one supplied burst, stop the GPU, then finish QC. Additional bounded repair bursts have separate rental costs.':'Dense needs a supported managed GPU connection, cloud images, Luna and automatic production.'):value==='align' ? 'Align image dispatch with ongoing chapter planning using matching history. Without matching history, plan first.' :
+export function strategySummary(value,managed=false,holdsGPUForQC,imageProvider='comfyui') {
+  if (imageProvider !== 'comfyui') return value === 'legacy'
+    ? 'The selected image provider runs on the helper.'
+    : 'Timed and Dense strategies require cloud images. Choose the existing chapter-by-chapter workflow for local images.';
+  return (value==='dense'?(managed?'Plan every chapter, then generate the initial images in one burst. '+denseLeaseDescription(holdsGPUForQC):'Dense needs a supported managed GPU connection, cloud images, Luna and automatic production.'):value==='align' ? 'Align image dispatch with ongoing chapter planning using matching history. Without matching history, plan first.' :
     value==='fastest' ? 'Start images for each ready chapter while Luna plans the next.' : 'Keep the existing workflow and overlap setting.') +
     (managed ? ' Studio manages the configured GPU during image generation.' : ' GPU rental must be started and stopped separately.');
 }

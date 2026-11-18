@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { splitText, countWords, pcm16, wavBlob, duration, prepareBatches, estimatedBytes, recordedSeconds } from './audio-core.mjs';
-import { createEncoder, joinBytes } from './encode-audio.mjs';
 import { pronunciationRules, speechText } from './pronunciation.mjs';
 test('long scripts retain every character with no fixed input cap', () => {
   const source = 'This is a complete sentence. Another one follows!\n'.repeat(30000);
@@ -44,14 +43,12 @@ test('90–120-minute sizes and MP3 duration include codec padding', () => {
   assert.equal(estimatedBytes(7200, 'wav'), 345600044);
   assert.equal(recordedSeconds(0, 43200000, 'mp3', 48), 7200);
 });
-test('streaming MP3 encoding retains frames between buffers and flushes final audio', async () => {
-  const samples = Float32Array.from({ length: 24000 }, (_, i) => .25 * Math.sin(i * Math.PI * 2 * 220 / 24000));
-  const encoder = await createEncoder('mp3', 48), blocks = [];
-  for (let i = 0; i < samples.length; i += 1000) blocks.push(encoder.encode(samples.subarray(i, i + 1000)));
-  blocks.push(encoder.flush()); const mp3 = joinBytes(blocks);
-  assert.ok(mp3.length >= 6000 && mp3.length < 7000);
-  assert.equal(mp3[0], 255); assert.equal(mp3[1] & 224, 224);
-  assert.ok(recordedSeconds(samples.length, mp3.length, 'mp3', 48) >= 1);
+test('existing CBR MP3 checkpoints retain their padded playback duration', () => {
+  // A 24 kHz MPEG-2 Layer III stream stores 576 samples per frame.
+  const sourceFrames = 24000, bitrate = 48, paddedFrames = 42;
+  const bytes = paddedFrames * 144;
+  assert.equal(recordedSeconds(sourceFrames, bytes, 'mp3', bitrate), paddedFrames * 576 / 24000);
+  assert.equal(recordedSeconds(sourceFrames, bytes, 'opus', bitrate), 1);
 });
 test('pronunciation fixes are literal, whole-word, and retain sentence punctuation', () => {
   const rules = pronunciationRules('Maya = My uh\nAPI = A P I\nignored\nC++ = see plus plus');

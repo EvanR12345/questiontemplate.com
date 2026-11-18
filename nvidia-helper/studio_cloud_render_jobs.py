@@ -60,7 +60,32 @@ class CloudRenderJobs:
             'reason':'Ready for verified short render-only previews; long exports need a capped validation run.' if ready else
                 'Cloud GPU rendering needs a successful video test and private Google storage. Existing local rendering remains available.'}
 
-    def plan(self,project):
+    def render_version(self, project, destination=None, verify_outro=False):
+        from studio_audio import probe
+        from studio_engagement import audio_signature, settings
+        engagement = dict(project['settings'].get('engagement', {}))
+        if destination is not None:
+            engagement['exportDestination'] = destination
+        version = project | {'settings': project['settings'] | {'engagement': engagement}}
+        effective = settings(version)
+        if effective['outroEnabled']:
+            engagement.pop('outroAudioDuration', None)
+            path = effective['outroAudioPath']
+            if verify_outro and (not path or effective['outroAudioSignature'] != audio_signature(version)):
+                raise ValueError('Prepare and save the selected outro narration before starting a cloud render.')
+            if path:
+                # The free planner uses local metadata. Before renting, restore
+                # the selected short audio if needed to enforce the duration limit.
+                resolve = self.studio.store.asset if verify_outro else self.studio.store.asset_local
+                source = resolve(project['id'], path)
+                if source.is_file():
+                    engagement['outroAudioDuration'] = probe(source, self.studio.config.get('ffmpeg'))['duration']
+                elif verify_outro:
+                    raise ValueError('Save the selected outro narration to Google before starting a cloud render.')
+        return version
+
+    def plan(self,project,destination=None):
+        project=self.render_version(project,destination)
         from studio_cloud_render_plan import render_plan
         from studio_cloud_pod_render import render_assets
         sizes=[];missing=[]
@@ -70,8 +95,12 @@ class CloudRenderJobs:
             else:missing.append(path)
         plan=render_plan(project,sum(sizes),self.studio.config)
         limit=self.capabilities()['maximumDurationSeconds']
-        plan.update(currentVerifiedLimitSeconds=limit,withinVerifiedDuration=plan['durationSeconds']<=limit,
-            missingCloudInputs=len(missing),configuredDiskGB=self.studio.config.get('gpuWorkingDiskGB',25),
+        from studio_engagement import settings as engagement_settings
+        engagement=engagement_settings(project)
+        unknown_outro=engagement['outroEnabled'] and 'outroAudioDuration' not in engagement
+        within_limit=plan['durationSeconds']<=limit
+        plan.update(currentVerifiedLimitSeconds=limit,withinVerifiedDuration=None if within_limit and unknown_outro else within_limit,
+            outroDurationPending=unknown_outro,missingCloudInputs=len(missing),configuredDiskGB=self.studio.config.get('gpuWorkingDiskGB',25),
             paidRequestsSubmitted=0)
         plan['workingDiskSufficient']=plan['configuredDiskGB']>=plan['recommendedDiskGB']
         return plan
@@ -93,25 +122,19 @@ class CloudRenderJobs:
         if project['revision']!=options['revision']:raise ValueError('Project changed. Save and review the current version first.')
         video=project['settings']['video']
         if (video['width'],video['height'],video['fps'])!=(1280,720,30):raise ValueError('The verified cloud preview format is 720p30.')
-        duration=0.;chapters=[c for c in project['chapters'] if c.get('sourceText','').strip()]
+        chapters=[c for c in project['chapters'] if c.get('sourceText','').strip()]
         if not chapters:raise ValueError('A saved chapter is required.')
         from studio_qc import decision
         for chapter in chapters:
             audio=chapter.get('audio',{});seconds=audio.get('duration')
             if not audio.get('path') or type(seconds) not in (int,float) or not math.isfinite(seconds) or seconds<=0:
                 raise ValueError('Generate and save continuous narration before rendering.')
-            duration+=seconds
             shots=[s for scene in chapter.get('scenes',[]) for s in scene['shots']]
             if not shots or any(not s.get('imagePath') for s in shots):raise ValueError('Save every selected shot image before rendering.')
             if any(decision(project,s,self.studio.store)['blocking'] for s in shots):
                 raise ValueError('Resolve blocking image findings before rendering; advisory findings stay visible.')
-        intro=project['intro']
-        if intro.get('enabled'):duration+=intro['duration']*(len(chapters) if intro.get('placement')=='every_chapter' else 1)
-        engagement=project['settings'].get('engagement',{})
-        if engagement.get('outroEnabled'):duration+=engagement.get('outroDuration',15)
         from studio_cloud_render_plan import render_plan
-        version=copy.deepcopy(project);version['settings'].setdefault('engagement',{})['exportDestination']=options['destination']
-        duration=render_plan(version,config=self.studio.config)['durationSeconds']
+        duration=render_plan(project,config=self.studio.config)['durationSeconds']
         limit=self.capabilities()['maximumDurationSeconds']
         if duration>limit:raise ValueError(f'Cloud exports are verified up to {limit:g} seconds on the configured providers. A longer capped validation is required before production.')
         rental=self.studio.store.root/'.managed-rental.json'
@@ -148,7 +171,8 @@ class CloudRenderJobs:
                 if old['project']!=pid or json.loads(old['payload'])!=options:
                     raise ValueError('This render identity already belongs to another request.')
                 return self.status(pid,options['id'])
-            project=self.studio.store.load(pid);self.validate(project,options)
+            project=self.render_version(self.studio.store.load(pid),options['destination'])
+            self.validate(project,options)
             active=self.studio.db.execute("SELECT id FROM jobs WHERE status IN ('QUEUED','RUNNING')").fetchone()
             if active:raise ValueError('Finish or cancel the active queue before a render-only cloud preview.')
             self.studio.db.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -172,8 +196,8 @@ class CloudRenderJobs:
     def run(self,project,options):
         options=render_options(options);identity=options['id']
         if self.load(identity):raise ValueError('A cloud attempt already exists. Its result is retained; paid work is never replayed automatically.')
-        self.validate(project,options)
-        render_project=copy.deepcopy(project);render_project['settings'].setdefault('engagement',{})['exportDestination']=options['destination']
+        render_project=self.render_version(copy.deepcopy(project),options['destination'],verify_outro=True)
+        self.validate(render_project,options)
         # A separate reserve covers operations and transfer; this preview does
         # not borrow the project's image/AI budget or silently increase a cap.
         reserve=min(.05,options['capUSD']/5);compute_cap=options['capUSD']-reserve
@@ -207,7 +231,7 @@ class CloudRenderJobs:
         renderer=(self.renderer_factory or CloudPodRenderer)(self.studio.store,self.studio.storage,config,gate,
             self.studio.store.root/'.managed-rental.json',progress,lease_factory=RenderGPUReservation)
         try:
-            gate('Checking saved cloud inputs');prepared=renderer.capabilities(project)
+            gate('Checking saved cloud inputs');prepared=renderer.capabilities(render_project)
             report=renderer.run(render_project,identity,compute_cap,prepared_sources=prepared)
             # Results are added to the archive. The selected original render,
             # source text and manual edits are not overwritten by this preview.

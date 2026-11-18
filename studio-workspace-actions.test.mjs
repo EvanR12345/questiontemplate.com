@@ -10,7 +10,7 @@ const settle=()=>new Promise(resolve=>setImmediate(resolve));
 
 test('repair control reflects automatic completion and restores manual choices without disabling checks',()=>{
  const controls={'#settingUnattended':{checked:true},'#settingCheckLevel':{value:'practical'},
- '#settingQCPolicy':{},'#settingSampleEvery':{},'#settingRepair':{checked:false}};
+ '#settingQCPolicy':{},'#settingSampleEvery':{},'#settingRetries':{value:'2'},'#settingRepair':{checked:false}};
  const context={$:name=>controls[name],project:{settings:{automaticRepair:false}}};
  vm.runInNewContext(source.slice(source.indexOf('  let manualRepairChoice='),source.indexOf('  const updateWatermark =')),context);
  assert.equal(controls['#settingRepair'].checked,true);assert.equal(controls['#settingRepair'].disabled,true);
@@ -20,6 +20,10 @@ test('repair control reflects automatic completion and restores manual choices w
  controls['#settingUnattended'].checked=true;controls['#settingUnattended'].onchange();
  controls['#settingUnattended'].checked=false;controls['#settingUnattended'].onchange();
  assert.equal(controls['#settingRepair'].checked,true);
+ controls['#settingRetries'].value='0';controls['#settingRetries'].oninput();
+ assert.equal(controls['#settingRepair'].checked,false);assert.equal(controls['#settingCheckLevel'].value,'practical');
+ controls['#settingRetries'].value='2';controls['#settingRetries'].oninput();
+ assert.equal(controls['#settingRepair'].checked,true);
  controls['#settingCheckLevel'].value='off';controls['#settingCheckLevel'].onchange();
  assert.equal(controls['#settingRepair'].checked,false);assert.equal(controls['#settingRepair'].disabled,true);
 });
@@ -28,6 +32,7 @@ function fixture(api){
   const get=selector=>{if(!controls.has(selector))controls.set(selector,{value:selector==='#productionStrategy'?'align':'a',checked:false,innerHTML:'',addEventListener(){},click(){}});return controls.get(selector);};
   const context={project:{id:'a',revision:3,chapters:[{id:'ch-a'}],settings:{image:{provider:'comfyui'},director:{provider:'openai-luna'},budget:{openaiUSD:1}}},chapterId:'ch-a',connected:true,tab:'write',
     health:{cloudSchedulingAvailable:true,unattendedProductionAvailable:true},strategyChoices:new Map(),strategyDirty:new Set(),selectedStrategy,strategyOptions,
+    loadStudioProject:async()=>undefined,
     loadPerformance:async()=>({history:{},forecast:{}}),patch:async(scope,target,patch)=>Object.assign(context.project,patch),
     editorSave:{revision:1},projectSelection:createProjectSelection(),startingProduction:new Set(),
     root:{querySelectorAll:()=>[]},$:get,api:async(path,body)=>{calls.push({path,body});return api(path,body);},
@@ -49,6 +54,14 @@ test('autosaving before project selection may replace the snapshot without losin
   const f=fixture(async()=>({id:'b',chapters:[{id:'ch-b'}]}));
   f.context.flush=async()=>{f.context.project={...f.context.project,revision:4};f.context.editorSave.revision++;};
   await f.select('b');assert.equal(f.context.project.id,'b');assert.equal(f.calls.length,1);
+});
+test('selecting a project with pending offline edits keeps its browser draft when paired',async()=>{
+  const f=fixture(async()=>{throw Error('Unexpected helper project fetch');});
+  const draft={id:'b',_unsynced:true,chapters:[{id:'ch-b',sourceText:'Local correction'}]};
+  f.context.loadStudioProject=async id=>id==='b'?draft:undefined;
+  await f.select('b');
+  assert.equal(f.context.project,draft);
+  assert.equal(f.calls.length,0);
 });
 test('typing during project retrieval retains the editor and requests an explicit new selection',async()=>{
   const response=deferred(),f=fixture(()=>response.promise);const pending=f.select('b');await settle();

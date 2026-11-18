@@ -55,6 +55,14 @@ def selected(settings):
     if value not in MODELS: raise ValueError('Choose a supported narration model.')
     return value
 
+def anchor_identity(anchor):
+    if not anchor:return None
+    return (str(anchor['path']).replace('\\','/').rsplit('/',1)[-1],anchor['text'])
+
+def project_anchor(project):
+    engine=selected(project['settings'])
+    return anchor_identity(project.get('voiceAnchors',{}).get(engine)) if engine in ('dia-1.6b','fish-s2-pro') else None
+
 def location(settings):
     return 'local' if selected(settings)=='kokoro-82m' and settings.get('voiceCompute','local')=='local' else 'kaggle'
 
@@ -146,9 +154,20 @@ class KaggleVoice:
         temp=path.with_suffix(path.suffix+'.tmp')
         temp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');temp.replace(path)
 
-    def generate(self,text,target,settings,gate,preview=False,reference=None):
+    def generate(self,text,target,settings,gate,preview=False,reference=None,chapter=None):
         while not _KAGGLE_ADMISSION.acquire(timeout=.25):gate('Waiting for the shared Kaggle voice slot')
-        try:return self._generate(text,target,settings,gate,preview,reference)
+        try:
+            if chapter and not preview:
+                target=Path(target)
+                cached=self._cached_member(target,chapter)
+                if cached:return cached
+                item=dict(chapter,text=text,target=str(target))
+                recovered=self._recover_groups(target.parent.parent/'.voice-groups',{item['id']:item},gate)
+                if recovered:return recovered[item['id']]
+            result=self._generate(text,target,settings,gate,preview,reference,
+                                  chapter_id=chapter['id'] if chapter and not preview else None)
+            if chapter and not preview:self._write_chapter(target,chapter['signature'],result)
+            return result
         finally:_KAGGLE_ADMISSION.release()
 
     def generate_many(self,items,settings,gate,reference=None):
@@ -157,80 +176,199 @@ class KaggleVoice:
         Only bounded same-model groups; no chapter labels enter the audio.
         Receipts publish independently so an interrupted split can recover.
         """
-        from studio_data import sentences
-        from narration_audio import audio_segments
         if not 1<=len(items)<=4 or len({item['id'] for item in items})!=len(items):
             raise ValueError('Narration groups need 1–4 distinct chapters.')
         if sum(len(item['text'].split()) for item in items)>4000:
             raise ValueError('Keep one voice group under 4000 words.')
         while not _KAGGLE_ADMISSION.acquire(timeout=.25):gate('Waiting for the shared Kaggle voice slot')
         try:
-            cached=[]
+            folder=Path(items[0]['target']).parent.parent/'.voice-groups'
+            folder.mkdir(exist_ok=True)
+            results={}
             for item in items:
-                target=Path(item['target']);receipt=target.with_suffix('.voice-ready.json')
-                value=json.loads(receipt.read_text(encoding='utf-8')) if receipt.is_file() else None
-                valid=bool(value and value.get('inputSignature')==item['signature'] and target.is_file())
-                if valid:
-                    checksum=hashlib.sha256()
-                    with target.open('rb') as source:
-                        for block in iter(lambda:source.read(1024*1024),b''):checksum.update(block)
-                    valid=checksum.hexdigest()==value.get('sha256')
-                cached.append(dict(value['result'],path=str(target)) if valid else None)
-            if all(cached):return cached
-            # A previous split may have saved only part of the group. Never
-            # submit those completed chapters again under a new notebook ID.
-            missing=[index for index,value in enumerate(cached) if value is None]
-            items=[items[index] for index in missing]
-            parts=[];ranges=[]
-            for item in items:
-                start=len(parts)
-                parts.extend({'text':line,'chapterId':item['id'],'segments':audio_segments(line,settings.get('soundEffects','subtle'))}
-                    for line in sentences(item['text']))
-                if len(parts)==start:raise ValueError('Chapter narration is empty.')
-                ranges.append((start,len(parts)))
-            fingerprint=hashlib.sha256(json.dumps([(i['id'],i['signature']) for i in items],sort_keys=True).encode()).hexdigest()
-            folder=Path(items[0]['target']).parent.parent/'.voice-groups';folder.mkdir(exist_ok=True)
-            combined=folder/(fingerprint+'.opus')
-            result=self._generate('\n'.join(i['text'] for i in items),combined,settings,gate,
-                reference=reference,parts_override=parts)
-            if result.get('voiceAnchor'):
-                # Internal notebook work is hidden from the asset archive. The
-                # reusable narrator anchor must be an ordinary project asset.
-                source=Path(result['voiceAnchor']['path'])
-                anchor=folder.parent/source.name
-                if not anchor.exists():shutil.copyfile(source,anchor)
-                result['voiceAnchor']=dict(result['voiceAnchor'],path=str(anchor))
-            results=[]
-            chapter_audio=result.get('chapterAudio',[])
-            if len(chapter_audio)!=len(items):
-                raise ValueError('Kaggle did not return every separate chapter Opus.')
-            for item,(first,last),asset in zip(items,ranges,chapter_audio):
-                gate('Saving completed chapter narration from the shared voice job')
-                timings=result['sentences'][first:last]
-                begin=timings[0]['start'];end=timings[-1]['end']
-                target=Path(item['target']);target.parent.mkdir(exist_ok=True)
-                temporary=target.with_suffix('.voice-partial.opus')
-                try:
-                    shutil.copyfile(asset['path'],temporary)
-                    temporary.replace(target)
-                finally:
-                    temporary.unlink(missing_ok=True)
-                chapter_result={k:v for k,v in result.items() if k not in ('chapterAudio','setupAndModelLoadSeconds','speechGenerationSeconds','setupAndGenerationSeconds')} | {'path':str(target),'duration':end-begin,
-                    'sentences':[dict(t,index=index,start=max(0,t['start']-begin),end=t['end']-begin)
-                        for index,t in enumerate(timings)],
-                    'voiceBatch':{'chapters':len(items),'group':fingerprint,'setupShared':True,
-                        'groupSetupSeconds':result.get('setupAndModelLoadSeconds'),
-                        'groupSpeechSeconds':result.get('speechGenerationSeconds')},
-                    'timingAllocation':'Shared notebook measurements; not isolated chapter throughput'}
-                checksum=hashlib.sha256(target.read_bytes()).hexdigest()
-                self._write(target.with_suffix('.voice-ready.json'),{'inputSignature':item['signature'],
-                    'sha256':checksum,'result':chapter_result})
-                results.append(chapter_result)
-            for index,result in zip(missing,results):cached[index]=result
-            return cached
+                target=Path(item['target'])
+                result=self._cached_member(target,item)
+                old_single=target.with_name(target.name+'.kaggle.json')
+                if not result and old_single.is_file() and json.loads(old_single.read_text())['state']!='REJECTED':
+                    result=self._generate(item['text'],target,settings,gate,reference=reference,chapter_id=item['id'])
+                    self._write_chapter(target,item['signature'],result)
+                if result:results[item['id']]=result
+            missing={i['id']:i for i in items if i['id'] not in results}
+
+            # Older helpers journaled the complete group but published its member
+            # receipts independently. Reattach an intact group recipe on upgrade.
+            if missing and len(missing)<len(items):
+                group=self._group_request(folder,items,settings,reference)
+                path=folder/(group['group']+'.publication.json')
+                journal=folder/(group['group']+'.opus.kaggle.json')
+                if not path.is_file() and journal.is_file():
+                    saved=json.loads(journal.read_text(encoding='utf-8'))
+                    if saved.get('state')!='REJECTED':self._write(path,group)
+
+            # Only interrupted groups leave these records. Submitted notebooks keep their
+            # original identity, even when a caller now asks for just one of their chapters.
+            results.update(self._recover_groups(folder,missing,gate))
+            if missing:
+                group=self._group_request(folder,list(missing.values()),settings,reference)
+                path=folder/(group['group']+'.publication.json')
+                self._write(path,group)
+                results.update(self._publish_group(path,group,missing,gate))
+            return [results[i['id']] for i in items]
         finally:_KAGGLE_ADMISSION.release()
 
-    def _generate(self,text,target,settings,gate,preview=False,reference=None,parts_override=None):
+    def _recover_groups(self,folder,missing,gate):
+        results={}
+        for path in sorted(folder.glob('*.publication.json')):
+            if not missing:break
+            group=json.loads(path.read_text(encoding='utf-8'))
+            if 'outputs' not in group:
+                journal=folder/(group['group']+'.opus.kaggle.json')
+                if not journal.is_file():continue
+                saved=json.loads(journal.read_text(encoding='utf-8'))
+                if saved.get('state')=='REJECTED':continue
+            recovered=self._publish_group(path,group,missing,gate)
+            results.update(recovered)
+            for key in recovered:del missing[key]
+        return results
+
+    @staticmethod
+    def _group_request(folder,items,settings,reference):
+        fingerprint=hashlib.sha256(json.dumps([(i['id'],i['signature']) for i in items],sort_keys=True).encode()).hexdigest()
+        keys=('voiceEngine','voiceCompute','voice','qwenSpeaker','voiceInstruction','speed',
+              'soundEffects','fishCommercialLicense')
+        return {'group':fingerprint,'settings':{k:settings[k] for k in keys if k in settings},
+                'reference':reference,'items':[dict(i,target=str(Path(i['target']).relative_to(folder.parent))) for i in items]}
+
+    def _publish_group(self,path,group,missing,gate):
+        folder=path.parent
+        wanted=[]
+        for item in group['items']:
+            current=missing.get(item['id'])
+            if not current:continue
+            target=Path(current['target'])
+            if item['signature']==current['signature']:
+                wanted.append((item,target))
+            elif (item['signature']==current.get('baseSignature') and group.get('anchor')
+                    and anchor_identity(group['outputs'][item['id']]['result'].get('voiceAnchor'))==tuple(current['anchor'])):
+                # The first published chapter may already have selected this
+                # group's generated anchor. Keep the original receipt identity.
+                wanted.append((item,target.with_name(current['baseName'])))
+        if not wanted:return {}
+        if 'outputs' not in group:
+            self._stage_group(path,group,gate)
+        anchor_path=None
+        if group.get('anchor'):
+            anchor=group['anchor']
+            anchor_path=folder.parent/Path(anchor['source']).name
+            self._publish_asset(folder,anchor,anchor_path)
+        results={}
+        for item,target in wanted:
+            gate('Saving completed chapter narration from the shared voice job')
+            output=group['outputs'][item['id']]
+            self._publish_asset(folder,output,target)
+            result=dict(output['result'],path=str(target))
+            if anchor_path:
+                result['voiceAnchor']=dict(result['voiceAnchor'],path=str(anchor_path))
+            self._write(target.with_suffix('.voice-ready.json'),{'inputSignature':item['signature'],
+                'sha256':output['sha256'],'result':result})
+            results[item['id']]=result
+
+        # Keep the shared receipt if this call requested only some outstanding chapters.
+        if len(wanted)==len(group['items']) or all(self._saved_chapter(folder.parent/i['target'],
+                i['signature'],group['outputs'][i['id']]['sha256']) for i in group['items']):
+            path.unlink(missing_ok=True)
+        return results
+
+    @classmethod
+    def _publish_asset(cls,folder,output,target):
+        if target.is_file() and cls._checksum(target)==output['sha256']:return
+        source=folder/output['source']
+        if not source.resolve().is_relative_to(folder.resolve()) or not source.is_file():
+            raise ValueError('Completed Kaggle audio is unavailable. Restore the saved group before retrying.')
+        target.parent.mkdir(exist_ok=True)
+        temporary=target.with_name(target.name+'.voice-partial')
+        try:
+            shutil.copyfile(source,temporary)
+            if cls._checksum(temporary)!=output['sha256']:
+                raise ValueError('Completed Kaggle audio failed its checksum. Restore the saved group before retrying.')
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    @staticmethod
+    def _checksum(path):
+        value=hashlib.sha256()
+        with path.open('rb') as source:
+            for block in iter(lambda:source.read(1024*1024),b''):value.update(block)
+        return value.hexdigest()
+
+    def _write_chapter(self,target,signature,result):
+        self._write(target.with_suffix('.voice-ready.json'),{'inputSignature':signature,
+                    'sha256':self._checksum(target),'result':result})
+
+    @classmethod
+    def _saved_chapter(cls,target,signature,expected_hash=None):
+        receipt=target.with_suffix('.voice-ready.json')
+        if not receipt.is_file() or not target.is_file():return None
+        value=json.loads(receipt.read_text(encoding='utf-8'))
+        checksum=value.get('sha256')
+        if (value.get('inputSignature')!=signature or (expected_hash and checksum!=expected_hash)
+                or cls._checksum(target)!=checksum):return None
+        return dict(value['result'],path=str(target))
+
+    @classmethod
+    def _cached_member(cls,target,item):
+        result=cls._saved_chapter(target,item['signature'])
+        if result or not item.get('baseName'):return result
+        previous=cls._saved_chapter(target.with_name(item['baseName']),item['baseSignature'])
+        if previous and anchor_identity(previous.get('voiceAnchor'))==tuple(item['anchor']):
+            return previous
+        return None
+
+    def _stage_group(self,path,group,gate):
+        """Validate and index every completed output together, before publishing any."""
+        from studio_data import sentences
+        from narration_audio import audio_segments
+        folder=path.parent
+        items=group['items']
+        settings=group['settings']
+        parts=[];ranges=[]
+        for item in items:
+            start=len(parts)
+            parts.extend({'text':line,'chapterId':item['id'],'segments':audio_segments(line,settings.get('soundEffects','subtle'))}
+                for line in sentences(item['text']))
+            if len(parts)==start:raise ValueError('Chapter narration is empty.')
+            ranges.append((start,len(parts)))
+        result=self._generate('\n'.join(i['text'] for i in items),folder/(group['group']+'.opus'),settings,gate,
+            reference=group['reference'],parts_override=parts)
+        if result.get('voiceAnchor'):
+            source=Path(result['voiceAnchor']['path'])
+            group['anchor']={'source':str(source.relative_to(folder)),'sha256':self._checksum(source)}
+            result['voiceAnchor']=dict(result['voiceAnchor'],path=source.name)
+        chapter_audio=result.get('chapterAudio',[])
+        if len(chapter_audio)!=len(items):
+            raise ValueError('Kaggle did not return every separate chapter Opus.')
+        outputs={}
+        for item,(first,last),asset in zip(items,ranges,chapter_audio):
+            timings=result['sentences'][first:last]
+            begin=timings[0]['start'];end=timings[-1]['end']
+            chapter_result={k:v for k,v in result.items() if k not in ('path','chapterAudio','setupAndModelLoadSeconds','speechGenerationSeconds','setupAndGenerationSeconds')} | {
+                'duration':end-begin,
+                'sentences':[dict(t,index=index,start=max(0,t['start']-begin),end=t['end']-begin)
+                    for index,t in enumerate(timings)],
+                'voiceBatch':{'chapters':len(items),'group':group['group'],'setupShared':True,
+                    'groupSetupSeconds':result.get('setupAndModelLoadSeconds'),
+                    'groupSpeechSeconds':result.get('speechGenerationSeconds')},
+                'timingAllocation':'Shared notebook measurements; not isolated chapter throughput'}
+            source=Path(asset['path'])
+            outputs[item['id']]={'source':str(source.relative_to(folder)),'sha256':self._checksum(source),'result':chapter_result}
+        group['outputs']=outputs
+        # Keep only identities and relative paths once the original request can be recovered locally.
+        del group['settings'],group['reference']
+        for item in items:del item['text']
+        self._write(path,group)
+
+    def _generate(self,text,target,settings,gate,preview=False,reference=None,parts_override=None,chapter_id=None):
         validate(settings)
         reason=readiness(settings,self.config,preview)
         if reason:raise ValueError(reason)
@@ -274,10 +412,22 @@ class KaggleVoice:
         (folder/'voice_job.py').write_text('REQUEST = '+repr(request)+'\n'+worker,encoding='utf-8')
         saved=json.loads(journal.read_text()) if journal.exists() else None
         if saved and saved.get('signature')!=signature:raise ValueError('Kaggle receipt belongs to different narration inputs.')
+        if saved and saved.get('kernel') and saved['kernel']!=slug:
+            raise ValueError('Reconnect the original private Kaggle account to recover this notebook.')
         if not saved or saved.get('state')=='REJECTED':
+            from studio_voice_legacy import overlapping_group
+            group_folder=target.parent.parent/'.voice-groups' if chapter_id else target.parent
+            owner=overlapping_group(group_folder,request,chapter_id,journal)
+            if owner:
+                if owner[1].get('state')=='SUBMITTING':
+                    raise ValueError('Kaggle submission needs reconciliation in its original private notebook. No duplicate was submitted.')
+                count=len({part['chapterId'] for part in owner[2]['parts']})
+                raise ValueError(f'Resume the original {count}-chapter Kaggle group to collect its audio. No duplicate was submitted.')
             gate('Submitting private Kaggle narration · '+MODELS[engine]['name'])
             # Durable uncertainty marker first: never blindly re-submit a timed-out push.
             saved={'signature':signature,'kernel':slug,'state':'SUBMITTING','created':time.time()}
+            if parts_override is not None:
+                saved['chapterIds']=list(dict.fromkeys(part['chapterId'] for part in request['parts']))
             self._write(journal,saved)
             try:
                 pushed=self._run(['kernels','push','-p',str(folder),'--accelerator','NvidiaTeslaT4','--timeout','14400'])
@@ -363,9 +513,9 @@ class KaggleVoice:
             info=probe(source,self.config.get('ffmpeg'))
             if info['codec']!='opus' or info['channels']!=1:
                 raise ValueError('Invalid generated Opus voice reference.')
-            name='voice-anchor-'+hashlib.sha256(source.read_bytes()).hexdigest()[:20]+'.opus'
-            path=target.parent/name
-            if not path.exists():shutil.copyfile(source,path)
+            checksum=self._checksum(source)
+            path=target.parent/('voice-anchor-'+checksum[:20]+'.opus')
+            self._publish_asset(target.parent,{'source':str(source.relative_to(target.parent)),'sha256':checksum},path)
             result['voiceAnchor']['path']=str(path)
         saved['state']='COMPLETE';self._write(journal,saved)
         # Only output media enters the project's normal verified cloud archive.

@@ -17,7 +17,7 @@ class RenderOnlyTest(unittest.TestCase):
     def test_native_encoder_logging_cannot_corrupt_the_json_control_stream(self):
         result=subprocess.run([sys.executable,'-c',
             'import os;import studio_remote_render_worker as w;w.isolate_telemetry();os.write(1,b"[INFO] native encoder log\\n");w.emit({"event":"progress","stage":"Rendering"})'],
-            capture_output=True,text=True,timeout=20)
+            cwd=Path(__file__).resolve().parent,capture_output=True,text=True,timeout=20)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual(json.loads(result.stdout),{'event':'progress','stage':'Rendering'})
         self.assertIn('[INFO] native encoder log',result.stderr)

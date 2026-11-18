@@ -170,6 +170,8 @@ export const FIELD_HELP = {
   settingVisualPacking:'How many visual plans share one request. Larger groups need their own measured quality/speed validation.',
   settingSourceVisualOverlap:'Experimental overlap between compatible fact work and visuals. Dependent continuity work must still wait.',
   settingFactBeatsMode:'Source of the initial story beats in Lean. Experimental alternatives must preserve source facts.',
+  settingClothingContinuity:'Required applies the saved review policy to clothing. Advisory permits cosmetic outfit differences. Identity, restraints and story-critical clothing still need to pass review.',
+  settingVoiceLocalFallback:'Use the local Kokoro voice for a whole narration when Kaggle reports GPU quota exhaustion before admission. Auditions keep the selected voice.',
   settingContinuity:'How strictly plans should preserve identity, objects and story state.',
   settingAppearance:'How to handle deliberate changes such as new clothing or injuries. Intentional story changes should not be repaired back to the old look.',
   settingRetries:'Maximum image retry attempts. A finite limit prevents endless repair loops; spending caps still apply.',

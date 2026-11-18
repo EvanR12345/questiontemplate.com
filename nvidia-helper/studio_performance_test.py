@@ -149,6 +149,26 @@ class PerformanceTest(unittest.TestCase):
             for value in ('SECRET','private-host','private-ip',self.project['id'],'A tale.'):
                 self.assertNotIn(value,raw)
 
+    def test_mixed_cached_and_unscoped_legacy_render_jobs_cannot_train_fresh_stage_speed(self):
+        from studio_performance import render_timing_details
+        for stage,scope in [('Render chapter','fresh-chapter'),('Assemble full video','fresh-assembly')]:
+            fresh=profile_for(stage,self.project,{})
+            self.assertEqual(fresh['renderTimingScope'],scope)
+            units={'kind':'videoSeconds','value':120}
+            legacy={k:v for k,v in fresh.items() if k!='renderTimingScope'} | {'renderTimingVersion':2}
+            self.store.record(stage+'legacy','previous',legacy,units,.05,{})
+            cached=render_timing_details(stage,{'reused':True,'renderTimingScope':scope})
+            self.assertEqual(cached['renderTimingScope'],'reused-base')
+            for i,work in enumerate([cached,{'renderTimingScope':'includes-chapter-render'},{'renderTimingScope':'unverified'}]):
+                profile=profile_for(stage,self.project,{},work)
+                self.store.record(stage+str(i),'restored',profile,units,.1+i,work,source='project-history')
+                self.assertIsNone(self.store.estimate(profile,units)['seconds'])
+            self.assertIsNone(self.store.estimate(fresh,units)['seconds'])
+            self.assertEqual(self.store.estimate(legacy,units)['retained'],1)
+            self.store.record(stage+'new','current',fresh,units,12,{})
+            self.assertEqual(self.store.estimate(fresh,units)['seconds'],12)
+            self.assertEqual(self.store.estimate(fresh,units)['samples'],1)
+
     def test_cpu_and_native_rendering_cannot_teach_each_others_speed(self):
         units={'kind':'videoSeconds','value':120}
         cpu=profile_for('Render chapter',self.project,{'renderBackend':'cpu'})

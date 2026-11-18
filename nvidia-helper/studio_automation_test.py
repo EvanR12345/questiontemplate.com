@@ -20,6 +20,15 @@ class AutomationPolicyTest(unittest.TestCase):
         self.assertTrue(result['automaticRepair']);self.assertEqual(result['maxImageRetries'],1)
         self.assertEqual(result['qcRepairBudgetMode'],'project-cap')
 
+    def test_zero_retry_unattended_runs_preserve_check_level_and_authorize_no_repairs(self):
+        for level in ('practical','strict','sampled'):
+            with self.subTest(level=level):
+                settings = run_settings({'qcCheckLevel':level, 'maxImageRetries':0})
+                self.assertEqual(settings['qcCheckLevel'],level)
+                self.assertEqual(settings['maxImageRetries'],0)
+                self.assertFalse(automatic_repairs(settings))
+                self.assertFalse(settings['automaticRepair'])
+
     def test_explicit_off_stays_off(self):
         result=run_settings({'qcCheckLevel':'off','automaticRepair':False,'maxImageRetries':0})
         self.assertFalse(result['automaticRepair']);self.assertEqual(result['maxImageRetries'],0)

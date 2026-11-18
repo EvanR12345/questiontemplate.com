@@ -11,22 +11,22 @@ import {providerSetupForm,providerSetupValues} from './studio-provider-setup.mjs
 import {directorLimits,directorSummary,directorSettings,directorRequestControls} from './studio-director-settings.mjs?v=luna-standard-controls-20261010';
 import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-state.mjs?v=forms-20261009';
 import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
-import {resolveConnectedProject,canAdoptConnection,connectionLoading} from './studio-connection.mjs?v=grounding-20261011b';
-import {checkpointProject,backupSnapshot,canApplyBackgroundProject} from './studio-project-safety.mjs?v=safety-20261009';
-import {createMediaLoader} from './studio-media-loader.mjs?v=media-20261013';
+import {resolveConnectedProject,canAdoptConnection,connectionLoading} from './studio-connection.mjs?v=offline-sync-20261118';
+import {checkpointProject,backupSnapshot,canApplyBackgroundProject,rememberOfflineEdit,offlineSyncRequest} from './studio-project-safety.mjs?v=offline-sync-20261118';
+import {createMediaLoader} from './studio-media-loader.mjs?v=playback-renewal-20261118';
 import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
 import { pairingKey, helperJson, importHelperPairing } from "./helper-connection.mjs?v=connection-20261009";
 import { nativeRequest } from "./native-client.mjs?v=connection-20261009";
 import {rendererPlacement,chapterDisplayStatus} from './studio-render-status.mjs?v=grounding-20261011';
-import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=dense-image-phase-20261028';
+import {STRATEGIES,selectedStrategy,strategyOptions,strategyDescription,strategySummary,forecastText,imageWorkEstimate} from './studio-generation-plan.mjs?v=dense-lease-20261118';
 import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
-import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaLink, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=workspace-20261016-cloud-recovery-20261015';
+import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaCapability, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=playback-expiry-20261118';
 import {
   loadProjectState,
   saveStudioProject,
   loadStudioProject,
-  listStudioProjects,
-} from "./image-store.mjs?v=storage-2";
+  listStudioProjectSummaries,
+} from "./image-store.mjs?v=offline-sync-20261118";
 
 const $ = (s) => document.querySelector(s),
   escape = (s) =>
@@ -72,7 +72,7 @@ let settingsOrganizer;
 const settingsDrafts=createFormDrafts(),projectSelection=createProjectSelection();
 const mediaCache = new Map();
 const progressReader=createProgressReader(qualityDecision);
-const mediaLoader=createMediaLoader({resolve:(path,projectId,options)=>media(path,projectId,options)});
+const mediaLoader=createMediaLoader({resolve:mediaCapability});
 const root = document.createElement("section");
 root.id = "productionStudio";
 root.className = "production";
@@ -168,28 +168,44 @@ async function api(path, body) {
     throw new Error(
       "Open the pairing link printed by the shared NVIDIA helper. Audio and Studio use the same connection.",
     );
+  // A connected helper may hold an older edition than this browser's draft.
+  // Media reads and controls for an existing job remain available during review.
+  if (project?._unsynced && body?.project === project.id &&
+      !['media-link', 'control', 'sync-offline'].includes(path) &&
+      !(['publish', 'vimeo', 'cloud-render'].includes(path) && ['status', 'cancel'].includes(body.operation))) {
+    throw new Error('Sync offline edits before starting this action on the helper.');
+  }
   return helperJson("/studio/" + path, key, body);
 }
-async function cache() {
+async function cache({includeBrowser = false} = {}) {
   if(!project || project._connectionPlaceholder)return;
   const warnings=[];
   await checkpointProject(project,{
-    connected,cloudEnabled:Boolean(health?.storage?.enabled),save:saveStudioProject,
+    connected,cloudEnabled:Boolean(health?.storage?.enabled) && !includeBrowser,save:saveStudioProject,
     remember:projectId=>localStorage.setItem('qt-production-project',projectId),
     warn:message=>warnings.push(message),
   });
   cacheWarning=warnings.join(' ');
   if(cacheWarning)note(cacheWarning,true);
 }
-async function media(path, projectId=project.id, {refresh=false}={}) {
+async function mediaCapability(path, projectId=project.id, {refresh=false}={}) {
   if(refresh)mediaCache.delete(projectId+'/'+path);
-  return cachedMediaLink(mediaCache,projectId,path,api);
+  return cachedMediaCapability(mediaCache,projectId,path,api);
+}
+async function media(path, projectId=project.id, options) {
+  return (await mediaCapability(path,projectId,options)).url;
 }
 async function fillMedia() {
   mediaLoader.load(root,project.id);
 }
 async function refreshProjects() {
-  projects = connected ? await api("projects") : await listStudioProjects();
+  const local = await listStudioProjectSummaries().catch(error => {
+    if (!connected) throw error;
+    return [];
+  });
+  if (!connected) { projects = local; return; }
+  const remote = await api("projects");
+  projects = [...remote, ...local.filter(row => row.unsynced && !remote.some(item => item.id === row.id))];
 }
 async function connectHelper() {
   if (pairingKey()) { await connect(); if (connected) return; }
@@ -234,10 +250,12 @@ async function reconnect() {
     if(canAdoptConnection(project,resolved.project,{requestedProject,
       editorRevision:editorSave.revision,startEditorRevision,preserveOffline:resolved.preserveOffline}))
       project=resolved.project;
-    health=info;queue=info.queue;projects=available;
+    health=info;queue=info.queue;
+    const localDrafts=projects.filter(row=>row.unsynced && !available.some(item=>item.id===row.id));
+    projects=[...available,...localDrafts];
     if(!projects.some(p=>p.id===project.id))projects=[{id:project.id,name:project.name,revision:project.revision,chapters:project.chapters.length},...projects];
     mediaCache.clear();connected=true;initialConnectionPending=false;chapterId=ch()?.id;
-    await cache();render();
+    await cache({includeBrowser:Boolean(requestedProject?._unsynced && !project._unsynced)});render();
     if(project._unsynced)note('Your offline edits are retained. Review them, then use Sync offline edits; existing helper generations remain saved.');
   } catch(error) {
     initialConnectionPending=false;connected=false;
@@ -259,7 +277,7 @@ async function mutate(path, body, redraw = true) {
   const p = await api(path, { project: requestedProject, ...body });
   // The helper committed its result to the requested project. A slow edit
   // must not switch the user's currently selected workspace back to it.
-  if(project.id!==requestedProject)return p;
+  if(project.id!==requestedProject || project._unsynced)return p;
   if (p?.chapters) {
     if((Number(p.revision)||0)<(Number(project.revision)||0))return p;
     project = p;
@@ -269,7 +287,7 @@ async function mutate(path, body, redraw = true) {
   return p;
 }
 async function patch(scope, item, values, redraw = false) {
-  if (connected) {
+  if (connected && !project._unsynced) {
     try {
       await mutate(
         "edit",
@@ -282,7 +300,7 @@ async function patch(scope, item, values, redraw = false) {
       connected = false;
     }
   }
-  if (!connected) {
+  if (!connected || project._unsynced) {
     delete project._connectionPlaceholder;
     const target =
       scope === "project"
@@ -294,6 +312,7 @@ async function patch(scope, item, values, redraw = false) {
             : scope === "character"
               ? project.characters.find((c) => c.id === item)
               : people().find((p) => p.id === item);
+    rememberOfflineEdit(project,scope,target,values);
     Object.assign(target, values);
     project._unsynced = true;
     await cache();
@@ -301,7 +320,7 @@ async function patch(scope, item, values, redraw = false) {
   }
   const state = $("#productionSaveState");
   if (state)
-    state.textContent = connected
+    state.textContent = project._unsynced && connected ? "Saved in browser · awaiting Sync offline edits" : connected
       ? health?.storage?.enabled ? "Saved to helper · cloud sync runs in the background" : "Saved to helper and browser"
       : "Saved in browser · helper offline";
 }
@@ -540,7 +559,7 @@ function render() {
     project.id,
   )}</select><button type="button" data-open-guide="all">Help · all functions</button><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
   <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
-  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong>${project.shortPreview ? `<p class="muted" role="note">Short preview · ${escape(project.shortPreview.sourceWords)} words · matching saved illustrations. This tests narration and motion; fresh image quality has not been validated.</p>` : ""}<p class="muted">Add your chapters, then press Generate full video. ${project.settings.unattendedProduction !== false ? 'Automatic production prepares narration, visuals and the finished video within your saved spending limits.' : 'Your saved review policy remains active; generation can stop for manual decisions.'} Saved work and manual edits are preserved. Keep the laptop and shared helper running for local stages.</p><details class="production-setup-details" data-ui="production-setup"><summary>Production options · ${escape(STRATEGIES.find(([id])=>id===generationStrategy)?.[1] || generationStrategy)}</summary><label>Generation strategy<select id="productionStrategy" aria-describedby="productionStrategyHelp">${options(STRATEGIES,generationStrategy)}</select></label><p id="productionStrategyHelp" class="muted">${escape(strategySummary(generationStrategy,health?.managedGPU?.configured))}</p><details data-ui="strategy-details"><summary>How this strategy runs</summary><p class="muted">${escape(strategyDescription(generationStrategy,health?.managedGPU?.configured,health?.managedGPU?.modelCopies))}</p></details><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && (generationStrategy!=='legacy' || overlapRequested) ? "checked" : ""} ${overlapEligible && generationStrategy==='legacy' ? "" : "disabled"}> Overlap cloud tasks</label><p class="muted">Requires cloud images, Luna and an API spending cap. Reviews and independent Luna calls follow your saved Settings.</p><details data-ui="learned-timings"><summary>Timing history and estimate coverage</summary><p id="productionPerformance" class="muted">${escape(forecastText(performanceReports.get(project.id)))}</p><button id="productionTimingRefresh" ${connected ? '' : 'disabled'}>Refresh matching estimates</button></details>${lunaUsageHTML(project.production?.timings || [])}<details data-ui="render-placement"><summary>${escape(placement.title)}</summary><p class="muted">${escape(placement.detail)}</p></details><p id="productionDirectorSummary" class="muted">${escape(directorSummary(project.settings))}</p></details><div id="productionReadiness" role="status"></div><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><div class="toolbar production-start-actions"><button id="productionCheckReadiness" ${connected ? "" : "disabled"}>Check readiness</button><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div></div>
+  <div class="full-video-bar"><div><strong>Your complete story, in one video</strong>${project.shortPreview ? `<p class="muted" role="note">Short preview · ${escape(project.shortPreview.sourceWords)} words · matching saved illustrations. This tests narration and motion; fresh image quality has not been validated.</p>` : ""}<p class="muted">Add your chapters, then press Generate full video. ${project.settings.unattendedProduction !== false ? 'Automatic production prepares narration, visuals and the finished video within your saved spending limits.' : 'Your saved review policy remains active; generation can stop for manual decisions.'} Saved work and manual edits are preserved. Keep the laptop and shared helper running for local stages.</p><details class="production-setup-details" data-ui="production-setup"><summary>Production options · ${escape(STRATEGIES.find(([id])=>id===generationStrategy)?.[1] || generationStrategy)}</summary><label>Generation strategy<select id="productionStrategy" aria-describedby="productionStrategyHelp">${options(STRATEGIES,generationStrategy)}</select></label><p id="productionStrategyHelp" class="muted">${escape(strategySummary(generationStrategy,health?.managedGPU?.configured,health?.managedGPU?.holdsGPUForQC,project.settings.image.provider))}</p><details data-ui="strategy-details"><summary>How this strategy runs</summary><p class="muted">${escape(strategyDescription(generationStrategy,health?.managedGPU?.configured,health?.managedGPU?.modelCopies,health?.managedGPU?.holdsGPUForQC,project.settings.image.provider))}</p></details><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && (generationStrategy!=='legacy' || overlapRequested) ? "checked" : ""} ${overlapEligible && generationStrategy==='legacy' ? "" : "disabled"}> Overlap cloud tasks</label><p class="muted">Requires cloud images, Luna and an API spending cap. Reviews and independent Luna calls follow your saved Settings.</p><details data-ui="learned-timings"><summary>Timing history and estimate coverage</summary><p id="productionPerformance" class="muted">${escape(forecastText(performanceReports.get(project.id)))}</p><button id="productionTimingRefresh" ${connected ? '' : 'disabled'}>Refresh matching estimates</button></details>${lunaUsageHTML(project.production?.timings || [])}<details data-ui="render-placement"><summary>${escape(placement.title)}</summary><p class="muted">${escape(placement.detail)}</p></details><p id="productionDirectorSummary" class="muted">${escape(directorSummary(project.settings))}</p></details><div id="productionReadiness" role="status"></div><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><div class="toolbar production-start-actions"><button id="productionCheckReadiness" ${connected ? "" : "disabled"}>Check readiness</button><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div></div>
   ${project._unsynced ? '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>' : ""}
   ${project.warnings
     .filter((w) => !w.resolved)
@@ -696,7 +715,7 @@ function settings() {
   const models = selected?.models || [i.model];
   return `<h2>Project settings</h2><p class="muted">Saved for this project. Use the sections below, then save your changes.</p><div class="toolbar"><button data-save-settings>Save changes</button><a href="#settings-checks">Checks</a><a href="#settings-intro">Intro</a><a href="#settings-watermark">Watermark</a><a href="#settings-video">Video</a><a href="#settings-voice">Voice</a><a href="#settings-cost">Spending limits</a></div><div class="section-box" id="settings-basics"><h3>Project basics</h3><label>Project name<input id="settingProjectName" value="${escape(project.name)}"></label><div class="two-col"><label>Visual style<select id="settingStyle">${options(["cinematic illustration", "anime", "manga", "storybook", "photorealistic cinema", "full-color manhwa", "dark fantasy"], s.style)}</select></label><label>Director layout<select id="settingLayout">${options(["AUTO", "CINEMATIC", "DYNAMIC", "MANGA / ANIME", "STORYBOOK", "CUSTOM"], s.layoutMode)}</select></label><label>Generation mode<select id="settingGenerationMode">${options(["QUICK", "BALANCED", "MAX QUALITY"], s.generationMode)}</select></label><label>Image quality preset<select id="settingImagePreset">${options(["Fast Local", "Balanced Quality", "Maximum Quality", "Character Reference", "Image Repair", "Anime/Manga", "Cinematic", "Storybook"], i.preset)}</select></label></div></div>
   ${videoSettingsHTML(project)}
-  <div class="section-box" id="settings-checks"><h3>Visual checks</h3><p role="status"><strong>Automatic repairs: ${s.unattendedProduction !== false && level !== "off" ? "Enabled for automatic full-video runs · saved caps and retry limits" : s.automaticRepair ? project.qcRepairBudget?.enabled ? "Enabled · bounded by verified cost and retry limits" : "On hold · see the cost requirement below" : "Off · checks report issues without replacing images"}</strong></p><div class="two-col"><label>Check level<select id="settingCheckLevel">${options([["off", "Off · no automatic or manual paid checks"], ["sampled", "Sampled · first shot + a stable sample"], ["practical", "Practical · every new image"], ["strict", "Strict · every new image"]], level)}</select></label><label>Sample about one image in<input id="settingSampleEvery" type="number" min="2" max="20" step="1" value="${s.qcSampleEvery ?? 5}"></label><label>How findings affect production<select id="settingQCPolicy">${options([["practical", "Practical · minor differences are advisory"], ["strict", "Strict · detailed review"]], ["practical","strict"].includes(level) ? level : s.qcPolicy || "practical")}</select></label><label>Clothing continuity<select id="settingClothingContinuity">${options([["required", "Required · normal review policy"], ["advisory", "Minor outfit differences · warnings only"]], s.qcClothingContinuity || "required")}</select></label></div><p class="muted">Clothing warnings apply only to findings identified solely as cosmetic outfit differences. Identity, actions, restraints, injuries and plot-critical clothing keep their review gates. Historical reviews remain saved and may need rechecking after this setting changes.</p><p class="muted">Sampled checks include the first shot of each chapter and planned intro, then select roughly one in N using stable shot IDs. Resuming keeps the same selection. Skipped images stay “Not checked.” Off also overrides MAX QUALITY. Existing AI findings and your image acceptances stay saved.</p><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""} ${level !== "off" ? "" : "disabled"}>Allow bounded automatic repairs · major errors only in Practical mode</label><p class="muted">Practical review treats minor pose, framing, expression and prop detail differences as advice. Automatic repairs target confirmed major story, identity or anatomy errors. Unattended Practical runs retain uncertain findings as warnings; manual review mode keeps its review gate. Unattended full-video runs use the remaining saved project API/GPU caps and bounded retries. Manual production retains the measured 10% overhead rule unless you select project-cap repairs. Enabling this option does not buy a repair or raise your budget. ${s.unattendedProduction !== false ? "Full-video repairs use the saved caps checked before starting." : escape(project.qcRepairBudget?.reason || "Missing cost evidence keeps automatic repairs on hold.")}</p></div>
+  <div class="section-box" id="settings-checks"><h3>Visual checks</h3><p role="status"><strong>Automatic repairs: ${s.maxImageRetries === 0 ? "Off · zero retries" : s.unattendedProduction !== false && level !== "off" ? "Enabled for automatic full-video runs · saved caps and retry limits" : s.automaticRepair ? project.qcRepairBudget?.enabled ? "Enabled · bounded by verified cost and retry limits" : "On hold · see the cost requirement below" : "Off · checks report issues without replacing images"}</strong></p><div class="two-col"><label>Check level<select id="settingCheckLevel">${options([["off", "Off · no automatic or manual paid checks"], ["sampled", "Sampled · first shot + a stable sample"], ["practical", "Practical · every new image"], ["strict", "Strict · every new image"]], level)}</select></label><label>Sample about one image in<input id="settingSampleEvery" type="number" min="2" max="20" step="1" value="${s.qcSampleEvery ?? 5}"></label><label>How findings affect production<select id="settingQCPolicy">${options([["practical", "Practical · minor differences are advisory"], ["strict", "Strict · detailed review"]], ["practical","strict"].includes(level) ? level : s.qcPolicy || "practical")}</select></label><label>Clothing continuity<select id="settingClothingContinuity">${options([["required", "Required · normal review policy"], ["advisory", "Minor outfit differences · warnings only"]], s.qcClothingContinuity || "required")}</select></label></div><p class="muted">Clothing warnings apply only to findings identified solely as cosmetic outfit differences. Identity, actions, restraints, injuries and plot-critical clothing keep their review gates. Historical reviews remain saved and may need rechecking after this setting changes.</p><p class="muted">Sampled checks include the first shot of each chapter and planned intro, then select roughly one in N using stable shot IDs. Resuming keeps the same selection. Skipped images stay “Not checked.” Off also overrides MAX QUALITY. Existing AI findings and your image acceptances stay saved.</p><label class="inline"><input id="settingRepair" type="checkbox" ${s.automaticRepair ? "checked" : ""} ${level !== "off" ? "" : "disabled"}>Allow bounded automatic repairs · major errors only in Practical mode</label><p class="muted">Practical review treats minor pose, framing, expression and prop detail differences as advice. Automatic repairs target confirmed major story, identity or anatomy errors. Unattended Practical runs retain uncertain findings as warnings; manual review mode keeps its review gate. Unattended full-video runs use the remaining saved project API/GPU caps and bounded retries. Manual production retains the measured 10% overhead rule unless you select project-cap repairs. Enabling this option does not buy a repair or raise your budget. ${s.unattendedProduction !== false ? "Full-video repairs use the saved caps checked before starting." : escape(project.qcRepairBudget?.reason || "Missing cost evidence keeps automatic repairs on hold.")}</p></div>
   <div class="section-box"><h3>Image generator</h3><label class="inline"><input id="settingFocusedPrompts" type="checkbox" ${s.focusedPrompts === true ? "checked" : ""}>Focused story facts for newly planned images</label><p class="muted">Optional guidance based on the prompt test: keep explicit gender, established people count and prop ownership; shorten repeated reference instructions. Existing shots and manual prompts stay saved. Prompts have no fixed word quota and are never cut off. A universal speed, price or quality winner was not established.</p><div class="two-col"><label>Image provider<select id="settingImageProvider">${options(
     [
       ["existing", "Existing SD fallback / DreamShaper"],
@@ -836,7 +855,7 @@ function renderQueue() {
               : run.stage || run.message || run.status;
     const delivery=ready?videoDeliveryStatus(project,queue.storage):null;
     let statusHTML = `<span>${escape(status)}${delivery?' · '+escape(delivery.label):''}</span>${ready ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}${delivery?.retry?'<button id="retryVideoCloudSave">Retry cloud save</button>':''}`;
-    if(run.generationStrategyLabel)statusHTML += `<p class="muted">This run: ${escape(run.generationStrategyLabel)} · ${run.rentalControl==='managed'?'Studio-managed GPU':'GPU rental start/stop remain external'}.</p>`;
+    if(run.generationStrategyLabel)statusHTML += `<p class="muted">This run: ${escape(run.generationStrategyLabel)} · ${run.rentalControl==='managed'?'Studio-managed GPU':run.rentalControl==='local'?'Local helper images':'GPU rental start/stop remain external'}.</p>`;
     if (activeFullRun?.started && activeFullRun.kind === "produce-story") {
       const elapsed = Math.max(0, Date.now() / 1000 - activeFullRun.started);
       const estimate=imageWorkEstimate(run.timings || [],run.chapterNumber,activeFullRun.started,run.totalImages-run.completedImages);
@@ -991,7 +1010,7 @@ function wire() {
       reload:async()=>{
         const before=project;
         const updated=await api('project?id='+filesProject.id);
-        if(project!==before||project?.id!==filesProject.id||dirty)return;
+        if(project!==before||project?.id!==filesProject.id||dirty||project._unsynced)return;
         project=updated;mediaCache.clear();render();
       }}));
   }
@@ -1048,7 +1067,13 @@ function wire() {
     void action(async()=>{
       request.project=project;request.editorRevision=editorSave.revision;
       let selected;
-      try{selected=connected?await api('project?id='+encodeURIComponent(wanted)):await loadStudioProject(wanted);}
+      try {
+        const local = await loadStudioProject(wanted).catch(error => {
+          if (!connected) throw error;
+          return undefined;
+        });
+        selected = !connected || local?._unsynced ? local : await api('project?id=' + encodeURIComponent(wanted));
+      }
       catch(error){if(!projectSelection.current(request,project,editorSave.revision))return;event.target.value=project.id;throw error;}
       if(!projectSelection.current(request,project,editorSave.revision)){
         if(projectSelection.latest(request)&&request.project===project&&editorSave.revision!==request.editorRevision){event.target.value=project.id;note('Your new edits are retained. Select the other project again when you are ready.');}
@@ -1095,10 +1120,11 @@ function wire() {
   });
   $("#productionAddChapter").onclick = workspaceAddChapter = () =>
     action(async () => {
-      if (connected) {
+      if (connected && !project._unsynced) {
         await mutate("chapter", { action: "add" });
         chapterId = project.chapters.at(-1).id;
       } else {
+        delete project._offlineChapterEdits;
         project.chapters.push(offlineChapter(project.chapters.length + 1));
         chapterId = project.chapters.at(-1).id;
         project._unsynced = true;
@@ -1130,6 +1156,9 @@ function wire() {
         cleanNarrationText:$('#narrationScript')?.value,narrationMode:$('#narrationMode')?.value,
         includeChapterLabel:$('#includeChapterHeading')?.checked,
       });
+      delete backup._unsynced;
+      delete backup._offlineChapterEdits;
+      delete backup._connectionPlaceholder;
       downloadBlob(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}),project.name+'.json');
       note('Project JSON exported with the current editor text and saved generation settings. Media files remain in their existing helper/cloud archive.'+(settingsDrafts.has(project.id)?' Unsaved settings are still in this page; Save project settings to include them in the next export.':''));
     } catch(error){note(error.message,true);}
@@ -1140,7 +1169,9 @@ function wire() {
       const p = JSON.parse(await e.target.files[0].text());
       if (p.schemaVersion !== 1 || !p.chapters)
         throw new Error("Choose a studio project JSON.");
-      project = connected ? await api("import", { project: p }) : p;
+      delete p._connectionPlaceholder;
+      delete p._offlineChapterEdits;
+      project = connected ? await api("import", { project: p }) : {...p, _unsynced:true};
       chapterId = project.chapters[0].id;
       await cache();
       await refreshProjects();
@@ -1148,13 +1179,40 @@ function wire() {
     });
   $("#syncOffline")?.addEventListener("click", () =>
     confirmAction(
-      "Sync this browser’s offline project? The helper’s current JSON will be backed up first. Existing asset files remain saved.",
+      "Sync these offline edits to the helper? Changes to the same text need review. Newer helper work and existing assets stay saved.",
       async () => {
-        const p = { ...project };
-        delete p._unsynced;
-        project = await api("import", { project: p });
-        await cache();
+        const draft = project, editRevision = editorSave.revision;
+        const submitted = JSON.stringify(draft);
+        const request = offlineSyncRequest(JSON.parse(submitted));
+        let synced;
+        try { synced = await api("sync-offline", request); }
+        catch (error) {
+          if (error.status === 404 || error.message.includes('Unknown studio endpoint')) {
+            throw Error('Update the shared helper to sync this draft with revision checks. The draft is still saved in this browser.');
+          }
+          throw error;
+        }
+        // A later edit or navigation still owns the mounted editor.
+        await flush();
+        if (project !== draft || editorSave.revision !== editRevision ||
+            JSON.stringify(draft) !== submitted) {
+          if (project === draft) {
+            if (request.snapshot) draft.revision = synced.revision;
+            // The helper acknowledged these fields even if more typing arrived.
+            // Keep the new local value and advance only its comparison base.
+            for (const edit of request.edits || []) {
+              const before = draft._offlineChapterEdits?.find(item => item.id === edit.id)?.before;
+              if (before) Object.assign(before, edit.values);
+            }
+            await cache();
+            note('The submitted version reached the helper. Your newer browser edits remain available to sync.');
+          }
+          return;
+        }
+        project = synced;
+        await cache({includeBrowser:true});
         render();
+        note(cacheWarning || 'Offline edits synced to the helper.', Boolean(cacheWarning));
       },
     ),
   );
@@ -1779,11 +1837,13 @@ function wireSettings() {
     $("#settingQCPolicy").disabled = level !== "sampled";
     $("#settingSampleEvery").disabled = level !== "sampled";
     const automatic=$('#settingUnattended')?.checked===true;
-    $("#settingRepair").disabled = level === "off" || automatic;
-    $("#settingRepair").checked = level !== "off" && (automatic || manualRepairChoice);
+    const repairsAllowed = level !== "off" && Number($("#settingRetries").value) > 0;
+    $("#settingRepair").disabled = !repairsAllowed || automatic;
+    $("#settingRepair").checked = repairsAllowed && (automatic || manualRepairChoice);
   };
   $('#settingRepair').onchange=()=>{manualRepairChoice=$('#settingRepair').checked;};
   $('#settingUnattended').onchange=updateChecks;
+  $('#settingRetries').oninput=updateChecks;
   $("#settingCheckLevel").onchange = updateChecks;
   $("#settingQCPolicy").onchange = updateChecks;
   updateChecks();
@@ -2024,7 +2084,7 @@ async function saveSettings() {
   s.automaticRepair = !$("#settingRepair").disabled && $("#settingRepair").checked;
   if($('#settingUnattended'))s.unattendedProduction = $('#settingUnattended').checked;
   if(s.unattendedProduction){s.appearanceHandling='Automatic';if(s.qcCheckLevel!=='off'){
-    s.automaticRepair=true;s.qcRepairBudgetMode='project-cap';s.maxImageRetries=Math.max(1,s.maxImageRetries);
+    s.automaticRepair=s.maxImageRetries>0;s.qcRepairBudgetMode='project-cap';
   }}
   s.economyPanels = $('#settingEconomyPanels').checked;
   s.focusedPrompts = $('#settingFocusedPrompts').checked;
@@ -2126,18 +2186,19 @@ async function poll() {
       try{await loadPerformance(requestedProjectId);learnedCompletion.set(requestedProjectId,observation);}
       catch{if(project.id===requestedProjectId && $('#productionPerformance'))$('#productionPerformance').textContent='Timing history could not refresh. Saved work is retained; use Refresh matching estimates to retry.';}
     }
-    if (
-      !dirty && !project._unsynced && project.id===requestedProjectId &&
-      !document.querySelector("dialog.studio-form-dialog[open]") &&
-      tab !== "settings"
-    ) {
+    const editorHasFocus = () => {
+      const active = document.activeElement;
+      return Boolean(document.querySelector("dialog.studio-form-dialog[open]") ||
+        (root.contains(active) && ["INPUT","TEXTAREA","SELECT"].includes(active.tagName)));
+    };
+    if (!dirty && !project._unsynced && project.id === requestedProjectId &&
+        tab !== "settings" && !editorHasFocus()) {
       const revision = await api("revision?id=" + requestedProjectId);
-      if (revision.revision !== project.revision) {
+      if (revision.revision !== project.revision && project.id === requestedProjectId && !dirty && !editorHasFocus()) {
         const latest = await api("project?id=" + requestedProjectId);
-        const active = document.activeElement;
         if (canApplyBackgroundProject(project,latest,{
           requestedId:requestedProjectId,dirty,
-          editing:Boolean(document.querySelector("dialog.studio-form-dialog[open]"))||(root.contains(active)&&["INPUT","TEXTAREA","SELECT"].includes(active.tagName)),
+          editing:editorHasFocus(),
         })) {
           project = latest;
           await cache();
@@ -2160,12 +2221,11 @@ async function poll() {
 let savedId;
 try{savedId=localStorage.getItem('qt-production-project');}catch{cacheWarning='Browser selection storage is unavailable.';}
 try{if(savedId)project=await loadStudioProject(savedId);}catch{cacheWarning='Browser project recovery is unavailable. Connect the helper to access its saved projects.';}
-if (!project) {
-  let existing=[];
-  try{existing=await listStudioProjects();}catch{cacheWarning='Browser project recovery is unavailable. Connect the helper to access its saved projects.';}
-  project = existing[0] || {...offlineProject(), _connectionPlaceholder:true};
-  if (existing.length) projects = existing;
-}
+try {
+  projects = await listStudioProjectSummaries();
+  if (!project && projects.length) project = await loadStudioProject(projects[0].id);
+} catch { cacheWarning='Browser project recovery is unavailable. Connect the helper to access its saved projects.'; }
+if (!project) project = {...offlineProject(), _connectionPlaceholder:true};
 chapterId = project.chapters[0].id;
 try{await cache();}catch(error){cacheWarning=error.message;}
 render();

@@ -255,9 +255,11 @@ class RenderReuseTest(unittest.TestCase):
             renderer = VideoRenderer(store, {})
             with patch.object(renderer, 'run', side_effect=self.save_output) as run:
                 ch['render'] = renderer.chapter(p, ch, lambda *_: None)
+                self.assertEqual(ch['render']['renderTimingScope'],'fresh-chapter')
                 run.reset_mock()
                 (store.folder(p['id']) / 'first.png').write_bytes(b'new image content')
-                renderer.chapter(p, ch, lambda *_: None)
+                changed=renderer.chapter(p, ch, lambda *_: None)
+                self.assertEqual(changed['renderTimingScope'],'reused-chapter-inputs')
                 encoding = [call for call in run.call_args_list if '-frames:v' in call.args[0]]
                 self.assertEqual(len(encoding), 1)
                 self.assertIn('first.png', ' '.join(encoding[0].args[0]))
