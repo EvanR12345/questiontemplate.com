@@ -113,7 +113,15 @@ export async function wireFiles({p,api,action,note,media,submit,reload}){
     $('cloudSplit').disabled=!p.render?.path;
     $('makeThumbnail').disabled=!p.chapters.some(c=>c.scenes.some(s=>s.shots.some(shot=>shot.imagePath)));
     const savedFiles=files.files.filter(file=>file.cloud);
-    $('cloudStatus').textContent=status.enabled?`${status.provider||'Cloud storage'} · ${state.status??'Not yet synced'} · ${savedFiles.length} cloud files · ${bytes(savedFiles.reduce((sum,file)=>sum+file.bytes,0))}${state.error?' · '+state.error:''}${status.error?' · '+status.error:''}`:status.error||'Cloud storage is not connected yet. Existing helper files remain safe.';
+    const archiveEdition=Number.isSafeInteger(files.revision) ? `Cloud revision ${files.revision}`
+      : files.revision===null ? 'No cloud save found' : '';
+    const helperState=state.status==='SYNCED' && Number.isSafeInteger(state.revision)
+      ? `Last helper sync at revision ${state.revision}` : state.status;
+    const fileCount=`${savedFiles.length} project file${savedFiles.length===1?'':'s'} in cloud`;
+    $('cloudStatus').textContent=status.enabled
+      ? [status.provider||'Cloud storage',archiveEdition,helperState,fileCount,
+          bytes(savedFiles.reduce((sum,file)=>sum+file.bytes,0)),state.error,status.error].filter(Boolean).join(' · ')
+      : status.error||'Cloud storage is not connected yet. Existing helper files remain safe.';
     rows=files.files;paint();
     void wireVimeo({p,files:rows,api,action,active,note});
     const legacyRender=publisher.cloudRendering===true&&publisherMatches&&status.provider==='Google Cloud Storage';

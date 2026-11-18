@@ -28,7 +28,10 @@ from studio_queue_image_recovery import current_receipt, run_queued_image, selec
 from studio_analysis_inputs import analysis_input_signature as exact_analysis_input_signature
 from studio_qc import decision as qc_decision, valid_acceptance, production_status, automatic_repairs, repair_budget_reason, check_level, should_check, policy as qc_policy, review_settings_signature, review_settings_stale
 from prompt_quality import generation_measurements
-from story_grounding import apply_environment_event, set_environment_location, visual_environment, require_owners
+from story_grounding import (
+    apply_environment_event, character_profile_evidence, require_owners,
+    set_environment_location, visual_environment,
+)
 from production_trace import ProductionTrace
 from prompt_preflight import require_shot
 from queue_estimates import remaining_time, timing_profile
@@ -4009,25 +4012,16 @@ class StudioService:
                     evidence=detected["evidence"],
                     aliases=detected["aliases"],
                 )
-                if detected["type"] == "main":
-                    # Casting decides identities; a separate small pass extracts
-                    # the protagonist's bible without filling dozens of fields
-                    # for every bystander or unnamed member of a crowd.
+                evidence = (
+                    character_profile_evidence(
+                        casting_text, detected, [*casting["people"], *known_people, *people]
+                    )
+                    if detected["type"] == "main"
+                    else ""
+                )
+                if evidence:
                     from director_provider import obj, short_text, IDENTITY, APPEARANCE
 
-                    quote = detected["evidence"].strip(" \"'")
-                    evidence = (
-                        next(
-                            (
-                                s
-                                for s in sentences(casting_text)
-                                if quote[:50].casefold() in s.casefold()
-                            ),
-                            "",
-                        )
-                        if len(quote) >= 50
-                        else ""
-                    )
                     profile = self.director.call(
                         "Character bible. Extract ONLY identity traits explicitly stated in sourceEvidence for this person. Include beard/facial hair in face. Unknown fields MUST be empty strings, never 'unknown'. Clothing is NOT permanent identity. Held weapons and tools are NOT permanent accessories. Do not borrow any other person's clothing. Return permanentIdentity, defaultAppearance, gender, approximateAge. Do not infer later events.",
                         {"name": detected["name"], "sourceEvidence": evidence},
@@ -4060,13 +4054,10 @@ class StudioService:
                         }
                     profile['permanentIdentity'] = grounded_identity(profile['permanentIdentity'], evidence)
                     person.update(profile)
-                    if evidence:
-                        person["description"] = (
-                            "; ".join(
-                                v for v in profile["permanentIdentity"].values() if v
-                            )
-                            or evidence
-                        )
+                    person["description"] = (
+                        "; ".join(v for v in profile["permanentIdentity"].values() if v)
+                        or evidence
+                    )
                     passes.append(
                         {
                             "pass": "character-bible",

@@ -17,6 +17,47 @@ def labels(person):
     return [str(person.get('name', '')), *map(str, person.get('aliases', []))]
 
 
+def character_profile_evidence(text, person, cast):
+    """Resolve one exact quote. Short descriptions must name one clear subject."""
+    from studio_data import sentences
+
+    quote = person["evidence"].strip().strip('"\'“”‘’').strip()
+    if not quote:
+        return ""
+    pattern = re.escape(quote)
+    short = len(quote) < 50
+    if short:
+        pattern = r"(?<!\w)" + pattern
+        if quote[-1].isalnum():
+            pattern += r"(?!\w)"
+    # A long verbatim excerpt can end mid-word at the casting schema's cap.
+    exact = re.compile(pattern, re.I)
+    matches = [(sentence, match[0]) for sentence in sentences(text)
+               for match in exact.finditer(sentence)]
+    if len(matches) != 1:
+        return ""
+    sentence, verbatim = matches[0]
+    if not short:
+        return sentence
+
+    name = person["name"].strip()
+    subject = re.match(re.escape(name) + r"(?!\w)", verbatim, re.I) if name else None
+    if not subject:
+        return ""
+    description = verbatim[subject.end():]
+    if not re.match(r"(?:,\s*(?:a|an|the)\s+|\s+(?:is|was|has|had|wears|wore|with)\s+)", description, re.I):
+        return ""
+    if re.search(r"\b(?:he|she|they|his|her|their|whose|while|although|than)\b|[’']s\b", description, re.I):
+        return ""
+    other_labels = {label.strip() for other in cast if other is not person
+                    for label in labels(other) if label.strip()}
+    if any(re.search(r"(?<!\w)" + re.escape(label) + r"(?!\w)", verbatim, re.I)
+           for label in other_labels):
+        return ""
+    # A matched sentence could describe other people before or after this clause.
+    return verbatim
+
+
 def owner_conflicts(events, people):
     """Find only explicit named/role possessors contradicting the assigned ID.
 

@@ -523,13 +523,19 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             if path=='/studio/upload':
                 from PIL import Image
                 raw=base64.b64decode(body['data'].split(',',1)[-1]);img=Image.open(io.BytesIO(raw));img.thumbnail((1536,1536));name='references/'+uid()+'.png';target=studio.store.asset(pid,name);target.parent.mkdir(exist_ok=True);img.convert('RGBA' if body.get('purpose')=='watermark' else 'RGB').save(target,'PNG');return {'path':name}
+            from studio_action_history import CHAPTER_EDITOR_FIELDS, chapter_editor_snapshot, record, snapshot
             def change(p, path=path, body=body):
-                from studio_action_history import snapshot
-                history_before=snapshot(p)
                 scope=body.get('scope','project');id=body.get('id');action=body.get('action','patch')
+                editor_patch = body.get('patch') if path == '/studio/edit' and scope == 'chapter' else None
+                editor_chapter = (get_chapter(p,id) if isinstance(editor_patch,dict) and
+                                  editor_patch.keys() <= CHAPTER_EDITOR_FIELDS else None)
+                # Prose edits also mark the project and chapter renders stale and may clean narration.
+                # Other patches can change relationships or plans and retain the full audit snapshot.
+                history_before = (snapshot(p) if editor_chapter is None else
+                                  chapter_editor_snapshot(p,editor_chapter))
                 if path=='/studio/edit':
                     if scope=='project':target=p
-                    elif scope=='chapter':target=get_chapter(p,id)
+                    elif scope=='chapter':target=get_chapter(p,id) if editor_chapter is None else editor_chapter
                     elif scope=='shot':target=get_shot(p,body['chapter'],id)
                     elif scope=='scene':target=next(s for s in get_chapter(p,body['chapter'])['scenes'] if s['id']==id)
                     elif scope=='character':target=next(c for c in p['characters'] if c['id']==id)
@@ -632,10 +638,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         for ch in p['chapters']:
                             if ch['id'] in warning['affected']:ch['continuityNeedsReview']=True
                 else:raise ValueError('Unknown studio endpoint.')
-                from studio_action_history import record
-                record(p,history_before,f"{scope}: {action if path!='/studio/edit' else ', '.join(changed)}")
+                history_after = None if editor_chapter is None else chapter_editor_snapshot(p,editor_chapter)
+                record(p,history_before,f"{scope}: {action if path!='/studio/edit' else ', '.join(changed)}",after=history_after)
             if path=='/studio/sync-offline':
-                fields={'sourceText','name','cleanNarrationText','narrationMode','includeChapterLabel'}
                 def apply_edits(project):
                     from studio_data import UNCHANGED
                     changed=False
@@ -643,7 +648,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         if not isinstance(edit,dict):raise ValueError('Invalid offline chapter edit.')
                         before,values=edit.get('before'),edit.get('values')
                         if (not isinstance(before,dict) or not isinstance(values,dict)
-                                or before.keys()!=values.keys() or not values.keys()<=fields):
+                                or before.keys()!=values.keys() or not values.keys()<=CHAPTER_EDITOR_FIELDS):
                             raise ValueError('Invalid offline chapter edit.')
                         chapter=get_chapter(project,edit['id'])
                         for field in values:

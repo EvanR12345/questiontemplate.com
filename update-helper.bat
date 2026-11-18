@@ -1,11 +1,10 @@
 @echo off
 setlocal
 set "DIR=%USERPROFILE%\QuestionTemplateHelper"
-if not exist "%DIR%" mkdir "%DIR%"
 echo Updating shared helper code. Existing .venv and Torch are preserved.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $dest=Join-Path $env:USERPROFILE 'QuestionTemplateHelper'; $script=Join-Path $dest 'update-helper.ps1'; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/main/nvidia-helper/update-helper.ps1' -OutFile $script; & $script"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $script=Join-Path ([IO.Path]::GetTempPath()) ('qt-update-' + [Guid]::NewGuid().ToString('N') + '.ps1'); try { Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/main/nvidia-helper/update-helper.ps1' -OutFile $script; & $script } finally { Remove-Item -LiteralPath $script -Force -ErrorAction SilentlyContinue }"
 if errorlevel 1 (
-  echo Update failed. Installed code and environment are preserved.
+  echo Update failed. Review the message above.
   pause
   exit /b 1
 )

@@ -1,59 +1,95 @@
+param([string]$ArchivePath)
 $ErrorActionPreference = 'Stop'
 $destination = Join-Path $env:USERPROFILE 'QuestionTemplateHelper'
 if (-not (Test-Path -LiteralPath (Join-Path $destination '.venv\Scripts\python.exe'))) {
     throw 'The existing shared .venv is missing. This update does not create or replace it.'
 }
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$staging = Join-Path $destination ('updates\' + $stamp)
-New-Item -ItemType Directory -Path $staging -Force | Out-Null
-$archive = Join-Path $staging 'helper.zip'
-Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/main/nvidia-helper.zip' -OutFile $archive
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zip = [IO.Compression.ZipFile]::OpenRead($archive)
+$updateLock = [IO.File]::Open((Join-Path $destination '.update-lock'), 'OpenOrCreate', 'ReadWrite', 'None')
 try {
-    foreach ($entry in $zip.Entries) {
-        if ($entry.FullName -notmatch '^nvidia-helper/' -or $entry.FullName -match '(^|/)\.\.(/|$)|:|^/') { throw 'Unsafe helper archive path.' }
-        if ($entry.FullName -match '^nvidia-helper/(\.venv|python|models|studio-runtime|outputs|studio-config\.json|\.[^/]+)(/|$)') { throw 'Archive attempted to replace protected helper data.' }
+    $stamp = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [Guid]::NewGuid().ToString('N')
+    $staging = Join-Path $destination ('updates\' + $stamp)
+    New-Item -ItemType Directory -Path $staging -Force | Out-Null
+    $archive = Join-Path $staging 'helper.zip'
+    if ($ArchivePath) {
+        Copy-Item -LiteralPath $ArchivePath -Destination $archive
+    } else {
+        Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/EvanR12345/questiontemplate.com/main/nvidia-helper.zip' -OutFile $archive
     }
-} finally { $zip.Dispose() }
-Expand-Archive -LiteralPath $archive -DestinationPath $staging -Force
-$source = [IO.Path]::GetFullPath((Join-Path $staging 'nvidia-helper'))
-$destRoot = [IO.Path]::GetFullPath($destination)
-if (-not $source.StartsWith($destRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Update staging must remain inside the named helper directory.' }
-$updateFiles = @(Get-ChildItem -LiteralPath $source -Recurse -File)
-foreach ($file in $updateFiles) {
-    $relative = $file.FullName.Substring($source.Length + 1)
-    $target = [IO.Path]::GetFullPath((Join-Path $destination $relative))
-    if (-not $target.StartsWith($destRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe update destination.' }
-}
-$venvExe = Join-Path $destination '.venv\Scripts\python.exe'
-$processes = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.ExecutablePath -eq $venvExe -and $_.CommandLine -match 'server.py' })
-$keyPath = Join-Path $destination '.pairing-key'
-if (Test-Path -LiteralPath $keyPath) {
-    $headers = @{ Authorization = 'Bearer ' + [IO.File]::ReadAllText($keyPath).Trim() }
-    foreach ($endpoint in @('/image/queue', '/studio/queue', '/studio/storage')) {
-        try { $queue = Invoke-RestMethod -Uri ('http://127.0.0.1:8765' + $endpoint) -Headers $headers -TimeoutSec 3 }
-        catch {
-            if ($processes.Count -gt 0 -and $_.Exception.Response.StatusCode.value__ -ne 404) { throw 'The running helper could not confirm that its queue is idle. The update was stopped before replacing code.' }
-            $queue = $null
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [IO.Compression.ZipFile]::OpenRead($archive)
+    try {
+        foreach ($entry in $zip.Entries) {
+            if ($entry.FullName -notmatch '^nvidia-helper/' -or $entry.FullName -match '(^|/)\.\.(/|$)|:|^/') { throw 'Unsafe helper archive path.' }
+            if ($entry.FullName -match '^nvidia-helper/(\.venv|python|models|studio-runtime|outputs|studio-config\.json|\.[^/]+)(/|$)') { throw 'Archive attempted to replace protected helper data.' }
         }
-        if ($queue -and ($queue.current -or $queue.counts.queued -gt 0 -or $queue.counts.QUEUED -gt 0)) { throw 'Finish or cancel queued work before updating. Saved assets and installed code were retained.' }
-        if ($endpoint -eq '/studio/storage' -and $queue -and ($queue.pending -gt 0 -or @($queue.projects.PSObject.Properties.Value | Where-Object { $_.status -eq 'UPLOADING' }).Count)) { throw 'Finish cloud synchronization before updating. Local and cloud copies were retained.' }
+    } finally { $zip.Dispose() }
+    Expand-Archive -LiteralPath $archive -DestinationPath $staging -Force
+    $source = [IO.Path]::GetFullPath((Join-Path $staging 'nvidia-helper'))
+    $destRoot = [IO.Path]::GetFullPath($destination)
+    if (-not $source.StartsWith($destRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Update staging must remain inside the named helper directory.' }
+    $updateFiles = @(Get-ChildItem -LiteralPath $source -Recurse -File)
+    foreach ($file in $updateFiles) {
+        $relative = $file.FullName.Substring($source.Length + 1)
+        $target = [IO.Path]::GetFullPath((Join-Path $destination $relative))
+        if (-not $target.StartsWith($destRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe update destination.' }
     }
-}
-foreach ($process in $processes) { & "$env:SystemRoot\System32\taskkill.exe" /PID $process.ProcessId /T /F | Out-Null }
-$backup = Join-Path $destination ('backups\update-' + $stamp)
-foreach ($file in $updateFiles) {
-    $relative = $file.FullName.Substring($source.Length + 1)
-    if ($relative -match '^(\.venv|python|models|studio-runtime|outputs|studio-config\.json|\.[^\\]+)(\\|$)') { throw 'Archive attempted to replace protected helper data.' }
-    $target = [IO.Path]::GetFullPath((Join-Path $destination $relative))
-    if (-not $target.StartsWith($destRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe update destination.' }
-    if (Test-Path -LiteralPath $target) {
-        $previous = Join-Path $backup $relative
-        New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($previous)) -Force | Out-Null
-        Copy-Item -LiteralPath $target -Destination $previous -Force
+    $backup = Join-Path $destination ('backups\update-' + $stamp)
+    $plan = foreach ($file in $updateFiles) {
+        $relative = $file.FullName.Substring($source.Length + 1)
+        if ($relative -match '^(\.venv|python|models|studio-runtime|outputs|studio-config\.json|\.[^\\]+)(\\|$)') { throw 'Archive attempted to replace protected helper data.' }
+        $target = Join-Path $destination $relative
+        if (Test-Path -LiteralPath $target -PathType Container) { throw "A folder blocks the installed code file: $relative" }
+        $previous = $null
+        if (Test-Path -LiteralPath $target) {
+            $previous = Join-Path $backup $relative
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($previous)) -Force | Out-Null
+            Copy-Item -LiteralPath $target -Destination $previous -Force
+        }
+        [PSCustomObject]@{ Source = $file.FullName; Target = $target; Previous = $previous }
     }
-    New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($target)) -Force | Out-Null
-    Copy-Item -LiteralPath $file.FullName -Destination $target -Force
-}
-Write-Host 'Helper code and website updated. Existing .venv, Torch, configuration, models and generated assets were preserved.'
+    $venvExe = Join-Path $destination '.venv\Scripts\python.exe'
+    $processes = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.ExecutablePath -eq $venvExe -and $_.CommandLine -match 'server.py' })
+    $keyPath = Join-Path $destination '.pairing-key'
+    if (Test-Path -LiteralPath $keyPath) {
+        $headers = @{ Authorization = 'Bearer ' + [IO.File]::ReadAllText($keyPath).Trim() }
+        foreach ($endpoint in @('/image/queue', '/studio/queue', '/studio/storage')) {
+            try { $queue = Invoke-RestMethod -Uri ('http://127.0.0.1:8765' + $endpoint) -Headers $headers -TimeoutSec 3 }
+            catch {
+                if ($processes.Count -gt 0 -and $_.Exception.Response.StatusCode.value__ -ne 404) { throw 'The running helper could not confirm that its queue is idle. The update was stopped before replacing code.' }
+                $queue = $null
+            }
+            if ($queue -and ($queue.current -or $queue.counts.queued -gt 0 -or $queue.counts.QUEUED -gt 0)) { throw 'Finish or cancel queued work before updating. Saved assets and installed code were retained.' }
+            if ($endpoint -eq '/studio/storage' -and $queue -and ($queue.pending -gt 0 -or @($queue.projects.PSObject.Properties.Value | Where-Object { $_.status -eq 'UPLOADING' }).Count)) { throw 'Finish cloud synchronization before updating. Local and cloud copies were retained.' }
+        }
+    }
+    foreach ($process in $processes) {
+        & "$env:SystemRoot\System32\taskkill.exe" /PID $process.ProcessId /T /F | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'The running helper could not be stopped. No code files were replaced.' }
+    }
+    $attempted = [Collections.Generic.Stack[object]]::new()
+    try {
+        foreach ($item in $plan) {
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($item.Target)) -Force | Out-Null
+            $attempted.Push($item)
+            Copy-Item -LiteralPath $item.Source -Destination $item.Target -Force
+        }
+    } catch {
+        $updateFailure = $_
+        $restoreErrors = @(
+            foreach ($item in $attempted) {
+                try {
+                    if ($item.Previous) {
+                        Copy-Item -LiteralPath $item.Previous -Destination $item.Target -Force
+                    } elseif (Test-Path -LiteralPath $item.Target) {
+                        Remove-Item -LiteralPath $item.Target -Force
+                    }
+                } catch { $_ }
+            }
+        )
+        if ($restoreErrors.Count) {
+            throw "Update failed and some code could not be restored. The previous code files are backed up at $backup. Update error: $updateFailure"
+        }
+        throw "Update failed. Changes to installed code files were rolled back. $updateFailure"
+    }
+    Write-Host 'Helper code and website updated. Existing .venv, Torch, configuration, models and generated assets were preserved.'
+} finally { $updateLock.Dispose() }

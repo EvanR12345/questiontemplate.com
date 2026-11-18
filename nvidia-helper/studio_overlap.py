@@ -289,18 +289,18 @@ class CloudStoryOverlap:
         clone.director.wait_for_budget=True
         clone.providers=dict(self.root.providers) if main else {
             'existing':NoLocalGeneration(),'native-flux':NoLocalGeneration()}
-        initial_shot=get_shot(snapshot,context.chapter,context.shot) if snapshot is not None else None
-        initial_path=initial_shot.get('imagePath') if initial_shot else None
+        has_snapshot=snapshot is not None
+        initial_path=get_shot(snapshot,context.chapter,context.shot).get('imagePath','') if has_snapshot else None
         initial_asset=self.root.store.asset(self.project,initial_path) if initial_path else None
         initial_digest=hashlib.sha256(initial_asset.read_bytes()).hexdigest() if initial_asset and initial_asset.is_file() else None
         def validate():
             current=self.validate_settings()
             clone.check_cloud_budget(current,self.root.providers['comfyui'])
-            if snapshot is not None:
+            if has_snapshot:
                 shot=get_shot(current,context.chapter,context.shot)
                 if clone.visual_spec_signature(current,shot)!=context.input_hash:
                     raise StaleExecution('Shot inputs changed before dispatch; current edits retained.')
-                if (shot.get('imagePath','')!=get_shot(snapshot,context.chapter,context.shot).get('imagePath','')
+                if (shot.get('imagePath','')!=initial_path
                         and shot.get('imageMetadata',{}).get('executionId')!=context.identity):
                     raise StaleExecution('Selected image changed before dispatch; current selection retained.')
                 path=self.root.store.asset(self.project,shot['imagePath']) if shot.get('imagePath') else None

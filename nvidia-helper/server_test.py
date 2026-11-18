@@ -87,6 +87,47 @@ class BridgeTest(unittest.TestCase):
         report=json.loads(raw);self.assertIsNone(report['cost']['apiKnownEstimatedUSD'])
         self.assertEqual(report['status'],'NOT_COMPLETE');self.assertFalse(self.engine.calls)
 
+    def test_chapter_editor_history_matches_full_project_diff(self):
+        from studio_action_history import changes, snapshot
+        from studio_data import new_chapter
+
+        store = self.server.RequestHandlerClass.studio_service.store
+        project = new_project('Prose history')
+        project['chapters'].append(new_chapter(2))
+        chapter, other = project['chapters']
+        project = store.save(project)
+        chapter_id, other_id = chapter['id'], other['id']
+        edits = [
+            {'sourceText': 'Second chapter\n\nA quiet return.', 'name': 'The return'},
+            {'cleanNarrationText': 'A deliberate voice.', 'narrationMode': 'manual', 'includeChapterLabel': True},
+            {'sourceText': 'The author changed the story.', 'name': 'The new name'},
+            {'name': 'A plan edit', 'analysis': {'note': 'Keep the original beats'}},
+        ]
+        for values in edits:
+            with self.subTest(values=values):
+                before = snapshot(project)
+                body = {'project': project['id'], 'scope': 'chapter', 'id': other_id,
+                        'chapter': other_id, 'patch': values}
+                code,_,raw = self.request('/studio/edit',body)
+                self.assertEqual(code,200,raw)
+                response = json.loads(raw)
+                project = store.load(project['id'])
+                action = project['actionHistory'][-1]
+                self.assertEqual(action['changes'],changes(before,project))
+                self.assertEqual(response['chapters'][0],project['chapters'][0])
+                self.assertEqual(response['chapters'][1],project['chapters'][1])
+                self.assertEqual(response['revision'],project['revision'])
+                self.assertIn('qcRepairBudget',response)
+        self.assertEqual(project['chapters'][1]['cleanNarrationText'],'A deliberate voice.')
+        self.assertEqual(project['chapters'][0]['id'],chapter_id)
+
+        earlier = project['actionHistory'][0]
+        code,_,raw = self.request('/studio/workspace',{'project':project['id'],'operation':'undo',
+            'actionId':earlier['id'],'revision':project['revision']})
+        self.assertNotEqual(code,200,raw)
+        self.assertIn(b'Newer work changed this value',raw)
+        self.assertEqual(store.load(project['id']),project)
+
     def test_workspace_requires_auth_and_revision_and_keeps_caps(self):
         service=self.server.RequestHandlerClass.studio_service
         p=service.store.save(new_project('Workspace'))

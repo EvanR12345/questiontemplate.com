@@ -266,3 +266,29 @@ test('a failed chunk exposes the saved upload for immediate resume',async()=>{
     assert.deepEqual(calls,['start','next','status']);
   }finally{globalThis.document=original;globalThis.confirm=previousConfirm;}
 });
+
+test('Files reports the cloud revision on a cold helper, even for an empty saved project',async()=>{
+  const dom=filesDOM(),original=globalThis.document;
+  globalThis.document=dom.document;
+  let revision=17,files=[],state={};
+  const api=async path=>{
+    if(path.startsWith('storage?'))return {enabled:true,provider:'Google Cloud Storage',projects:{[project.id]:state}};
+    if(path.startsWith('files?'))return {files,revision};
+    return {};
+  };
+  try{
+    await wireFiles(options(project,api));
+    const status=()=>dom.nodes.get('cloudStatus').textContent;
+    assert.match(status(),/Cloud revision 17/);
+    assert.match(status(),/0 project files in cloud/);
+    files=[video('saved.mp4'),{...video('working.mp4'),cloud:false}];
+    state={status:'PENDING'};
+    await dom.nodes.get('cloudRefresh').onclick();
+    assert.match(status(),/PENDING/);
+    assert.match(status(),/Cloud revision 17/);
+    assert.match(status(),/1 project file in cloud/);
+    state={};revision=null;files=[];
+    await dom.nodes.get('cloudRefresh').onclick();
+    assert.match(status(),/No cloud save found/);
+  }finally{globalThis.document=original;}
+});

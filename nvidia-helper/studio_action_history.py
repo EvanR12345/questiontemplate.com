@@ -9,6 +9,8 @@ EXCLUDED = {'actionHistory', 'revision', 'updated', 'created', 'schemaVersion',
             'production', 'exports', 'warnings', 'renderHistory', 'audioHistory',
             'history', 'timingHistory', 'settingsHistory', 'setupHistory', 'previewRenders', 'imageSelectionRevision'}
 SECRET = re.compile(r'key|secret|token|password|credential|authorization', re.I)
+CHAPTER_EDITOR_FIELDS = frozenset({'sourceText', 'name', 'cleanNarrationText', 'narrationMode', 'includeChapterLabel'})
+CHAPTER_EDITOR_HISTORY_FIELDS = CHAPTER_EDITOR_FIELDS | {'id', 'renderStale'}
 
 
 def mark_image_selection(shot):
@@ -19,6 +21,21 @@ def mark_image_selection(shot):
 
 def snapshot(p):
     return copy.deepcopy({k: v for k, v in p.items() if k not in EXCLUDED and not SECRET.search(k)})
+
+
+def chapter_editor_snapshot(project, chapter):
+    """Capture the fields a prose edit can change, with the original Undo paths."""
+    view = {
+        'id': project['id'],
+        'chapters': [
+            {key: copy.deepcopy(row[key]) for key in CHAPTER_EDITOR_HISTORY_FIELDS if key in row}
+            if row is chapter else {'id': row['id']}
+            for row in project['chapters']
+        ],
+    }
+    if 'renderStale' in project:
+        view['renderStale'] = copy.deepcopy(project['renderStale'])
+    return view
 
 
 def contains_secret(value):
@@ -54,8 +71,8 @@ def changes(before, after, path=(), guards=()):
              'before': copy.deepcopy(before), 'after': copy.deepcopy(after), 'guards': list(guards)}]
 
 
-def record(p, before, label):
-    delta = changes(before, p)
+def record(p, before, label, *, after=None):
+    delta = changes(before, p if after is None else after)
     if not delta:
         return
     # Never put an unbounded story snapshot in every autosave. Large operations
