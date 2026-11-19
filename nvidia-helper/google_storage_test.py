@@ -71,7 +71,8 @@ class Client:
         if key not in self.data:return None
         blob = self.blob(key);blob.reload();return blob
     def list_blobs(self, bucket, prefix, **kwargs):
-        return [SimpleNamespace(name=k) for k in self.data if k.startswith(prefix)]
+        return [SimpleNamespace(name=k,generation=v['generation'])
+                for k,v in self.data.items() if k.startswith(prefix)]
 
 
 class GoogleStorageTests(unittest.TestCase):

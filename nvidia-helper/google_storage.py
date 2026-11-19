@@ -10,7 +10,7 @@ import mimetypes
 import re
 import hashlib
 import io
-from studio_storage import attachment_disposition
+from studio_storage import CatalogueGenerationChanged, attachment_disposition
 from immutable_upload import ImmutableUploadMixin
 
 
@@ -158,6 +158,23 @@ class GCSObjects(ImmutableUploadMixin):
     def keys(self, prefix):
         for blob in self.client.list_blobs(self.bucket, prefix=prefix, timeout=60):
             yield blob.name
+
+    def catalogue_generations(self, prefix):
+        for blob in self.client.list_blobs(self.bucket, prefix=prefix, timeout=60,
+                                           fields='nextPageToken,items(name,generation)'):
+            if type(blob.generation) is not int or blob.generation <= 0:
+                raise ValueError('Cloud catalogue entry has no valid generation.')
+            yield blob.name, blob.generation
+
+    def read_catalogue_generation(self, key, generation):
+        # An unversioned URL with a generation condition reads the listed
+        # current object or fails if it has since been deleted/replaced.
+        try:
+            return self.bucket.blob(key).download_as_bytes(if_generation_match=generation, timeout=60)
+        except Exception as error:
+            if getattr(error, 'code', None) in (404, 412):
+                raise CatalogueGenerationChanged('The cloud catalogue changed during refresh.') from None
+            raise
 
     def url(self, key, download_name=None):
         options={}

@@ -21,6 +21,9 @@ from immutable_upload import frozen_body, SourceChangedAfterUpload
 
 MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.wav', '.m4a', '.opus', '.mp3', '.mp4', '.json', '.flac'}
 
+class CatalogueGenerationChanged(Exception):
+    """A listed manifest no longer has the same current generation."""
+
 def local_media(folder):
     """Prune excluded working/private trees before visiting their contents."""
     def excluded(name):
@@ -254,6 +257,8 @@ class R2Archive:
         self.asset_locks = [threading.RLock() for _ in range(32)]
         self.catalogue_lock = threading.RLock()
         self.catalogue = None; self.catalogue_at = 0
+        self.catalogue_version_source = None
+        self.catalogue_versions = {}
         self.catalogue_request = None
         self.catalogue_thread = None
         self.catalogue_error = ''
@@ -579,19 +584,24 @@ class R2Archive:
         def check_open():
             if cancel_on_close and self.stopped:
                 raise RuntimeError('The helper is shutting down.')
-        check_open()
-        keys = []
-        for key in self.objects.keys('studio/manifests/'):
+        objects = self.objects
+        versions = getattr(objects, 'catalogue_generations', None) if self.provider == 'Google Cloud Storage' else None
+        known = dict(self.catalogue_versions) if self.catalogue_version_source is objects else {}
+        changed = object()
+        def summary(entry):
             check_open()
-            if re.fullmatch(r'studio/manifests/pr-[a-f0-9]{16}\.json',key):
-                keys.append(key)
-        def summary(key):
-            check_open()
+            key, generation = entry
+            cached = known.get(key)
+            if generation is not None and cached is not None and cached[0] == generation:
+                return cached[1]
             pid=key.rsplit('/',1)[-1].removesuffix('.json')
             try:
                 # Listing needs metadata only. Do not retain every novel's full
                 # manifest in the asset cache or restore its media to the laptop.
-                raw,_=self.objects.read(key)
+                if generation is None:
+                    raw,_=objects.read(key)
+                else:
+                    raw=objects.read_catalogue_generation(key, generation)
                 if raw is None:return None # Removed after the listing snapshot.
                 p=json.loads(raw)['project']
                 if (p['id']!=pid or not isinstance(p['name'],str)
@@ -600,13 +610,37 @@ class R2Archive:
                     or not isinstance(p['chapters'],list)):
                     raise ValueError('Invalid cloud project summary')
                 return {k:p[k] for k in ('id','name','revision','updated')} | {'chapters':len(p['chapters'])}
+            except CatalogueGenerationChanged:
+                return changed
             except Exception:
                 # Preserve visibility and never expose raw SDK/credential text.
                 return {'id':pid,'name':'Cloud project needs recovery','revision':0,
                     'updated':0,'chapters':0,
                     'loadError':'Cloud project metadata could not be read. Its saved files are retained; retry or recover a saved snapshot.'}
-        with ThreadPoolExecutor(max_workers=4,thread_name_prefix='studio-project-list') as pool:
-            return [row for row in pool.map(summary,keys) if row is not None]
+        prefix = 'studio/manifests/'
+        for _ in range(2):
+            check_open()
+            source = versions(prefix) if versions else ((key, None) for key in objects.keys(prefix))
+            entries = []
+            for key, generation in source:
+                check_open()
+                if re.fullmatch(r'studio/manifests/pr-[a-f0-9]{16}\.json', key):
+                    entries.append((key, generation))
+            with ThreadPoolExecutor(max_workers=4,thread_name_prefix='studio-project-list') as pool:
+                rows = list(pool.map(summary, entries))
+            check_open()
+            # Hold only validated summaries. A recovery row caused by a
+            # transient error must get another chance at its next refresh.
+            verified = {key:(generation, row) for (key, generation), row in zip(entries, rows)
+                        if generation is not None and isinstance(row, dict) and 'loadError' not in row}
+            if all(row is not changed for row in rows):
+                self.catalogue_version_source = objects
+                self.catalogue_versions = verified
+                return [row for row in rows if row is not None]
+            # Re-list once for a conditional miss. Reuse successful reads from
+            # this attempt only if their generations match the next listing.
+            known.update(verified)
+        raise CatalogueGenerationChanged('The cloud catalogue is still changing. Retry the refresh.')
 
     def worker(self):
         while True:
