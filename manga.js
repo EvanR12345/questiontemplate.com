@@ -1,7 +1,8 @@
 import { planScenes, migrateScenes, panelPrompt as buildPanelPrompt, continuityTarget, soundOnly, humanSubjects } from './story-planner.mjs?v=prompt-2';
 import { pairingKey, helperJson } from './helper-connection.mjs?v=queue-1';
 import { nativeRequest } from './native-client.mjs?v=queue-1';
-import { saveProjectState, loadProjectState, saveImageBlob, loadImageBlob } from './image-store.mjs?v=storage-2';
+import { saveProjectState, loadProjectState, saveImageBlob, loadImageBlob } from './image-store.mjs?v=comic-storage-20261119';
+import { buildComicZip } from './manga-export.mjs';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const STYLE={manhwa:'full-color Korean webtoon aesthetic, clean line art, polished cel shading, cinematic dramatic lighting, expressive characters',action:'black and white action manga, bold ink lines, screentones, dynamic motion, impact framing',seinen:'cinematic detailed manga, realistic anatomy, nuanced expressions, textured shadows, mature visual storytelling',romance:'elegant romantic manga, soft lighting, expressive eyes, delicate line work, emotional atmosphere',horror:'psychological horror manga, heavy black ink, unsettling composition, dramatic high contrast, eerie atmosphere',dark:'dark fantasy manga, epic scale, intricate armor and environments, moody dramatic lighting, textured illustration'};
 const SHOTS=['Wide establishing','Medium','Close-up','Extreme close-up','Full body','Over shoulder'];
@@ -16,9 +17,41 @@ function uid(prefix='id'){return prefix+'-'+crypto.randomUUID().slice(0,8)}
 function status(msg){$('#status').textContent=msg}
 function escapeHtml(s=''){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function debounce(fn,ms=350){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}}
-async function save(){state.name=$('#projectName').value.trim()||'Untitled story';state.story=$('#story').value;try{await saveProjectState(structuredClone(state));}catch(e){$('#saveStatus').textContent='Browser storage failed: '+e.message+'. Generated PNGs remain saved in the helper output folder.';return;}$('#saveStatus').textContent='Saved on this device · '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+let restoreFailed=false;
+const retryRestore='Load the saved comic again before saving changes.';
+async function save(){
+  if(restoreFailed){$('#saveStatus').textContent=retryRestore;return false;}
+  state.name=$('#projectName').value.trim()||'Untitled story';
+  state.story=$('#story').value;
+  try{
+    await saveProjectState(structuredClone(state));
+    $('#saveStatus').textContent='Saved on this device · '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    return true;
+  }catch(e){
+    $('#saveStatus').textContent='Browser storage failed: '+e.message;
+    return false;
+  }
+}
 const autosave=debounce(save,500);
-async function load(){try{const saved=await loadProjectState();const legacy=saved?null:localStorage.getItem('qt-manga-project');if(saved||legacy)state={...state,...(saved||JSON.parse(legacy))};state.projectId ||= crypto.randomUUID();}catch(e){status('Could not restore browser project: '+e.message);} migrateScenes(state);if(state.generatorDefaultVersion!==2){state.generator='sd15';state.generatorDefaultVersion=2;}$('#projectName').value=state.name;$('#story').value=state.story;$('#worldContext').value=state.world||'';$('#generatorModel').value=state.generator||'sd15';selectStyle(state.style);renderAll();}
+async function load(){
+  try{
+    const saved=await loadProjectState();
+    const legacy=saved?null:localStorage.getItem('qt-manga-project');
+    if(saved||legacy)state={...state,...(saved||JSON.parse(legacy))};
+    state.projectId ||= crypto.randomUUID();
+    restoreFailed=false;
+  }catch(e){
+    restoreFailed=true;
+    status('Could not restore browser project: '+e.message);
+    $('#saveStatus').textContent=retryRestore;
+    return false;
+  }
+  migrateScenes(state);
+  if(state.generatorDefaultVersion!==2){state.generator='sd15';state.generatorDefaultVersion=2;}
+  $('#projectName').value=state.name;$('#story').value=state.story;$('#worldContext').value=state.world||'';
+  $('#generatorModel').value=state.generator||'sd15';selectStyle(state.style);renderAll();
+  return true;
+}
 
 function words(s){return (s.match(/[\p{L}\p{N}]+/gu)||[]).length}
 function extractCharacters(text){const counts=new Map();for(const m of text.matchAll(/\b[A-Z][a-z]{2,}\b/g)){const n=m[0];if(common.has(n))continue;counts.set(n,(counts.get(n)||0)+1)}return [...counts].filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([name])=>({id:uid('char'),name,role:'Character',description:'',outfit:'',traits:'',locked:false,reference:null,seed:Math.floor(Math.random()*2**31)}));}
@@ -69,7 +102,7 @@ let queueSnapshot=null, submitting=false, queueEpoch=0, polling=false;
 const applied=new Set(), objectUrls=new Map();
 async function imageSource(value){if(!value?.startsWith('local:'))return value;const id=value.slice(6);if(objectUrls.has(id))return objectUrls.get(id);let blob=await loadImageBlob(id);if(!blob)blob=await(await nativeRequest('/image/result/'+id,imageKey)).blob();const url=URL.createObjectURL(blob);objectUrls.set(id,url);if(objectUrls.size>100){const first=objectUrls.keys().next().value;URL.revokeObjectURL(objectUrls.get(first));objectUrls.delete(first);}return url;}
 function panelJob(p){if(soundOnly(p.prompt))throw new Error(`Panel ${state.panels.indexOf(p)+1} contains only a sound effect. In Layout, describe who does what and move the sound to SFX.`);const subjects=humanSubjects(p.prompt);return{target:p.id,kind:'panel',cast_ids:p.characters,action_prompt:p.prompt,prompt:panelPrompt(p),negative:'low quality, blurry, distorted face, extra fingers, malformed hands, text, speech bubble, watermark, logo'+(Math.max(subjects.length,p.characters.length)<2?', duplicate person':'')+(subjects.length?', empty room, unoccupied room':''),seed:p.seed,reference_images:refsFor(p),reference_strength:p.ref??0.45,...(continuityTarget(p,state)?{continuity_target:continuityTarget(p,state)}:{}),...settings()};}
-async function enqueue(jobs){if(submitting)return status('A batch is already being added.');if(!connected)await connect();if(!connected)return;submitting=true;const epoch=queueEpoch;$('#generateAll').disabled=$('#generateMissing').disabled=true;$('#cancelAllImages').disabled=false;try{if(!jobs.length)return status('All panels already have images.');if(jobs.length>1000)throw new Error('Select a batch of at most 1000 images.');await save();for(let i=0;i<jobs.length;i+=10){if(epoch!==queueEpoch)break;await helperJson('/image/queue',imageKey,{project:state.projectId,jobs:jobs.slice(i,i+10)});if(epoch!==queueEpoch){await helperJson('/image/control',imageKey,{action:'cancel-all'});break;}status(`Added ${Math.min(i+10,jobs.length)} / ${jobs.length} images to the helper queue.`);}await pollQueue();}catch(e){status(e.message);}finally{submitting=false;$('#generateAll').disabled=$('#generateMissing').disabled=false;}}
+async function enqueue(jobs){if(restoreFailed)return status(retryRestore);if(submitting)return status('A batch is already being added.');if(!connected)await connect();if(!connected)return;submitting=true;const epoch=queueEpoch;$('#generateAll').disabled=$('#generateMissing').disabled=true;$('#cancelAllImages').disabled=false;try{if(!jobs.length)return status('All panels already have images.');if(jobs.length>1000)throw new Error('Select a batch of at most 1000 images.');await save();for(let i=0;i<jobs.length;i+=10){if(epoch!==queueEpoch)break;await helperJson('/image/queue',imageKey,{project:state.projectId,jobs:jobs.slice(i,i+10)});if(epoch!==queueEpoch){await helperJson('/image/control',imageKey,{action:'cancel-all'});break;}status(`Added ${Math.min(i+10,jobs.length)} / ${jobs.length} images to the helper queue.`);}await pollQueue();}catch(e){status(e.message);}finally{submitting=false;$('#generateAll').disabled=$('#generateMissing').disabled=false;}}
 async function generatePanel(p){try{return await enqueue([panelJob(p)]);}catch(e){status(e.message);}}
 async function generateReference(c){if(!c.description.trim()&&!c.outfit.trim())return status('Describe '+c.name+'’s appearance and outfit in Cast before generating a reference. A name alone cannot define a consistent look.');return enqueue([{target:c.id,kind:'reference',prompt:`full body character reference portrait, one person, clear face and outfit, neutral standing pose, plain white background. ${c.name}, ${c.description}, ${c.outfit}. ${STYLE[state.style]}`,negative:'multiple different people, text, watermark, cropped head, deformed',seed:c.seed,reference_images:c.reference?[c.reference]:[],reference_strength:.5,...settings()}]);}
 async function generateSet(list){try{return await enqueue(list.map(panelJob));}catch(e){status(e.message);}}
@@ -81,21 +114,40 @@ async function controlQueue(action){if(action==='cancel-all')queueEpoch++;try{re
 function openEdit(p){editing=p;$('#editPrompt').value=p.prompt;$('#editDialogue').value=p.dialogue;$('#editSfx').value=p.sfx;$('#editSeed').value=p.seed;$('#editRef').value=p.ref??0.45;$('#editMask').value='';$('#editDialog').hidden=false}
 async function regenEdit(inpaint=false){if(!editing)return;const panel=editing;panel.prompt=$('#editPrompt').value;panel.dialogue=$('#editDialogue').value;panel.sfx=$('#editSfx').value;panel.seed=Number($('#editSeed').value);panel.ref=Number($('#editRef').value);if(inpaint){const src=state.images[panel.id],file=$('#editMask').files[0];if(!src||!file)return status('Generate the panel and choose a mask image first.');const url=await imageSource(src);const image=await fileData(await(await fetch(url)).blob());await enqueue([{...panelJob(panel),operation:'inpaint',image,mask:await fileData(file)}]);}else await generatePanel(panel);$('#editDialog').hidden=true;renderDraw();await save();}
 
-async function exportCanvas(p){const src=state.images[p.id];if(!src)return null;const img=await loadImage(await imageSource(src)),c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;const x=c.getContext('2d');x.drawImage(img,0,0);if(p.dialogue){x.font=`700 ${Math.max(18,c.width*.035)}px Arial`;const pad=16,w=Math.min(c.width*.72,x.measureText(p.dialogue).width+pad*2),h=55;x.fillStyle='white';roundRect(x,c.width*.07,c.height*.06,w,h,26);x.fill();x.strokeStyle='#111';x.lineWidth=3;x.stroke();x.fillStyle='#111';x.textAlign='center';x.fillText(p.dialogue,c.width*.07+w/2,c.height*.06+36)}if(p.sfx){x.font=`900 ${Math.max(26,c.width*.06)}px Impact`;x.fillStyle='white';x.strokeStyle='#111';x.lineWidth=6;x.textAlign='right';x.strokeText(p.sfx,c.width*.94,c.height*.9);x.fillText(p.sfx,c.width*.94,c.height*.9)}return c}
+async function exportCanvas(p,src=state.images[p.id]){if(!src)return null;const img=await loadImage(await imageSource(src)),c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;const x=c.getContext('2d');x.drawImage(img,0,0);if(p.dialogue){x.font=`700 ${Math.max(18,c.width*.035)}px Arial`;const pad=16,w=Math.min(c.width*.72,x.measureText(p.dialogue).width+pad*2),h=55;x.fillStyle='white';roundRect(x,c.width*.07,c.height*.06,w,h,26);x.fill();x.strokeStyle='#111';x.lineWidth=3;x.stroke();x.fillStyle='#111';x.textAlign='center';x.fillText(p.dialogue,c.width*.07+w/2,c.height*.06+36)}if(p.sfx){x.font=`900 ${Math.max(26,c.width*.06)}px Impact`;x.fillStyle='white';x.strokeStyle='#111';x.lineWidth=6;x.textAlign='right';x.strokeText(p.sfx,c.width*.94,c.height*.9);x.fillText(p.sfx,c.width*.94,c.height*.9)}return c}
 function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y,w,h,r):(ctx.rect(x,y,w,h));}
 function loadImage(src){return new Promise((resolve,reject)=>{const i=new Image;i.onload=()=>resolve(i);i.onerror=reject;i.src=src})}
 async function canvasBlob(c){return new Promise(r=>c.toBlob(r,'image/png'))}
 async function downloadPanel(p){const c=await exportCanvas(p);if(!c)return;downloadBlob(await canvasBlob(c),`panel-${state.panels.indexOf(p)+1}.png`)}
 function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)}
 async function exportPngs(){for(const p of state.panels)if(state.images[p.id])await downloadPanel(p)}
-async function exportZip(){if(!window.JSZip)return status('ZIP library did not load. Try again online.');const zip=new JSZip();zip.file('project.json',JSON.stringify({...state,images:{}},null,2));let n=0;for(const p of state.panels){if(!state.images[p.id])continue;const blob=await canvasBlob(await exportCanvas(p));zip.file(`panels/${String(++n).padStart(3,'0')}.png`,blob)}for(const c of state.characters)if(c.reference)zip.file(`characters/${c.name.replace(/[^\w-]+/g,'_')}.png`,dataToBlob(c.reference));downloadBlob(await zip.generateAsync({type:'blob'}),`${safeName(state.name)}.zip`)}
+async function exportZip(){
+  if(!window.JSZip)return status('ZIP library did not load. Try again online.');
+  const filename=`${safeName(state.name)}.zip`;
+  try{
+    const archive=await buildComicZip(new JSZip(),state,{
+      renderPanel:async (panel,source)=>{
+        const url=URL.createObjectURL(source);
+        try{return await canvasBlob(await exportCanvas(panel,url));}
+        finally{URL.revokeObjectURL(url);}
+      },
+      readPanel:async image=>{
+        const response=await fetch(await imageSource(image));
+        if(!response.ok)throw new Error('A saved panel image could not be read.');
+        return response.blob();
+      },
+      readReference:dataToBlob,
+    });
+    downloadBlob(archive,filename);
+  }catch(error){status('Comic ZIP export failed: '+error.message);}
+}
 function dataToBlob(data){const [meta,b64]=data.split(',');const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));return new Blob([bytes],{type:meta.match(/data:(.*?);/)?.[1]||'application/octet-stream'})}
 async function exportWebtoon(){const canvases=[];for(const p of state.panels)if(state.images[p.id])canvases.push(await exportCanvas(p));if(!canvases.length)return status('Generate at least one panel first.');const gap=24,w=Math.max(...canvases.map(c=>c.width)),h=canvases.reduce((s,c)=>s+c.height,0)+gap*(canvases.length-1);if(h>32767)return status('Webtoon is too tall for one browser image. Export ZIP instead.');const out=document.createElement('canvas');out.width=w;out.height=h;const x=out.getContext('2d');x.fillStyle='#111';x.fillRect(0,0,w,h);let y=0;for(const c of canvases){x.drawImage(c,(w-c.width)/2,y);y+=c.height+gap}downloadBlob(await canvasBlob(out),`${safeName(state.name)}-webtoon.png`)}
 async function exportPdf(){if(!window.jspdf)return status('PDF library did not load. Try again online.');const ready=state.panels.filter(p=>state.images[p.id]);if(!ready.length)return status('Generate at least one panel first.');let doc;for(let i=0;i<ready.length;i++){const c=await exportCanvas(ready[i]),data=c.toDataURL('image/jpeg',.92),orientation=c.width>c.height?'landscape':'portrait';if(!doc)doc=new jspdf.jsPDF({orientation,unit:'px',format:[c.width,c.height]});else doc.addPage([c.width,c.height],orientation);doc.addImage(data,'JPEG',0,0,c.width,c.height)}doc.save(`${safeName(state.name)}.pdf`)}
 function safeName(s){return (s||'manga-project').replace(/[^\w-]+/g,'-').replace(/^-|-$/g,'').toLowerCase()||'manga-project'}
-function newProject(){if(submitting||queueSnapshot?.counts.running||queueSnapshot?.counts.queued)return status('Pause and cancel the queue before starting a new project.');if(!confirm('Start a new project? Your saved project will be replaced when you save.'))return;state={name:'Untitled story',story:'',style:'manhwa',characters:[],scenes:[],panels:[],images:{},cover:null,version:1,generator:'sd15',generatorDefaultVersion:2,projectId:crypto.randomUUID()};$('#generatorModel').value='sd15';drawPage=0;$('#worldContext').value='';$('#projectName').value=state.name;$('#story').value='';renderAll();go('story');status('New project ready.')}
+function newProject(){if(submitting||queueSnapshot?.counts.running||queueSnapshot?.counts.queued)return status('Pause and cancel the queue before starting a new project.');if(!confirm('Start a new project? Your saved project will be replaced when you save.'))return;restoreFailed=false;state={name:'Untitled story',story:'',style:'manhwa',characters:[],scenes:[],panels:[],images:{},cover:null,version:1,generator:'sd15',generatorDefaultVersion:2,projectId:crypto.randomUUID()};$('#generatorModel').value='sd15';drawPage=0;$('#worldContext').value='';$('#projectName').value=state.name;$('#story').value='';renderAll();go('story');status('New project ready.')}
 $$('.stage').forEach(b=>b.onclick=()=>go(b.dataset.step));$$('[data-style]').forEach(b=>b.onclick=()=>selectStyle(b.dataset.style));
-$('#story').oninput=()=>{renderStats();autosave()};$('#analyze').onclick=analyze;$('#exampleStory').onclick=()=>{$('#story').value=example;renderStats()};$('#clearStory').onclick=()=>{$('#story').value='';renderStats()};$('#importStory').onclick=()=>$('#storyFile').click();$('#storyFile').onchange=async e=>{if(e.target.files[0]){$('#story').value=await e.target.files[0].text();renderStats()}};$('#addCharacter').onclick=()=>{state.characters.push({id:uid('char'),name:'New character',role:'Character',description:'',outfit:'',traits:'',locked:false,reference:null,seed:Math.floor(Math.random()*2**31)});renderCast()};$('#autoLayout').onclick=autoLayout;$('#generateAll').onclick=()=>generateSet(state.panels);$('#generateMissing').onclick=()=>generateSet(state.panels.filter(p=>!state.images[p.id]));$('#connectImage').onclick=connect;$('#projectName').oninput=autosave;$('#saveProject').onclick=()=>{void save().then(()=>status('Project saved on this device.'))};$('#loadProject').onclick=()=>{void load().then(()=>status('Saved project loaded.'))};$('#newProject').onclick=newProject;$('#closeEdit').onclick=()=>$('#editDialog').hidden=true;$('#regenPanel').onclick=()=>regenEdit(false);$('#inpaintPanel').onclick=()=>regenEdit(true);$('#exportPngs').onclick=exportPngs;$('#exportZip').onclick=exportZip;$('#exportWebtoon').onclick=exportWebtoon;$('#exportPdf').onclick=exportPdf;
+$('#story').oninput=()=>{renderStats();autosave()};$('#analyze').onclick=analyze;$('#exampleStory').onclick=()=>{$('#story').value=example;renderStats();autosave()};$('#clearStory').onclick=()=>{$('#story').value='';renderStats();autosave()};$('#importStory').onclick=()=>$('#storyFile').click();$('#storyFile').onchange=async e=>{if(e.target.files[0]){$('#story').value=await e.target.files[0].text();renderStats();autosave()}};$('#addCharacter').onclick=()=>{state.characters.push({id:uid('char'),name:'New character',role:'Character',description:'',outfit:'',traits:'',locked:false,reference:null,seed:Math.floor(Math.random()*2**31)});renderCast();autosave()};$('#autoLayout').onclick=autoLayout;$('#generateAll').onclick=()=>generateSet(state.panels);$('#generateMissing').onclick=()=>generateSet(state.panels.filter(p=>!state.images[p.id]));$('#connectImage').onclick=connect;$('#projectName').oninput=autosave;$('#saveProject').onclick=()=>{void save().then(ok=>status(ok?'Project saved on this device.':$('#saveStatus').textContent))};$('#loadProject').onclick=()=>{void load().then(ok=>{if(ok)status('Saved project loaded.');})};$('#newProject').onclick=newProject;$('#closeEdit').onclick=()=>$('#editDialog').hidden=true;$('#regenPanel').onclick=()=>regenEdit(false);$('#inpaintPanel').onclick=()=>regenEdit(true);$('#exportPngs').onclick=exportPngs;$('#exportZip').onclick=exportZip;$('#exportWebtoon').onclick=exportWebtoon;$('#exportPdf').onclick=exportPdf;
 $('#pauseImages').onclick=()=>controlQueue('pause');$('#resumeImages').onclick=()=>controlQueue('resume');$('#cancelCurrentImage').onclick=()=>controlQueue('cancel-current');$('#cancelAllImages').onclick=()=>controlQueue('cancel-all');$('#retryImages').onclick=()=>controlQueue('retry-failed');$('#previousPage').onclick=()=>{drawPage=Math.max(0,drawPage-1);renderDraw();renderLayout();};$('#nextPage').onclick=()=>{drawPage=Math.min(Math.max(0,Math.ceil(state.panels.length/50)-1),drawPage+1);renderDraw();renderLayout();};
 $('#worldContext').oninput=e=>{state.world=e.target.value;updatePromptPreviews();autosave();};$('#generatorModel').onchange=e=>{state.generator=e.target.value;autosave();};
 await load();if(imageKey)await connect();setInterval(()=>{if(imageKey)void pollQueue();},2000);window.addEventListener('online',()=>{if(imageKey)void connect();});

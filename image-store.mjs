@@ -30,7 +30,7 @@ async function operation(store, mode, action, retry = true) {
   return new Promise((resolve, reject) => {
     const request = action(transaction.objectStore(store));
     transaction.oncomplete = () => resolve(request.result);
-    transaction.onerror = () => reject(transaction.error);
+    transaction.onerror = event => reject(transaction.error || event.target?.error || new Error('Browser storage request failed'));
     transaction.onabort = () => reject(transaction.error || new Error('Storage transaction canceled'));
   });
 }

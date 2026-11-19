@@ -14,7 +14,7 @@ Projects and their assets live in `outputs/studio/`. Copy a complete project fol
 
 For other existing helper installations, run the website's `update-helper.bat`, then optionally run `setup-studio-models.bat` (`--vision` adds the vision projector). The installer reuses configured weights, verifies downloads, and never installs Torch or recreates `.venv`. It does not enable the native default until the configuration records a successful local validation. Configure an existing FFmpeg executable if it is not on PATH.
 
-See [STUDIO-IMPLEMENTATION.md](https://questiontemplate.com/STUDIO-IMPLEMENTATION.md) for architecture, model comparison, measured performance and quality limits. A local copy is included under `web/` in the downloaded helper. Fine character identity and left/right corrections still require review; visual QC is advisory.
+See [STUDIO-IMPLEMENTATION.md](https://questiontemplate.com/STUDIO-IMPLEMENTATION.md) for architecture, model comparison, measured performance and quality limits. Practical visual checks can block production on major findings. Open Layout to inspect the affected shots, including character identity and left/right placement.
 
 ## Original Comic & panel tools
 

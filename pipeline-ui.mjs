@@ -216,12 +216,21 @@ function renderTimeline(){
     for(const dep of getTask(selected).deps){const from=positions.get(dep);if(!from)continue;const a=from.x+from.w,b=from.y+13,c=to.x,d=to.y+13;paths+=`<path d="M ${a} ${b} C ${a+18} ${b},${c-18} ${d},${c} ${d}"/>`;}
   }
   html+=`<svg class="dependencies" width="${width}" height="${top}" aria-hidden="true"><g fill="none" stroke="#64826d" stroke-width="1.2" stroke-dasharray="3 3">${paths}</g></svg><i class="playhead" id="playhead" style="left:155px" hidden></i></div>`;
+  const focusedTask=$('timeline').contains(document.activeElement)?document.activeElement.dataset.id:null;
   $('timeline').innerHTML=html;
+  if(focusedTask)$('timeline').querySelector(`[data-id="${CSS.escape(focusedTask)}"]`)?.focus({preventScroll:true});
   for(const button of $('timeline').querySelectorAll('.task')){
     button.addEventListener('click',()=>selectTask(button.dataset.id));
-    button.addEventListener('keydown',e=>{
-      if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const t=getTask(button.dataset.id);moveTask(t.id,t.start+(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?30:1));
-      $('timeline').querySelector(`[data-id="${t.id}"]`)?.focus();
+    button.addEventListener('keydown',async e=>{
+      if(!['ArrowLeft','ArrowRight'].includes(e.key))return;
+      e.preventDefault();
+      const task=getTask(button.dataset.id);
+      const delta=(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?30:1);
+      await moveTask(task.id,Math.max(0,task.start+delta));
+      // Rebuilding temporarily makes the timeline inert and replaces its buttons.
+      if(view==='schedule'&&selected===task.id&&document.activeElement===document.body){
+        $('timeline').querySelector(`[data-id="${CSS.escape(task.id)}"]`)?.focus({preventScroll:true});
+      }
     });
     button.addEventListener('pointerdown',beginDrag);
   }

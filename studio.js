@@ -2,7 +2,7 @@ import {setupAudioModels} from './audio-model-picker.mjs?v=opus-only-20261026';
 import { countWords, duration, wavBlob, SAMPLE_RATE, estimatedBytes, recordedSeconds } from './audio-core.mjs?v=speech-3';
 import { speechText } from './pronunciation.mjs?v=speech-3';
 import { GenerationEstimate, measuredPace, narrationEstimate } from './speech-progress.mjs?v=speech-3';
-import { beginSession, savePart, saveJob, loadSession } from './session-store.mjs?v=long-fast-2';
+import { beginSession, checkpointVersion, loadCheckpointVersion, savePart, saveJob, loadSession } from './session-store.mjs?v=audio-checkpoint-2';
 import { nativeHealth } from './native-client.mjs?v=queue-1';
 import { pairingKey } from './helper-connection.mjs?v=queue-1';
 const $ = selector => document.querySelector(selector);
@@ -102,11 +102,25 @@ function updateRecording() {
 }
 function jobData(complete = false) {
   return { text: run.text, voice: run.voice, voiceName: run.voiceName, speed: run.speed, volume: run.volume,
-    format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', processed: run.checkpoint || 0, complete, updated: Date.now() };
+    format: run.format, bitrate: run.bitrate, engine: run.engine, pronunciation: run.pronunciation || '', processed: run.checkpoint || 0, complete, updated: Date.now(), checkpointId: crypto.randomUUID() };
 }
-function storageFailure() {
+function storageFailure(message = 'Checkpoint storage is unavailable or full. Download completed parts before closing this tab.') {
   run.persist = false;
-  $('#engineStatus').textContent = 'Checkpoint storage is unavailable or full. Download completed parts before closing this tab.';
+  $('#engineStatus').textContent = message;
+}
+async function saveCheckpoint(part, complete = false) {
+  try {
+    const expected = await run.checkpointBase;
+    if (!run.persist) return;
+    const job = jobData(complete);
+    let saved;
+    if (!part) saved = await saveJob(job, expected);
+    // Replace the earlier recovery slot only when new audio can take its place.
+    else if (part.index === 0) saved = await beginSession(job, part, expected);
+    else saved = await savePart(job, part, expected);
+    if (saved) run.checkpointBase = Promise.resolve(job.checkpointId);
+    else storageFailure('Another Audio tab updated the saved recording. Download completed parts before closing this tab.');
+  } catch { storageFailure(); }
 }
 function appendPart(part) {
   const blob = run.format === 'wav' ? wavBlob([part.blob], part.frames) : new Blob([part.blob], { type: run.format === 'opus' ? 'audio/ogg; codecs=opus' : 'audio/mpeg' });
@@ -125,9 +139,7 @@ async function finishPart(processed) {
   const part = { index: run.parts.length, blob: new Blob(run.current), frames: run.partFrames, processed };
   run.parts.push(part); run.current = []; run.partFrames = 0; run.checkpoint = processed;
   appendPart(part);
-  if (run.persist) {
-    try { await savePart(jobData(), part); } catch { storageFailure(); }
-  }
+  if (run.persist) await saveCheckpoint(part);
 }
 function setFullDownload(partial = false) {
   if (!run.parts.length) return;
@@ -139,6 +151,15 @@ function setFullDownload(partial = false) {
     link.textContent = (run.sample ? '↓ Download preview ' : '↓ Download full ') + run.format.toUpperCase(); link.setAttribute('aria-disabled', 'false');
   } catch { $('#recordingNote').textContent = 'Download individual parts; this recording exceeds the WAV format size limit.'; }
 }
+async function offerSavedRecording(message) {
+  const currentRun = run;
+  try {
+    const saved = await loadSession();
+    if (busy || run !== currentRun || !saved?.parts.length) return;
+    $('#recoveryText').textContent = message;
+    $('#recovery').hidden = false;
+  } catch {}
+}
 async function complete(message, partial = false) {
   run.finishedAt = performance.now();
   $('#progress').hidden = true;
@@ -148,21 +169,18 @@ async function complete(message, partial = false) {
       : run.sample ? 'A short sample of your script. Generate audio to record the entire script.'
       : run.words.toLocaleString() + ' words recorded · ' + run.voiceName + ' · ' + run.speed.toFixed(2) + '× speed. Actual WPM includes pauses.';
   } else $('#recordingNote').textContent = 'No audio generated yet.';
-  if (run.persist) {
-    try { await saveJob(jobData(!partial)); } catch { storageFailure(); }
-  }
+  if (run.persist && run.parts.length) await saveCheckpoint(null, !partial);
   $('#resumeSaved').hidden = !partial || run.processed >= run.text.length || run.sample;
   clearInterval(run.timer); updateRecording(); controls(false); status(message);
+  if (!run.persist || !run.parts.length) {
+    void offerSavedRecording(run.sample ? 'Your earlier recording is still saved.' : 'A saved recording is available on this device.');
+  }
   await wakeLock?.release().catch(() => {}); wakeLock = null;
   if (run.sample && run.frames && !partial) {
     const audio = $('#parts audio');
     $('#downloads').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     try { await audio.play(); status('Voice preview ready. Generate audio to record your whole script.'); }
     catch { status('Voice preview ready. Press play below to listen.'); }
-    try {
-      const saved = await loadSession();
-      if (saved?.parts.length) { $('#recoveryText').textContent = 'Your earlier recording is still saved.'; $('#recovery').hidden = false; }
-    } catch {}
   }
 }
 function advance(processed) {
@@ -221,7 +239,12 @@ async function receive({ data }) {
     await finishPart(data.processed);
     worker?.postMessage({ type: 'ack' }); return;
   }
-  if (data.type === 'done') { run.checkpoint = run.processed; await complete(run.sample ? 'Voice sample ready. Press play below.' : 'Recording ready. Download the full track or individual parts.'); }
+  if (data.type === 'done') {
+    run.checkpoint = run.processed;
+    const message = !run.frames ? 'No audio was generated. Check the script and pronunciation fixes, then try again.'
+      : run.sample ? 'Voice sample ready. Press play below.' : 'Recording ready. Download the full track or individual parts.';
+    await complete(message);
+  }
   if (data.type === 'canceled') await complete('Stopped safely. Completed audio is downloadable. Resume to continue.', true);
   if (data.type === 'error') await complete('Could not finish: ' + data.message.replace(/[.\s]+$/, '') + '. Completed sections are downloadable.', true);
 }
@@ -233,7 +256,8 @@ function initializeRun(job, parts = []) {
   stopPreview(); document.querySelectorAll('audio').forEach(audio => audio.pause()); revokeUrls();
   run = { ...job, frames: parts.reduce((sum, part) => sum + part.frames, 0), bytes: parts.reduce((sum, part) => sum + part.blob.size, 0),
     current: [], parts: [...parts], partFrames: 0, checkpoint: job.processed || 0, wallStart: performance.now(),
-    generationStart: 0, pausedMs: 0, pauseStart: 0, persist: !job.sample, ready: false };
+    generationStart: 0, pausedMs: 0, pauseStart: 0, persist: !job.sample, ready: false,
+    checkpointBase: Promise.resolve(parts.length ? checkpointVersion(job) : null) };
   run.startFrames = run.frames; run.startOffset = job.processed || 0;
   resetWords(job.processed || 0);
   run.startWords = run.words; run.totalWords = countWords(run.text); run.estimator = new GenerationEstimate();
@@ -277,7 +301,13 @@ async function generate(sample = false) {
     bitrate: Number($('#bitrate').value), engine: $('#engine').value, pronunciation: $('#pronunciation').value, sample, processed: 0 });
   controls(true); remember(full); $('#recovery').hidden = true;
   $('#recordingNote').textContent = 'Parts appear as they finish. Raw audio is compressed immediately for compact downloads.';
-  if (run.persist) { try { await beginSession(jobData()); } catch { storageFailure(); } }
+  if (run.persist) {
+    const currentRun = run;
+    run.checkpointBase = loadCheckpointVersion().catch(() => {
+      if (run === currentRun) storageFailure();
+      return null;
+    });
+  }
   await startWorker();
 }
 async function resumeSaved() {
@@ -409,12 +439,7 @@ $('#pauseGeneration').onclick = () => {
 $('#restore').onclick = restore; $('#resumeSaved').onclick = resumeSaved;
 ['format', 'bitrate', 'engine'].forEach(id => $('#' + id).onchange = formatOutputs);
 document.addEventListener('visibilitychange', () => { if (busy && document.visibilityState === 'visible') void keepAwake(); });
-loadSession().then(saved => {
-  if (!busy && saved?.parts.length) {
-    $('#recoveryText').textContent = 'A previous recording is saved on this device.';
-    $('#recovery').hidden = false;
-  }
-}).catch(() => {});
+void offerSavedRecording('A previous recording is saved on this device.');
 $('#preview').onclick = devicePreview;
 $('#pause').onclick = () => { synth?.pause(); document.querySelectorAll('audio').forEach(audio => audio.pause()); if (!busy) status('Playback paused.'); };
 $('#resume').onclick = () => { synth?.resume(); if (!busy) status('Device preview resumed. Use each recording’s play button for generated audio.'); };

@@ -1,5 +1,10 @@
 // Only completed, flushed parts are checkpoints. An interrupted in-flight part
 // is regenerated on resume, so neither text nor buffered encoder audio is lost.
+export function checkpointVersion(job) {
+  // Older saved recordings use their metadata as the first comparison.
+  return job ? job.checkpointId || JSON.stringify(job) : null;
+}
+
 export function createSessionStore(name) {
   let database;
   function open() {
@@ -18,20 +23,52 @@ export function createSessionStore(name) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(names, 'readwrite');
       tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
-      action(tx);
+      const abort = error => {
+        tx.abort();
+        reject(error);
+      };
+      try { action(tx, abort); } catch (error) { abort(error); }
     });
   }
-  async function beginSession(job) {
-    return transaction(['job', 'parts'], tx => {
-      tx.objectStore('parts').clear(); tx.objectStore('job').put(job, 'current');
+  async function writeCheckpoint(job, part, replace, expectedVersion) {
+    let written = false;
+    await transaction(part || replace ? ['job', 'parts'] : ['job'], (tx, abort) => {
+      const jobs = tx.objectStore('job');
+      const write = () => {
+        if (replace) tx.objectStore('parts').clear();
+        if (part) tx.objectStore('parts').put(part);
+        jobs.put(job, 'current');
+        written = true;
+      };
+      if (expectedVersion === undefined) { write(); return; }
+      const current = jobs.get('current');
+      current.onsuccess = () => {
+        try {
+          if (checkpointVersion(current.result) === expectedVersion) write();
+        } catch (error) { abort(error); }
+      };
+    });
+    return written;
+  }
+  function beginSession(job, firstPart, expectedVersion) {
+    return writeCheckpoint(job, firstPart, true, expectedVersion);
+  }
+  function savePart(job, part, expectedVersion) {
+    return writeCheckpoint(job, part, false, expectedVersion);
+  }
+  function saveJob(job, expectedVersion) {
+    return writeCheckpoint(job, null, false, expectedVersion);
+  }
+  async function loadCheckpointVersion() {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const job = db.transaction('job').objectStore('job').get('current');
+      job.onsuccess = () => {
+        try { resolve(checkpointVersion(job.result)); } catch (error) { reject(error); }
+      };
+      job.onerror = () => reject(job.error);
     });
   }
-  async function savePart(job, part) {
-    return transaction(['job', 'parts'], tx => {
-      tx.objectStore('parts').put(part); tx.objectStore('job').put(job, 'current');
-    });
-  }
-  async function saveJob(job) { return transaction(['job'], tx => tx.objectStore('job').put(job, 'current')); }
   async function loadSession() {
     const db = await open();
     return new Promise((resolve, reject) => {
@@ -40,7 +77,7 @@ export function createSessionStore(name) {
       tx.onerror = () => reject(tx.error);
     });
   }
-  return { beginSession, savePart, saveJob, loadSession };
+  return { beginSession, savePart, saveJob, loadCheckpointVersion, loadSession };
 }
 
-export const { beginSession, savePart, saveJob, loadSession } = createSessionStore('audio-studio-recording-v1');
+export const { beginSession, savePart, saveJob, loadCheckpointVersion, loadSession } = createSessionStore('audio-studio-recording-v1');

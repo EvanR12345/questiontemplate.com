@@ -25,7 +25,11 @@ function fakeStorage() {
                 writes++;
                 const result = { result: key };
                 queueMicrotask(() => {
-                  if (failWrite) {
+                  if (failWrite === 'request') {
+                    const error = new DOMException('Request aborted', 'AbortError');
+                    transaction.onerror({ target: { error } });
+                    transaction.onabort();
+                  } else if (failWrite) {
                     transaction.error = new DOMException('Full', 'QuotaExceededError');
                     transaction.onabort();
                   } else { values.set(key, value); transaction.oncomplete(); }
@@ -49,7 +53,7 @@ function fakeStorage() {
     return request;
   } };
   return { connections, values, get opens() { return opens; }, get writes() { return writes; },
-    failNextOpen() { failOpen = true; }, failWrites() { failWrite = true; } };
+    failNextOpen() { failOpen = true; }, failWrites(cause = true) { failWrite = cause; } };
 }
 
 let revision = 0;
@@ -96,4 +100,13 @@ test('failed writes report the original error without repeating the write', asyn
   await assert.rejects(store.saveProjectState({ title: 'Quota' }), { name: 'QuotaExceededError' });
   assert.equal(storage.writes, 1);
   assert.equal(storage.opens, 1);
+});
+
+test('a request error remains available before the transaction receives its abort error', async () => {
+  const storage = fakeStorage(), store = await loadStore();
+  storage.failWrites('request');
+  await assert.rejects(store.saveProjectState({ title: 'Keep the saved comic' }), {
+    name: 'AbortError', message: 'Request aborted',
+  });
+  assert.equal(storage.writes, 1);
 });

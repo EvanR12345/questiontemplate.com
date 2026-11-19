@@ -1,12 +1,5 @@
 # QuestionTemplate Image Helper
 
-Free local image generation for QuestionTemplate Manga Studio.
+The Audio, Comic & panel tools and Story → video pages use the shared QuestionTemplate NVIDIA helper. Start the existing installation with its `start-windows.bat`, open the pairing link, and choose **Comic & panel tools** in Studio. The shared helper keeps its installed Python environment, model files and image queue. [Shared helper instructions](../nvidia-helper/README.md)
 
-## Windows
-
-1. Install Python 3.11 and a current NVIDIA driver.
-2. Run `image-helper-windows.bat` from questiontemplate.com, or place this folder on your PC and run `start-windows.bat`.
-3. The first setup installs CUDA PyTorch and downloads Stable Diffusion when you first generate an image.
-4. Keep the helper window open. It opens Manga Studio with a temporary connection key.
-
-The default model is Stable Diffusion 1.5 for compatibility with 4 GB GPUs. Character consistency uses IP-Adapter reference conditioning. Inpainting is downloaded lazily the first time it is used.
+This directory preserves the earlier standalone image server. Its launcher creates a separate Python environment and installs Torch. It implements the earlier image API. The current Comic workspace connects through the shared helper's image queue.
