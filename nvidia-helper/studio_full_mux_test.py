@@ -186,8 +186,18 @@ class FullMuxMediaTest(unittest.TestCase):
             p['intro'].update(enabled=True, duration=10, audioPath='audio-1.wav',
                               placement='full_story_only', showTitle=False)
             p = store.save(p)
-            self.assertEqual(renderer.full_mux_forecast(p)['eligibility'], 'unsupported')
+            with patch.object(renderer,'direct_intro_mux_supported',return_value=False,create=True):
+                baseline=renderer.full(p,lambda *_:None)
+            original=store.asset(p['id'],baseline['path'])
+            before=original.read_bytes()
+            original.rename(original.with_name('baseline-check.mp4'))
+            checkpoint=original.with_name(original.stem+'-visual.mp4')
+            checkpoint.rename(checkpoint.with_name('baseline-visual-check.mp4'))
+            self.assertEqual(renderer.full_mux_forecast(p)['effectivePolicy'],'direct-concat-intro-decoded-audio-v1')
             result = renderer.full(p, lambda *_: None)
+            self.assertEqual(result['fullAssemblyPolicy'],'direct-concat-intro-decoded-audio-v1')
+            self.assertEqual(store.asset(p['id'],result['path']).read_bytes(),before)
+            self.assertFalse(checkpoint.exists())
             self.assert_chapter_tones(store.asset(p['id'], result['path']), 11.2,
                                       [(.2, 430), (10.2, 430), (10.8, 560)])
 

@@ -238,6 +238,24 @@ class PracticalQCTest(unittest.TestCase):
         settings['qcCheckLevel']='off';self.assertFalse(automatic_repairs(settings,finding('major')))
         settings['qcCheckLevel']='practical';settings['qcCostEstimate']['includesIncrementalRental']=False
         self.assertFalse(automatic_repairs(settings,finding('major')))
+    def test_review_reports_only_attempts_against_the_current_visual_inputs(self):
+        from studio_render_inputs import visual_spec_signature
+        p=self.store.load(self.pid);shot=get_shot(p,self.chid,self.sid)
+        p['settings'].update(qcCheckLevel='practical',automaticRepair=True,maxImageRetries=1,
+            qcCostEstimate={'baselineControlled':True,'includesAPI':True,'includesIncrementalRental':True,
+                'includesRechecks':True,'baselineGenerationUSD':1,'combinedQCAndReplacementUpperUSD':.01,
+                'maxImageRetriesCovered':1})
+        shot['qc'].update(issues=['The required person is missing.'],
+            findings=[{'issue':'The required person is missing.','severity':'major'}])
+        shot.update(automaticRepairAttempts=1,automaticRepairSpec=visual_spec_signature(p,shot,self.store))
+        self.store.save(p)
+        def status():
+            return get_shot(project_view(self.store,self.pid),self.chid,self.sid)['qcDecision']['automaticRepair']
+        self.assertEqual(status(),{'reason':'exhausted','used':1,'remaining':0,'limit':1})
+        self.store.mutate(self.pid,lambda q:get_shot(q,self.chid,self.sid).update(prompt='The same room at dusk.'))
+        self.assertEqual(status(),{'reason':None,'used':0,'remaining':1,'limit':1})
+        self.store.mutate(self.pid,lambda q:get_shot(q,self.chid,self.sid)['manual'].update(imagePath=True))
+        self.assertEqual(status(),{'reason':'manual','limit':1})
     def test_existing_flagged_image_cannot_buy_a_replacement_without_cost_proof(self):
         from studio_service import StudioService
         from unittest.mock import Mock

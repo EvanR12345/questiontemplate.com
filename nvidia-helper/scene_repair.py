@@ -1,5 +1,5 @@
 """Bounded full-scene repair plans, separate from original user/story prompts."""
-import copy,hashlib,json
+import copy,hashlib,json,re
 ROLE=('Corrective scene planner: write ONE complete positive image prompt for the CURRENT moment, '
  'using current narration, saved cast, identities, appearances and confirmed defects. This replaces the old baked image prompt. '
  'Put the essential current action and corrected body arrangement FIRST. Explicitly bind each action, restraint and essential prop to its named owner. '
@@ -19,6 +19,45 @@ def confirmed_defects(settings,qc):
  issues += [b['issue'] for b in qc.get('criticalStoryBlockers',[])]
  return list(dict.fromkeys(issues))
 
+def framing_subjects(settings, shot, qc, *, project=None):
+    """Return cast IDs for a confirmed garment conflict that can be restaged non-explicitly."""
+    if not shot or not settings.get('automaticSceneRestaging', True):
+        return []
+    if any(shot.get('manual', {}).get(field) for field in ('prompt', 'camera', 'referenceImages')):
+        return []
+    from studio_qc import effective_issue_levels
+    state = r'(?:stripped(?:\s+(?:of\s+(?:(?:all|his|her|their|the)\s+)*(?:clothing|clothes)|naked))?|(?:fully\s+)?(?:unclothed|undressed|naked))'
+    eligible = [person['id'] for person in shot.get('characters', []) if person.get('id') and re.fullmatch(
+        state, str(person.get('appearanceState', {}).get('outfit', '')).strip(' .'), re.I)]
+    if not eligible:return []
+    cast={s['id'] for s in shot['characters'] if s.get('id')}
+    people=[]
+    if project:
+        chapter=next((c for c in project.get('chapters',[]) if c['id']==shot.get('chapterId')), {})
+        people=[p for p in project.get('characters',[])+chapter.get('people',[]) if p.get('id') in cast and p.get('name')]
+    found=set()
+    for finding,level in zip(qc.get('findings',[]),effective_issue_levels(settings,qc)):
+        if level!='major':continue
+        text=finding.get('issue','')
+        expected=re.search(r'\b(?:stripped|unclothed|undressed|naked)\b',text,re.I)
+        seen=re.search(r'\b(?:wearing|wears|clothed|dressed|clad)\b',text,re.I)
+        if not expected or not seen or expected.start()<seen.end():continue
+        before=text[:seen.start()]
+        if re.search(r'\b(?:not|never|no longer)\s+(?:visibly\s+)?$',before,re.I):continue
+        named={p['id'] for p in people if any(re.search(r'(?<!\w)'+re.escape(name)+r'(?!\w)',before,re.I)
+               for name in (p['name'],p['name'].split()[0]))}
+        between=text[seen.end():expected.start()]
+        if any(p['id'] not in named and re.search(r'(?<!\w)'+re.escape(p['name'].split()[0])+r'(?!\w)',between,re.I)
+               for p in people):continue
+        owner=finding.get('subjectId')
+        if owner:
+            if owner in eligible:found.add(owner)
+        elif len(named)==1:
+            found.update(named.intersection(eligible))
+        elif not named and len(eligible)==1:
+            found.add(eligible[0])
+    return [pid for pid in eligible if pid in found]
+
 def planning_context(project,shot,qc):
  from scene_conditioning import scene_facts
  if shot.get('manual',{}).get('prompt'):return None
@@ -35,7 +74,7 @@ def planning_context(project,shot,qc):
   # Current supporting roles can name an owned prop absent from the focal
   # action. Reuse the visibility filter rather than restoring raw inventory.
   return visible_appearance(shot | {'action':str(shot.get('action',''))+' '+fact['description']},selected)
- return {'currentNarration':shot.get('narrationSegment',''),'currentAction':shot.get('action',''),
+ context={'currentNarration':shot.get('narrationSegment',''),'currentAction':shot.get('action',''),
   'currentPose':shot.get('pose',''),'camera':copy.deepcopy(shot.get('camera',{})),
   'location':shot.get('location',''),'lighting':shot.get('lighting',''),
   'intendedPeople':[{'name':f['name'],'currentAppearance':current_appearance(f),
@@ -46,6 +85,16 @@ def planning_context(project,shot,qc):
   'visualConstraints':project['settings'].get('imageVisualConstraints',project['settings'].get('visualConstraints','')),
   'clothingContinuity':project['settings'].get('qcClothingContinuity','required'),
   'planningPolicy':{k:project['settings'].get('director',{}).get(k) for k in ('provider','model','reasoning','processingTier')}}
+ subjects=framing_subjects(project['settings'],shot,qc,project=project)
+ if subjects:
+  context['framingGuidance']={
+   'subjects':[people.get(s,{}).get('name') or s for s in subjects],
+   'instruction':('Keep the scene non-explicit. Place the affected person near the camera, with the lower edge through '
+                  'their upper torso, while the other focal people remain visible in the middle distance. '
+                  'Name the visible evidence of the required action and any existing restraint. '
+                  'Keep each supporting person and prop separately identifiable. Use another non-explicit staging '
+                  'if this angle would conceal a required action, limb, movement, or relationship.')}
+ return context
 
 def bind(prompt,image_sha,spec,context,model,reasoning):
  if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>2600:raise ValueError('Corrective scene plan is empty or exceeds its bounded prompt size.')

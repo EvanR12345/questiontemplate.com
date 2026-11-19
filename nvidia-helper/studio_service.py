@@ -58,6 +58,14 @@ class AudioYield(Exception):
 class CloudBudgetPaused(ValueError):
     """Preserve the current seed and waiting jobs when rented time runs out."""
 
+def temporary_queue_storage_error(error):
+    if isinstance(error,MemoryError):return True
+    code=getattr(error,'sqlite_errorcode',None)
+    if code is None:
+        return any(s in str(error).lower() for s in ('locked','busy','disk i/o','disk is full','out of memory'))
+    return code & 255 in (sqlite3.SQLITE_BUSY,sqlite3.SQLITE_LOCKED,sqlite3.SQLITE_IOERR,sqlite3.SQLITE_FULL,
+                           sqlite3.SQLITE_NOMEM,sqlite3.SQLITE_READONLY,sqlite3.SQLITE_CANTOPEN)
+
 
 class StudioService:
     def __init__(
@@ -123,6 +131,11 @@ class StudioService:
             "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)"
         )
         self.db.execute('CREATE TABLE IF NOT EXISTS queued_image_receipts(job TEXT PRIMARY KEY, receipt TEXT NOT NULL)')
+        self.db.execute("""CREATE TABLE IF NOT EXISTS queue_project_updates(
+            job TEXT, started REAL, project TEXT NOT NULL, completion TEXT,
+            attempts INTEGER NOT NULL DEFAULT 0, retry_after REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY(job,started))""")
+        self.db.execute('CREATE INDEX IF NOT EXISTS project_update_due ON queue_project_updates(retry_after)')
         # Keep long histories cheap to inspect without dropping pending work.
         self.db.execute("CREATE INDEX IF NOT EXISTS jobs_created ON jobs(created DESC)")
         self.db.execute("CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status)")
@@ -139,7 +152,16 @@ class StudioService:
         self.db.commit()
         from studio_cloud_render_jobs import CloudRenderJobs
         self.cloud_renders=CloudRenderJobs(self)
-        self.sync_queue_states()
+        try:
+            self.sync_queue_states()
+        except (MemoryError, OSError, sqlite3.OperationalError, ValueError):
+            # Keep the helper available if a project's files are temporarily unreadable.
+            self.db.execute("""INSERT OR IGNORE INTO queue_project_updates(job,started,project)
+                SELECT DISTINCT 'startup:' || project,0,project FROM jobs
+                WHERE chapter IS NOT NULL AND kind!='render-preview'""")
+            self.db.commit()
+        self.next_project_update=self.db.execute('SELECT min(retry_after) FROM queue_project_updates').fetchone()[0]
+        self.project_update_warning=None
         self.thread = threading.Thread(
             target=self.worker, daemon=True, name="story-production"
         )
@@ -173,6 +195,8 @@ class StudioService:
 
     def sync_queue_states(self, project_id=None, completed_job=None):
         """Restore persistent item states without touching completed image assets."""
+        parent_completion=False
+        chapter_completion=False
         with self.cv:
             rows = [
                 dict(r)
@@ -181,6 +205,16 @@ class StudioService:
                     (project_id,) if project_id else (),
                 )
             ]
+            if completed_job and completed_job['kind'] in ('produce-story','prepare-story') and 'message' in completed_job:
+                latest=self.db.execute("""SELECT id,started,status FROM jobs WHERE project=? AND kind IN
+                    ('produce-story','prepare-story') AND started IS NOT NULL ORDER BY started DESC,rowid DESC LIMIT 1""",
+                    (completed_job['project'],)).fetchone()
+                parent_completion=bool(latest and tuple(latest)==tuple(completed_job[k] for k in ('id','started','status')))
+            if completed_job and completed_job.get('chapterTransition') and completed_job.get('chapter'):
+                latest=self.db.execute("""SELECT id,started,status FROM jobs WHERE project=? AND chapter=?
+                    AND started IS NOT NULL ORDER BY started DESC,rowid DESC LIMIT 1""",
+                    (completed_job['project'],completed_job['chapter'])).fetchone()
+                chapter_completion=bool(latest and tuple(latest)==tuple(completed_job[k] for k in ('id','started','status')))
         latest = {(r["project"], r["chapter"], r["shot"]): r for r in rows}
         byproject = {}
         for r in latest.values():
@@ -199,7 +233,20 @@ class StudioService:
                     previous_statuses.setdefault(id(item), (item, 'status' in item, item.get('status')))
                     item['status'] = value
                 timing_changed = False
+                parent_changed = False
                 if completed_job and completed_job['project'] == pid:
+                    if chapter_completion:
+                        chapter=next((c for c in p['chapters'] if c['id']==completed_job['chapter']),None)
+                        if chapter:set_status(chapter,completed_job['chapterTransition'])
+                    if parent_completion:
+                        run=p.setdefault('production',{})
+                        finished={'status':completed_job['status'],'message':completed_job['message'],
+                                  'updated':completed_job['started']+completed_job['elapsed']}
+                        parent_changed=any(run.get(k)!=v for k,v in finished.items())
+                        run.update(finished)
+                        if finished['status'] in ('FAILED','CANCELLED','QUEUED') and run.get('chapterId'):
+                            chapter=next((c for c in p['chapters'] if c['id']==run['chapterId']),None)
+                            if chapter:set_status(chapter,'PAUSED' if finished['status']=='QUEUED' else finished['status'])
                     production = p.get('production')
                     timings = production.get('timings') if isinstance(production, dict) else None
                     timing_count = len(timings) if isinstance(timings, list) else None
@@ -262,7 +309,7 @@ class StudioService:
                         elif c.get('status') in ('QUEUED','PAUSED','GENERATING') and any(
                                 r['chapter']==cid and r['status']=='INTERRUPTED' for r in items):
                             set_status(c, 'READY_FOR_IMAGES')
-                if (not timing_changed
+                if (not timing_changed and not parent_changed
                         and all(present and item.get('status') == previous
                                 for item, present, previous in previous_statuses.values())):
                     return UNCHANGED
@@ -271,6 +318,53 @@ class StudioService:
                 self.store.mutate(pid, update)
             except FileNotFoundError:
                 pass
+
+    def flush_queue_project_update(self, key=None):
+        """Retry only the project bookkeeping for an already committed job attempt."""
+        try:
+            self._flush_queue_project_update(key)
+        except (sqlite3.OperationalError,OSError,MemoryError) as error:
+            # A failed acknowledgement leaves the durable record available.
+            with self.cv:
+                self.project_update_warning=f'Studio is waiting for local queue storage ({type(error).__name__}).'
+                self.next_project_update=time.time()+1
+
+    def _flush_queue_project_update(self,key):
+        with self.cv:
+            query='SELECT job,started,project,completion,attempts FROM queue_project_updates '
+            row=(self.db.execute(query+'WHERE job=? AND started=?',key) if key else
+                 self.db.execute(query+'WHERE retry_after<=? ORDER BY retry_after,rowid LIMIT 1',(time.time(),))).fetchone()
+        if row:
+            key=(row['job'],row['started'])
+            try:
+                completion=json.loads(row['completion']) if row['completion'] else None
+                if completion and completion.get('repairRefund'):
+                    self.release_unsubmitted_repair(row['project'],completion['chapter'],completion['shot'],
+                        completion['spec'],completion['repairRefund'],intro=completion['intro'])
+                else:
+                    self.sync_queue_states(row['project'],completion)
+                    if completion and completion.get('queueTraceId'):
+                        self.trace.finish(completion['queueTraceId'],completion['elapsed'],completion['status'])
+                        if completion['seconds'] is not None:
+                            self.learn_performance(performance_signature({'job':completion['id'],'started':completion['started']}),
+                                completion['id'],completion.get('performanceProfile'),completion.get('performanceUnits'),
+                                completion['elapsed'],{'status':completion['status'],'paused':completion['pausedDuringAttempt'],
+                                'reused':completion.get('reused',False)},completion['started']+completion['elapsed'])
+            except Exception as error:
+                # Re-executing the producing job here could charge twice. Retain the
+                # metadata on disk and let other jobs and projects continue.
+                with self.cv, self.db:
+                    delay=min(60,2**min(6,row['attempts']))
+                    self.db.execute("""UPDATE queue_project_updates SET attempts=attempts+1,retry_after=?
+                        WHERE job=? AND started=?""",(time.time()+delay,*key))
+                    self.project_update_warning=f'Project status update delayed ({type(error).__name__}). Studio will retry saving it automatically.'
+            else:
+                with self.cv, self.db:
+                    self.db.execute('DELETE FROM queue_project_updates WHERE job=? AND started=?',key)
+        with self.cv:
+            self.next_project_update=self.db.execute('SELECT min(retry_after) FROM queue_project_updates').fetchone()[0]
+            if self.next_project_update is None:
+                self.project_update_warning=None
 
     def unload_models(self):
         self.director.stop()
@@ -692,6 +786,7 @@ class StudioService:
             return {
                 "paused": self.paused,
                 "current": self.current,
+                "projectUpdateWarning": getattr(self,'queue_read_warning',None) or getattr(self,'project_update_warning',None),
                 "counts": counts,
                 "projectCounts": project_counts,
                 **estimate,
@@ -1296,16 +1391,31 @@ class StudioService:
 
     def worker(self):
         while True:
+            if self.closed:
+                return
+            if self.next_project_update is not None and self.next_project_update<=time.time():
+                self.flush_queue_project_update()
             with self.cv:
                 while not self.closed:
-                    job = self.db.execute(
-                        "SELECT * FROM jobs WHERE status='QUEUED' ORDER BY priority DESC,created LIMIT 1"
-                    ).fetchone()
+                    try:
+                        job = self.db.execute(
+                            "SELECT * FROM jobs WHERE status='QUEUED' ORDER BY priority DESC,created LIMIT 1"
+                        ).fetchone()
+                        self.queue_read_warning=None
+                    except sqlite3.OperationalError as error:
+                        if not temporary_queue_storage_error(error):raise
+                        self.queue_read_warning='Studio is waiting to read the saved production queue.'
+                        self.cv.wait(1)
+                        continue
                     if job and not self.paused:
+                        break
+                    if self.next_project_update is not None and self.next_project_update<=time.time():
                         break
                     self.cv.wait(0.5)
                 if self.closed:
                     return
+                if not job or self.paused:
+                    continue
                 job = dict(job)
                 self.current = job["id"]
                 self.cancel = False
@@ -1314,6 +1424,7 @@ class StudioService:
                 attempt_pause_epoch=self.pause_epoch
                 job_performance={}
                 reused_image=False
+                chapter_transition=None
                 claim_image(self.db,job)
                 self.db.execute(
                     "UPDATE jobs SET status='RUNNING',started=?,attempt=attempt+1 WHERE id=?",
@@ -1518,11 +1629,11 @@ class StudioService:
                 state = "QUEUED"
                 message = str(error)
                 self.paused = True
-                if job['kind'] != 'render-preview':self.status(job['project'], job['chapter'], 'PAUSED')
+                if job['kind']!='render-preview':chapter_transition='PAUSED'
             except JobCancelled:
                 state = "CANCELLED"
                 message = "Cancelled; completed assets preserved"
-                if job['kind'] != 'render-preview':self.status(job["project"], job["chapter"], "CANCELLED")
+                if job['kind']!='render-preview':chapter_transition='CANCELLED'
             except Exception as error:
                 state = "FAILED"
                 message = type(error).__name__ + ": " + str(error)[:1800]
@@ -1553,54 +1664,40 @@ class StudioService:
                 except Exception as error:
                     state='FAILED';message=type(error).__name__+': '+str(error)[:1800]
                 finally:power.release()
-                if job["kind"] in ("produce-story", "prepare-story"):
-
-                    def run_finished(p):
-                        run = p.setdefault("production", {})
-                        run.update(status=state, message=message, updated=time.time())
-                        if state in ("FAILED", "CANCELLED", "QUEUED") and run.get(
-                            "chapterId"
-                        ):
-                            chapter = next(
-                                (
-                                    c
-                                    for c in p["chapters"]
-                                    if c["id"] == run["chapterId"]
-                                ),
-                                None,
-                            )
-                            if chapter:
-                                chapter.update(
-                                    status="PAUSED" if state == "QUEUED" else state
-                                )
-
-                    self.store.mutate(job["project"], run_finished)
                 if state in ("CANCELLED", "QUEUED", "FAILED") or state=="INTERRUPTED" and job['kind']=='image':
-                    self.unload_models()
+                    try:self.unload_models()
+                    except Exception:traceback.print_exc()
                 with self.cv:
                     elapsed = time.time() - started
-                    self.trace.finish(trace_job, max(0, elapsed), state)
                     self.trace.parent.reset(trace_token)
-                    self.db.execute(
-                        "UPDATE jobs SET status=?,message=?,seconds=? WHERE id=?",
-                        (state, message, None if reused_image else elapsed, job["id"]),
-                    )
-                    if 'renderTimingScope' in job_performance:
-                        payload=json.loads(job['payload']) | {'_renderTimingScope':job_performance['renderTimingScope']}
-                        self.db.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(payload),job['id']))
-                    if job['kind']=='image' and state=='COMPLETE':
-                        self.db.execute('DELETE FROM queued_image_receipts WHERE job=?',(job['id'],))
-                    self.db.commit()
+                    completion={k:job[k] for k in ('id','project','chapter','shot','kind')}
+                    completion.update(started=started,seconds=None if reused_image else elapsed,status=state,
+                        elapsed=max(0,elapsed),queueTraceId=trace_job,message=message,chapterTransition=chapter_transition,
+                        pausedDuringAttempt=self.pause_epoch!=attempt_pause_epoch,**job_performance)
+                    while True:
+                        try:
+                            with self.db:
+                                self.db.execute('UPDATE jobs SET status=?,message=?,seconds=? WHERE id=?',
+                                    (state,message,completion['seconds'],job['id']))
+                                if 'renderTimingScope' in job_performance:
+                                    payload=json.loads(job['payload']) | {'_renderTimingScope':job_performance['renderTimingScope']}
+                                    self.db.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(payload),job['id']))
+                                if job['kind']=='image' and state=='COMPLETE':
+                                    self.db.execute('DELETE FROM queued_image_receipts WHERE job=?',(job['id'],))
+                                self.db.execute('INSERT OR IGNORE INTO queue_project_updates(job,started,project,completion) VALUES(?,?,?,?)',
+                                    (job['id'],started,job['project'],json.dumps(completion)))
+                            break
+                        except (sqlite3.OperationalError,MemoryError) as error:
+                            if not temporary_queue_storage_error(error):raise
+                            # The producer has returned. Keep ownership and retry only
+                            # its metadata transaction, even if a pause was requested.
+                            self.project_update_warning='Studio is waiting for local storage to record the finished job.'
+                            self.cv.wait(1)
+                    self.next_project_update=0
                     self.current = None
                     self.cancel = False
                     self.cv.notify_all()
-                completion=job | {'started':started, 'seconds':None if reused_image else elapsed, 'status':state,
-                    'pausedDuringAttempt':self.pause_epoch!=attempt_pause_epoch,**job_performance}
-                self.sync_queue_states(job['project'],completion)
-                if reused_image:continue  # Recovery time is not an image generation measurement.
-                self.learn_performance(performance_signature({'job':job['id'],'started':started}),job['id'],
-                    job_performance.get('performanceProfile'),job_performance.get('performanceUnits'),elapsed,
-                    {'status':state,'paused':completion['pausedDuringAttempt'],'reused':job_performance.get('reused',False)},started+elapsed)
+                p=None  # Release the worker's large source snapshot before loading current project state.
 
     def production_progress(self, pid, stage, **details):
         """Persist the current stage alongside assets, including between restarts."""
@@ -1668,7 +1765,7 @@ class StudioService:
             result=self.performance.record(*args,**kwargs)
             root.performance_warning=None
             return result
-        except (OSError,sqlite3.Error):
+        except (MemoryError,OSError,sqlite3.Error):
             root.performance_warning='Timing history is saved with the project; calibration could not update. Retry its timing report after storage recovers.'
             return False
 
@@ -2313,17 +2410,9 @@ class StudioService:
 
     def automatic_repair_blocker(self, project, shot, *, reference_digest=None):
         """Explain why a confirmed finding cannot use a saved replacement slot."""
-        if shot.get('manual', {}).get('imagePath'):
-            return 'manual'
-        settings=project['settings']
-        if not automatic_repairs(settings, shot.get('qc', {})):
-            return 'policy'
-        limit=int(settings.get('maxImageRetries', 2))
-        if shot.get('automaticRepairSpec') and shot.get('automaticRepairAttempts', 0)>=limit:
-            signature=self.visual_spec_signature(project, shot, reference_digest=reference_digest)
-            if shot['automaticRepairSpec']==signature:
-                return 'exhausted'
-        return None
+        from studio_qc import automatic_repair_capacity
+        return automatic_repair_capacity(project['settings'],shot,
+            lambda:self.visual_spec_signature(project,shot,reference_digest=reference_digest))['reason']
 
     def complete_automatic_reviews(self,pid):
         """Repair confirmed findings once under the durable per-shot retry ceiling."""
@@ -2562,13 +2651,50 @@ class StudioService:
 
     def reserve_automatic_repair(self,pid,chid,sid,signature,intro=False):
         """Consume a durable retry before dispatch, including uncertain attempts."""
+        token=uid('repair-')
         def reserve(project):
             item=next(s for s in project['intro']['shots'] if s['id']==sid) if intro else get_shot(project,chid,sid)
             used=item.get('automaticRepairAttempts',0) if item.get('automaticRepairSpec')==signature else 0
             if used>=project['settings']['maxImageRetries']:
                 raise ValueError('Automatic repair limit reached; saved work retained.')
-            item.update(automaticRepairSpec=signature,automaticRepairAttempts=used+1)
+            claims=list(item.get('automaticRepairClaims',[])) if used else []
+            item.update(automaticRepairSpec=signature,automaticRepairAttempts=used+1,automaticRepairClaims=[*claims,token])
         self.store.mutate(pid,reserve)
+        return token
+
+    def release_unsubmitted_repair(self,pid,chid,sid,signature,token,*,intro=False):
+        """Return only this attempt's slot after an explicit provider refusal before POST."""
+        def release(project):
+            try:
+                item=next(s for s in project['intro']['shots'] if s['id']==sid) if intro else get_shot(project,chid,sid)
+            except StopIteration:
+                return UNCHANGED
+            claims=item.get('automaticRepairClaims',[])
+            if item.get('automaticRepairSpec')!=signature or token not in claims:
+                return UNCHANGED
+            claims.remove(token)
+            item['automaticRepairAttempts']=max(0,item['automaticRepairAttempts']-1)
+        self.store.mutate(pid,release)
+
+    def record_unsubmitted_repair(self,pid,chid,sid,signature,token,*,intro=False,receipt=None):
+        """Durably record that the provider never submitted this exact repair before touching the project."""
+        key=('repair-refund:'+token,0)
+        data={'repairRefund':token,'chapter':chid,'shot':sid,'spec':signature,'intro':intro}
+        with self.cv:
+            while True:
+                try:
+                    with self.db:
+                        if receipt:receipt.confirm_retry_safe(commit=False)
+                        self.db.execute('INSERT OR IGNORE INTO queue_project_updates(job,started,project,completion) VALUES(?,?,?,?)',
+                                        (*key,pid,json.dumps(data)))
+                    break
+                except (sqlite3.OperationalError,MemoryError) as error:
+                    if not temporary_queue_storage_error(error):raise
+                    self.project_update_warning='Studio is waiting for local storage to record the refused image request.'
+                    self.cv.wait(1)
+            self.next_project_update=0
+            self.cv.notify_all()
+        self.flush_queue_project_update(key)
 
     @staticmethod
     def retain_superseded_render(target, result):
@@ -3375,7 +3501,6 @@ class StudioService:
                 if repair:
                     reason=repair_budget_reason(p['settings'])
                     if reason:raise ValueError(reason)
-                    self.reserve_automatic_repair(p['id'],None,shot['id'],self.visual_spec_signature(p,shot),intro=True)
                 self.check_cloud_budget(p, provider)
                 self.prepare_scene_references(p,shot,provider,reserved_slots=1 if operation=='edit' else 0)
                 references, metadata = select_references(p, shot, self.store, provider,reserved_slots=1 if operation=='edit' else 0)
@@ -3397,9 +3522,15 @@ class StudioService:
                 if initial:
                     from scene_reference_binding import compose
                     prompt=compose(p,shot,initial,metadata)
-                result = provider.generateImage({'prompt': prompt, 'negativePrompt': '', 'referenceImages': references,
+                request={'prompt': prompt, 'negativePrompt': '', 'referenceImages': references,
                     'settings': settings, 'workflow': shot['workflow'], 'operation': operation,
-                    **({'sourceImage':data_url(self.store.asset(p['id'],shot['imagePath']))} if operation=='edit' else {})}, self.checkpoint)
+                    **({'sourceImage':data_url(self.store.asset(p['id'],shot['imagePath']))} if operation=='edit' else {})}
+                token=self.reserve_automatic_repair(p['id'],None,shot['id'],expected_spec,intro=True) if repair else None
+                try:
+                    result=provider.generateImage(request,self.checkpoint)
+                except ImageAdmissionBlocked:
+                    if token:self.record_unsubmitted_repair(p['id'],None,shot['id'],expected_spec,token,intro=True)
+                    raise
                 name = shot['id'] + '-' + uid() + '.png'
                 target = self.store.folder(p['id']) / name
                 partial = target.with_suffix('.partial.png')
@@ -5201,7 +5332,13 @@ class StudioService:
             if initial:
                 from scene_reference_binding import compose
                 request['prompt']=compose(p,shot,initial,ref_metadata)
-            elif references:request['prompt']+=' '+reference_prompt(p,shot,ref_metadata,'generate',include_scene_facts=False)
+            elif references:
+                from scene_repair import framing_subjects
+                if framing_subjects(p['settings'],shot,shot.get('qc',{}),project=p):
+                    from scene_reference_binding import compose
+                    request['prompt']=compose(p,shot,restaged,ref_metadata)
+                else:
+                    request['prompt']+=' '+reference_prompt(p,shot,ref_metadata,'generate',include_scene_facts=False)
         else:
             if options.get('_repairPrompt'):
                 from studio_automation import repair_prompt
@@ -5250,8 +5387,9 @@ class StudioService:
         for attempt in range(max_attempts):
             self.gate(f'Generating {ch["name"]} · shot {sid} · attempt {attempt+1}')
             self.check_cloud_budget(p, provider)
+            repair_token=None
             if p['settings'].get('unattendedProduction') and (options.get('budgetedQCRepair') or attempt>0):
-                self.reserve_automatic_repair(p['id'],chid,sid,expected_spec)
+                repair_token=self.reserve_automatic_repair(p['id'],chid,sid,expected_spec)
             queued_path=receipt.dispatch(provider.id,attempt,expected_spec,expected_path,expected_image_digest,
                                          shot.get('qcOverride'),qc,shot.get('imageSelectionRevision')) if receipt else None
             provider_error = None
@@ -5267,7 +5405,9 @@ class StudioService:
                 if receipt:raise ImageRecoveryRequired(str(error)+' Reconcile the interrupted request before starting another image.',pause_queue=True) from error
                 raise
             except Exception as e:
-                if receipt:
+                if repair_token and e is provider_error and isinstance(e,ImageAdmissionBlocked):
+                    self.record_unsubmitted_repair(p['id'],chid,sid,expected_spec,repair_token,receipt=receipt)
+                elif receipt:
                     # Comfy wraps unresolved POSTs in RemoteGenerationUncertain,
                     # except for a legacy single-slot interrupt. Errors from
                     # trace finalization cannot attest to the provider outcome.
@@ -5431,7 +5571,7 @@ class StudioService:
                 saved=get_shot(self.store.load(p['id']),chid,sid)
                 previous_failed=(saved.get('automaticRepairAttempts',0)>0
                     and saved.get('automaticRepairSpec')==expected_spec)
-                rebuild=fresh_scene_repair(p['settings'],qc,previous_failed)
+                rebuild=fresh_scene_repair(p['settings'],qc,previous_failed,shot=shot,project=p)
                 if rebuild:
                     request['operation']='generate'
                     request.pop('sourceImage',None)
@@ -5649,7 +5789,7 @@ class StudioService:
                     and not current.get('manual',{}).get('prompt')
                     and spec==reviewed_spec
                     and review_settings_signature(latest['settings'])==reviewed_policy
-                    and (used>0 or fresh_scene_repair(latest['settings'],result))
+                    and (used>0 or fresh_scene_repair(latest['settings'],result,shot=current,project=latest))
                     and automatic_repairs(latest['settings'],result)
                     and current.get('imagePath') and self.store.asset(latest['id'],current['imagePath']).resolve()==Path(path).resolve()
                     and data_url(self.store.asset(latest['id'],current['imagePath']))==reviewed_image):

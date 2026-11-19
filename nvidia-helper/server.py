@@ -21,10 +21,9 @@ INPAINT_ID = os.environ.get('QT_INPAINT_MODEL', 'runwayml/stable-diffusion-inpai
 
 
 class CudaEngine:
-    def __init__(self):
+    def __init__(self, *, defer_cached_voice=False):
         import torch
         from huggingface_hub import hf_hub_download
-        from kokoro import KModel
         self.torch, self.download = torch, hf_hub_download
         if not torch.cuda.is_available():
             raise RuntimeError('NVIDIA CUDA is unavailable. Update the NVIDIA driver and run the helper again.')
@@ -34,22 +33,55 @@ class CudaEngine:
         torch.cuda.set_device(index)
         torch.set_num_threads(min(4, os.cpu_count() or 1))
         torch.backends.cudnn.benchmark = False
-        self.model = KModel(repo_id='hexgrad/Kokoro-82M').to(self.device).eval()
+        self.model = None
+        self._load_lock=threading.RLock()
         self.voices = {}
         self.warm = set()
         self.gpu = torch.cuda.get_device_name(index)
-        self.prepare('am_michael')
+        self._vocab=self.cached_vocab() if defer_cached_voice else None
+        if self._vocab is None:
+            self.prepare('am_michael')
+
+    @staticmethod
+    def cached_vocab():
+        from huggingface_hub import try_to_load_from_cache
+        try:
+            files=[try_to_load_from_cache('hexgrad/Kokoro-82M',f)
+                   for f in ('config.json','kokoro-v1_0.pth','voices/am_michael.pt')]
+            if not all(isinstance(f,str) and Path(f).is_file() and Path(f).stat().st_size>0 for f in files):
+                return None
+            vocab=json.loads(Path(files[0]).read_bytes())['vocab']
+            if isinstance(vocab,dict) and vocab and all(isinstance(k,str) and type(v) is int for k,v in vocab.items()):
+                return vocab
+        except (OSError,ValueError,KeyError,TypeError):
+            pass
+        return None
 
     def health(self):
         return {
             'protocol': 2, 'backend': 'cuda', 'gpu': self.gpu, 'sampleRate': 24000,
-            'precision': 'float32', 'vocab': self.model.vocab,
+            'precision': 'float32', 'vocab': self._vocab, 'voiceLoaded':bool(self.warm),
             'capabilities': ['audio', 'image', 'image-queue'], 'imageModel': MODEL_ID
         }
 
     def prepare(self, voice):
         if voice not in VOICES:
             raise ValueError('Choose a supported studio voice.')
+        with self._load_lock:
+            if self.model is None:
+                from kokoro import KModel
+                self.model=KModel(repo_id='hexgrad/Kokoro-82M').to(self.device).eval()
+                self._vocab=self.model.vocab
+                try:
+                    self._prepare_voice('am_michael')
+                except Exception:
+                    self.model=None
+                    self.voices.clear()
+                    self.warm.clear()
+                    raise
+            self._prepare_voice(voice)
+
+    def _prepare_voice(self,voice):
         if voice not in self.voices:
             path = self.download(repo_id='hexgrad/Kokoro-82M', filename=f'voices/{voice}.pt')
             self.voices[voice] = self.torch.load(path, map_location='cpu', weights_only=True).to(self.device)
@@ -58,6 +90,7 @@ class CudaEngine:
             self.warm.add(voice)
 
     def render(self, phonemes, voice, speed):
+        if self.model is None:self.prepare(voice)
         torch = self.torch
         if not phonemes or any(char not in self.model.vocab for char in phonemes):
             raise ValueError('Speech sounds do not match the loaded model.')
@@ -135,6 +168,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
         return image_engine
 
     def before_image():
+        if getattr(audio_engine,'model',None) is None:return
         audio_engine.model.to('cpu')
         audio_engine.voices = {name: voice.to('cpu') for name, voice in audio_engine.voices.items()}
         audio_engine.torch.cuda.empty_cache()
@@ -144,7 +178,7 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
             studio.unload_models()
         if image_engine is not None:
             image_engine.unload()
-        if hasattr(audio_engine, 'model'):
+        if getattr(audio_engine,'model',None) is not None:
             audio_engine.model.to(audio_engine.device)
             audio_engine.voices = {name: voice.to(audio_engine.device) for name, voice in audio_engine.voices.items()}
 
@@ -749,7 +783,9 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
 
 def main():
     print('Loading QuestionTemplate local NVIDIA helper.', flush=True)
-    audio_engine = CudaEngine()
+    from studio_render import VideoRenderer
+    available=VideoRenderer.available_memory_bytes()
+    audio_engine = CudaEngine(defer_cached_voice=os.name=='nt' and available is not None and available<2*1024**3)
     key_path = Path(__file__).resolve().parent / '.pairing-key'
     key = key_path.read_text().strip() if key_path.exists() else secrets.token_hex(32)
     if len(key) != 64 or any(c not in '0123456789abcdef' for c in key):

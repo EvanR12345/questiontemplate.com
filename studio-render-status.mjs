@@ -1,3 +1,16 @@
+export function automaticRepairLabel(decision) {
+  const state=decision?.automaticRepair;
+  if (!decision?.blocking || !state) return '';
+  if (state.reason==='manual') return 'You locked this image';
+  if (state.reason==='policy') return state.limit===0 ? 'Automatic repair limit is zero' : 'Saved repair settings require review';
+  if (state.reason==='exhausted') return state.used>state.limit
+    ? `${state.used} automatic repairs used · current limit ${state.limit}`
+    : `${state.used} of ${state.limit} automatic repairs used for this shot`;
+  if (state.reason===null && state.remaining>0)
+    return `${state.remaining} automatic repair${state.remaining===1?'':'s'} available for this shot`;
+  return '';
+}
+
 // Renderer placement is independent of permanent storage and image generation.
 export function chapterDisplayStatus(project, chapter) {
   const saved = String(chapter?.status || 'NOT_ANALYZED').replaceAll('_', ' ');

@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {rendererPlacement,chapterDisplayStatus} from './studio-render-status.mjs';
+import {rendererPlacement,chapterDisplayStatus,automaticRepairLabel} from './studio-render-status.mjs';
+test('only current blocking images explain the saved repair decision', () => {
+  const label=automaticRepair=>automaticRepairLabel({blocking:true,automaticRepair});
+  assert.match(label({reason:'exhausted',used:1,limit:1}),/1 of 1/);
+  assert.match(label({reason:null,remaining:2}),/2 automatic repairs available/);
+  assert.match(label({reason:'manual',limit:1}),/locked/);
+  assert.match(label({reason:'policy',limit:0}),/zero/);
+  assert.equal(automaticRepairLabel({blocking:false,automaticRepair:{reason:'manual'}}),'');
+  assert.equal(automaticRepairLabel({blocking:true}),'');
+});
 test('completed unchecked exports do not inherit a misleading historical failure label', () => {
   const project={settings:{qcCheckLevel:'off'}};
   const chapter={status:'FAILED',render:{path:'chapter.mp4'},renderStale:false,

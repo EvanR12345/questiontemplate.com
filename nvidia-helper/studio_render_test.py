@@ -187,6 +187,35 @@ class IntroTest(unittest.TestCase):
 
 
 class RenderReuseTest(unittest.TestCase):
+    def test_assembling_selected_chapter_preserves_provenance_and_skips_project_write(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store,p,ch=self.setup_project(folder)
+            p['intro']['enabled']=False
+            p['settings']['watermark']={'enabled':False}
+            ch['sourceText']='A quiet library.'
+            ch['scenes'][0]['id']='scene-fixture'
+            for shot in ch['scenes'][0]['shots']:
+                shot.update(sceneId='scene-fixture',chapterId=ch['id'],characters=[],
+                    generationSettings={},camera={},status='COMPLETE')
+            selected={'path':'selected.mp4','duration':2,'renderIdentity':'selected','renderTimingScope':'fresh-chapter'}
+            ch.update(render=selected,renderStale=False)
+            p=store.save(p)
+            renderer=VideoRenderer(store,{})
+            cached=selected | {'renderTimingScope':'reused-base','reused':True}
+            for stale in (False,True):
+                if stale:
+                    store.mutate(p['id'],lambda latest:latest['chapters'][0].update(renderStale=True))
+                with patch.object(renderer,'chapter',return_value=cached), \
+                     patch.object(renderer,'narration_join',side_effect=RuntimeError('chapter already handled')), \
+                     patch.object(store,'save',wraps=store.save) as save:
+                    with self.assertRaisesRegex(RuntimeError,'chapter already handled'):
+                        renderer.full(p,lambda *_:None)
+                self.assertEqual(save.call_count,int(stale))
+                saved=store.load(p['id'])['chapters'][0]
+                self.assertFalse(saved['renderStale'])
+                if not stale:
+                    self.assertEqual(saved['render'],selected)
+
     def test_full_assembly_cannot_replace_a_chapter_edited_during_its_render(self):
         with tempfile.TemporaryDirectory() as folder:
             store,p,ch=self.setup_project(folder)

@@ -1,9 +1,44 @@
 """Persistence safety across cached, externally changed and oversized snapshots."""
 import json,tempfile,unittest
+from pathlib import Path
 from unittest.mock import patch
 from studio_data import ProjectStore,new_project
 
 class StoreRevisionTest(unittest.TestCase):
+    def test_large_save_does_not_need_a_second_whole_file_allocation(self):
+        with tempfile.TemporaryDirectory() as root:
+            store=ProjectStore(root)
+            source=new_project('Large history')
+            source['chapters'][0]['sourceText']='scene notes '*(130*1024)
+            project=store.save(source)
+            path=store.folder(project['id'])/'project.json'
+            previous=path.read_bytes()
+            loaded=store.load(project['id'])
+            loaded['name']='Edited'
+            original=Path.read_bytes
+            def constrained_read(file):
+                if file==path:raise MemoryError('simulate the second allocation failing on Windows')
+                return original(file)
+            with patch.object(Path,'read_bytes',constrained_read):
+                store.save(loaded,expected=loaded['revision'])
+            self.assertEqual(path.with_name('project.previous.json').read_bytes(),previous)
+            self.assertEqual(store.load(project['id'])['name'],'Edited')
+
+    def test_large_external_conflict_and_corruption_retain_both_snapshots(self):
+        with tempfile.TemporaryDirectory() as root:
+            store=ProjectStore(root);source=new_project('Edited elsewhere')
+            source['chapters'][0]['sourceText']='archived material '*(90*1024)
+            p=store.save(source)
+            store.mutate(p['id'],lambda q:q.update(name='Established backup'))
+            loaded=store.load(p['id']);path=store.folder(p['id'])/'project.json'
+            backup=path.with_name('project.previous.json').read_bytes()
+            external=dict(loaded,revision=loaded['revision']+1)
+            for raw,err in ((json.dumps(external).encode(),ValueError),(b'{broken'+b' '*1100000,json.JSONDecodeError)):
+                path.write_bytes(raw)
+                with self.assertRaises(err):store.save(loaded,expected=loaded['revision'])
+                self.assertEqual(path.read_bytes(),raw)
+                self.assertEqual(path.with_name('project.previous.json').read_bytes(),backup)
+                self.assertFalse(path.with_name('project.previous.tmp').exists())
     def test_mutation_keeps_exact_backup_and_revision_without_second_decode(self):
         with tempfile.TemporaryDirectory() as root:
             store=ProjectStore(root);p=store.save(new_project('Original'))

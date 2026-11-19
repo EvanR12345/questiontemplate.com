@@ -3,7 +3,7 @@
 import copy, hashlib, json, math, os, shutil, subprocess, threading, time, wave
 from pathlib import Path
 from studio_qc import decision as qc_decision
-from studio_data import digest
+from studio_data import UNCHANGED, digest
 from studio_video_settings import capture as capture_video_settings
 from render_queue import render_unique_clips
 from studio_audio import probe as probe_audio
@@ -913,6 +913,14 @@ class VideoRenderer:
         if any(duration < .5 for duration in durations):return False
         return VideoRenderer.aligned_wave_format(sources, durations, 30) == (24000, 1, 2, 'NONE')
 
+    @classmethod
+    def direct_intro_mux_supported(cls, video, sources, durations):
+        # The intro Opus is padded to the frame-rounded opening duration. Its
+        # original WAV and the chapter WAVs must each match the verified format.
+        return (len(sources)>1 and len(sources)==len(durations)
+                and cls.direct_full_mux_supported(video,sources[:1],durations[:1])
+                and cls.direct_full_mux_supported(video,sources[1:],durations[1:]))
+
     def full_mux_forecast(self, project):
         """Read local headers only; forecasting must never restore cloud assets."""
         result={'installedCapability':'direct-concat-original-audio-v1','eligibility':'unknown',
@@ -922,8 +930,11 @@ class VideoRenderer:
             return result | {'eligibility':'unsupported'}
         entries=[(ch.get('audio',{}).get('path'),ch.get('audio',{}).get('duration'))
                  for ch in project.get('chapters',[]) if ch.get('sourceText','').strip()]
-        if project.get('intro',{}).get('enabled'):
-            entries.append((project['intro'].get('audioPath'),project['intro'].get('duration')))
+        intro=project.get('intro',{})
+        if intro.get('enabled'):
+            entries.insert(0,(intro.get('audioPath'),intro.get('duration')))
+            if intro.get('placement')=='full_story_only':
+                result['installedCapability']='direct-concat-intro-decoded-audio-v1'
         if not entries:return result
         sources=[];durations=[];missing=False
         for name,duration in entries:
@@ -934,7 +945,9 @@ class VideoRenderer:
             if not path.is_file():missing=True
             sources.append(path);durations.append(duration)
         if missing:return result
-        if not project.get('intro', {}).get('enabled') and self.direct_full_mux_supported(video,sources,durations):
+        if intro.get('enabled') and intro.get('placement')=='full_story_only' and self.direct_intro_mux_supported(video,sources,durations):
+            return result | {'eligibility':'verified','effectivePolicy':'direct-concat-intro-decoded-audio-v1'}
+        if not intro.get('enabled') and self.direct_full_mux_supported(video,sources,durations):
             return result | {'eligibility':'verified','effectivePolicy':'direct-concat-original-audio-v1'}
         return result | {'eligibility':'unsupported'}
 
@@ -1021,12 +1034,21 @@ class VideoRenderer:
                     target['renderStale']=True
                     latest['renderStale']=True
                     return False
+                stale=bool(p["intro"]["enabled"] and p["intro"]["placement"]=="every_chapter")
+                previous=c.get("render") or {}
+                if result.get('reused') and c.get('renderStale')==stale and previous:
+                    # Reusing a selected chapter during assembly preserves the
+                    # original render timing and does not rewrite a large project.
+                    provenance={'reused','renderTimingScope'}
+                    if ({k:v for k,v in previous.items() if k not in provenance}==
+                            {k:v for k,v in chapter_result.items() if k not in provenance}):
+                        return UNCHANGED
                 if (
                     c.get("render", {}).get("path")
                     and c["render"]["path"] != chapter_result["path"]
                 ):
                     c.setdefault("renderHistory", []).append(c["render"])
-                c.update(render=chapter_result, renderStale=bool(p["intro"]["enabled"] and p["intro"]["placement"] == "every_chapter"))
+                c.update(render=chapter_result, renderStale=stale)
                 return True
 
             if not self.store.mutate(p["id"], chapter_saved):
@@ -1067,8 +1089,11 @@ class VideoRenderer:
             reuse_visual = self.cached_asset(p['id'], visual)
             if reuse_visual and timing_scope == 'fresh-assembly':
                 timing_scope = 'reused-visual-assembly'
-            direct = audio_join == 'original' and self.direct_full_mux_supported(p['settings']['video'],audio_sources,durations)
-            if not reuse_visual and not direct:
+            video_settings=p['settings']['video']
+            direct = audio_join == 'original' and self.direct_full_mux_supported(video_settings,audio_sources,durations)
+            direct_intro=(audio_join=='decoded' and p['intro']['enabled'] and p['intro']['placement']=='full_story_only'
+                          and self.direct_intro_mux_supported(video_settings,audio_sources,durations))
+            if not reuse_visual and not (direct or direct_intro):
                 self.concat(files,visual,gate,log,durations,video_only=True)
                 reuse_visual = True
             if reuse_visual:
@@ -1078,7 +1103,7 @@ class VideoRenderer:
                 video_copy_options = []
                 visual_bytes = visual.stat().st_size
             else:
-                assembly_policy = 'direct-concat-original-audio-v1'
+                assembly_policy = 'direct-concat-intro-decoded-audio-v1' if direct_intro else 'direct-concat-original-audio-v1'
                 # Copy chapter video packets and mux original narration together;
                 # a new export need not write/read a second full silent video.
                 video_listing = self.concat_listing(files,target.with_suffix('.video.txt'),durations)

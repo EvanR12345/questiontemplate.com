@@ -206,6 +206,44 @@ class AutomaticProductionTest(unittest.TestCase):
         result=get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])
         self.assertEqual(result['automaticRepairAttempts'],1);self.assertEqual(result['automaticRepairSpec'],'new-spec')
 
+    def test_proven_unsubmitted_repair_returns_only_its_own_slot(self):
+        self.service.prepare_story(self.project['id'],{})
+        p=self.service.store.load(self.project['id']);ch=p['chapters'][0];shot=ch['scenes'][0]['shots'][0]
+        self.service.store.mutate(p['id'],lambda latest:latest['settings'].update(maxImageRetries=2))
+        args=(p['id'],ch['id'],shot['id'])
+        first=self.service.reserve_automatic_repair(*args,'current')
+        second=self.service.reserve_automatic_repair(*args,'current')
+        for token in (first,first,'unrecognized'):
+            self.service.release_unsubmitted_repair(*args,'current',token)
+        s=get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])
+        self.assertEqual(s['automaticRepairAttempts'],1)
+        self.assertEqual(s['automaticRepairClaims'],[second])
+        new=self.service.reserve_automatic_repair(*args,'changed')
+        self.service.release_unsubmitted_repair(*args,'current',second)
+        s=get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])
+        self.assertEqual(s['automaticRepairAttempts'],1)
+        self.assertEqual(s['automaticRepairClaims'],[new])
+
+    def test_image_admission_refusal_refunds_but_unknown_submission_keeps_the_charge(self):
+        from image_provider import ImageAdmissionBlocked,RemoteGenerationUncertain
+        from studio_service import StudioService
+        self.service.prepare_story(self.project['id'],{})
+        p=self.service.store.load(self.project['id']);ch=p['chapters'][0];shot=ch['scenes'][0]['shots'][0]
+        p['settings']=run_settings(p['settings']);p['settings']['maxImageRetries']=1
+        self.service.store.save(p)
+        self.service.providers['native-flux']=Mock()
+        provider=self.service.providers['existing']
+        provider.getCapabilities=lambda:{'maxReferenceImages':1,'supportsImageEditing':False}
+        options={'operation':'generate','budgetedQCRepair':True,'_collectReview':True}
+        for failure,expected in ((ImageAdmissionBlocked('Worker not ready'),0),(RemoteGenerationUncertain(),1)):
+            provider.generateImage=Mock(side_effect=failure)
+            current=self.service.store.load(p['id'])
+            with self.assertRaises(type(failure)):
+                StudioService.generate(self.service,current,ch['id'],shot['id'],123,options)
+            saved=get_shot(self.service.store.load(p['id']),ch['id'],shot['id'])
+            self.assertEqual(saved['automaticRepairAttempts'],expected)
+            provider.generateImage.assert_called_once()
+
     def test_major_repair_uses_at_most_the_durable_remaining_attempts(self):
         from studio_service import StudioService
         from PIL import Image

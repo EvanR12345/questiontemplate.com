@@ -229,6 +229,23 @@ def automatic_repairs(settings, qc=None):
     # advisory/uncertain discrepancies or a manual-review-only instruction.
     return 'major' in levels
 
+def automatic_repair_capacity(settings, shot, resolve_signature, *, include_remaining=False):
+    """Explain this selected shot's saved automatic repair limit against its current inputs."""
+    limit=int(settings.get('maxImageRetries',2))
+    if shot.get('manual',{}).get('imagePath'):
+        return {'limit':limit,'reason':'manual'}
+    if not automatic_repairs(settings,shot.get('qc',{})):
+        return {'limit':limit,'reason':'policy'}
+    attempts=shot.get('automaticRepairAttempts',0)
+    used=0
+    if attempts and (include_remaining or attempts>=limit) and shot.get('automaticRepairSpec'):
+        if shot['automaticRepairSpec']==resolve_signature():
+            used=attempts
+    result={'limit':limit,'reason':'exhausted' if used>=limit else None}
+    if include_remaining:
+        result.update(used=used,remaining=max(0,limit-used))
+    return result
+
 def repair_budget_reason(settings):
     """Unknown combined overhead never authorizes spending to find it out.
 
@@ -264,6 +281,11 @@ def project_view(store, pid):
         for scene in chapter['scenes']:
             for shot in scene['shots']:
                 shot['qcDecision'] = decision(project,shot,store,context)
+                if shot['qcDecision']['disposition']=='review' and shot['qcDecision']['blocking'] and shot.get('imagePath'):
+                    from studio_render_inputs import visual_spec_signature
+                    shot['qcDecision']['automaticRepair']=automatic_repair_capacity(project['settings'],shot,
+                        lambda:visual_spec_signature(project,shot,store,
+                            reference_digest=lambda pid,name:asset_hash(store,pid,name,context)),include_remaining=True)
                 if shot.get('imagePath'):shot['qcReviewSignature']=review_signature(project,shot,store,context)
     for shot in project.get('intro',{}).get('shots',[]):
         shot['qcDecision'] = decision(project,shot,store,context)

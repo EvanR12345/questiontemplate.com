@@ -522,6 +522,7 @@ def validate_project(p):
 
 
 UNCHANGED=object() # Explicit callback result; avoids copying large snapshots just to compare them.
+INLINE_SNAPSHOT_BYTES=1024*1024
 
 
 class ProjectNotFound(FileNotFoundError):
@@ -538,7 +539,7 @@ class ProjectStore:
         # Retain at most one bounded immutable snapshot, never a caller's dict.
         # mutate() reads this same file again for its exact backup; equal bytes
         # let save() reuse only the revision instead of decoding a large history
-        # twice. Every save still reads current disk bytes and publishes atomically.
+        # twice. Larger snapshots use a digest and a streamed backup.
         self._loaded_revision = None
 
     def folder(self, id):
@@ -557,7 +558,7 @@ class ProjectStore:
             try:source=path.read_bytes()
             except FileNotFoundError:raise ProjectNotFound('Saved project not found.') from None
             result=json.loads(source.decode('utf-8'))
-            self._loaded_revision=((path,source,result['revision'],None) if len(source)<=8*1024*1024
+            self._loaded_revision=((path,source,result['revision'],None) if len(source)<=INLINE_SNAPSHOT_BYTES
                 else (path,None,result['revision'],hashlib.sha256(source).digest())) if (
                 isinstance(result,dict) and 'revision' in result) else None
             return result
@@ -568,7 +569,9 @@ class ProjectStore:
             folder = self.folder(p["id"])
             folder.mkdir(exist_ok=True)
             path = folder / "project.json"
-            if path.exists():
+            if path.exists() and path.stat().st_size>INLINE_SNAPSHOT_BYTES:
+                p["revision"]=self.backup_large_snapshot(path,expected)+1
+            elif path.exists():
                 previous_bytes = path.read_bytes()
                 cached=self._loaded_revision
                 # Very large projects retain just a SHA-256 fingerprint. Both
@@ -608,6 +611,31 @@ class ProjectStore:
             # this return value. Avoid duplicating its full history on every
             # progress write; public save() keeps its detached-result contract.
             return copy.deepcopy(p) if _return_copy else None
+
+    def backup_large_snapshot(self,path,expected):
+        """Preserve actual disk bytes while bounding the normal large-save allocation."""
+        staged=path.with_name('project.previous.tmp')
+        digest=hashlib.sha256()
+        try:
+            with path.open('rb') as source, staged.open('wb') as output:
+                while block:=source.read(256*1024):
+                    digest.update(block)
+                    output.write(block)
+            cached=self._loaded_revision
+            known=None
+            if cached and cached[0]==path:
+                known=cached[3] if cached[1] is None else hashlib.sha256(cached[1]).digest()
+            if known==digest.digest():
+                revision=cached[2]
+            else:
+                with staged.open('rb') as source:
+                    revision=json.load(source)['revision']
+            if expected is not None and revision!=expected:
+                raise ValueError("Project changed in another operation. Reload before saving.")
+            self.replace_snapshot(staged,path.with_name('project.previous.json'))
+            return revision
+        finally:
+            staged.unlink(missing_ok=True)
 
     @staticmethod
     def replace_snapshot(source,destination):

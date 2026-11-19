@@ -114,14 +114,14 @@ class QueuedImageReceipt:
             self.service.db.commit()
         return path
 
-    def confirm_retry_safe(self):
+    def confirm_retry_safe(self, *, commit=True):
         with self.service.cv:
             # A verified admission rejection or terminal backend error allows
             # another attempt. An accepted result and an uncertain call never do.
             record = self.dispatched | {'retrySafe':True}
-            self.service.db.execute('UPDATE queued_image_receipts SET receipt=? WHERE job=?',
-                                    (json.dumps(record), self.job['id']))
-            self.service.db.commit()
+            self.service.db.execute('UPDATE queued_image_receipts SET receipt=? WHERE job=? AND receipt=?',
+                                    (json.dumps(record),self.job['id'],json.dumps(self.dispatched)))
+            if commit:self.service.db.commit()
 
     def recover(self, project, options):
         service=self.service
