@@ -45,5 +45,13 @@ class QueueEstimatesTest(unittest.TestCase):
         self.assertEqual(result['etaSeconds'], 5)
         self.assertEqual(timing_profile('image', payload | {'deferQC': False}), inline)
 
+    def test_new_job_with_provider_defaults_matches_equivalent_older_observations(self):
+        shot={'imageModel':'test','generationSettings':{'steps':4}}
+        effective={'steps':4,'width':512,'height':512}
+        legacy={'shotSnapshot':shot|{'generationSettings':effective}}
+        new={'shotSnapshot':shot,'validatedGenerationSettings':effective}
+        self.assertEqual(timing_profile('image',new),timing_profile('image',legacy))
+        self.assertNotEqual(timing_profile('image',new),timing_profile('image',{'shotSnapshot':shot}))
+
 
 if __name__ == '__main__': unittest.main()

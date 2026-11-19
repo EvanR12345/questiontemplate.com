@@ -96,6 +96,34 @@ def selection_changed(current, submitted):
             or current.get('qcOverride') != submitted.get('qcOverride'))
 
 
+def restore_legacy_request_settings(service, job, options, current):
+    """Separate older normalized requests from the matching saved shot settings."""
+    submitted = options.get('shotSnapshot')
+    if ('validatedGenerationSettings' in options or not submitted
+            or submitted.get('imageProvider') != current.get('imageProvider')
+            or submitted.get('imageModel') != current.get('imageModel')):
+        return options
+    raw = current.get('generationSettings', {})
+    effective = submitted.get('generationSettings', {})
+    effective_fingerprint = fingerprint(effective)
+    if fingerprint(raw) == effective_fingerprint:
+        return options
+    requested = raw | {'model': current.get('imageModel'), 'seed': job['seed']}
+    if fingerprint(requested) != effective_fingerprint:
+        from image_provider import ImageProvider
+        try:
+            provider = service.provider(current['imageProvider'])
+            # Studio's providers normalize through the shared settings method.
+            # Verify that transformation without loading a model or checking VRAM.
+            requested = ImageProvider.validateSettings(provider, requested, check_hardware=False)
+        except (OSError, ValueError, KeyError, TypeError):
+            return options
+    if fingerprint(requested) != effective_fingerprint:
+        return options
+    return options | {'shotSnapshot': submitted | {'generationSettings': raw},
+                      'validatedGenerationSettings': effective}
+
+
 class QueuedImageReceipt:
     def __init__(self,service,job):
         self.service=service
@@ -122,6 +150,17 @@ class QueuedImageReceipt:
             self.service.db.execute('UPDATE queued_image_receipts SET receipt=? WHERE job=? AND receipt=?',
                                     (json.dumps(record),self.job['id'],json.dumps(self.dispatched)))
             if commit:self.service.db.commit()
+
+    def matches_spec(self, project, shot, options, expected):
+        signature = self.service.visual_spec_signature
+        current = signature(project, shot)
+        if current == expected:
+            return True
+        submitted = options.get('shotSnapshot')
+        if 'validatedGenerationSettings' in options or not submitted or signature(project, submitted) != expected:
+            return False
+        compatible = restore_legacy_request_settings(self.service, self.job, options, shot)
+        return compatible is not options and signature(project, compatible['shotSnapshot']) == current
 
     def recover(self, project, options):
         service=self.service
@@ -171,9 +210,9 @@ class QueuedImageReceipt:
             selected=shot.get('imagePath','')
             if (selected!=receipt['previous'] or
                 (service.store.asset_digest(pid,selected) if selected else None)!=receipt['previousSHA'] or
-                service.visual_spec_signature(project,shot)!=receipt['spec'] or
                 fingerprint(shot.get('qcOverride'))!=receipt['previousReview'] or
-                choice_changed(shot)):
+                choice_changed(shot) or
+                not self.matches_spec(project,shot,options,receipt['spec'])):
                 raise ImageRecoveryRequired('The shot or its selected image changed after interruption. The current selection is retained.')
             return False
         try:
@@ -202,7 +241,7 @@ class QueuedImageReceipt:
                                   and fingerprint(shot.get('qcOverride')) == receipt['previousReview']
                                   and not choice_changed(shot)
                                   and not already_in_history)
-            if service.visual_spec_signature(latest,shot)!=receipt['spec'] or not (selected_result or previous_selection):
+            if not (selected_result or previous_selection) or not self.matches_spec(latest,shot,options,receipt['spec']):
                 if selected_result:shot['generationStale']=True
                 if selected!=receipt['path'] and not already_in_history:
                     shot.setdefault('history',[]).append({'imagePath':receipt['path'],'metadata':metadata,'selected':False,
@@ -232,8 +271,13 @@ def run_queued_image(service,project,job,options):
     if receipt.recover(project,options):
         return True
     current = get_shot(project, job['chapter'], job['shot'])
-    if selection_changed(current, options.get('shotSnapshot') or current):
+    submitted = options.get('shotSnapshot') or current
+    if selection_changed(current, submitted):
         raise ImageRecoveryRequired('The selected image or its acceptance changed after queuing. Review the current selection before generating another image.')
+    options = restore_legacy_request_settings(service, job, options, current)
+    submitted = options.get('shotSnapshot') or current
+    if submitted is not current and service.visual_spec_signature(project,submitted)!=service.visual_spec_signature(project,current):
+        raise ImageRecoveryRequired('The shot was edited after queuing. Review the current settings before generating another image.')
     project=service.begin_queued_image_rental(project,job,options) or project
     token=current_receipt.set(receipt)
     try:

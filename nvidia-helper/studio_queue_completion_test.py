@@ -81,6 +81,17 @@ class CompletionRecoveryTest(unittest.TestCase):
     def timings(self,pid=None):
         return [x['jobId'] for x in self.helper.store.load(pid or self.pid)['production']['timings']]
 
+    def test_due_retry_precedes_new_receipts_in_a_continuously_busy_queue(self):
+        now=time.time()
+        with self.helper.cv,self.helper.db:
+            self.helper.db.executemany('INSERT INTO queue_project_updates(job,started,project,retry_after) VALUES(?,?,?,?)',
+                [('not-due',now,self.pid,now+1800),('earlier-retry',now,self.pid,now-1),('new-job',now,self.pid,0)])
+        self.helper.flush_queue_project_update()
+        remaining={r[0] for r in self.helper.db.execute('SELECT job FROM queue_project_updates')}
+        self.assertEqual(remaining,{'not-due','new-job'})
+        self.helper.flush_queue_project_update()
+        self.assertEqual([r[0] for r in self.helper.db.execute('SELECT job FROM queue_project_updates')],['not-due'])
+
     def test_transient_memory_error_allows_next_job_and_repairs_timing_once(self):
         self.enqueue('first')
         other=self.helper.store.save(new_project('Independent project'))['id']

@@ -563,6 +563,25 @@ class ProjectStore:
                 isinstance(result,dict) and 'revision' in result) else None
             return result
 
+    def read_only_loader(self, id):
+        """Reuse one decoded project during a scan while the exact file bytes match."""
+        path=self.folder(id)/'project.json'
+        cached=None
+        fingerprint=None
+        def read():
+            nonlocal cached,fingerprint
+            with self.lock:
+                if fingerprint and path.is_file() and self.asset_digest(id,'project.json')==fingerprint:
+                    return cached
+                cached=self.load(id)
+                loaded=self._loaded_revision
+                if loaded and loaded[0]==path:
+                    fingerprint=loaded[3].hex() if loaded[3] is not None else hashlib.sha256(loaded[1]).hexdigest()
+                else:
+                    fingerprint=None
+                return cached
+        return read
+
     def save(self, p, expected=None, *, _return_copy=True):
         validate_project(p)
         with self.lock:

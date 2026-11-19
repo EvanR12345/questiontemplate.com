@@ -11,6 +11,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from image_provider import ExistingImageProvider
 from studio_data import ProjectStore, get_shot, new_project
 from studio_queue_image_recovery import QueuedImageReceipt, ImageRecoveryRequired, run_queued_image
 from studio_qc import review_signature
@@ -49,12 +50,12 @@ class DirectImageRecoveryTest(unittest.TestCase):
     def selected(self, p):
         return get_shot(p,self.job['chapter'],self.job['shot'])
 
-    def dispatch(self, provider='existing', qc=None):
+    def dispatch(self, provider='existing', qc=None, *, spec=None):
         p = self.project()
         shot = self.selected(p)
         selected = shot.get('imagePath','')
         selected_sha = self.store.asset_digest(p['id'],selected) if selected else None
-        rel = self.receipt.dispatch(provider,0,self.service.visual_spec_signature(p,shot),selected,selected_sha,
+        rel = self.receipt.dispatch(provider,0,spec or self.service.visual_spec_signature(p,shot),selected,selected_sha,
                                     shot.get('qcOverride'),qc or {'status':'UNCHECKED','pass':None},
                                     shot.get('imageSelectionRevision'))
         self.path = self.store.asset_local(p['id'],rel)
@@ -70,6 +71,95 @@ class DirectImageRecoveryTest(unittest.TestCase):
 
     def run_job(self):
         return run_queued_image(self.service,self.project(),self.job,self.options)
+
+    def legacy_settings(self, raw=None):
+        effective={'seed':8,'model':'sd15','width':512,'height':512,'steps':20}
+        if raw is not None:
+            self.store.mutate(self.job['project'],lambda p:self.selected(p).update(generationSettings=raw))
+        self.options['shotSnapshot']['generationSettings']=effective
+        self.service.provider=Mock(return_value=ExistingImageProvider(None))
+        return effective
+
+    def legacy_dispatch(self):
+        self.dispatch('comfyui',spec=self.service.visual_spec_signature(self.project(),self.options['shotSnapshot']))
+
+    def test_normalized_legacy_settings_restore_snapshot_without_editing_the_project(self):
+        self.receipt.service.db.execute('INSERT INTO queued_image_receipts VALUES(?,?)',(self.job['id'],json.dumps({'state':'unsubmitted'})))
+        self.receipt.service.db.commit()
+        effective=self.legacy_settings()
+        self.assertFalse(self.run_job())
+        options=self.service.generate.call_args.args[-1]
+        self.assertEqual(options['validatedGenerationSettings'],effective)
+        self.assertEqual(options['shotSnapshot']['generationSettings'],{'seed':8})
+        self.assertEqual(self.selected(self.project())['generationSettings'],{'seed':8})
+
+    def test_legacy_int_provider_settings_match_equivalent_saved_float_dimensions(self):
+        raw={'seed':8,'model':'sd15','width':512.0,'height':512.0,'steps':20.0}
+        effective=self.legacy_settings(raw)
+        self.db.execute('INSERT INTO queued_image_receipts VALUES(?,?)',(self.job['id'],json.dumps({'state':'unsubmitted'})))
+        self.db.commit()
+        self.assertFalse(self.run_job())
+        options=self.service.generate.call_args.args[-1]
+        self.assertEqual(options['validatedGenerationSettings'],effective)
+        self.assertIs(type(options['shotSnapshot']['generationSettings']['width']),float)
+        self.assertIs(type(self.selected(self.project())['generationSettings']['width']),float)
+
+    def test_retry_safe_legacy_receipt_matches_untouched_raw_shot(self):
+        effective=self.legacy_settings()
+        self.legacy_dispatch()
+        self.receipt.confirm_retry_safe()
+        self.assertFalse(self.run_job())
+        self.assertEqual(self.service.generate.call_args.args[-1]['validatedGenerationSettings'],effective)
+        self.store.mutate(self.job['project'],lambda p:self.selected(p)['generationSettings'].update(width=640))
+        with self.assertRaisesRegex(ImageRecoveryRequired,'changed after interruption'):
+            self.run_job()
+        self.service.generate.assert_called_once()
+
+    def test_legacy_signed_sidecar_is_recovered_while_checkpoint_is_unavailable(self):
+        self.legacy_settings()
+        self.legacy_dispatch()
+        self.publish_files()
+        with patch.object(ExistingImageProvider,'healthCheck',side_effect=AssertionError('checked offline weights')):
+            self.assertTrue(self.run_job())
+            self.assertTrue(self.run_job())
+        shot=self.selected(self.project())
+        self.assertEqual(shot['imagePath'],self.rel)
+        self.assertEqual(shot['retryHistory'],[self.metadata])
+        self.assertFalse(shot['generationStale'])
+        self.service.generate.assert_not_called()
+        self.service.begin_queued_image_rental.assert_not_called()
+
+    def test_uncertain_legacy_remote_receipt_never_revalidates_or_retries(self):
+        self.legacy_settings()
+        self.legacy_dispatch()
+        with self.assertRaisesRegex(ImageRecoveryRequired,'Reconcile the remote operation') as blocked:
+            self.run_job()
+        self.assertTrue(blocked.exception.pause_queue)
+        self.service.provider.assert_not_called()
+        self.service.generate.assert_not_called()
+
+    def test_legacy_signed_sidecar_keeps_prompt_edit_and_manual_selection(self):
+        self.legacy_settings()
+        self.legacy_dispatch()
+        self.publish_files()
+        self.choose('manual.png')
+        self.store.mutate(self.job['project'],lambda p:self.selected(p).update(prompt='A new archive.'))
+        with self.assertRaisesRegex(ImageRecoveryRequired,'current selection'):
+            self.run_job()
+        shot=self.selected(self.project())
+        self.assertEqual((shot['prompt'],shot['imagePath']),('A new archive.','manual.png'))
+        self.assertEqual([(h['imagePath'],h['selected']) for h in shot['history'] if h['imagePath']==self.rel],[(self.rel,False)])
+        self.service.generate.assert_not_called()
+
+    def test_queued_visual_edit_is_detected_before_renting_or_dispatch(self):
+        self.receipt.service.db.execute('INSERT INTO queued_image_receipts VALUES(?,?)',(self.job['id'],json.dumps({'state':'unsubmitted'})))
+        self.receipt.service.db.commit()
+        self.options['validatedGenerationSettings']={'seed':8,'model':'sd15','width':512}
+        self.store.mutate(self.job['project'],lambda p:self.selected(p).update(prompt='An edited archive.'))
+        with self.assertRaisesRegex(ImageRecoveryRequired,'edited after queuing'):
+            self.run_job()
+        self.service.begin_queued_image_rental.assert_not_called()
+        self.service.generate.assert_not_called()
 
     def test_durable_sidecar_before_selection_and_existing_final_selection_are_idempotent(self):
         self.dispatch()

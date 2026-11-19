@@ -11,6 +11,7 @@ import mimetypes
 import os
 import re
 import threading
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from pathlib import Path
@@ -433,11 +434,26 @@ class R2Archive:
         if not record: return target
         if not re.fullmatch(r'[a-f0-9]{64}',record.get('sha256','')) or record.get('key') != f'studio/assets/{pid}/{record["sha256"]}/{name.replace(chr(92),"/")}':
             raise ValueError('Invalid cloud asset identity.')
-        target.parent.mkdir(parents=True,exist_ok=True); tmp=target.with_suffix(target.suffix+'.cloud-partial')
-        self.objects.download(record['key'],tmp)
-        if tmp.stat().st_size != record['bytes'] or sha(tmp)!=record['sha256']:
-            tmp.unlink(missing_ok=True); raise ValueError('Cloud asset checksum failed. Existing assets preserved.')
-        tmp.replace(target); return target
+        target.parent.mkdir(parents=True,exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=target.parent,prefix='.restore-',suffix='.cloud-partial',delete=False) as partial:
+            tmp=Path(partial.name)
+        try:
+            self.objects.download(record['key'],tmp)
+            if tmp.stat().st_size!=record['bytes'] or sha(tmp)!=record['sha256']:
+                raise ValueError('Cloud asset checksum failed. Existing assets preserved.')
+            try:
+                # The editor, renderer or another helper may have written a
+                # newer file during transfer. Publish only into a vacant path.
+                if os.name=='nt':
+                    tmp.rename(target)
+                else:
+                    os.link(tmp,target)
+            except FileExistsError:
+                if not self.store.asset_local(pid,name).is_file():
+                    raise
+            return target
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def media_url(self, pid, name, download_name=None):
         manifest,_=self.manifest(pid)

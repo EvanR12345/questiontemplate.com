@@ -10,6 +10,8 @@ import studio_qc_test as qc_fixtures
 
 class ReadinessReviewTest(unittest.TestCase):
     def setUp(self):
+        disk=patch('shutil.disk_usage',return_value=shutil._ntuple_diskusage(40*2**30,20*2**30,20*2**30))
+        disk.start();self.addCleanup(disk.stop)
         self.fixture=qc_fixtures.PracticalQCTest();self.fixture.setUp()
         self.store=self.fixture.store;self.pid=self.fixture.pid
         self.service=object.__new__(StudioService)
@@ -200,6 +202,14 @@ class ReadinessReviewTest(unittest.TestCase):
         report=self.service.production_readiness(self.pid,{'unattended':True})
         row=next(c for c in report['checks'] if c['name']=='unattended-caps')
         self.assertFalse(row['ready']);self.assertTrue(row['blocking']);self.assertIn('exceed',row['message'])
+
+    def test_under_512_mib_blocks_readiness_even_with_cloud_storage(self):
+        with patch('shutil.disk_usage',return_value=shutil._ntuple_diskusage(4*2**30,4*2**30-64*2**20,64*2**20)):
+            report=self.check()
+        self.assertFalse(report['ready'])
+        scratch=next(c for c in report['checks'] if c['name']=='scratch')
+        self.assertFalse(scratch['ready']);self.assertTrue(scratch['blocking'])
+        self.assertIn('448 MiB',scratch['message'])
 
     def test_cloud_archiving_does_not_claim_long_video_will_fit_small_disk(self):
         with patch('shutil.disk_usage',return_value=shutil._ntuple_diskusage(10*2**30,9*2**30,2**30)):

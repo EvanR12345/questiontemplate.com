@@ -255,47 +255,50 @@ class StudioService:
                     timings = production.get('timings') if isinstance(production, dict) else None
                     timing_changed = isinstance(timings, list) and len(timings) != timing_count
                 affected = set()
+                chapters={c['id']:c for c in p['chapters']}
+                shots_by_chapter={}
+                active={}
+                interrupted=set()
                 for item in items:
-                    try:
-                        c = get_chapter(p, item["chapter"])
-                    except StopIteration:
+                    cid=item['chapter']
+                    c=chapters.get(cid)
+                    if c is None:
                         continue
                     state = item["status"]
-                    affected.add(c["id"])
+                    affected.add(cid)
+                    if state in ('QUEUED','RUNNING'):active.setdefault(cid,set()).add(state)
+                    if state=='INTERRUPTED':interrupted.add(cid)
+                    if state=='COMPLETE':continue
                     if item["shot"]:
-                        try:
-                            s = get_shot(p, c["id"], item["shot"])
-                        except StopIteration:
+                        if cid not in shots_by_chapter:
+                            shots_by_chapter[cid]={s['id']:s for scene in c.get('scenes',[]) for s in scene['shots']}
+                        s=shots_by_chapter[cid].get(item['shot'])
+                        if s is None:
                             continue
                         if state == "INTERRUPTED":
                             if s.get('status') in ('QUEUED','PAUSED','GENERATING'):
                                 set_status(s, production_status(p,s,self.store) if s.get('imagePath') and not s.get('generationStale') else 'READY_FOR_IMAGES')
-                        elif state != "COMPLETE":
+                        else:
                             set_status(s, (
                                 "PAUSED"
                                 if state == "QUEUED" and self.paused
                                 else "GENERATING" if state == "RUNNING" else state
                             ))
-                    elif state != "COMPLETE":
+                    else:
                         set_status(c, (
                             "PAUSED"
                             if state == "QUEUED" and self.paused
                             else "ANALYZING" if state == "RUNNING" else state
                         ))
                 for cid in affected:
-                    c = get_chapter(p, cid)
-                    active = [
-                        r
-                        for r in items
-                        if r["chapter"] == cid and r["status"] in ("QUEUED", "RUNNING")
-                    ]
-                    if active:
+                    c = chapters[cid]
+                    if cid in active:
                         set_status(c, (
                             "PAUSED"
                             if self.paused
                             else (
                                 "GENERATING"
-                                if any(r["status"] == "RUNNING" for r in active)
+                                if 'RUNNING' in active[cid]
                                 else "QUEUED"
                             )
                         ))
@@ -306,8 +309,7 @@ class StudioService:
                             for s in shots
                         ):
                             set_status(c, "COMPLETE")
-                        elif c.get('status') in ('QUEUED','PAUSED','GENERATING') and any(
-                                r['chapter']==cid and r['status']=='INTERRUPTED' for r in items):
+                        elif c.get('status') in ('QUEUED','PAUSED','GENERATING') and cid in interrupted:
                             set_status(c, 'READY_FOR_IMAGES')
                 if (not timing_changed and not parent_changed
                         and all(present and item.get('status') == previous
@@ -333,7 +335,7 @@ class StudioService:
         with self.cv:
             query='SELECT job,started,project,completion,attempts FROM queue_project_updates '
             row=(self.db.execute(query+'WHERE job=? AND started=?',key) if key else
-                 self.db.execute(query+'WHERE retry_after<=? ORDER BY retry_after,rowid LIMIT 1',(time.time(),))).fetchone()
+                 self.db.execute(query+'WHERE retry_after<=? ORDER BY rowid LIMIT 1',(time.time(),))).fetchone()
         if row:
             key=(row['job'],row['started'])
             try:
@@ -944,8 +946,13 @@ class StudioService:
             except ValueError:valid=False
             check('overlap',valid,'Overlap must match the selected cloud providers, checks and API budget.')
         free=shutil.disk_usage(self.store.folder(pid)).free
-        check('scratch',free>=512*2**20,
-              f'Local temporary disk: {free/2**30:.2f} GiB free. Long-video space is checked again against actual rendered inputs.')
+        minimum_scratch=512*2**20
+        scratch_message=(f'{free/2**30:.2f} GiB available for local Studio files. '
+                         'Long-video assembly also checks the size of its completed inputs.')
+        if free<minimum_scratch:
+            scratch_message=(f'Studio needs 512 MiB free to start. Free at least '
+                             f'{math.ceil((minimum_scratch-free)/2**20)} MiB on the helper drive.')
+        check('scratch',free>=minimum_scratch,scratch_message)
         if free<2*2**30:
             check('scratch-headroom',False,
                   'Limited local scratch space: cloud archiving does not remove local working files. Free space before a long generation; this setup check is not a guarantee that the complete video will fit.',False)
@@ -1091,7 +1098,6 @@ class StudioService:
                     settings = provider.validateSettings(requested, check_hardware=False)
                 else:
                     settings = provider.validateSettings(requested)
-                shot["generationSettings"] = settings
                 seed = settings["seed"]
             else:
                 seed = None
@@ -1100,7 +1106,8 @@ class StudioService:
                     uid("job-"),
                     sid,
                     seed,
-                    options | ({"shotSnapshot": copy.deepcopy(shot), "qcTimingProfile": [check_level(p["settings"]), p["settings"].get("qcSampleEvery",5), p["settings"].get("qcPolicy","practical"), p["settings"]["director"]]} if shot else {}),
+                    options | ({"shotSnapshot": copy.deepcopy(shot), "validatedGenerationSettings": settings,
+                                "qcTimingProfile": [check_level(p["settings"]), p["settings"].get("qcSampleEvery",5), p["settings"].get("qcPolicy","practical"), p["settings"]["director"]]} if shot else {}),
                 )
             )
         with self.cv:
@@ -1393,7 +1400,11 @@ class StudioService:
         while True:
             if self.closed:
                 return
-            if self.next_project_update is not None and self.next_project_update<=time.time():
+            # A steady image queue adds one status receipt per job. Leave room
+            # for an earlier failed save to catch up while new work continues.
+            for _ in range(2):
+                if self.next_project_update is None or self.next_project_update>time.time():
+                    break
                 self.flush_queue_project_update()
             with self.cv:
                 while not self.closed:
@@ -2416,10 +2427,15 @@ class StudioService:
 
     def complete_automatic_reviews(self,pid):
         """Repair confirmed findings once under the durable per-shot retry ceiling."""
-        p=self.store.load(pid)
+        read_current=self.store.read_only_loader(pid)
+        p=read_current()
         for chapter in p['chapters']:
             for scene in chapter['scenes']:
                 for shot in scene['shots']:
+                    current=read_current();item=get_shot(current,chapter['id'],shot['id'])
+                    if not item.get('imagePath') or not qc_decision(current,item,self.store)['blocking']:continue
+                    # Generation can modify its request snapshot. Recheck a
+                    # fresh private copy before spending or reporting a blocker.
                     current=self.store.load(pid);item=get_shot(current,chapter['id'],shot['id'])
                     if not item.get('imagePath') or not qc_decision(current,item,self.store)['blocking']:continue
                     blocker=self.automatic_repair_blocker(current,item)
@@ -2442,16 +2458,18 @@ class StudioService:
                     latest=self.store.load(pid)
                     if qc_decision(latest,get_shot(latest,chapter['id'],item['id']),self.store)['blocking']:
                         raise RuntimeError('Automatic image repairs exhausted without a usable result; saved assets and findings retained.')
-        if self.store.load(pid)['intro']['enabled']:
+        if read_current()['intro']['enabled']:
             self.inspect_intro(self.store.load(pid),sampled_only=True)
-            for original in self.store.load(pid)['intro'].get('shots',[]):
-                for _ in range(self.store.load(pid)['settings']['maxImageRetries']):
+            for original in read_current()['intro'].get('shots',[]):
+                for _ in range(read_current()['settings']['maxImageRetries']):
+                    current=read_current();item=next(s for s in current['intro']['shots'] if s['id']==original['id'])
+                    if not qc_decision(current,item,self.store)['blocking']:break
                     current=self.store.load(pid);item=next(s for s in current['intro']['shots'] if s['id']==original['id'])
                     if not qc_decision(current,item,self.store)['blocking']:break
                     if not automatic_repairs(current['settings'],item.get('qc',{})):
                         raise RuntimeError('Automatic intro quality checks could not resolve the image; original assets retained.')
                     self.intro_image(current,{'repairShot':item['id'],'_collectReview':True})
-                latest=self.store.load(pid);item=next(s for s in latest['intro']['shots'] if s['id']==original['id'])
+                latest=read_current();item=next(s for s in latest['intro']['shots'] if s['id']==original['id'])
                 if qc_decision(latest,item,self.store)['blocking']:
                     raise RuntimeError('Automatic intro repair limit reached; original assets and findings retained.')
 
@@ -5300,7 +5318,10 @@ class StudioService:
         if provider.id != "existing":
             self.providers["existing"].unload()
         self.status(p["id"], chid, "GENERATING")
-        settings = shot["generationSettings"] | {
+        # Provider defaults belong to the request. The saved shot remains the
+        # authority for identifying an editor change while a job is in flight.
+        settings = (options["validatedGenerationSettings"] if receipt and "validatedGenerationSettings" in options
+                    else shot["generationSettings"]) | {
             "model": shot["imageModel"],
             "seed": seed,
         }
@@ -5333,12 +5354,8 @@ class StudioService:
                 from scene_reference_binding import compose
                 request['prompt']=compose(p,shot,initial,ref_metadata)
             elif references:
-                from scene_repair import framing_subjects
-                if framing_subjects(p['settings'],shot,shot.get('qc',{}),project=p):
-                    from scene_reference_binding import compose
-                    request['prompt']=compose(p,shot,restaged,ref_metadata)
-                else:
-                    request['prompt']+=' '+reference_prompt(p,shot,ref_metadata,'generate',include_scene_facts=False)
+                from scene_repair import compose_repair
+                request['prompt']=compose_repair(p,shot,shot.get('qc',{}),restaged,ref_metadata)
         else:
             if options.get('_repairPrompt'):
                 from studio_automation import repair_prompt
@@ -5582,7 +5599,8 @@ class StudioService:
                 from scene_first_pass import repair_source
                 request['prompt']=(restaged or repair_prompt(repair_source(p,shot),qc.get('productionRepairPrompt') or qc.get('repairPrompt'),request['operation']))
                 if restaged and references:
-                    request['prompt']+=' '+reference_prompt(p,shot,ref_metadata,'generate',include_scene_facts=False)
+                    from scene_repair import compose_repair
+                    request['prompt']=compose_repair(p,shot,qc,restaged,ref_metadata)
                 if (
                     not rebuild
                     and

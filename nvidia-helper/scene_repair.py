@@ -12,6 +12,29 @@ ROLE=('Corrective scene planner: write ONE complete positive image prompt for th
  'Respect clothingContinuity: Advisory tolerates non-plot-critical garments; Required enforces the saved outfit. Plot-critical uniforms and disguises remain essential. Keep non-explicit staging where appropriate. '
  'Use concise natural prose, about120-220 words; no repeated boilerplate, instruction tags, error descriptions, captions or collage. Do not invent story facts.')
 
+FACE_CLOSEUP_BRIEF=(
+    'The saved camera explicitly calls for a close-up of a single face. Put the chosen facial feature, '
+    'viewpoint, expression, and frame edges in the first sentence. Describe only things visible inside that tight frame. '
+    'Use the existing expression or a visible shoulder cue for a continuing offscreen posture. Preserve any '
+    'specifically required visible action and the original illustration style. Do not create another view or a listener.')
+
+
+def closeup_subject(shot):
+    """Identify the saved facial framing in the single-subject FLUX workflow we measured."""
+    if shot.get('imageProvider')!='comfyui' or shot.get('imageModel')!='flux2-klein-4b':
+        return None
+    cast=shot.get('characters',[])
+    camera=shot.get('camera') or {}
+    if len(cast)!=1 or str(camera.get('shot','')).strip().casefold() not in ('close-up','extreme close-up'):
+        return None
+    composition=str(camera.get('composition',''))
+    if not re.search(r'\b(?:face|eyes|mouth|grin)\b',composition,re.I):
+        return None
+    # A close-up of a face and a held object or hand can require wider staging.
+    if re.search(r'\b(?:hands?|wrists?|fingers?|holding|holds?|grips?|object|prop)\b',composition,re.I):
+        return None
+    return cast[0].get('id')
+
 def confirmed_defects(settings,qc):
  from studio_qc import effective_issue_levels
  levels=effective_issue_levels(settings,qc)
@@ -94,7 +117,26 @@ def planning_context(project,shot,qc):
                   'Name the visible evidence of the required action and any existing restraint. '
                   'Keep each supporting person and prop separately identifiable. Use another non-explicit staging '
                   'if this angle would conceal a required action, limb, movement, or relationship.')}
+  if closeup_subject(shot) in subjects:
+   context['framingGuidance']['instruction']=FACE_CLOSEUP_BRIEF
  return context
+
+
+def compose_repair(project,shot,qc,prompt,metadata):
+    """Attach the original portrait to a verified corrective plan at dispatch."""
+    subjects=framing_subjects(project['settings'],shot,qc,project=project)
+    if subjects:
+        owner=closeup_subject(shot)
+        if owner in subjects and len(metadata)==1 and metadata[0].get('characterId')==owner:
+            chapter=next((c for c in project.get('chapters',[]) if c.get('id')==shot.get('chapterId')), {})
+            person=next((p for p in project.get('characters',[])+chapter.get('people',[]) if p['id']==owner),{})
+            original=metadata[0].get('path')
+            if person.get('name') and original and any(r.get('path')==original for r in person.get('references',[])):
+                return prompt.strip()+f" Use image 1 for {person['name']}’s permanent facial identity only."
+        from scene_reference_binding import compose
+        return compose(project,shot,prompt,metadata)
+    from image_provider import reference_prompt
+    return prompt+' '+reference_prompt(project,shot,metadata,'generate',include_scene_facts=False)
 
 def bind(prompt,image_sha,spec,context,model,reasoning):
  if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>2600:raise ValueError('Corrective scene plan is empty or exceeds its bounded prompt size.')

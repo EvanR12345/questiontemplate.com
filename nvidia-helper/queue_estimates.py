@@ -11,7 +11,7 @@ def timing_profile(kind, payload):
     if kind != 'image':
         return kind
     shot = payload.get('shotSnapshot', {})
-    settings = shot.get('generationSettings', {})
+    settings = payload.get('validatedGenerationSettings', shot.get('generationSettings', {}))
     return json.dumps([kind, shot.get('imageProvider'), shot.get('imageModel'), shot.get('workflow'),
         settings.get('width'), settings.get('height'), settings.get('steps'),
         payload.get('operation', 'generate'), payload.get('qcTimingProfile', 'legacy'),

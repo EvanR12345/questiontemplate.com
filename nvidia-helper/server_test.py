@@ -190,6 +190,12 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(result['settingsHistory'][-1]['settings'],p['settings'])
 
     def test_health_reports_the_broker_image_configuration_and_dense_lease_policy(self):
+        import subprocess
+        real_check_output=subprocess.check_output
+        def hardware_fixture(command,*args,**kwargs):
+            if isinstance(command,list) and command[0]=='nvidia-smi':
+                return '4096, 2048\n' if 'memory.free' in command[1] else '4096\n'
+            return real_check_output(command,*args,**kwargs)
         service = self.server.RequestHandlerClass.studio_service
         provider = service.providers['comfyui']
         cases = [
@@ -202,6 +208,7 @@ class BridgeTest(unittest.TestCase):
         ]
         for config, managed, holds_gpu in cases:
             with self.subTest(config=config), patch.dict(service.config, config, clear=True), \
+                    patch('subprocess.check_output',side_effect=hardware_fixture), \
                     patch.object(provider, 'healthCheck', return_value={'installed': False}) as probe:
                 code, _, raw = self.request('/studio/health')
                 self.assertEqual(code, 200, raw)
@@ -248,6 +255,7 @@ class BridgeTest(unittest.TestCase):
         p=service.store.save(p)
         worker=Mock();worker.healthCheck.return_value={'installed':True}
         with patch.object(service,'storage',Mock(status=lambda *_:{'enabled':True,'provider':'Google Cloud Storage'})), \
+             patch('shutil.disk_usage',return_value=Mock(free=20*2**30)), \
              patch('studio_service.OpenAIDirector.healthCheck',return_value={'installed':True}), \
              patch.object(service,'provider',return_value=worker), \
              patch.dict(service.config,{'ffmpeg':__file__}):

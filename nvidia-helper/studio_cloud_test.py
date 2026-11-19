@@ -26,6 +26,28 @@ class Objects:
     def url(self,k):return 'https://private.example/'+k
 
 class CloudSaveTests(unittest.TestCase):
+    def test_cloud_restore_does_not_overwrite_a_new_local_file(self):
+        self.a.sync(self.p['id']);self.image.unlink()
+        def restore(key,path):
+            path.write_bytes(self.obj.data[key][0])
+            self.image.write_bytes(b'a newer local selection')
+        self.obj.download=restore
+        target=self.a.fetch_asset(self.p['id'],'art.png')
+        self.assertEqual(target.read_bytes(),b'a newer local selection')
+        self.assertFalse(list(target.parent.glob('*.cloud-partial')))
+
+    def test_failed_cloud_download_removes_only_its_own_partial(self):
+        self.a.sync(self.p['id']);self.image.unlink()
+        sibling=self.image.parent/'unrelated.cloud-partial';sibling.write_bytes(b'other restore')
+        def interrupted(key,path):
+            path.write_bytes(b'partial file');raise OSError('connection ended')
+        self.obj.download=interrupted
+        with self.assertRaisesRegex(OSError,'connection ended'):
+            self.a.fetch_asset(self.p['id'],'art.png')
+        self.assertFalse(self.image.exists())
+        self.assertEqual(list(self.image.parent.glob('*.cloud-partial')),[sibling])
+        self.assertEqual(sibling.read_bytes(),b'other restore')
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.store=ProjectStore(self.tmp.name)
         self.p=self.store.save(new_project('Cloud story'));self.obj=Objects()

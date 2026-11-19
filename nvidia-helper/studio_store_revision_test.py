@@ -5,6 +5,27 @@ from unittest.mock import patch
 from studio_data import ProjectStore,new_project
 
 class StoreRevisionTest(unittest.TestCase):
+    def test_read_only_scan_detects_external_same_length_edit_with_restored_timestamp(self):
+        import os
+        with tempfile.TemporaryDirectory() as root:
+            store=ProjectStore(root);p=store.save(new_project('Run A'));pid=p['id']
+            read=store.read_only_loader(pid)
+            first=read();self.assertIs(read(),first)
+            path=store.folder(pid)/'project.json';original=path.read_bytes();stamp=path.stat()
+            changed=original.replace(b'Run A',b'Run B',1)
+            self.assertNotEqual(original,changed);self.assertEqual(len(original),len(changed))
+            path.write_bytes(changed);os.utime(path,ns=(stamp.st_atime_ns,stamp.st_mtime_ns))
+            fresh=read();self.assertEqual(fresh['name'],'Run B');self.assertIsNot(fresh,first)
+            self.assertEqual(first['name'],'Run A');self.assertIs(fresh,read())
+
+    def test_large_read_only_views_refresh_across_an_independent_write(self):
+        with tempfile.TemporaryDirectory() as root:
+            store=ProjectStore(root);p=new_project('One');p['chapters'][0]['sourceText']='x'*(1200*1024)
+            store.save(p);read=store.read_only_loader(p['id'])
+            self.assertEqual(read()['name'],'One')
+            other=ProjectStore(root);other.mutate(p['id'],lambda data:data.update(name='Two'))
+            self.assertEqual(read()['name'],'Two')
+
     def test_large_save_does_not_need_a_second_whole_file_allocation(self):
         with tempfile.TemporaryDirectory() as root:
             store=ProjectStore(root)

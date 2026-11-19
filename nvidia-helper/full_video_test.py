@@ -431,6 +431,23 @@ class FullVideoTest(unittest.TestCase):
         self.service.sync_queue_states(self.project['id'])
         self.assertEqual(touched, [self.project['id']])
 
+    def test_queued_provider_defaults_do_not_change_the_saved_shot_identity(self):
+        self.service.prepare_story(self.project['id'], {})
+        project=self.service.store.load(self.project['id'])
+        chapter=project['chapters'][0];shot=chapter['scenes'][0]['shots'][0]
+        shot['generationSettings']={'seed':17,'steps':4}
+        project=self.service.store.save(project)
+        self.service.provider('existing').validateSettings=lambda s:s|{'width':512,'height':512}
+        self.service.enqueue(project['id'],chapter['id'],'image',[shot['id']])
+        row=self.service.db.execute("SELECT payload FROM jobs WHERE kind='image' AND shot=?",(shot['id'],)).fetchone()
+        payload=json.loads(row[0]);current=self.service.store.load(project['id'])
+        saved=get_shot(current,chapter['id'],shot['id'])
+        self.assertEqual(payload['shotSnapshot']['generationSettings'],saved['generationSettings'])
+        self.assertEqual(self.service.visual_spec_signature(project,payload['shotSnapshot']),
+                         self.service.visual_spec_signature(current,saved))
+        self.assertEqual(payload['validatedGenerationSettings'],
+                         {'seed':17,'steps':4,'width':512,'height':512,'model':shot['imageModel']})
+
     def test_saved_image_review_queues_without_image_backend_online(self):
         self.service.prepare_story(self.project['id'], {})
         saved = self.service.store.load(self.project['id'])
