@@ -59,10 +59,8 @@ export function createProductionTools(ctx){
   async function health(){
     const id=ctx.get().project.id;
     if(!ctx.get().connected)throw Error('Connect the helper to check configured voices, references, storage and caps.');
-    await ctx.flush();await ctx.saveSettingsIfVisible();await ctx.saveStrategy();
-    if(ctx.get().project.id!==id)throw Error('Project changed; reopen Project health.');
     const options=ctx.productionOptions(false);
-    const m=readonly('Project health','<p role="status" id="wsHealth">Checking saved project setup…</p><p class="muted">Read-only checks. No paid API calls, image generation or GPU startup. Live GPU stock and the full working-disk requirement are checked again during production.</p>');
+    const m=readonly('Project health','<p role="status" id="wsHealth">Checking the saved project with the shown production options…</p><p class="muted">Read-only checks. No paid API calls, image generation or GPU startup. Live GPU stock and the full working-disk requirement are checked again during production.</p>');
     try{const r=await ctx.api('production-readiness?project='+encodeURIComponent(id)+'&overlap='+options.overlap+'&generationStrategy='+options.generationStrategy+'&unattended='+options.unattended);
       if(!current(m,id))return;
       m.querySelector('#wsHealth').outerHTML=`<section id="wsHealth"><p><strong>${r.ready?'Setup checks passed':'Setup needs attention'}</strong> · revision ${r.revision}</p><ul class="ws-health-list">${r.checks.map(x=>`<li><strong>${x.ready?'Ready':x.blocking?'Required':'Note'}</strong><span>${esc(x.message)}</span></li>`).join('')}</ul></section>`;
@@ -107,6 +105,6 @@ export function createProductionTools(ctx){
       m.querySelector('#wsDownloadReport').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(r,null,2)],{type:'application/json'}));const a=m.ownerDocument.createElement('a');a.href=url;a.download='studio-completion-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
     }catch(e){if(current(m,p.id))m.querySelector('#wsReportBody').textContent='Report unavailable: '+e.message;}
   }
-  function wire(){ctx.get().root.querySelectorAll('[data-project-tool]').forEach(b=>b.onclick=()=>ctx.action(({health,search,history,report})[b.dataset.projectTool]));}
+  function wire(){ctx.get().root.querySelectorAll('[data-project-tool]').forEach(b=>b.onclick=()=>ctx.action(({health,search,history,report})[b.dataset.projectTool],{flushEditor:b.dataset.projectTool!=='health'}));}
   return {toolbar,wire};
 }

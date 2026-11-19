@@ -146,6 +146,21 @@ class PlannerProfileTest(unittest.TestCase):
         self.assertEqual(planner_profile(p,config={'renderBackend':'native'})['renderExecution']['backend'],'native')
         self.assertEqual(planner_profile(p,config={'renderBackend':'native'},renderer_backend='cpu')['renderExecution']['backend'],'cpu')
 
+    def test_planner_separates_next_preference_from_previous_production(self):
+        p=new_project()
+        p['production']={'generationStrategy':'dense'}
+        before=copy.deepcopy(p)
+        r=planner_profile(p)
+        self.assertEqual(r['generationStrategy'],'align')
+        self.assertEqual(r['lastProductionStrategy'],'dense')
+        self.assertEqual(p,before)
+        p['generationStrategy']='fastest'
+        r=planner_profile(p)
+        self.assertEqual(r['generationStrategy'],'fastest')
+        self.assertEqual(r['lastProductionStrategy'],'dense')
+        p['production']={}
+        self.assertIsNone(planner_profile(p)['lastProductionStrategy'])
+
     def test_new_pipeline_admission_does_not_inherit_old_three_task_throughput(self):
         with tempfile.TemporaryDirectory() as folder:
             db=PerformanceStore(Path(folder)/'history.db');p=new_project()

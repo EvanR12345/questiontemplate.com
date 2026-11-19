@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {plannerSettings,profileSummary} from './studio-planner-profile.mjs';
+import {STRATEGIES} from './studio-generation-plan.mjs';
 import {plannerSourceState} from './pipeline-config.mjs';
 
 function fixture(){
@@ -17,7 +18,7 @@ function fixture(){
       image:{width:1280,height:720,model:'flux2-klein-4b',steps:4,guidance:1},director:{}},estimates:{}};
   const context=vm.createContext({
     DEFAULTS:{minutes:120},PRICING_DATE:'fixture',PRICING_URL:'fixture',VERSION:1,
-    plannerSettings,profileSummary,plannerSourceState,
+    plannerSettings,profileSummary,plannerSourceState,STRATEGIES,
     document:{getElementById:element},location:{search:''},localStorage:{getItem:()=>null},
     URLSearchParams,structuredClone,setTimeout:()=>0,clearTimeout:()=>{},
     Option:function(name,value,defaultSelected,selected){Object.assign(this,{name,value,selected});},
@@ -75,4 +76,12 @@ test('a newly available Dense saved profile cannot replace an active manual scen
   assert.deepEqual(after.snapshot.config,before.snapshot.config);assert.deepEqual(after.snapshot.preferences,before.snapshot.preferences);
   assert.equal(after.selected,before.selected);assert.equal(after.snapshot.studioSource.following,false);
   assert.match(element('studioProfileStatus').textContent,/manual scenario retained/);
+});
+
+test('planner labels current preference separately from the previous production strategy',async()=>{
+  const {api,profile,element}=fixture();
+  profile.generationStrategy='align';
+  profile.lastProductionStrategy='dense';
+  await api.load();
+  assert.match(element('studioProfileSummary').textContent,/next run: Timed.*last recorded run: Dense images/);
 });

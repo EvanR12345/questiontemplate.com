@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {plannerSettings} from './studio-planner-profile.mjs';
 import {DEFAULTS,buildPlan,schedule} from './pipeline-engine.mjs';
 import {startupCandidates,startupSearch,startupPolicy,startupApplyConfig,mountStartupTradeoffs} from './pipeline-detail-ui.mjs';
+import {STRATEGIES} from './studio-generation-plan.mjs';
 import {plannerSourceState} from './pipeline-config.mjs';
 import {profileSummary} from './studio-planner-profile.mjs';
 
@@ -173,7 +174,7 @@ test('automatic Follow loader sends the installed policy and applies the matchin
   };
   const p={...profile(),project:'fixture',name:'Fixture',revision:7};
   const context=vm.createContext({DEFAULTS,PRICING_DATE:'fixture',PRICING_URL:'fixture',VERSION:1,
-    plannerSettings,profileSummary,plannerSourceState,buildPlan,
+    plannerSettings,profileSummary,plannerSourceState,buildPlan,STRATEGIES,
     fixtureEvidence:evidence,fixtureConfig:{...base,minutes:5,chapters:1},
     document:{getElementById:element},location:{search:''},localStorage:{getItem:()=>null},
     URLSearchParams,structuredClone,setTimeout:()=>0,clearTimeout:()=>{},

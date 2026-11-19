@@ -1,6 +1,6 @@
 import {updateHTML,queuePart,renderTimingHistory,queueJobHTML} from './studio-queue-view.mjs?v=dense-retry-20261118';
 import {chapterStage,createWorkspaceTools} from './studio-workspace.mjs?v=queue-recovery-20261017';
-import {createProductionTools} from './studio-production-tools.mjs?v=queue-perf-20261016';
+import {createProductionTools} from './studio-production-tools.mjs?v=readiness-20261119';
 import {workspaceGuideHTML,organizeSettings,organizeFileTools,openStudioGuide} from './studio-guide.mjs?v=tools-20261016';
 import {VOICE_MODELS,NARRATOR,DEFAULT_VOICE_SCRIPT,voicesFor,voiceCards,mountVoicePicker,voiceValues,voiceNotice} from './studio-voice-settings.mjs?v=kaggle-fallback-20261026';
 import {lunaUsageHTML} from './studio-luna-usage.mjs?v=luna-lean-1';
@@ -80,7 +80,7 @@ root.className = "production";
 let workspaceAddChapter;
 const toolContext={
   get:()=>({project,chapter:ch(),chapterId,tab,queue,connected,health,projects,root}),
-  action,api,mutate,patch,formDialog,media,note,saveSettings,upload,flush,productionOptions,saveSettingsIfVisible,saveStrategy,
+  action,api,mutate,patch,formDialog,media,note,saveSettings,upload,productionOptions,
   connect:()=>connectHelper(),addChapter:()=>workspaceAddChapter?.(),
   refreshQueue:async()=>{queue=await api('queue');renderQueue();},
   replaceImage:async(shot,result)=>mutate('workspace',{operation:'attach-image',chapter:chapterId,shot:shot.id,path:result.path,revision:project.revision}),
@@ -324,10 +324,10 @@ async function patch(scope, item, values, redraw = false) {
       ? health?.storage?.enabled ? "Saved to helper · cloud sync runs in the background" : "Saved to helper and browser"
       : "Saved in browser · helper offline";
 }
-async function action(fn) {
+async function action(fn,{flushEditor=true}={}) {
   try {
     if(connectionPromise)await connectionPromise;
-    await flush();
+    if(flushEditor)await flush();
     await fn();
   } catch (error) {
     note(error.message, true);
@@ -872,9 +872,11 @@ function renderQueue() {
           ? "Full video ready" + (reviewCount ? ` · ${reviewCount} shots need review` : "")
           : run.status === "COMPLETE" && project.render?.path && project.renderStale
             ? "Video settings changed · render the full story to apply"
-            : ["FAILED", "CANCELLED"].includes(run.status)
-              ? run.status + " · " + run.message
-              : run.stage || run.message || run.status;
+            : run.status === "REVIEW_REQUIRED" && !activeFullRun
+              ? "Last run stopped for visual review"
+              : ["FAILED", "CANCELLED"].includes(run.status)
+                ? run.status + " · " + run.message
+                : run.stage || run.message || run.status;
     const delivery=ready?videoDeliveryStatus(project,queue.storage):null;
     let statusHTML = `<span>${escape(status)}${delivery?' · '+escape(delivery.label):''}</span>${ready ? '<button class="video-result-button" id="openFullVideo">Open finished video</button>' : ""}${delivery?.retry?'<button id="retryVideoCloudSave">Retry cloud save</button>':''}`;
     if(run.generationStrategyLabel)statusHTML += `<p class="muted">This run: ${escape(run.generationStrategyLabel)} · ${run.rentalControl==='managed'?'Studio-managed GPU':run.rentalControl==='local'?'Local helper images':'GPU rental start/stop remain external'}.</p>`;
@@ -1050,19 +1052,21 @@ function wire() {
     return loadPerformance(project.id);
   };
   $('#productionTimingRefresh').onclick=()=>action(refreshPerformance);
-  const checkReadiness=async()=>{
+  const checkReadiness=async({starting=false}={})=>{
     const targetProject=project.id;
-    await saveSettingsIfVisible();
-    await saveStrategy();
+    if(starting){
+      await saveSettingsIfVisible();
+      await saveStrategy();
+    }
     if(project.id!==targetProject)throw Error('Project selection changed. Check the current project again.');
-    const planned=productionOptions();
+    const planned=productionOptions(starting);
     const readiness=await api("production-readiness?project="+encodeURIComponent(project.id)+"&overlap="+planned.overlap+'&generationStrategy='+planned.generationStrategy+'&unattended='+planned.unattended);
     await refreshPerformance();
     if(project.id!==targetProject)throw Error('Project selection changed. Check the current project again.');
-    $("#productionReadiness").innerHTML=`<details open><summary>${readiness.ready?'Ready to start':'Setup needs attention'}</summary><ul>${readiness.checks.map(x=>`<li>${x.ready?'✓':x.blocking?'Required:':'Note:'} ${escape(x.message)}</li>`).join('')}</ul><p class="muted">These checks do not generate images, rent a GPU or spend API tokens.</p></details>`;
+    $("#productionReadiness").innerHTML=`<details open><summary>${readiness.ready?'Ready to start':'Setup needs attention'}</summary><ul>${readiness.checks.map(x=>`<li>${x.ready?'✓':x.blocking?'Required:':'Note:'} ${escape(x.message)}</li>`).join('')}</ul><p class="muted">Checks use the saved project and shown production options. They do not generate images, rent a GPU or spend API tokens.</p></details>`;
     return readiness;
   };
-  $("#productionCheckReadiness").onclick=()=>action(checkReadiness);
+  $("#productionCheckReadiness").onclick=()=>action(checkReadiness,{flushEditor:false});
   $("#productionFullVideo").onclick = () =>
     action(async () => {
       const targetProject=project.id;
@@ -1070,7 +1074,7 @@ function wire() {
       startingProduction.add(targetProject);renderQueue();
       try{
         await flush();
-        const readiness=await checkReadiness();
+        const readiness=await checkReadiness({starting:true});
         if(project.id!==targetProject)throw Error('Project selection changed. Start generation again in the intended project.');
         const planned=productionOptions();
         if(!readiness.ready){

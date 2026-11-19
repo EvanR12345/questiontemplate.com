@@ -1,6 +1,7 @@
 """Read-only production setup for forecasts; never expose scripts or credentials."""
 import copy,math
 from studio_qc import check_level
+from studio_schedule import LABELS
 from studio_performance import profile_for,signature
 
 FIELDS = ('unattendedProduction','qcRepairBudgetMode','style','generationMode','layoutMode','voice','voiceEngine','voiceCompute','qwenSpeaker','voiceInstruction','voiceChapterBatchSize','speed','narrationDelivery',
@@ -25,7 +26,9 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
     from studio_gpu_broker import gpu_configured
     dense_eligible=bool(source.get('unattendedProduction') and source['image'].get('provider')=='comfyui'
         and source['director'].get('provider')=='openai-luna' and not source.get('economyPanels') and gpu_configured(config))
-    selected_strategy=project.get('generationStrategy') or project.get('production',{}).get('generationStrategy') or 'align'
+    preference=project.get('generationStrategy')
+    historical=project.get('production',{}).get('generationStrategy')
+    selected_strategy=preference if isinstance(preference,str) and preference in LABELS else 'align'
     project={**project,'generationStrategy':selected_strategy}
     qc_profile=profile_for('Visual QC',project,config)
     # Policy and API concurrency select separate calibration cohorts. Keep all
@@ -92,6 +95,7 @@ def planner_profile(project, performance=None, config=None, rental=None, rendere
         'qcProcessingTier':source['director'].get('processingTier') or config.get('openaiServiceTier','default'),
         'qcHistoryIdentity':qc_history_identity,
         'generationStrategy':selected_strategy,
+        'lastProductionStrategy':historical if isinstance(historical,str) and historical in LABELS else None,
         'denseImagePhase':{'version':1,'supported':True,'generationTasks':5,
             'leasePolicy':'retained-qc-v1' if config.get('studioDenseLeaseContinuity',True) is True else 'stopped-qc-v1',
             'holdsGPUForQC':config.get('studioDenseLeaseContinuity',True) is True,

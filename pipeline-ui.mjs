@@ -16,6 +16,8 @@ import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-202610
 import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=zero-retry-20261118';
 import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=production-components-20261031';
 import {denseActive,denseLeaseRetained,imageRentalPercent} from './pipeline-dense.mjs?v=production-components-20261031';
+import {STRATEGIES} from './studio-generation-plan.mjs?v=dense-lease-20261118';
+const strategyLabel=value=>STRATEGIES.find(([id])=>id===value)?.[1]||value;
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+n.toFixed(2), sec=n=>n<60?n.toFixed(1)+'s':(n/60).toFixed(1)+'m';
 const STORE='questiontemplate-production-planner-v1';
@@ -36,7 +38,8 @@ async function loadStudioSettings({refresh=false,initial=false}={}){
     const requestedId=studioProject;
     const profile=await helperJson('/studio/planner-profile?project='+encodeURIComponent(requestedId),key);
     if(requestedId!==studioProject)return;
-    $('studioProfileSummary').textContent=profileSummary(profile)+` · production strategy: ${profile.generationStrategy}`;
+    const previous=profile.lastProductionStrategy ? ` · last recorded run: ${strategyLabel(profile.lastProductionStrategy)}` : '';
+    $('studioProfileSummary').textContent=profileSummary(profile)+` · next run: ${strategyLabel(profile.generationStrategy ?? 'align')}${previous}`;
     const mapped=plannerSettings(config,profile,evidence);
     $('studioProfileWarnings').textContent=mapped.warnings.join(' ');
     if(studioFollowing&&(refresh||profile.revision!==studioRevision||!studioAppliedProfile)){
