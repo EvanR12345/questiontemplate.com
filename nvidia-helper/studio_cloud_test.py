@@ -365,6 +365,99 @@ class CloudSaveTests(unittest.TestCase):
         self.assertEqual(self.a.catalogue_at,0)
         self.assertEqual(self.a.list_projects()[0]['name'],'Latest cloud name')
 
+class ProjectPickerTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.store = ProjectStore(directory.name)
+        self.objects = Objects()
+        self.archive = R2Archive(self.store, Path(directory.name)/'absent', self.objects, start_worker=False)
+        self.addCleanup(self.archive.close)
+
+    def picker(self):
+        return self.store.project_picker(self.archive)
+
+    def test_remote_failure_cannot_become_a_complete_empty_picker(self):
+        with patch.object(self.objects, 'keys', side_effect=OSError('private URL and credential')) as keys:
+            self.assertEqual(self.picker(), {'projects': [], 'complete': False, 'refreshing': True})
+            self.archive.catalogue_thread.join(3)
+            failed = self.picker()
+            self.assertFalse(failed['complete'])
+            self.assertFalse(failed['refreshing'])
+            self.assertTrue(failed['error'])
+            self.assertNotIn('credential', str(failed))
+            self.assertNotIn('private URL', str(failed))
+            self.assertEqual(keys.call_count, 1)
+        self.archive.catalogue_retry_at = 0
+        self.assertTrue(self.picker()['refreshing'])
+        self.archive.catalogue_thread.join(3)
+        self.assertEqual(self.picker(), {'projects': [], 'complete': True, 'refreshing': False})
+
+    def test_invalid_cloud_configuration_prevents_empty_completion(self):
+        self.archive.enabled = False
+        self.assertEqual(self.picker(), {'projects': [], 'complete': True, 'refreshing': False})
+        self.archive.configuration_error = 'Private storage configuration is unavailable.'
+        failed = self.picker()
+        self.assertFalse(failed['complete'])
+        self.assertFalse(failed['refreshing'])
+        self.assertEqual(failed['error'], self.archive.configuration_error)
+
+    def test_picker_uses_old_cloud_rows_and_local_revisions_while_legacy_listing_blocks(self):
+        local = self.store.save(new_project('Local edits'))
+        remote = new_project('Remote only')
+        for p in [local,remote]:
+            self.objects.put_json(f'studio/manifests/{p["id"]}.json', {'project':p})
+        self.archive.list_projects()
+        self.store.mutate(local['id'], lambda p:p.update(name='New local name'))
+        self.archive.catalogue_at = 0
+        entered, release = threading.Event(), threading.Event()
+        original_keys = self.objects.keys
+        def held(prefix):
+            entered.set()
+            if not release.wait(5): raise TimeoutError()
+            return original_keys(prefix)
+        with patch.object(self.objects, 'keys', side_effect=held) as keys, ThreadPoolExecutor(3) as pool:
+            blocking = pool.submit(self.store.list)
+            try:
+                self.assertTrue(entered.wait(3))
+                picker = pool.submit(self.picker).result(timeout=1)
+                self.assertTrue(picker['refreshing'])
+                self.assertFalse(picker['complete'])
+                self.assertEqual({p['name'] for p in picker['projects']}, {'New local name','Remote only'})
+                picker['projects'][0]['name'] = 'Modified response'
+                self.assertNotIn('Modified response', str(self.picker()))
+                self.assertFalse(blocking.done())
+                # A manifest publisher invalidates a listing in progress.
+                with self.archive.catalogue_lock:self.archive.catalogue_at = 0
+            finally:release.set()
+            self.assertEqual(len(blocking.result(timeout=3)), 2)
+        self.assertEqual(keys.call_count, 1)
+        self.assertFalse(self.picker()['complete'])
+        self.archive.catalogue_thread.join(3)
+        self.assertTrue(self.picker()['complete'])
+
+    def test_shutdown_releases_waiters_and_stops_unstarted_manifest_reads(self):
+        entered, release = threading.Event(), threading.Event()
+        def held(prefix):
+            entered.set()
+            if not release.wait(5): raise TimeoutError()
+            return ['studio/manifests/pr-0000000000000001.json']
+        with patch.object(self.objects, 'keys', side_effect=held), patch.object(self.objects,'read') as read:
+            with ThreadPoolExecutor(2) as pool:
+                try:
+                    self.assertTrue(self.picker()['refreshing'])
+                    self.assertTrue(entered.wait(3))
+                    legacy = pool.submit(self.archive.list_projects)
+                    self.archive.close()
+                    with self.assertRaisesRegex(RuntimeError, 'shutting down'):
+                        legacy.result(timeout=1)
+                    self.assertFalse(self.picker()['refreshing'])
+                    self.assertFalse(self.picker()['complete'])
+                finally:release.set()
+            self.archive.catalogue_thread.join(3)
+            self.assertFalse(self.archive.catalogue_thread.is_alive())
+            read.assert_not_called()
+
 class EngagementTests(unittest.TestCase):
     def test_reminders_stable_across_outro_asset_and_thumbnail_changes(self):
         p=new_project();p['settings']['engagement']['popupEnabled']=True

@@ -2,7 +2,36 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {resolveConnectedProject,canAdoptConnection,connectionLoading} from './studio-connection.mjs';
+import {resolveConnectedProject,canAdoptConnection,connectionLoading,readProjectPicker,mergePickerProjects} from './studio-connection.mjs';
+
+test('fast helper exposes available projects while a complete legacy list still works',async()=>{
+  const local={id:'local'},cloud={id:'cloud'},draft={id:'draft',unsynced:true},snapshot={projects:[local],complete:false,refreshing:true};
+  const calls=[];const api=async path=>{calls.push(path);return path==='projects'?[local,cloud]:snapshot;};
+  assert.deepEqual(await readProjectPicker(api,{projectPickerAvailable:true}),snapshot);
+  assert.deepEqual(await readProjectPicker(api,{}),{projects:[local,cloud],complete:true,refreshing:false});
+  assert.deepEqual(calls,['projects?picker=true','projects']);
+  assert.deepEqual(mergePickerProjects(snapshot,[local,cloud,draft]),[local,cloud,draft]);
+  assert.deepEqual(mergePickerProjects({...snapshot,complete:true},[local,cloud,draft]),[local,draft]);
+});
+
+test('remembered available project or cloud-only selection wins over the first local project',async()=>{
+  for(const projects of [[{id:'first'},{id:'remembered'}],[{id:'first'}]]){
+    const calls=[];const api=async path=>{calls.push(path);return {id:'remembered'};};
+    const r=await resolveConnectedProject({project:{_connectionPlaceholder:true},projects,api,
+      preferredId:'remembered',catalogueComplete:false});
+    assert.equal(r.project.id,'remembered');assert.deepEqual(calls,['project?id=remembered']);
+  }
+});
+
+test('incomplete cloud discovery never creates a blank story or hides a retrieval failure',async()=>{
+  const calls=[];const api=async path=>{calls.push(path);throw Object.assign(new Error('missing'),{status:404,code:'PROJECT_NOT_FOUND'});};
+  await assert.rejects(resolveConnectedProject({projects:[],api,catalogueComplete:false}),/Loading saved cloud projects/);
+  assert.deepEqual(calls,[]);
+  await assert.rejects(resolveConnectedProject({projects:[],api,catalogueComplete:false,preferredId:'remembered',catalogueError:'Cloud catalogue offline.'}),/Cloud catalogue offline/);
+  assert.deepEqual(calls,['project?id=remembered']);
+  await assert.rejects(resolveConnectedProject({projects:[{id:'fallback'}],api:async()=>{throw new Error('access unavailable');},
+    catalogueComplete:false,preferredId:'remembered'}),/access unavailable/);
+});
 test('paired empty startup placeholders show loading while real offline drafts remain editable',()=>{
   const placeholder={...fixture(),_connectionPlaceholder:true};
   assert.equal(connectionLoading(placeholder,true,true),true);
@@ -52,6 +81,7 @@ function browserFixture(api){
   const editor={value:'Saved story'},chapterName={value:'Chapter'};
   const context={key:'fixture-not-a-key',connectionPromise:undefined,connected:true,dirty:false,cacheWarning:'',health:{},queue:{},projects:[],project:fixture(),chapterId:'chapter',tab:'write',
     pairingKey:()=> 'fixture-not-a-key',mediaCache:new Map(),api,resolveConnectedProject,canAdoptConnection,backupSnapshot,
+    pickerGeneration:0,pickerPending:false,savedId:undefined,readProjectPicker,mergePickerProjects,
     cache:async()=>{},note:()=>{},render:()=>{editor.value=context.project.chapters[0].sourceText;},
     ch:()=>context.project.chapters[0],$:selector=>selector==='#chapterStory'?editor:selector==='#chapterName'?chapterName:undefined};
   context.editorSave=createEditorSave(async()=>{

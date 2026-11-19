@@ -11,7 +11,7 @@ import {providerSetupForm,providerSetupValues} from './studio-provider-setup.mjs
 import {directorLimits,directorSummary,directorSettings,directorRequestControls} from './studio-director-settings.mjs?v=luna-standard-controls-20261010';
 import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-state.mjs?v=forms-20261009';
 import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
-import {resolveConnectedProject,canAdoptConnection,connectionLoading} from './studio-connection.mjs?v=offline-sync-20261118';
+import {resolveConnectedProject,canAdoptConnection,connectionLoading,readProjectPicker,mergePickerProjects} from './studio-connection.mjs?v=project-picker-20261119';
 import {checkpointProject,backupSnapshot,canApplyBackgroundProject,rememberOfflineEdit,offlineSyncRequest} from './studio-project-safety.mjs?v=offline-sync-20261118';
 import {createMediaLoader} from './studio-media-loader.mjs?v=playback-renewal-20261118';
 import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
@@ -62,7 +62,8 @@ let key = pairingKey(),
   overlapRequested = false,
   saveTimer;
 let cacheWarning="";
-let connectionPromise;
+let connectionPromise,savedId;
+let pickerPending=false,pickerBusy=false,pickerGeneration=0,nextPickerRefresh=0;
 let initialConnectionPending=Boolean(key);
 const startingProduction=new Set();
 const strategyChoices=new Map(),strategyDirty=new Set(),performanceReports=new Map();
@@ -204,8 +205,27 @@ async function refreshProjects() {
     return [];
   });
   if (!connected) { projects = local; return; }
-  const remote = await api("projects");
-  projects = [...remote, ...local.filter(row => row.unsynced && !remote.some(item => item.id === row.id))];
+  const generation=++pickerGeneration;
+  const picker=await readProjectPicker(api,health);
+  if(generation!==pickerGeneration)return;
+  projects=mergePickerProjects(picker,local);
+  pickerPending=picker.refreshing || !picker.complete;
+}
+
+async function refreshPendingPicker(){
+  if(!connected||!pickerPending||pickerBusy||Date.now()<nextPickerRefresh)return;
+  pickerBusy=true;nextPickerRefresh=Date.now()+5000;
+  const generation=pickerGeneration;
+  try{
+    const picker=await readProjectPicker(api,health);
+    if(generation!==pickerGeneration||!connected)return;
+    projects=mergePickerProjects(picker,projects);
+    const select=root.querySelector('#productionProject');
+    if(select && (select===document.activeElement||select.value!==project.id))return;
+    pickerPending=picker.refreshing||!picker.complete;
+    if(select)select.innerHTML=projectOptions();
+  }catch{nextPickerRefresh=Date.now()+15000;}
+  finally{pickerBusy=false;}
 }
 async function connectHelper() {
   if (pairingKey()) { await connect(); if (connected) return; }
@@ -235,24 +255,26 @@ function connect() {
   return connectionPromise;
 }
 async function reconnect() {
+  ++pickerGeneration;
   key=pairingKey();
   // Keep autosave local until the connection has chosen a safe snapshot.
   // Existing editors stay mounted while health/project requests are pending.
   connected=false;
   try {
     const info=await api('health');
-    const available=await api('projects');
+    const picker=await readProjectPicker(api,info),available=picker.projects;
     await flush();
     const requestedProject=project,startEditorRevision=editorSave.revision;
-    const resolved=await resolveConnectedProject({project:requestedProject,projects:available,providers:info.providers,api});
+    const resolved=await resolveConnectedProject({project:requestedProject,projects:available,providers:info.providers,api,
+      preferredId:savedId,catalogueComplete:picker.complete&&!picker.refreshing,catalogueError:picker.error});
     // Includes edits typed during the final project fetch/import, before redraw.
     await flush();
     if(canAdoptConnection(project,resolved.project,{requestedProject,
       editorRevision:editorSave.revision,startEditorRevision,preserveOffline:resolved.preserveOffline}))
       project=resolved.project;
     health=info;queue=info.queue;
-    const localDrafts=projects.filter(row=>row.unsynced && !available.some(item=>item.id===row.id));
-    projects=[...available,...localDrafts];
+    projects=mergePickerProjects(picker,projects);
+    pickerPending=picker.refreshing||!picker.complete;
     if(!projects.some(p=>p.id===project.id))projects=[{id:project.id,name:project.name,revision:project.revision,chapters:project.chapters.length},...projects];
     mediaCache.clear();connected=true;initialConnectionPending=false;chapterId=ch()?.id;
     await cache({includeBrowser:Boolean(requestedProject?._unsynced && !project._unsynced)});render();
@@ -494,6 +516,10 @@ function offlineChapter(n) {
     errors: [],
   };
 }
+function projectOptions(){
+  const choices=projects.some(p=>p.id===project.id)?projects:[{id:project.id,name:project.name},...projects];
+  return options(choices.map(p=>[p.id,p.name+(p.loadError?' · needs recovery':'')]),project.id);
+}
 function options(values, selected) {
   if (selected && !values.some((v) => (Array.isArray(v) ? v[0] : v) === selected))
     values = [...values, selected];
@@ -576,10 +602,7 @@ function render() {
     !project.settings.economyPanels;
   const placement = rendererPlacement(connected,health);
   const generationStrategy=strategyChoices.get(project.id) || selectedStrategy(project);
-  root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · edits use this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${options(
-    (projects.some(p=>p.id===project.id)?projects:[{id:project.id,name:project.name},...projects]).map((p) => [p.id, p.name+(p.loadError?" · needs recovery":"")]),
-    project.id,
-  )}</select><button type="button" data-open-guide="all">Help · all functions</button><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
+  root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · edits use this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${projectOptions()}</select><button type="button" data-open-guide="all">Help · all functions</button><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
   <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
   <div class="full-video-bar"><div><strong>Your complete story, in one video</strong>${project.shortPreview ? `<p class="muted" role="note">Short preview · ${escape(project.shortPreview.sourceWords)} words · matching saved illustrations. This tests narration and motion; fresh image quality has not been validated.</p>` : ""}<p class="muted">Add your chapters, then press Generate full video. ${project.settings.unattendedProduction !== false ? 'Automatic production prepares narration, visuals and the finished video within your saved spending limits.' : 'Your saved review policy remains active; generation can stop for manual decisions.'} Saved work and manual edits are preserved. Keep the laptop and shared helper running for local stages.</p><details class="production-setup-details" data-ui="production-setup"><summary>Production options · ${escape(STRATEGIES.find(([id])=>id===generationStrategy)?.[1] || generationStrategy)}</summary><label>Generation strategy<select id="productionStrategy" aria-describedby="productionStrategyHelp">${options(STRATEGIES,generationStrategy)}</select></label><p id="productionStrategyHelp" class="muted">${escape(strategySummary(generationStrategy,health?.managedGPU?.configured,health?.managedGPU?.holdsGPUForQC,project.settings.image.provider))}</p><details data-ui="strategy-details"><summary>How this strategy runs</summary><p class="muted">${escape(strategyDescription(generationStrategy,health?.managedGPU?.configured,health?.managedGPU?.modelCopies,health?.managedGPU?.holdsGPUForQC,project.settings.image.provider))}</p></details><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && (generationStrategy!=='legacy' || overlapRequested) ? "checked" : ""} ${overlapEligible && generationStrategy==='legacy' ? "" : "disabled"}> Overlap cloud tasks</label><p class="muted">Requires cloud images, Luna and an API spending cap. Reviews and independent Luna calls follow your saved Settings.</p><details data-ui="learned-timings"><summary>Timing history and estimate coverage</summary><p id="productionPerformance" class="muted">${escape(forecastText(performanceReports.get(project.id)))}</p><button id="productionTimingRefresh" ${connected ? '' : 'disabled'}>Refresh matching estimates</button></details>${lunaUsageHTML(project.production?.timings || [])}<details data-ui="render-placement"><summary>${escape(placement.title)}</summary><p class="muted">${escape(placement.detail)}</p></details><p id="productionDirectorSummary" class="muted">${escape(directorSummary(project.settings))}</p></details><div id="productionReadiness" role="status"></div><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><div class="toolbar production-start-actions"><button id="productionCheckReadiness" ${connected ? "" : "disabled"}>Check readiness</button><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div></div>
   ${project._unsynced ? '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>' : ""}
@@ -2203,6 +2226,7 @@ async function testStory() {
 }
 async function poll() {
   if (!connected || polling || !project) return;
+  void refreshPendingPicker();
   polling = true;
   const requestedProjectId=project.id;
   try {
@@ -2250,8 +2274,8 @@ async function poll() {
     polling = false;
   }
 }
-let savedId;
 try{savedId=localStorage.getItem('qt-production-project');}catch{cacheWarning='Browser selection storage is unavailable.';}
+if(!/^pr-[a-f0-9]{16}$/.test(savedId||''))savedId=undefined;
 try{if(savedId)project=await loadStudioProject(savedId);}catch{cacheWarning='Browser project recovery is unavailable. Connect the helper to access its saved projects.';}
 try {
   projects = await listStudioProjectSummaries();

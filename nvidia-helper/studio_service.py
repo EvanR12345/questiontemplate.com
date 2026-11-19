@@ -446,6 +446,7 @@ class StudioService:
         )
         return {
             "studioProtocol": 1,
+            "projectPickerAvailable":True,
             "cloudOverlapAvailable":True,
             "cloudSchedulingAvailable":True,
             "denseImagePhaseAvailable":True,

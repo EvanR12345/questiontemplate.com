@@ -67,6 +67,42 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_fast_project_picker_and_legacy_list_share_the_cold_catalogue(self):
+        from studio_storage import R2Archive
+        from unittest.mock import Mock
+        service = self.server.RequestHandlerClass.studio_service
+        local = service.store.save(new_project('Local project'))
+        remote = new_project('Cloud project')
+        entered, release = threading.Event(), threading.Event()
+        def keys(prefix):
+            entered.set()
+            if not release.wait(5): raise TimeoutError()
+            return [f'studio/manifests/{remote["id"]}.json']
+        objects = Mock(spec=['keys','read'])
+        objects.keys.side_effect = keys
+        objects.read.return_value = (json.dumps({'project':remote}).encode(), 'etag')
+        archive = R2Archive(service.store, Path(self.directory.name)/'absent', objects, start_worker=False)
+        self.addCleanup(archive.close)
+        with patch.object(service,'storage',archive), ThreadPoolExecutor(2) as pool:
+            self.assertEqual(self.request('/studio/projects?picker=true',key='wrong')[0],401)
+            self.assertTrue(service.health()['projectPickerAvailable'])
+            try:
+                code,_,body = self.request('/studio/projects?picker=true')
+                self.assertEqual(code,200)
+                first = json.loads(body)
+                self.assertFalse(first['complete'])
+                self.assertTrue(first['refreshing'])
+                self.assertEqual([p['id'] for p in first['projects']],[local['id']])
+                self.assertTrue(entered.wait(2))
+                legacy = pool.submit(self.request,'/studio/projects')
+                self.assertFalse(json.loads(self.request('/studio/projects?picker=true')[2])['complete'])
+            finally:release.set()
+            rows = json.loads(legacy.result(timeout=3)[2])
+            self.assertEqual({p['id'] for p in rows},{local['id'],remote['id']})
+            finished = json.loads(self.request('/studio/projects?picker=true')[2])
+            self.assertEqual(finished,{'projects':rows,'complete':True,'refreshing':False})
+            objects.keys.assert_called_once()
+
     def test_manual_edit_history_undo_and_private_report_are_authenticated(self):
         service=self.server.RequestHandlerClass.studio_service
         p=service.store.save(new_project('History fixture'))

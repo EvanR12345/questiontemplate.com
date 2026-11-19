@@ -13,7 +13,7 @@ import re
 import threading
 import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
 from pathlib import Path
 from studio_data import digest
 from urllib.parse import quote
@@ -254,6 +254,10 @@ class R2Archive:
         self.asset_locks = [threading.RLock() for _ in range(32)]
         self.catalogue_lock = threading.RLock()
         self.catalogue = None; self.catalogue_at = 0
+        self.catalogue_request = None
+        self.catalogue_thread = None
+        self.catalogue_error = ''
+        self.catalogue_retry_at = 0
         if self.enabled:
             store.archive = self
             if start_worker:
@@ -367,8 +371,7 @@ class R2Archive:
         shared_fingerprint = digest(project)
         self.manifests.pop(pid,None)
         with self.cv:self.staged_assets.pop(pid,None)
-        # Invalidate after any concurrent catalogue refresh finishes; otherwise
-        # that refresh could overwrite this invalidation with its new timestamp.
+        # A refresh that overlaps publication must leave its result stale.
         with self.catalogue_lock:self.catalogue_at = 0
         with self.store.lock:
             changed = (folder/'project.json').read_bytes() != snapshot
@@ -496,17 +499,94 @@ class R2Archive:
                     self.states.get(pid,{}).get('status')),'cloud':True,'revision':(manifest or {}).get('project',{}).get('revision')}
 
     def list_projects(self):
+        """Legacy callers wait for a full listing and share any picker refresh."""
         with self.catalogue_lock:
-            if self.catalogue is not None and time.monotonic()-self.catalogue_at < 30:
+            if self._catalogue_fresh():
                 return copy.deepcopy(self.catalogue)
-            self.catalogue = self._list_projects()
-            self.catalogue_at = time.monotonic()
-            return copy.deepcopy(self.catalogue)
+            owner = self.catalogue_request is None
+            request = self._begin_catalogue() if owner else self.catalogue_request
+        if owner:
+            self._refresh_catalogue(request)
+        return copy.deepcopy(request.result())
+
+    def _catalogue_fresh(self):
+        return (self.catalogue_request is None and self.catalogue is not None
+                and self.catalogue_at > 0 and time.monotonic() - self.catalogue_at < 30)
+
+    def _begin_catalogue(self):
+        self.catalogue_request = Future()
+        # Existing publishers invalidate by setting this stamp to zero. They can
+        # do so while the network request runs, including during a cold listing.
+        self.catalogue_at = time.monotonic()
+        self.catalogue_error = ''
+        return self.catalogue_request
+
+    def _refresh_catalogue(self, request):
+        try:
+            summaries = self._list_projects()
+        except Exception:
+            with self.catalogue_lock:
+                self.catalogue_error = 'Cloud projects could not be listed. Check the storage connection and retry.'
+                self.catalogue_retry_at = time.monotonic() + 5
+                self.catalogue_at = 0
+                self.catalogue_request = None
+                if not request.done():
+                    request.set_exception(RuntimeError(self.catalogue_error))
+        else:
+            with self.catalogue_lock:
+                if not request.done():
+                    self.catalogue = summaries
+                    if self.catalogue_at:
+                        self.catalogue_at = time.monotonic()
+                    self.catalogue_retry_at = 0
+                    request.set_result(summaries)
+                self.catalogue_request = None
+
+    def picker_catalogue(self):
+        """Return known cloud summaries immediately, even during a blocking listing."""
+        if not self.enabled:
+            result = {'projects': [], 'complete': not self.configuration_error, 'refreshing': False}
+            if self.configuration_error:
+                result['error'] = self.configuration_error
+            return result
+        with self.catalogue_lock:
+            rows = copy.deepcopy(self.catalogue or [])
+            if self.stopped:
+                return {'projects': rows, 'complete': False, 'refreshing': False,
+                        'error': 'The helper is shutting down.'}
+            if self._catalogue_fresh():
+                return {'projects': rows, 'complete': True, 'refreshing': False}
+            if self.catalogue_request is None and time.monotonic() >= self.catalogue_retry_at:
+                request = self._begin_catalogue()
+                self.catalogue_thread = threading.Thread(target=self._refresh_catalogue, args=(request,),
+                                                        daemon=True, name='studio-picker-refresh')
+                try:
+                    self.catalogue_thread.start()
+                except RuntimeError:
+                    self.catalogue_thread = self.catalogue_request = None
+                    self.catalogue_at = 0
+                    self.catalogue_error = 'The cloud project list could not be started. Retry in a moment.'
+                    self.catalogue_retry_at = time.monotonic() + 5
+            result = {'projects': rows, 'complete': False, 'refreshing': self.catalogue_request is not None}
+            if self.catalogue_error:
+                result['error'] = self.catalogue_error
+            return result
 
     def _list_projects(self):
-        keys=[key for key in self.objects.keys('studio/manifests/')
-              if re.fullmatch(r'studio/manifests/pr-[a-f0-9]{16}\.json',key)]
+        # Tests and recovery tooling also perform synchronous reads explicitly
+        # after closing the worker. Only reads admitted before close are stopped.
+        cancel_on_close = not self.stopped or threading.current_thread() is self.catalogue_thread
+        def check_open():
+            if cancel_on_close and self.stopped:
+                raise RuntimeError('The helper is shutting down.')
+        check_open()
+        keys = []
+        for key in self.objects.keys('studio/manifests/'):
+            check_open()
+            if re.fullmatch(r'studio/manifests/pr-[a-f0-9]{16}\.json',key):
+                keys.append(key)
         def summary(key):
+            check_open()
             pid=key.rsplit('/',1)[-1].removesuffix('.json')
             try:
                 # Listing needs metadata only. Do not retain every novel's full
@@ -546,4 +626,12 @@ class R2Archive:
 
     def close(self):
         with self.cv: self.stopped=True; self.cv.notify_all()
+        with self.catalogue_lock:
+            thread = self.catalogue_thread
+            if self.catalogue_request is not None and not self.catalogue_request.done():
+                self.catalogue_request.set_exception(RuntimeError('The helper is shutting down.'))
+                self.catalogue_at = 0
+        # An SDK read already in progress can finish after shutdown. Queued
+        # manifest reads check stopped before contacting storage.
+        if thread:thread.join(1)
         if self.thread:self.thread.join(5)

@@ -280,7 +280,10 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                     elif path=='/studio/voice-lab/audio':self.send_asset(get_voice_lab().audio(query['id'][0]),query.get('download',[None])[0])
                     elif path=='/studio/voice-lab/reference-audio':self.send_asset(get_voice_lab().reference_audio(query['id'][0]),query.get('download',[None])[0])
                     elif path=='/studio/health':self.reply(200,studio.health())
-                    elif path=='/studio/projects':self.reply(200,studio.store.list())
+                    elif path=='/studio/projects':
+                        if query.get('picker',['false'])[0]=='true':
+                            self.reply(200,studio.store.project_picker(studio.storage))
+                        else:self.reply(200,studio.store.list())
                     elif path=='/studio/project':
                         from studio_qc import project_view
                         self.reply(200,project_view(studio.store,query['id'][0]))

@@ -690,12 +690,22 @@ class ProjectStore:
         local = self.list_local()
         if not self.archive: return local
         try:
-            merged = {p['id']:p for p in self.archive.list_projects()}
-            for p in local:
-                if p['id'] not in merged or p['revision'] >= merged[p['id']]['revision']: merged[p['id']] = p
-            return sorted(merged.values(), key=lambda p:p['updated'], reverse=True)
+            return self._merge_summaries(local, self.archive.list_projects())
         except Exception:
             return local
+
+    @staticmethod
+    def _merge_summaries(local, cloud):
+        merged = {p['id']:p for p in cloud}
+        for p in local:
+            if p['id'] not in merged or p['revision'] >= merged[p['id']]['revision']:
+                merged[p['id']] = p
+        return sorted(merged.values(), key=lambda p:p['updated'], reverse=True)
+
+    def project_picker(self, archive):
+        catalogue = archive.picker_catalogue()
+        catalogue['projects'] = self._merge_summaries(self.list_local(), catalogue['projects'])
+        return catalogue
 
     def list_local(self):
         result = []
