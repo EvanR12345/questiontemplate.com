@@ -559,9 +559,6 @@ class VoiceLabHTTPTests(unittest.TestCase):
         self.bridge.setUp()
 
     def tearDown(self):
-        lab = self.bridge.server.RequestHandlerClass.voice_lab_service
-        if lab:
-            lab.close()
         self.bridge.tearDown()
 
     def test_all_lab_routes_require_pairing_before_initialization(self):

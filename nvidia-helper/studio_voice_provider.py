@@ -237,7 +237,7 @@ class KaggleVoice:
         keys=('voiceEngine','voiceCompute','voice','qwenSpeaker','voiceInstruction','speed',
               'soundEffects','fishCommercialLicense')
         return {'group':fingerprint,'settings':{k:settings[k] for k in keys if k in settings},
-                'reference':reference,'items':[dict(i,target=str(Path(i['target']).relative_to(folder.parent))) for i in items]}
+                'reference':reference,'items':[dict(i,target=Path(i['target']).relative_to(folder.parent).as_posix()) for i in items]}
 
     def _publish_group(self,path,group,missing,gate):
         folder=path.parent

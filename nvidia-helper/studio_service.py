@@ -106,6 +106,7 @@ class StudioService:
         self.cancel = False
         self.yield_requested = False
         self.closed = False
+        self.voice_lab = None
         from studio_execution import ExecutionJournal
         self.execution_journal = ExecutionJournal(self.store.root / 'executions.sqlite3')
         self.active_executions = {}
@@ -5711,7 +5712,10 @@ class StudioService:
     def close(self):
         with self.cv:
             self.closed = True
+            voice_lab, self.voice_lab = self.voice_lab, None
             self.cv.notify_all()
+        if voice_lab is not None:
+            voice_lab.close()
         self.unload_models()
         self.storage.close()
         self.thread.join(5)

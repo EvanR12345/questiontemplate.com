@@ -158,17 +158,15 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
     media_by_path = {}
     media_lock = threading.RLock()
     next_media_cleanup = 0
-    voice_lab = None
-    voice_lab_lock = threading.Lock()
-
     def get_voice_lab():
-        nonlocal voice_lab
-        with voice_lab_lock:
-            if voice_lab is None:
+        with studio.cv:
+            if studio.closed:
+                raise RuntimeError('The helper is shutting down.')
+            if studio.voice_lab is None:
                 from voice_lab import VoiceLab
-                voice_lab = VoiceLab(studio.store.root, studio.config)
-                Handler.voice_lab_service = voice_lab
-            return voice_lab
+                studio.voice_lab = VoiceLab(studio.store.root, studio.config)
+                Handler.voice_lab_service = studio.voice_lab
+            return studio.voice_lab
 
     class Handler(BaseHTTPRequestHandler):
         image_queue = queue
