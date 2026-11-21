@@ -49,6 +49,23 @@ export const saveStudioProject = project => operation('projects', 'readwrite', s
   store.put(projectSummary(project), 'summary:' + project.id);
   return store.put(project, 'studio:' + project.id);
 });
+// Compare and write under one transaction so another tab's newer or unsynced draft wins.
+export const saveProjectCheckpoint = project => operation('projects', 'readwrite', store => {
+  const result = {};
+  const summaryKey = 'summary:' + project.id;
+  const consider = current => {
+    if (current?.unsynced || current?.revision >= project.revision) return;
+    store.put(projectSummary(project), summaryKey);
+    store.put(project, 'studio:' + project.id);
+  };
+  const summary = store.get(summaryKey);
+  summary.onsuccess = () => {
+    if (summary.result) return consider(summary.result);
+    const legacy = store.get('studio:' + project.id);
+    legacy.onsuccess = () => consider(legacy.result && projectSummary(legacy.result));
+  };
+  return result;
+});
 export const loadStudioProject = id => operation('projects', 'readonly', store => store.get('studio:' + id));
 export const listStudioProjects = async () => (await operation('projects', 'readonly', store => store.getAll())).filter(p => p?.schemaVersion === 1 && p?.chapters);
 

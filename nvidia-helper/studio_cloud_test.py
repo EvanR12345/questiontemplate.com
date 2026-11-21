@@ -26,6 +26,80 @@ class Objects:
     def url(self,k):return 'https://private.example/'+k
 
 class CloudSaveTests(unittest.TestCase):
+    def test_second_helper_media_update_cannot_be_republished_by_the_first(self):
+        pid=self.p['id']
+        self.a.sync(pid)
+        original=self.image.read_bytes()
+        with tempfile.TemporaryDirectory() as root:
+            store=ProjectStore(root)
+            archive=R2Archive(store,Path(root)/'absent',self.obj,start_worker=False)
+            store.load(pid)
+            portrait=store.asset(pid,'art.png')
+            portrait.write_bytes(b'second helper portrait')
+            archive.sync(pid)
+            remote=archive.asset_record(pid,'art.png')['sha256']
+            with self.assertRaisesRegex(ValueError,'art.png'):
+                self.a.sync(pid)
+            self.assertEqual(remote,self.a.asset_record(pid,'art.png')['sha256'])
+            self.assertEqual(self.image.read_bytes(),original)
+            with self.assertRaisesRegex(ValueError,'art.png'):
+                self.a.restore(pid)
+            self.assertEqual(self.image.read_bytes(),original)
+            self.assertEqual(self.store.load_local(pid),self.p)
+            backup=Path(self.tmp.name)/'preserved-local-portrait.png'
+            self.image.rename(backup)
+            self.a.restore(pid)
+            self.assertEqual(self.store.asset(pid,'art.png').read_bytes(),b'second helper portrait')
+            self.assertEqual(backup.read_bytes(),original)
+            self.assertTrue(self.a.sync(pid))
+
+    def test_remote_media_guard_survives_restart_and_allows_independent_new_files(self):
+        pid=self.p['id']
+        self.a.sync(pid)
+        with tempfile.TemporaryDirectory() as root:
+            store=ProjectStore(root)
+            archive=R2Archive(store,Path(root)/'absent',self.obj,start_worker=False)
+            store.load(pid)
+            store.asset(pid,'second.png').write_bytes(b'new file on helper two')
+            archive.sync(pid)
+            self.image.write_bytes(b'first helper edit')
+            restarted=R2Archive(self.store,Path(self.tmp.name)/'absent',self.obj,start_worker=False)
+            self.assertTrue(restarted.sync(pid))
+            self.assertEqual(restarted.asset_record(pid,'art.png')['sha256'],sha(self.image))
+            self.assertEqual(restarted.asset_record(pid,'second.png')['sha256'],
+                             hashlib.sha256(b'new file on helper two').hexdigest())
+
+    def test_later_asset_upload_rechecks_earlier_files_and_membership(self):
+        pid=self.p['id']
+        self.image.with_name('zz.png').write_bytes(b'second asset')
+        original=self.obj.upload
+        def change_earlier(key,path,checksum):
+            original(key,path,checksum)
+            if path.name=='zz.png':
+                self.image.write_bytes(b'changed after the first transfer')
+                self.image.with_name('added.png').write_bytes(b'new member')
+        with patch.object(self.obj,'upload',side_effect=change_earlier):
+            self.assertFalse(self.a.sync(pid))
+        self.assertIsNone(self.obj.read(f'studio/manifests/{pid}.json')[0])
+        self.assertIn(pid,self.a.pending)
+        self.assertTrue(self.a.sync(pid))
+        files=self.a.manifest(pid,True)[0]['files']
+        self.assertIn('added.png',files)
+        self.assertEqual(files['art.png']['sha256'],sha(self.image))
+
+    def test_media_added_during_head_write_is_pending_until_the_next_sync(self):
+        pid=self.p['id']
+        put=self.obj.put_json
+        def edit(key,value,etag=None,create=False):
+            put(key,value,etag,create)
+            if key==f'studio/manifests/{pid}.json':
+                self.image.with_name('late.png').write_bytes(b'last-minute edit')
+        with patch.object(self.obj,'put_json',side_effect=edit):
+            self.assertFalse(self.a.sync(pid))
+        self.assertEqual(self.a.status(pid)['projects'][pid]['status'],'PENDING')
+        self.assertTrue(self.a.sync(pid))
+        self.assertIn('late.png',self.a.manifest(pid,True)[0]['files'])
+
     def test_cloud_restore_does_not_overwrite_a_new_local_file(self):
         self.a.sync(self.p['id']);self.image.unlink()
         def restore(key,path):
@@ -247,6 +321,24 @@ class CloudSaveTests(unittest.TestCase):
                 other.restore(pid)
             self.assertEqual(other_store.load_local(pid),local)
             self.assertEqual(other.manifest(pid,True)[0]['project'],cloud)
+
+    def test_missing_sync_journal_cannot_select_an_unrelated_higher_revision(self):
+        pid=self.p['id']
+        self.a.sync(pid)
+        local=self.store.mutate(pid,lambda p:p.update(notes='Unpublished local changes'))
+        self.a.states.clear()
+        manifest,etag=self.a.manifest(pid,True)
+        remote=copy.deepcopy(manifest)
+        remote['project'].update(revision=local['revision']+1,notes='Independent remote changes')
+        self.obj.put_json(f'studio/manifests/{pid}.json',remote,etag=etag)
+        with self.assertRaisesRegex(ValueError,'conflict'):
+            self.a.restore(pid)
+        self.assertEqual(self.store.load_local(pid),local)
+        self.store.mutate(pid,lambda p:p.update(notes='Local second edit'))
+        self.store.mutate(pid,lambda p:p.update(notes='Local third edit'))
+        with self.assertRaisesRegex(ValueError,'conflict'):
+            self.a.sync(pid)
+        self.assertEqual(self.a.manifest(pid,True)[0],remote)
 
     def test_preupgrade_sync_journal_detects_remote_advance_and_allows_ordinary_local_save(self):
         pid=self.p['id']

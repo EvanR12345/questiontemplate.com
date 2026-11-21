@@ -24,6 +24,10 @@ MEDIA = {'.png', '.jpg', '.jpeg', '.webp', '.wav', '.m4a', '.opus', '.mp3', '.mp
 class CatalogueGenerationChanged(Exception):
     """A listed manifest no longer has the same current generation."""
 
+class CloudMediaConflict(ValueError):
+    """A named local asset differs from the incoming cloud version."""
+
+
 def local_media(folder):
     """Prune excluded working/private trees before visiting their contents."""
     def excluded(name):
@@ -201,6 +205,20 @@ class S3Objects:
     def download(self, key, target):
         self.client.download_file(self.bucket, key, str(target))
 
+    def verify_object(self, key, checksum, size):
+        remote = self.open_object(key)
+        body = remote['body']
+        try:
+            if remote['bytes'] != size:
+                raise ValueError('Archived asset size differs.')
+            fingerprint = hashlib.sha256()
+            for block in iter(lambda: body.read(4 * 1024 * 1024), b''):
+                fingerprint.update(block)
+            if fingerprint.hexdigest() != checksum:
+                raise ValueError('Archived asset checksum differs.')
+        finally:
+            body.close()
+
     def open_object(self, key):
         """Streaming migration source: never creates a laptop download file."""
         r = self.client.get_object(Bucket=self.bucket, Key=key)
@@ -310,8 +328,49 @@ class R2Archive:
             revision = state.get('revision')
         if fingerprint:
             return fingerprint != digest(project)
-        # Existing upload journals record the last acknowledged revision.
-        return type(revision) is int and revision != project['revision']
+        # Legacy journals record a revision. Without either acknowledgement,
+        # a larger counter alone cannot establish which edits it contains.
+        return type(revision) is not int or revision != project['revision']
+
+    @staticmethod
+    def media_signature(records):
+        return digest({name:record['sha256'] for name,record in records.items()})
+
+    @staticmethod
+    def history_key(pid, project, records):
+        version = digest({'project':project, 'files':records})[:16]
+        return f'studio/history/{pid}/{project["revision"]}-{version}.json'
+
+    @staticmethod
+    def media_conflict(name):
+        return CloudMediaConflict(f'Cloud media conflict for {name}. Both copies are retained. '
+                                  'Move the local file to a backup folder outside the project '
+                                  'before restoring the cloud version.')
+
+    def check_remote_media_changes(self, pid, old, staged):
+        records = old.get('files', {})
+        changed = [name for name, record in records.items() if staged[name]['sha256'] != record['sha256']]
+        if not changed:
+            return
+        with self.cv:
+            state = dict(self.states.get(pid, {}))
+        shared = state.get('sharedMediaSHA256')
+        if shared and shared == self.media_signature(records):
+            return
+        # Older journals saved the publication time but no per-media fingerprint.
+        if not shared and state.get('savedAt') is not None and state['savedAt'] == old.get('savedAt'):
+            return
+        previous = None
+        key = state.get('sharedManifestHistory')
+        if key and shared and re.fullmatch(r'studio/history/'+pid+r'/[0-9]+-[a-f0-9]{16}\.json', key):
+            data, _ = self.objects.read(key)
+            if data:
+                baseline = json.loads(data).get('files', {})
+                if self.media_signature(baseline) == shared:
+                    previous = baseline
+        for name in changed:
+            if previous is None or previous.get(name, {}).get('sha256') != records[name]['sha256']:
+                raise self.media_conflict(name)
 
     def sync(self, pid):
         folder = self.store.folder(pid)
@@ -326,9 +385,12 @@ class R2Archive:
             raise ValueError('Cloud and helper revisions conflict. Both copies retained for review.')
         records = dict(old.get('files',{})) if old else {}
         video_references=project_video_paths(project)
-        paths=[path for path in sorted(local_media(folder))
-            if not render_scratch(project,path.relative_to(folder).as_posix(),video_references)
-            and path.name not in ('project.json','revision.json','project.previous.json')]
+        def eligible_media():
+            for path in local_media(folder):
+                if (path.name not in ('project.json','revision.json','project.previous.json')
+                        and not render_scratch(project,path.relative_to(folder).as_posix(),video_references)):
+                    yield path
+        paths = sorted(eligible_media())
         relative_paths={path.relative_to(folder).as_posix() for path in paths}
         with self.cv:
             staged=self.staged_assets.get(pid,{})
@@ -352,6 +414,24 @@ class R2Archive:
                 for relative in sorted(relative_paths)[:4096]}
             while len(self.staged_assets)>8:
                 self.staged_assets.pop(next(iter(self.staged_assets)))
+        def snapshot_changed():
+            if (folder/'project.json').read_bytes() != snapshot:
+                return True
+            # Walk only eligible local media; immutable cloud-only history
+            # stays in records. Compare metadata without rereading media bytes.
+            count = 0
+            try:
+                for path in eligible_media():
+                    name = path.relative_to(folder).as_posix()
+                    if name not in relative_paths or records[name]['stamp'] != list(stable_file(path)):
+                        return True
+                    count += 1
+            except FileNotFoundError:
+                return True
+            return count != len(relative_paths)
+
+        if old:
+            self.check_remote_media_changes(pid, old, records)
         manifest = {'version':1,'project':project,'files':records,'savedAt':time.time()}
         if old and old.get('renderCache'):
             # Cloud render aliases belong to immutable content-keyed outputs;
@@ -359,19 +439,22 @@ class R2Archive:
             manifest['renderCache']=copy.deepcopy(old['renderCache'])
         # All immutable assets finish before publishing a new loadable project.
         with self.store.lock:
-            if (folder/'project.json').read_bytes() != snapshot:
+            if snapshot_changed():
                 self.enqueue(pid); return False
         # Snapshot + immutable assets are already complete. Network requests
         # must not hold the project lock and stall edits/generation commits.
         # The cloud's condition still rejects concurrent remote revisions.
+        history_key = self.history_key(pid, project, records)
         if (old and old['project']==project and old.get('files')==records
                 and type(old.get('savedAt')) in (int,float) and math.isfinite(old['savedAt'])):
             manifest['savedAt']=old['savedAt']
         else:
-            history=digest({'project':project,'files':records})[:16]
             if cancelled():raise RuntimeError('Cloud archive stopped before publication; local files retained.')
-            self.objects.put_json(f'studio/history/{pid}/{project["revision"]}-{history}.json',manifest)
+            self.objects.put_json(history_key,manifest)
             if cancelled():raise RuntimeError('Cloud archive stopped before publication; local files retained.')
+            with self.store.lock:
+                if snapshot_changed():
+                    self.enqueue(pid); return False
             self.objects.put_json(f'studio/manifests/{pid}.json',manifest,etag,create=old is None)
         shared_fingerprint = digest(project)
         self.manifests.pop(pid,None)
@@ -379,9 +462,10 @@ class R2Archive:
         # A refresh that overlaps publication must leave its result stale.
         with self.catalogue_lock:self.catalogue_at = 0
         with self.store.lock:
-            changed = (folder/'project.json').read_bytes() != snapshot
+            changed = snapshot_changed()
             with self.cv:
                 self.states[pid] = {'status':'PENDING' if changed else 'SYNCED','revision':project['revision'],'sharedProjectSHA256':shared_fingerprint,'savedAt':manifest['savedAt'],
+                    'sharedMediaSHA256':self.media_signature(records),'sharedManifestHistory':history_key,
                     'files':len(records),'bytes':sum(x['bytes'] for x in records.values()),'lastUploadBytes':uploaded,'error':''}
                 self.persist()
             if changed:self.enqueue(pid)
@@ -402,11 +486,17 @@ class R2Archive:
                 current=self.store.load_local(pid)
                 if current != project and (current['revision'] >= project['revision'] or self.changed_since_shared_project(pid, current)):
                     raise ValueError('Unsaved or conflicting helper changes exist. Both copies retained; cloud reload was cancelled.')
+            for name, record in manifest.get('files', {}).items():
+                path = self.store.asset_local(pid, name)
+                if path.exists() and (path.stat().st_size != record['bytes'] or sha(path) != record['sha256']):
+                    raise self.media_conflict(name)
             temp=folder/'project.cloud.tmp'; temp.write_text(json.dumps(project,ensure_ascii=False),encoding='utf-8')
             temp.replace(folder/'project.json')
             (folder/'revision.json').write_text(json.dumps({'revision':project['revision'],'updated':project['updated']}),encoding='utf-8')
             with self.cv:
-                self.states.setdefault(pid, {})['sharedProjectSHA256'] = digest(project)
+                self.states.setdefault(pid, {}).update(sharedProjectSHA256=digest(project),
+                    sharedMediaSHA256=self.media_signature(manifest.get('files', {})),
+                    sharedManifestHistory=self.history_key(pid, project, manifest.get('files', {})))
                 self.persist()
         return project
 
@@ -502,6 +592,14 @@ class R2Archive:
                         'category':media_category(name)}
         return {'files':located_files(self.store,pid,list(rows.values()),True,
                     self.states.get(pid,{}).get('status')),'cloud':True,'revision':(manifest or {}).get('project',{}).get('revision')}
+
+    def archived_projects(self):
+        from studio_archived_projects import list_editions
+        return list_editions(self)
+
+    def recover_archived(self, pid, edition, mode=None):
+        from studio_archived_projects import recover_edition
+        return recover_edition(self, pid, edition, mode)
 
     def list_projects(self):
         """Legacy callers wait for a full listing and share any picker refresh."""
@@ -650,10 +748,12 @@ class R2Archive:
                 pid=self.pending.pop(); self.active_project=pid
                 self.states.setdefault(pid,{})['status']='UPLOADING'; self.persist()
             try: self.sync(pid)
-            except Exception:
-                # SDK errors may contain credential-adjacent URLs. Never return their raw text.
+            except Exception as error:
+                # Only our validated relative-file conflict is safe to show directly.
+                message = str(error) if isinstance(error, CloudMediaConflict) else (
+                    'Cloud save failed. Local work is retained. Check access, connection and revision conflicts; retry cloud save.')
                 with self.cv:
-                    self.states[pid].update(status='FAILED',error='Cloud save failed. Local work is retained. Check access, connection and revision conflicts; retry cloud save.')
+                    self.states[pid].update(status='FAILED',error=message)
                     self.persist()
             finally:
                 with self.cv:self.active_project=None

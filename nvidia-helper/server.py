@@ -284,6 +284,15 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         if query.get('picker',['false'])[0]=='true':
                             self.reply(200,studio.store.project_picker(studio.storage))
                         else:self.reply(200,studio.store.list())
+                    elif path=='/studio/archived-projects':self.reply(200,studio.storage.archived_projects())
+                    elif path=='/studio/project-checkpoint':
+                        if studio.storage.configuration_error and not (studio.store.folder(query['id'][0])/'project.json').is_file():
+                            raise ValueError('Cloud storage is unavailable. Reconnect it before checking this project.')
+                        try:
+                            checkpoint=studio.store.browser_checkpoint(query['id'][0],int(query.get('revision',['0'])[0]))
+                        except ConnectionError:
+                            self.reply(503,{'error':'Cloud library is temporarily unavailable.'});return
+                        self.reply(200,checkpoint)
                     elif path=='/studio/project':
                         from studio_qc import project_view
                         self.reply(200,project_view(studio.store,query['id'][0]))
@@ -461,6 +470,8 @@ def make_handler(audio_engine, key, queue_root=None, image_factory=None):
                         raise ValueError('This draft and the helper both changed. Export your browser draft to compare versions. Both copies are retained.')
                     return studio.store.save(snapshot,expected=expected)
 
+            if path=='/studio/recover-archived':
+                return studio.storage.recover_archived(body.get('project'),body.get('edition'),body.get('mode'))
             if path=='/studio/storage-sync':
                 if not studio.storage.enabled:raise ValueError('Connect private cloud storage before cloud saving.')
                 projects=[body['project']] if body.get('project') else [p['id'] for p in studio.store.list_local()]

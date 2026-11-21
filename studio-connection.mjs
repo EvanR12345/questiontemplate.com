@@ -1,4 +1,4 @@
-// Reads and missing-project imports are separate from UI adoption. A slow reply
+// Project reads are separate from UI adoption. A slow reply
 // cannot choose which editor wins; the caller checks its editor revision.
 export function connectionLoading(project, hasPairingKey, pending) {
   // An empty bootstrap placeholder is not the user's saved story or an
@@ -12,11 +12,31 @@ export async function readProjectPicker(api,capabilities) {
 }
 
 export function mergePickerProjects(picker, previous) {
-  const ids=new Set(picker.projects.map(row=>row.id));
-  return [...picker.projects,...previous.filter(row=>!ids.has(row.id) && (row.unsynced || !picker.complete))];
+  const complete=picker.complete&&!picker.refreshing&&!picker.error;
+  const previousById=new Map(previous.map(row=>[row.id,row]));
+  const helperRows=picker.projects.map(row=>{
+    const local=previousById.get(row.id);
+    previousById.delete(row.id);
+    return local?.browserSaved?{...row,browserSaved:true}:row;
+  });
+  const retained=[...previousById.values()].filter(row=>row.browserSaved||row.unsynced||!complete);
+  return [...helperRows,...retained.map(row=>complete&&row.browserSaved?{...row,browserOnly:true}:row)];
 }
 
-export async function resolveConnectedProject({project,projects,providers,api,preferredId,catalogueComplete=true,catalogueError=''}) {
+export async function saveBrowserOnlyDraft(api,draft,capabilities){
+  // The catalogue may have advanced since the browser-only row was drawn.
+  // Leave any existing helper/cloud edition for explicit conflict-aware sync.
+  if(!capabilities?.projectCheckpointAvailable)throw Error('Update the helper to check the private library before saving this browser copy.');
+  try{await api('project-checkpoint?id='+encodeURIComponent(draft.id));}
+  catch(error){
+    if(error.status!==404||error.code!=='PROJECT_NOT_FOUND')throw error;
+    const {_unsynced,_offlineChapterEdits,_connectionPlaceholder,...snapshot}=draft;
+    return api('import',{project:snapshot,onlyIfMissing:true});
+  }
+  throw Error('A helper copy now exists. Refresh the project list and use Sync offline edits to compare revisions. Your browser copy is retained.');
+}
+
+export async function resolveConnectedProject({project,projects,api,preferredId,catalogueComplete=true,catalogueError=''}) {
   const local=project?._connectionPlaceholder?null:project;
   if(!local){
     if(preferredId && (projects.some(p=>p.id===preferredId) || !catalogueComplete)){
@@ -32,15 +52,13 @@ export async function resolveConnectedProject({project,projects,providers,api,pr
   try{remote=await api('project?id='+encodeURIComponent(local.id));}
   catch(error){if(error.status!==404||error.code!=='PROJECT_NOT_FOUND')throw error;}
   if(remote)return {project:remote,preserveOffline:Boolean(local._unsynced)};
-  const copy=structuredClone(local);delete copy._unsynced;delete copy._offlineChapterEdits;
-  const native=providers?.['native-flux'];
-  if(!copy._imageSelectedByUser&&!copy.chapters.some(c=>c.scenes.length)&&native?.validated)
-    copy.settings.image={...copy.settings.image,...native.recommended,provider:'native-flux',model:'flux2-klein-4b-q4',workflow:'reference-edit'};
-  return {project:await api('import',{project:copy,onlyIfMissing:true}),preserveOffline:false};
+  // An offline revision-zero draft can also be an edited copy of a removed
+  // private project. Reconnection alone must never publish either record.
+  return {project:{...local,_unsynced:true},preserveOffline:false,browserOnly:true};
 }
 
 export function canAdoptConnection(current,candidate,{requestedProject,editorRevision,startEditorRevision,preserveOffline}){
-  return Boolean(candidate?.chapters?.length&&current===requestedProject&&
+  return Boolean(Array.isArray(candidate?.chapters)&&current===requestedProject&&
     editorRevision===startEditorRevision&&!preserveOffline&&
     (candidate.id!==current.id||candidate.revision>=current.revision));
 }

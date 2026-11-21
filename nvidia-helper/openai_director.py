@@ -366,9 +366,12 @@ class OpenAIDirector(DirectorProvider):
                     usage = completed.get('usage')
                     if ledger:
                         ledger.retain_response(request_id,completed,owner=owner)
-                    # A missing receipt tier must not turn requested premium
-                    # processing into an artificially cheap estimate.
-                    returned_tier = completed.get('service_tier') or service_tier
+                    # A receipt without its tier provides no evidence of a Flex
+                    # discount. Keep the premium rate for requested fast work.
+                    returned_tier = completed.get('service_tier')
+                    if not returned_tier:
+                        returned_tier = 'default' if service_tier == 'flex' else service_tier
+                        timing['billingTierEstimated'] = True
                     returned_tiers.append(returned_tier)
                     if ledger:
                         estimated_cost += ledger.settle(usage, service_tier=returned_tier,

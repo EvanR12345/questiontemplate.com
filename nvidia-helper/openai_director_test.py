@@ -74,6 +74,22 @@ class LunaTest(unittest.TestCase):
                 self.assertEqual(request.call_args.kwargs['timeout'],timeout)
                 self.assertEqual(json.loads(request.call_args.args[0].data)['service_tier'],tier)
 
+    def test_flex_discount_requires_returned_tier_and_premium_reservation_stays_conservative(self):
+        from cost_control import SpendLedger, luna_cost
+        for requested,returned,priced in [('flex',None,'default'),('flex','flex','flex'),('fast',None,'fast')]:
+            with self.subTest(requested=requested,returned=returned), tempfile.TemporaryDirectory() as folder:
+                director=OpenAIDirector({'openaiServiceTier':requested},Path(folder))
+                director.key=lambda:'test-key'
+                director.spend_ledger=SpendLedger(Path(folder)/'ledger.json',.02)
+                response=stream(**({'service_tier':returned} if returned else {}))
+                with patch('openai_director.urllib.request.urlopen',return_value=response) as request:
+                    director.call('Test',{},obj({'summary':STR}),lambda *_:None)
+                self.assertEqual(request.call_count,1)
+                row=director.spend_ledger.load()['receipts'][0]
+                self.assertEqual(row['requestedServiceTier'],requested)
+                self.assertEqual(row['serviceTier'],priced)
+                self.assertAlmostEqual(row['estimatedUSD'],luna_cost(row['usage'],priced),places=9)
+
     def test_flex_capacity_rejection_releases_only_unaccepted_usage_and_never_upgrades(self):
         from cost_control import SpendLedger
         with tempfile.TemporaryDirectory() as folder:

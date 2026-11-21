@@ -253,7 +253,8 @@ class SpendLedger:
                 raise RuntimeError('API ledger halted after a conflicting receipt or exceeded reservation; reconcile before dispatch.')
             if self.allow_multiple and state.get('capNanoUSD', self.cap_nanos) != self.cap_nanos:
                 raise RuntimeError('API budget cap changed between owners; reconcile the shared allowance before dispatch.')
-            if state['requests'] and (legacy or not self.allow_multiple):
+            if state['requests'] and (legacy or not self.allow_multiple
+                    or any(request.get('legacy') for request in state['requests'].values())):
                 raise RuntimeError('A previous API request has unresolved usage. Review its spend receipt before continuing.')
             reserved = sum(r['reservedNanoUSD'] for r in state['requests'].values())
             if state['spentNanoUSD'] + reserved + _nanos(bound) > self.cap_nanos:

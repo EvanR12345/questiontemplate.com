@@ -171,6 +171,24 @@ class RequestOwnershipTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'unresolved'):
             self.reserve('b','chapter-b')
 
+    def test_concurrent_writer_waits_for_unowned_legacy_receipt(self):
+        # Old saved projects and current callers without request IDs must
+        # still be able to settle their one pending request after a restart.
+        for migrated in (False, True):
+            with self.subTest(migrated=migrated):
+                if migrated:
+                    self.path.write_text(json.dumps({'spentUSD':0,'receipts':[],
+                        'pending':{'reservedUSD':.001,'model':'gpt-6-luna','started':100}}))
+                else:
+                    SpendLedger(self.path,.02).reserve(self.body)
+                before=self.path.read_bytes()
+                with self.assertRaisesRegex(RuntimeError,'unresolved'):
+                    self.reserve('next','new-owner')
+                self.assertEqual(self.path.read_bytes(),before)
+                SpendLedger(self.path,.02).settle(self.usage)
+                self.reserve('next','new-owner')
+                self.assertEqual(set(self.ledger.load()['requests']),{'next'})
+
     def test_stale_owner_cannot_expand_a_shared_allowance(self):
         self.reserve()
         stale=SpendLedger(self.path,.2,allow_multiple=True)

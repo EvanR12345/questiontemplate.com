@@ -67,6 +67,29 @@ class FakeEngine:
 
 
 class BridgeTest(unittest.TestCase):
+    def test_browser_checkpoint_reads_local_and_archived_editions_without_restoring(self):
+        from studio_storage import R2Archive
+        from unittest.mock import Mock
+        studio = self.server.RequestHandlerClass.studio_service
+        local = studio.store.save(new_project('Local'))
+        cloud = new_project('Remote')
+        objects = Mock(spec=['read'])
+        archive = R2Archive(studio.store, Path(self.directory.name)/'absent', objects, start_worker=False)
+        self.addCleanup(archive.close)
+        with patch.object(studio, 'storage', archive):
+            path = '/studio/project-checkpoint?id='
+            self.assertEqual(self.request(path + local['id'],key='invalid')[0],401)
+            self.assertEqual(json.loads(self.request(path + local['id'])[2]),local)
+            objects.read.assert_not_called()
+            objects.read.return_value=(json.dumps({'project':cloud}).encode(),'generation')
+            self.assertEqual(json.loads(self.request(path + cloud['id'])[2])['name'],'Remote')
+            self.assertFalse((studio.store.folder(cloud['id'])/'project.json').exists())
+            objects.read.return_value=(None,None)
+            code,_,body=self.request(path + cloud['id'])
+            self.assertEqual((code,json.loads(body)['code']),(404,'PROJECT_NOT_FOUND'))
+            objects.read.side_effect=TimeoutError('not available')
+            self.assertNotEqual(self.request(path + cloud['id'])[0],404)
+
     def test_fast_project_picker_and_legacy_list_share_the_cold_catalogue(self):
         from studio_storage import R2Archive
         from unittest.mock import Mock
@@ -505,6 +528,34 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(file.read_bytes(),before);archive.enqueue.assert_not_called()
         code,_,data=self.request('/studio/edit',{'project':p['id'],'scope':'project','patch':{'name':'Actual update'}})
         self.assertEqual(code,200);self.assertEqual(json.loads(data)['revision'],p['revision']+1)
+
+    def test_archived_project_routes_require_pairing_and_restore_only_the_chosen_history(self):
+        from studio_cloud_test import Objects
+        from studio_storage import R2Archive
+        service = self.server.RequestHandlerClass.studio_service
+        objects = Objects()
+        archive = R2Archive(service.store, Path(self.directory.name)/'absent', objects, start_worker=False)
+        self.addCleanup(archive.close)
+        project = new_project('Only in history')
+        project['chapters'][0]['sourceText'] = 'Private fixture prose'
+        pid = project['id']
+        manifest = {'version':1, 'project':project, 'files':{}, 'savedAt':123}
+        key = archive.history_key(pid,project,{})
+        objects.put_json(key,manifest)
+        with patch.object(service,'storage',archive):
+            self.assertEqual(self.request('/studio/archived-projects',key='invalid')[0],401)
+            code,_,body=self.request('/studio/archived-projects')
+            self.assertEqual(code,200,body)
+            edition=json.loads(body)['projects'][0]['edition']
+            self.assertNotIn(b'Private fixture prose',body)
+            payload={'project':pid,'edition':edition}
+            self.assertEqual(self.request('/studio/recover-archived',payload,key='invalid')[0],401)
+            self.assertIsNone(objects.read(f'studio/manifests/{pid}.json')[0])
+            code,_,body=self.request('/studio/recover-archived',payload)
+            self.assertEqual(code,200,body)
+            self.assertEqual(json.loads(body)['project']['edition'],edition)
+            self.assertEqual(json.loads(objects.read(f'studio/manifests/{pid}.json')[0]),manifest)
+            self.assertEqual(self.request('/studio/recover-archived',payload)[0],400)
 
     def test_authentication_and_origins(self):
         self.assertEqual(self.request(key='bad')[0], 401)

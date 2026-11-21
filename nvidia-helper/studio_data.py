@@ -710,6 +710,32 @@ class ProjectStore:
                 merged[p['id']] = p
         return sorted(merged.values(), key=lambda p:p['updated'], reverse=True)
 
+    def browser_checkpoint(self, pid, minimum_revision=0):
+        """Read editable project facts without restoring media or altering local project files."""
+        path = self.folder(pid) / 'project.json'
+        if minimum_revision < 0:
+            raise ValueError('Invalid project revision.')
+        with self.lock:
+            try:
+                local = json.loads(path.read_bytes())
+            except FileNotFoundError:
+                local = None
+        if local is not None and local['id'] == pid and local['revision'] >= minimum_revision:
+            return local
+        if self.archive and self.archive.enabled:
+            try:
+                raw, _ = self.archive.objects.read(f'studio/manifests/{pid}.json')
+            except Exception as error:
+                raise ConnectionError('Cloud library is temporarily unavailable.') from error
+            if raw is not None:
+                remote = validate_project(json.loads(raw)['project'])
+                if remote['id'] != pid or remote['revision'] < minimum_revision:
+                    raise ValueError('Cloud project does not match the requested revision. Refresh the library.')
+                return remote
+        if local is not None:
+            raise ValueError('The local project is behind the requested revision.')
+        raise ProjectNotFound('Saved project not found.')
+
     def project_picker(self, archive):
         catalogue = archive.picker_catalogue()
         catalogue['projects'] = self._merge_summaries(self.list_local(), catalogue['projects'])

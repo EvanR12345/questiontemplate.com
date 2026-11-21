@@ -1,3 +1,4 @@
+import {createLibraryCopies} from './studio-library-copies.mjs?v=durable-20261121';
 import {updateHTML,queuePart,renderTimingHistory,queueJobHTML} from './studio-queue-view.mjs?v=dense-retry-20261118';
 import {chapterStage,createWorkspaceTools} from './studio-workspace.mjs?v=queue-recovery-20261017';
 import {createProductionTools} from './studio-production-tools.mjs?v=readiness-20261119';
@@ -11,7 +12,7 @@ import {providerSetupForm,providerSetupValues} from './studio-provider-setup.mjs
 import {directorLimits,directorSummary,directorSettings,directorRequestControls} from './studio-director-settings.mjs?v=luna-standard-controls-20261010';
 import {captureFormFocus,restoreFormFocus,openFormDialog} from './studio-form-state.mjs?v=forms-20261009';
 import {createFormDrafts,createProjectSelection} from './studio-form-drafts.mjs?v=drafts-20261009';
-import {resolveConnectedProject,canAdoptConnection,connectionLoading,readProjectPicker,mergePickerProjects} from './studio-connection.mjs?v=project-picker-20261119';
+import {resolveConnectedProject,canAdoptConnection,connectionLoading,readProjectPicker,mergePickerProjects,saveBrowserOnlyDraft} from './studio-connection.mjs?v=browser-library-20261121';
 import {checkpointProject,backupSnapshot,canApplyBackgroundProject,rememberOfflineEdit,offlineSyncRequest} from './studio-project-safety.mjs?v=offline-sync-20261118';
 import {createMediaLoader} from './studio-media-loader.mjs?v=playback-renewal-20261118';
 import {createEditorSave} from './studio-editor-save.mjs?v=editor-20261009b';
@@ -23,10 +24,11 @@ import {createProgressReader} from './studio-progress.mjs?v=large-20261008';
 import {engagementForm, engagementValues, filesPanel, wireFiles, cachedMediaCapability, directCloudDownload, videoDeliveryStatus} from './studio-cloud-ui.mjs?v=private-delivery-20261118';
 import {
   loadProjectState,
+  saveProjectCheckpoint,
   saveStudioProject,
   loadStudioProject,
   listStudioProjectSummaries,
-} from "./image-store.mjs?v=offline-sync-20261118";
+} from "./image-store.mjs?v=saved-library-20261121";
 
 const $ = (s) => document.querySelector(s),
   escape = (s) =>
@@ -61,6 +63,16 @@ let key = pairingKey(),
   scenePage = 0,
   overlapRequested = false,
   saveTimer;
+let libraryStatus='';
+const copyLibrary = createLibraryCopies({
+  list:listStudioProjectSummaries,
+  read:(id,revision)=>api('project-checkpoint?id='+encodeURIComponent(id)+'&revision='+revision),
+  save:saveProjectCheckpoint,
+  report:text=>{libraryStatus=text;const el=root.querySelector('#libraryCopiesStatus');if(el)el.textContent=text;},
+});
+function copyAvailableProjects(rows){
+  if(health?.projectCheckpointAvailable&&rows.length)void copyLibrary(rows);
+}
 let cacheWarning="";
 let connectionPromise,savedId;
 let pickerPending=false,pickerBusy=false,pickerGeneration=0,nextPickerRefresh=0;
@@ -180,12 +192,15 @@ async function api(path, body) {
 }
 async function cache({includeBrowser = false} = {}) {
   if(!project || project._connectionPlaceholder)return;
+  const savedProject=project;
   const warnings=[];
-  await checkpointProject(project,{
+  await checkpointProject(savedProject,{
     connected,cloudEnabled:Boolean(health?.storage?.enabled) && !includeBrowser,save:saveStudioProject,
-    remember:projectId=>localStorage.setItem('qt-production-project',projectId),
+    remember:projectId=>{if(project?.id===projectId)localStorage.setItem('qt-production-project',projectId);},
     warn:message=>warnings.push(message),
   });
+  if(project?.id!==savedProject.id)return;
+  if(connected&&!savedProject._unsynced)copyAvailableProjects([savedProject]);
   cacheWarning=warnings.join(' ');
   if(cacheWarning)note(cacheWarning,true);
 }
@@ -208,7 +223,8 @@ async function refreshProjects() {
   const generation=++pickerGeneration;
   const picker=await readProjectPicker(api,health);
   if(generation!==pickerGeneration)return;
-  projects=mergePickerProjects(picker,local);
+  copyAvailableProjects(picker.projects);
+  projects=mergePickerProjects(picker,local.map(row=>({...row,browserSaved:true})));
   pickerPending=picker.refreshing || !picker.complete;
 }
 
@@ -219,6 +235,7 @@ async function refreshPendingPicker(){
   try{
     const picker=await readProjectPicker(api,health);
     if(generation!==pickerGeneration||!connected)return;
+    copyAvailableProjects(picker.projects);
     projects=mergePickerProjects(picker,projects);
     const select=root.querySelector('#productionProject');
     if(select && (select===document.activeElement||select.value!==project.id))return;
@@ -273,12 +290,18 @@ async function reconnect() {
       editorRevision:editorSave.revision,startEditorRevision,preserveOffline:resolved.preserveOffline}))
       project=resolved.project;
     health=info;queue=info.queue;
+    copyAvailableProjects(picker.projects);
     projects=mergePickerProjects(picker,projects);
     pickerPending=picker.refreshing||!picker.complete;
     if(!projects.some(p=>p.id===project.id))projects=[{id:project.id,name:project.name,revision:project.revision,chapters:project.chapters.length},...projects];
+    if(resolved.browserOnly&&project.id===requestedProject?.id){
+      projects=projects.map(row=>row.id===project.id?{...row,browserSaved:true,browserOnly:true}:row);
+    }
     mediaCache.clear();connected=true;initialConnectionPending=false;chapterId=ch()?.id;
     await cache({includeBrowser:Boolean(requestedProject?._unsynced && !project._unsynced)});render();
-    if(project._unsynced)note('Your offline edits are retained. Review them, then use Sync offline edits; existing helper generations remain saved.');
+    if(project._unsynced)note(projects.some(row=>row.id===project.id&&row.browserOnly)
+      ?'This project is saved in this browser. Use Save browser copy to helper when you want it in the private library.'
+      :'Your offline edits are retained. Review them, then use Sync offline edits; existing helper generations remain saved.');
   } catch(error) {
     initialConnectionPending=false;connected=false;
     // Export and the mounted editor must retain the latest input even if its
@@ -309,6 +332,8 @@ async function mutate(path, body, redraw = true) {
   return p;
 }
 async function patch(scope, item, values, redraw = false) {
+  const requestedId=project.id;
+  let saveLocally=!connected || project._unsynced;
   if (connected && !project._unsynced) {
     try {
       await mutate(
@@ -317,23 +342,26 @@ async function patch(scope, item, values, redraw = false) {
         redraw,
       );
     } catch (error) {
-      if (!error.message.includes("Cannot reach the NVIDIA helper"))
+      if (project.id!==requestedId || !error.message.includes("Cannot reach the NVIDIA helper"))
         throw error;
       connected = false;
+      saveLocally=true;
     }
   }
-  if (!connected || project._unsynced) {
+  if(project.id!==requestedId)return;
+  if (saveLocally) {
     delete project._connectionPlaceholder;
     const target =
       scope === "project"
         ? project
         : scope === "chapter"
-          ? ch()
+          ? project.chapters.find(chapter=>chapter.id===item)
           : scope === "shot"
             ? shots().find((s) => s.id === item)
             : scope === "character"
               ? project.characters.find((c) => c.id === item)
               : people().find((p) => p.id === item);
+    if(!target)throw Error('The edited item is no longer available in this project.');
     rememberOfflineEdit(project,scope,target,values);
     Object.assign(target, values);
     project._unsynced = true;
@@ -518,7 +546,7 @@ function offlineChapter(n) {
 }
 function projectOptions(){
   const choices=projects.some(p=>p.id===project.id)?projects:[{id:project.id,name:project.name},...projects];
-  return options(choices.map(p=>[p.id,p.name+(p.loadError?' · needs recovery':'')]),project.id);
+  return options(choices.map(p=>[p.id,p.name+(p.loadError?' · needs recovery':p.browserOnly?' · browser copy':'')]),project.id);
 }
 function options(values, selected) {
   if (selected && !values.some((v) => (Array.isArray(v) ? v[0] : v) === selected))
@@ -573,6 +601,15 @@ function refreshBackgroundSummary() {
   const summary = root.querySelector("#productionContent > .stats");
   if (summary) summary.outerHTML = stats();
 }
+function projectToolbarHTML(){
+  return `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · edits use this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${projectOptions()}</select><button type="button" data-open-guide="all">Help · all functions</button><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><p id="libraryCopiesStatus" class="caption">${escape(libraryStatus)}</p>${navigator.storage?.persist?'<button type="button" id="protectProjectCopies">Protect browser copies from automatic cleanup</button>':''}<div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><button id="productionHistory" ${connected ? "" : "disabled"}>Recover archived project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
+  <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>`;
+}
+function offlineNoticeHTML(){
+  return project._unsynced ? (projects.some(row=>row.id===project.id&&row.browserOnly)
+    ? '<div class="notice">This project is saved in this browser.<button id="syncOffline">Save browser copy to helper</button></div>'
+    : '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>') : "";
+}
 function render() {
   const plannerLink=$('#studioPlannerLink');
   if(plannerLink)plannerLink.href='./pipeline.html'+(project&&!project._connectionPlaceholder?'?project='+encodeURIComponent(project.id):'');
@@ -589,9 +626,10 @@ function render() {
   const c = ch();
   chapterId = c?.id;
   if (!c) {
-    project.chapters.push(offlineChapter(1));
-    chapterId = project.chapters[0].id;
-    return render();
+    root.innerHTML=projectToolbarHTML()+offlineNoticeHTML()+'<section class="production-main"><h2>No chapters yet</h2><button class="primary" id="productionAddChapter">Add first chapter</button></section>';
+    wireProjectControls();
+    if(cacheWarning)note(cacheWarning,true);
+    return;
   }
   const focusContext=JSON.stringify([project.id,chapterId,tab]);
   const savedFocus=captureFormFocus(root,focusContext);
@@ -602,10 +640,9 @@ function render() {
     !project.settings.economyPanels;
   const placement = rendererPlacement(connected,health);
   const generationStrategy=strategyChoices.get(project.id) || selectedStrategy(project);
-  root.innerHTML = `<div class="project-bar"><div><div class="kicker">Your story workspace</div><h1>${escape(project.name)}</h1><div class="connection-line"><span class="connection-dot ${connected ? 'connected' : ''}" aria-hidden="true"></span>${connected ? `Shared helper connected · ${escape(health.hardware.gpu)}` : "Helper offline · edits use this browser"}</div></div><div class="toolbar project-controls"><select id="productionProject" aria-label="Project">${projectOptions()}</select><button type="button" data-open-guide="all">Help · all functions</button><details class="action-menu" data-ui="project-actions"><summary>Project actions</summary><div class="toolbar"><button id="productionNewProject">New project</button><button id="productionConnect">${connected ? "Reconnect" : "Connect helper"}</button><button id="productionBackup">Export project</button><label class="import-control"><button id="productionImport">Import</button><input id="productionImportFile" type="file" accept="application/json,.json" hidden></label></div></details></div></div>
-  <div id="productionNotice" class="notice" role="status" aria-live="polite" hidden></div>
+  root.innerHTML = `${projectToolbarHTML()}
   <div class="full-video-bar"><div><strong>Your complete story, in one video</strong>${project.shortPreview ? `<p class="muted" role="note">Short preview · ${escape(project.shortPreview.sourceWords)} words · matching saved illustrations. This tests narration and motion; fresh image quality has not been validated.</p>` : ""}<p class="muted">Add your chapters, then press Generate full video. ${project.settings.unattendedProduction !== false ? 'Automatic production prepares narration, visuals and the finished video within your saved spending limits.' : 'Your saved review policy remains active; generation can stop for manual decisions.'} Saved work and manual edits are preserved. Keep the laptop and shared helper running for local stages.</p><details class="production-setup-details" data-ui="production-setup"><summary>Production options · ${escape(STRATEGIES.find(([id])=>id===generationStrategy)?.[1] || generationStrategy)}</summary><label>Generation strategy<select id="productionStrategy" aria-describedby="productionStrategyHelp">${options(STRATEGIES,generationStrategy)}</select></label><p id="productionStrategyHelp" class="muted">${escape(strategySummary(generationStrategy,health?.managedGPU?.configured,health?.managedGPU?.holdsGPUForQC,project.settings.image.provider))}</p><details data-ui="strategy-details"><summary>How this strategy runs</summary><p class="muted">${escape(strategyDescription(generationStrategy,health?.managedGPU?.configured,health?.managedGPU?.modelCopies,health?.managedGPU?.holdsGPUForQC,project.settings.image.provider))}</p></details><label class="inline"><input id="productionOverlap" type="checkbox" ${overlapEligible && (generationStrategy!=='legacy' || overlapRequested) ? "checked" : ""} ${overlapEligible && generationStrategy==='legacy' ? "" : "disabled"}> Overlap cloud tasks</label><p class="muted">Requires cloud images, Luna and an API spending cap. Reviews and independent Luna calls follow your saved Settings.</p><details data-ui="learned-timings"><summary>Timing history and estimate coverage</summary><p id="productionPerformance" class="muted">${escape(forecastText(performanceReports.get(project.id)))}</p><button id="productionTimingRefresh" ${connected ? '' : 'disabled'}>Refresh matching estimates</button></details>${lunaUsageHTML(project.production?.timings || [])}<details data-ui="render-placement"><summary>${escape(placement.title)}</summary><p class="muted">${escape(placement.detail)}</p></details><p id="productionDirectorSummary" class="muted">${escape(directorSummary(project.settings))}</p></details><div id="productionReadiness" role="status"></div><div id="fullVideoStatus" role="status" aria-live="polite"></div></div><div class="toolbar production-start-actions"><button id="productionCheckReadiness" ${connected ? "" : "disabled"}>Check readiness</button><button class="primary" id="productionFullVideo" ${connected ? "" : "disabled"}>Generate full video</button></div></div>
-  ${project._unsynced ? '<div class="notice">This browser has offline edits.<button id="syncOffline">Sync offline edits</button></div>' : ""}
+  ${offlineNoticeHTML()}
   ${project.warnings
     .filter((w) => !w.resolved)
     .map(
@@ -1038,15 +1075,7 @@ async function submit(kind, selected, options) {
   note("Added to the production queue. Completed results save immediately.");
 }
 function wire() {
-  root.querySelectorAll('[data-open-guide]').forEach(button => button.onclick = () => {
-    const dialog=openStudioGuide({scope:button.dataset.openGuide==='all'?tab:button.dataset.openGuide,
-      navigate:(next,anchor)=>action(async()=>{
-        tab=next;render();
-        if(anchor&&tab==='settings')settingsOrganizer?.reveal(anchor);
-        else root.querySelector('[role="tab"][aria-selected="true"]')?.focus({preventScroll:true});
-      })});
-    if(button.dataset.openGuide==='all')dialog.querySelector('[data-guide-scope="all"]').click();
-  });
+  wireProjectControls();
   if(tab==='files') {
     const filesProject=project;
     const filesAction=fn=>action(()=>{
@@ -1110,31 +1139,6 @@ function wire() {
         note('Full video queued. Keep the shared helper running. Use the production queue to pause, cancel or check progress. Completed work is saved and reused.');
       }finally{startingProduction.delete(targetProject);renderQueue();}
     });
-  $("#productionConnect").onclick = () => action(connectHelper);
-  $("#productionNewProject").onclick = () => action(newProject);
-  $("#productionProject").onchange = event => {
-    const wanted=event.target.value;
-    const request=projectSelection.begin(project,editorSave.revision);
-    void action(async()=>{
-      request.project=project;request.editorRevision=editorSave.revision;
-      let selected;
-      try {
-        const local = await loadStudioProject(wanted).catch(error => {
-          if (!connected) throw error;
-          return undefined;
-        });
-        selected = !connected || local?._unsynced ? local : await api('project?id=' + encodeURIComponent(wanted));
-      }
-      catch(error){if(!projectSelection.current(request,project,editorSave.revision))return;event.target.value=project.id;throw error;}
-      if(!projectSelection.current(request,project,editorSave.revision)){
-        if(projectSelection.latest(request)&&request.project===project&&editorSave.revision!==request.editorRevision){event.target.value=project.id;note('Your new edits are retained. Select the other project again when you are ready.');}
-        return;
-      }
-      if(!selected?.chapters?.length){event.target.value=project.id;throw new Error('This project is saved on the helper. Reconnect the helper, then select it again.');}
-      project=selected;chapterId=project.chapters[0].id;scenePage=0;
-      await cache();render();
-    });
-  };
   root.querySelectorAll("[data-chapter]").forEach(
     (b) =>
       (b.onclick = () =>
@@ -1169,21 +1173,6 @@ function wire() {
       });
     };
   });
-  $("#productionAddChapter").onclick = workspaceAddChapter = () =>
-    action(async () => {
-      if (connected && !project._unsynced) {
-        await mutate("chapter", { action: "add" });
-        chapterId = project.chapters.at(-1).id;
-      } else {
-        delete project._offlineChapterEdits;
-        project.chapters.push(offlineChapter(project.chapters.length + 1));
-        chapterId = project.chapters.at(-1).id;
-        project._unsynced = true;
-        await cache();
-      }
-      tab = "write";
-      render();
-    });
   $("#productionDuplicate").onclick = () =>
     action(() => mutate("chapter", { id: chapterId, action: "duplicate" }));
   $("#productionMoveUp").onclick = () =>
@@ -1199,74 +1188,6 @@ function wire() {
       "Delete this chapter from the project? Generated files remain on disk and in project backups.",
       () => mutate("chapter", { id: chapterId, action: "delete" }),
     );
-  $("#productionBackup").onclick = () => {
-    try {
-      // Export must remain available even when browser or helper saving fails.
-      const backup=backupSnapshot(project,chapterId,tab,{
-        sourceText:$('#chapterStory')?.value,name:$('#chapterName')?.value,
-        cleanNarrationText:$('#narrationScript')?.value,narrationMode:$('#narrationMode')?.value,
-        includeChapterLabel:$('#includeChapterHeading')?.checked,
-      });
-      delete backup._unsynced;
-      delete backup._offlineChapterEdits;
-      delete backup._connectionPlaceholder;
-      downloadBlob(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}),project.name+'.json');
-      note('Project JSON exported with the current editor text and saved generation settings. Media files remain in their existing helper/cloud archive.'+(settingsDrafts.has(project.id)?' Unsaved settings are still in this page; Save project settings to include them in the next export.':''));
-    } catch(error){note(error.message,true);}
-  };
-  $("#productionImport").onclick = () => $("#productionImportFile").click();
-  $("#productionImportFile").onchange = (e) =>
-    action(async () => {
-      const p = JSON.parse(await e.target.files[0].text());
-      if (p.schemaVersion !== 1 || !p.chapters)
-        throw new Error("Choose a studio project JSON.");
-      delete p._connectionPlaceholder;
-      delete p._offlineChapterEdits;
-      project = connected ? await api("import", { project: p }) : {...p, _unsynced:true};
-      chapterId = project.chapters[0].id;
-      await cache();
-      await refreshProjects();
-      render();
-    });
-  $("#syncOffline")?.addEventListener("click", () =>
-    confirmAction(
-      "Sync these offline edits to the helper? Changes to the same text need review. Newer helper work and existing assets stay saved.",
-      async () => {
-        const draft = project, editRevision = editorSave.revision;
-        const submitted = JSON.stringify(draft);
-        const request = offlineSyncRequest(JSON.parse(submitted));
-        let synced;
-        try { synced = await api("sync-offline", request); }
-        catch (error) {
-          if (error.status === 404 || error.message.includes('Unknown studio endpoint')) {
-            throw Error('Update the shared helper to sync this draft with revision checks. The draft is still saved in this browser.');
-          }
-          throw error;
-        }
-        // A later edit or navigation still owns the mounted editor.
-        await flush();
-        if (project !== draft || editorSave.revision !== editRevision ||
-            JSON.stringify(draft) !== submitted) {
-          if (project === draft) {
-            if (request.snapshot) draft.revision = synced.revision;
-            // The helper acknowledged these fields even if more typing arrived.
-            // Keep the new local value and advance only its comparison base.
-            for (const edit of request.edits || []) {
-              const before = draft._offlineChapterEdits?.find(item => item.id === edit.id)?.before;
-              if (before) Object.assign(before, edit.values);
-            }
-            await cache();
-            note('The submitted version reached the helper. Your newer browser edits remain available to sync.');
-          }
-          return;
-        }
-        project = synced;
-        await cache({includeBrowser:true});
-        render();
-        note(cacheWarning || 'Offline edits synced to the helper.', Boolean(cacheWarning));
-      },
-    ),
-  );
   $("#chapterStory")?.addEventListener("input", dirtyEditor);
   $("#chapterName")?.addEventListener("input", dirtyEditor);
   $("#narrationScript")?.addEventListener("input", () => {
@@ -1315,7 +1236,7 @@ function wire() {
         name: legacy.name || "Imported story",
         legacy,
       });
-      chapterId = project.chapters[0].id;
+      chapterId = project.chapters[0]?.id;
       await refreshProjects();
       await cache();
       render();
@@ -1512,6 +1433,143 @@ function wire() {
     return mutate("review",{shot:s.id,chapter:s.chapterId || chapterId,imagePath:s.imagePath,imageSHA256:s.imageMetadata?.imageSHA256 || s.qc?.checkedImageSHA256 || "", reviewSpecSignature:s.qcReviewSignature});
   }));
   if (tab === "settings") wireSettings();
+}
+function wireProjectControls(){
+  root.querySelectorAll('[data-open-guide]').forEach(button => button.onclick = () => {
+    const dialog=openStudioGuide({scope:button.dataset.openGuide==='all'?tab:button.dataset.openGuide,
+      navigate:(next,anchor)=>action(async()=>{
+        tab=next;render();
+        if(anchor&&tab==='settings')settingsOrganizer?.reveal(anchor);
+        else root.querySelector('[role="tab"][aria-selected="true"]')?.focus({preventScroll:true});
+      })});
+    if(button.dataset.openGuide==='all')dialog.querySelector('[data-guide-scope="all"]').click();
+  });
+  const protectCopies=$("#protectProjectCopies");
+  if(protectCopies)protectCopies.onclick=async()=>{
+    try{
+      const protectedStorage=await navigator.storage.persist();
+      note(protectedStorage?'This browser has granted persistent storage for Studio copies.':'This browser uses its normal storage retention. Your private cloud library is still available through the paired helper.');
+    }catch{note('This browser could not change its storage retention setting.',true);}
+  };
+  $("#productionConnect").onclick = () => action(connectHelper);
+  $("#productionNewProject").onclick = () => action(newProject);
+  $("#productionProject").onchange = event => {
+    const wanted=event.target.value;
+    const request=projectSelection.begin(project,editorSave.revision);
+    void action(async()=>{
+      request.project=project;request.editorRevision=editorSave.revision;
+      let selected;
+      try {
+        const local = await loadStudioProject(wanted).catch(error => {
+          if (!connected) throw error;
+          return undefined;
+        });
+        const browserOnly=projects.some(row=>row.id===wanted&&row.browserOnly);
+        selected = connected&&local&&browserOnly ? {...local,_unsynced:true}
+          : !connected || local?._unsynced ? local : await api('project?id=' + encodeURIComponent(wanted));
+      }
+      catch(error){if(!projectSelection.current(request,project,editorSave.revision))return;event.target.value=project.id;throw error;}
+      if(!projectSelection.current(request,project,editorSave.revision)){
+        if(projectSelection.latest(request)&&request.project===project&&editorSave.revision!==request.editorRevision){event.target.value=project.id;note('Your new edits are retained. Select the other project again when you are ready.');}
+        return;
+      }
+      if(!Array.isArray(selected?.chapters)){event.target.value=project.id;throw new Error('This project is saved on the helper. Reconnect the helper, then select it again.');}
+      project=selected;chapterId=project.chapters[0]?.id;scenePage=0;
+      await cache();render();
+    });
+  };
+  $("#productionAddChapter").onclick = workspaceAddChapter = () =>
+    action(async () => {
+      const target=project.id;
+      if (connected && !project._unsynced) {
+        await mutate("chapter", { action: "add" },false);
+        if(project.id!==target)return;
+        chapterId = project.chapters.at(-1).id;
+      } else {
+        delete project._offlineChapterEdits;
+        project.chapters.push(offlineChapter(project.chapters.length + 1));
+        chapterId = project.chapters.at(-1).id;
+        project._unsynced = true;
+        await cache();
+      }
+      tab = "write";
+      render();
+    });
+  $("#productionHistory").onclick = () => action(openArchivedProjects,{flushEditor:false});
+  $("#productionBackup").onclick = () => {
+    try {
+      // Export must remain available even when browser or helper saving fails.
+      const backup=backupSnapshot(project,chapterId,tab,{
+        sourceText:$('#chapterStory')?.value,name:$('#chapterName')?.value,
+        cleanNarrationText:$('#narrationScript')?.value,narrationMode:$('#narrationMode')?.value,
+        includeChapterLabel:$('#includeChapterHeading')?.checked,
+      });
+      delete backup._unsynced;
+      delete backup._offlineChapterEdits;
+      delete backup._connectionPlaceholder;
+      downloadBlob(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}),project.name+'.json');
+      note('Project JSON exported with the current editor text and saved generation settings. Media files remain in their existing helper/cloud archive.'+(settingsDrafts.has(project.id)?' Unsaved settings are still in this page; Save project settings to include them in the next export.':''));
+    } catch(error){note(error.message,true);}
+  };
+  $("#productionImport").onclick = () => $("#productionImportFile").click();
+  $("#productionImportFile").onchange = (e) =>
+    action(async () => {
+      const p = JSON.parse(await e.target.files[0].text());
+      if (p.schemaVersion !== 1 || !Array.isArray(p.chapters))
+        throw new Error("Choose a studio project JSON.");
+      delete p._connectionPlaceholder;
+      delete p._offlineChapterEdits;
+      project = connected ? await api("import", { project: p }) : {...p, _unsynced:true};
+      chapterId = project.chapters[0]?.id;
+      await cache();
+      await refreshProjects();
+      render();
+    });
+  $("#syncOffline")?.addEventListener("click", () =>
+    confirmAction(
+      "Sync these offline edits to the helper? Changes to the same text need review. Newer helper work and existing assets stay saved.",
+      async () => {
+        const draft = project, editRevision = editorSave.revision;
+        const submitted = JSON.stringify(draft);
+        const request = offlineSyncRequest(JSON.parse(submitted));
+        let synced;
+        const browserOnly=projects.some(row=>row.id===draft.id&&row.browserOnly);
+        try { synced = browserOnly?await saveBrowserOnlyDraft(api,JSON.parse(submitted),health):await api("sync-offline", request); }
+        catch (error) {
+          if (!browserOnly && (error.status === 404 || error.message.includes('Unknown studio endpoint'))) {
+            throw Error('Update the shared helper to sync this draft with revision checks. The draft is still saved in this browser.');
+          }
+          if(browserOnly)pickerPending=true;
+          throw error;
+        }
+        if(browserOnly){
+          projects=projects.map(row=>row.id===draft.id?{...row,browserOnly:false}:row);
+          pickerPending=true;
+        }
+        // A later edit or navigation still owns the mounted editor.
+        await flush();
+        if (project !== draft || editorSave.revision !== editRevision ||
+            JSON.stringify(draft) !== submitted) {
+          if (project === draft) {
+            if (request.snapshot||browserOnly) draft.revision = synced.revision;
+            // The helper acknowledged these fields even if more typing arrived.
+            // Keep the new local value and advance only its comparison base.
+            for (const edit of request.edits || []) {
+              const before = draft._offlineChapterEdits?.find(item => item.id === edit.id)?.before;
+              if (before) Object.assign(before, edit.values);
+            }
+            await cache();
+            note('The submitted version reached the helper. Your newer browser edits remain available to sync.');
+          }
+          return;
+        }
+        project = synced;
+        await cache({includeBrowser:true});
+        render();
+        note(cacheWarning || 'Offline edits synced to the helper.', Boolean(cacheWarning));
+      },
+    ),
+  );
 }
 async function shotAction(sid, act) {
   const s = shots().find((s) => s.id === sid);
@@ -1765,6 +1823,60 @@ function formDialog(title, body, onSave) {
   return openFormDialog({document,title,body,escape,onSave,
     stillCurrent:()=>project?.id===projectId});
 }
+async function openArchivedProjects(){
+  let editions=[];
+  const modal=formDialog('Recover an archived project',
+    '<label>Archived edition<select class="archived-edition" disabled><option value="">Select an edition</option></select></label><label>Recovery type<select class="recovery-type" disabled><option value="full">Full project and archived media</option><option value="writing">Separate writing-only copy</option></select></label><p class="archive-status" role="status">Loading private archive history…</p>',
+    async dialog=>{
+      const selected=dialog.querySelector('.archived-edition').value;
+      const row=editions.find((_,index)=>String(index)===selected);
+      if(!row)throw Error('Select an archived edition to recover.');
+      const writing=dialog.querySelector('.recovery-type').value==='writing';
+      if(!writing&&row.recoverable===false)throw Error('This edition has missing media. Select a writing-only copy.');
+      const reply=await api('recover-archived',{project:row.id,edition:row.edition,...(writing?{mode:'writing'}:{})});
+      if(writing?(!row.writingCopyId||reply?.writingOnly!==true||reply?.project?.id!==row.writingCopyId)
+        :(reply?.project?.id!==row.id||reply.project.edition!==row.edition))throw Error('Recovery could not be confirmed. Reopen archive history to check the result.');
+      const recovered=writing?'Saved the writing-only copy of '+row.name:'Recovered '+row.name;
+      pickerPending=true;
+      try{
+        await refreshProjects();
+        const select=root.querySelector('#productionProject');
+        if(select&&select!==document.activeElement&&select.value===project.id)select.innerHTML=projectOptions();
+        else pickerPending=true;
+        note(recovered+'. Open it from the project list.');
+      }catch{pickerPending=true;note(recovered+'. The project list will retry its refresh.');}
+    });
+  const select=modal.querySelector('.archived-edition'),mode=modal.querySelector('.recovery-type'),status=modal.querySelector('.archive-status'),save=modal.querySelector('.dialog-save');
+  save.textContent='Recover selected edition';save.disabled=true;
+  try{
+    const response=await api('archived-projects');
+    if(!modal.open)return;
+    if(!Array.isArray(response?.projects))throw Error('The helper returned an invalid archive list.');
+    editions=response.projects;
+    editions.forEach((row,index)=>{
+      const when=new Date(row.updated*1000);
+      const date=Number.isFinite(when.getTime())?when.toLocaleString():'Date unavailable';
+      const missing=row.missingMedia?' · '+row.missingMedia+' missing media':'';
+      select.add(new Option(row.name+' · '+row.chapters+' chapters · rev '+row.revision+' · '+date+missing+' · '+row.edition,String(index)));
+    });
+    select.disabled=!editions.length;
+    status.textContent=(editions.length?'Full recovery uses the original project ID. A writing-only copy has a separate ID and excludes generated media.':'No recoverable archived editions found.')+
+      (response.unreadableEditions?' Unreadable editions: '+response.unreadableEditions+'.':'');
+    select.onchange=()=>{
+      const row=select.value===''?null:editions[Number(select.value)];
+      mode.disabled=!row;
+      mode.querySelector('[value="full"]').disabled=row?.recoverable===false;
+      mode.querySelector('[value="writing"]').disabled=!row?.writingCopyId;
+      mode.value=row?.recoverable===false?'writing':'full';mode.onchange();
+    };
+    mode.onchange=()=>{
+      save.disabled=select.value===''||!mode.value;
+      save.textContent=mode.value==='writing'?'Save separate writing-only copy':'Recover selected edition';
+    };
+  }catch(error){
+    status.textContent=error.status===404?'Update the shared helper to browse private archive history.':error.message;
+  }
+}
 function jsonDialog(title, value, save) {
   formDialog(
     title,
@@ -1826,7 +1938,7 @@ async function newProject() {
   await saveSettingsIfVisible();
   if (connected) project = await api("create", { name: "My story", sourceProject: project?.id });
   else project = offlineProject();
-  chapterId = project.chapters[0].id;
+  chapterId = project.chapters[0]?.id;
   tab = "write";
   await cache();
   await refreshProjects();
@@ -2218,7 +2330,7 @@ async function testStory() {
   const fixture = await (await fetch("./studio-test-story.json")).json();
   fixture.id = id("pr-");
   project = await api("import", { project: fixture });
-  chapterId = project.chapters[0].id;
+  chapterId = project.chapters[0]?.id;
   tab = "write";
   await cache();
   await refreshProjects();
@@ -2261,7 +2373,7 @@ async function poll() {
           if (redraw) render();
           else refreshBackgroundSummary();
           await cache();
-          if (!redraw && project === latest && tab === adoptedTab && !dirty && !editorHasFocus())
+          if (!redraw && ch() && project === latest && tab === adoptedTab && !dirty && !editorHasFocus())
             $("#productionSaveState").textContent =
               "Background results saved · " + chapterDisplayStatus(project,ch());
         }
@@ -2278,11 +2390,11 @@ try{savedId=localStorage.getItem('qt-production-project');}catch{cacheWarning='B
 if(!/^pr-[a-f0-9]{16}$/.test(savedId||''))savedId=undefined;
 try{if(savedId)project=await loadStudioProject(savedId);}catch{cacheWarning='Browser project recovery is unavailable. Connect the helper to access its saved projects.';}
 try {
-  projects = await listStudioProjectSummaries();
-  if (!project && projects.length) project = await loadStudioProject(projects[0].id);
+  projects = (await listStudioProjectSummaries()).map(row=>({...row,browserSaved:true}));
+  if (!project && projects.length && !(savedId && key)) project = await loadStudioProject(projects[0].id);
 } catch { cacheWarning='Browser project recovery is unavailable. Connect the helper to access its saved projects.'; }
 if (!project) project = {...offlineProject(), _connectionPlaceholder:true};
-chapterId = project.chapters[0].id;
+chapterId = project.chapters[0]?.id;
 try{await cache();}catch(error){cacheWarning=error.message;}
 render();
 if (key) await connect();

@@ -32,7 +32,7 @@ function fixture(api){
   const get=selector=>{if(!controls.has(selector))controls.set(selector,{value:selector==='#productionStrategy'?'align':'a',checked:false,innerHTML:'',addEventListener(){},click(){}});return controls.get(selector);};
   const context={project:{id:'a',revision:3,chapters:[{id:'ch-a'}],settings:{image:{provider:'comfyui'},director:{provider:'openai-luna'},budget:{openaiUSD:1}}},chapterId:'ch-a',connected:true,tab:'write',
     health:{cloudSchedulingAvailable:true,unattendedProductionAvailable:true},strategyChoices:new Map(),strategyDirty:new Set(),selectedStrategy,strategyOptions,
-    loadStudioProject:async()=>undefined,
+    projects:[],loadStudioProject:async()=>undefined,
     loadPerformance:async()=>({history:{},forecast:{}}),patch:async(scope,target,patch)=>Object.assign(context.project,patch),
     editorSave:{revision:1},projectSelection:createProjectSelection(),startingProduction:new Set(),
     root:{querySelectorAll:()=>[]},$:get,api:async(path,body)=>{calls.push({path,body});return api(path,body);},
@@ -67,6 +67,54 @@ test('typing during project retrieval retains the editor and requests an explici
   const response=deferred(),f=fixture(()=>response.promise);const pending=f.select('b');await settle();
   f.context.editorSave.revision++;response.resolve({id:'b',chapters:[{id:'ch-b'}]});await pending;
   assert.equal(f.context.project.id,'a');assert.equal(f.get('#productionProject').value,'a');assert.match(f.notes[0],/edits are retained/);
+});
+test('picker opens a clean browser-only recovery copy without importing or editing it',async()=>{
+ const f=fixture(async()=>{throw Error('Unexpected helper request');});
+ const stored={id:'b',revision:3,chapters:[{id:'ch-b',sourceText:'Recovered words'}]};
+ f.context.projects=[{id:'b',browserSaved:true,browserOnly:true}];f.context.loadStudioProject=async()=>stored;
+ await f.select('b');
+ assert.equal(f.context.project.id,'b');assert.equal(f.context.project._unsynced,true);
+ assert.equal(stored._unsynced,undefined);assert.equal(f.calls.length,0);
+});
+test('empty project selection preserves zero chapters and adds the first only on request',async()=>{
+ for(const connected of [true,false]){
+  const empty={id:'b',revision:5,chapters:[]};
+  const f=fixture(async()=>empty);f.context.connected=connected;
+  if(!connected)f.context.loadStudioProject=async()=>empty;
+  await f.select('b');
+  assert.equal(f.context.project,empty);assert.equal(empty.chapters.length,0);assert.equal(f.context.chapterId,undefined);
+  f.context.offlineChapter=n=>({id:'ch-new',number:n});
+  let writes=0;
+  f.context.mutate=async(path,body)=>{assert.equal(path,'chapter');assert.equal(body.action,'add');writes++;empty.chapters.push({id:'ch-new',number:1});};
+  await f.get('#productionAddChapter').onclick();
+  assert.equal(writes,connected?1:0);assert.equal(empty.chapters.length,1);assert.equal(f.context.chapterId,'ch-new');
+  assert.equal(f.context.tab,'write');if(!connected)assert.equal(empty._unsynced,true);
+ }
+});
+
+test('archive history reads on open and restores only an explicitly selected edition without changing editors',async()=>{
+ const calls=[],controls=new Map(),rows=[{id:'hidden',edition:'r3-abc',name:'Missing story',revision:3,chapters:2,updated:1711000000},
+   {id:'partial',edition:'r10-xyz',name:'Writing only',revision:10,chapters:2,missingMedia:1,recoverable:false,writingCopyId:'new-id'}];
+ const get=k=>{if(!controls.has(k))controls.set(k,{value:'',options:[],querySelector:get,add(o){this.options.push(o);}});return controls.get(k);};
+ const modal={open:true,querySelector:get};
+ let onSave;
+ const project={id:'editing',text:'unpushed text'};
+ const context={project,Option:class{constructor(text,value){Object.assign(this,{text,value});}},pickerPending:false,
+   formDialog:(_title,_body,fn)=>{onSave=fn;return modal;},api:async(path,body)=>{
+     calls.push([path,body]);return path==='archived-projects'?{projects:rows,unreadableEditions:1}:body.mode==='writing'?{project:{id:'new-id'},writingOnly:true}:{project:rows[0]};
+   },refreshProjects:async()=>calls.push(['refresh']),note:()=>{},
+   document:{activeElement:null},root:{querySelector:()=>({value:project.id})},projectOptions:()=>''};
+ vm.runInNewContext(source.slice(source.indexOf('async function openArchivedProjects('),source.indexOf('function jsonDialog('))+';this.openHistory=openArchivedProjects;',context);
+ await context.openHistory();
+ assert.deepEqual(calls,[['archived-projects',undefined]]);assert.equal(get('.dialog-save').disabled,true);
+ await assert.rejects(onSave(modal),/Select an archived edition/);
+ assert.equal(calls.length,1);assert.match(get('.archive-status').textContent,/Unreadable editions: 1/);
+ const select=get('.archived-edition');select.value='0';select.onchange();assert.equal(get('.dialog-save').disabled,false);
+ await onSave(modal);assert.deepEqual(JSON.parse(JSON.stringify(calls.slice(1))),[['recover-archived',{project:'hidden',edition:'r3-abc'}],['refresh']]);
+ assert.equal(context.project,project);assert.equal(project.text,'unpushed text');
+ select.value='1';select.onchange();
+ assert.equal(get('.recovery-type').value,'writing');assert.equal(get('[value="full"]').disabled,true);
+ await onSave(modal);assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-2))),['recover-archived',{project:'partial',edition:'r10-xyz',mode:'writing'}]);
 });
 test('superseded responses cannot reset the selector or display a stale error after typing',async()=>{
   const b=deferred(),c=deferred(),f=fixture(path=>path.includes('=b')?b.promise:c.promise);
