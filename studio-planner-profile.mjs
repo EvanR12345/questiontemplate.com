@@ -1,5 +1,5 @@
 // Shared settings projection. No story, references, budgets or keys are copied.
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=production-components-20261031';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=pipeline-review-20261121';
 import {denseCapability} from './pipeline-dense.mjs?v=production-components-20261031';
 import {matchedDirectorProfile} from './pipeline-director-matched.mjs?v=production-components-20261031';
 import {currentComponentsEligible,CURRENT_COMPONENTS_ID} from './pipeline-production-components.mjs?v=production-components-20261031';
@@ -7,6 +7,15 @@ export function plannerSettings(config, profile, evidence) {
   if(profile?.version!==1)throw Error('Update the helper to load saved production settings.');
   const s=profile.settings, v=s.video, d=s.director, i=s.image;
   const warnings=[], next={...config};
+  const previousQuote=config.followedComputeQuote;
+  const priceFields=['pricingBasis','quotedGPU','quotedGPUHourly'];
+  if(previousQuote?.previous&&previousQuote.applied){
+    if(priceFields.every(key=>config[key]===previousQuote.applied[key])){
+      for(const key of priceFields)next[key]=previousQuote.previous[key];
+    }
+    if(previousQuote.diskIncluded&&config.containerGB===0)next.containerGB=previousQuote.previous.containerGB;
+  }
+  delete next.followedComputeQuote;
   // Read-only observed settings metadata, retained across worker structuredClone.
   // No control or saved production setting is changed by this projection.
   next.sourceBurstImageSettings=Object.fromEntries(['provider','model','workflow','steps','guidance','sampler','scheduler','width','height','referenceStrength'].map(k=>[k,i[k]]));
@@ -75,7 +84,9 @@ export function plannerSettings(config, profile, evidence) {
     const quote=topology.computeQuote;
     if(Number.isFinite(quote?.hourlyUSD)&&quote.hourlyUSD>0&&Number.isFinite(quote.observedAt)){
       if(resolvedProductionGPU){
+        const previous={pricingBasis:next.pricingBasis,quotedGPU:next.quotedGPU,quotedGPUHourly:next.quotedGPUHourly,containerGB:next.containerGB};
         next.pricingBasis='quote';next.quotedGPUHourly=quote.hourlyUSD;next.quotedGPU=resolvedProductionGPU;
+        next.followedComputeQuote={previous,applied:{pricingBasis:'quote',quotedGPU:resolvedProductionGPU,quotedGPUHourly:quote.hourlyUSD},diskIncluded:quote.workingDiskIncluded===true};
         if(quote.workingDiskIncluded)next.containerGB=0;
         warnings.push(`Using ${quote.provider??'the configured 5090'}'s last observed compute quote: $${quote.hourlyUSD.toFixed(2)}/hour, recorded ${new Date(quote.observedAt*1000).toLocaleString()}. ${quote.workingDiskIncluded?'Working disk is already included; it is not added twice. Shared storage remains separate.':'Container/shared storage remain separate.'} This is not a new availability or price guarantee.`);
         if(quote.provider&&quote.provider!=='runpod')warnings.push('The fallback marketplace can have different runtime and delivery speed. Until compatible production history is learned, Runpod benchmark timing remains a comparison reference, not measured fallback throughput.');
@@ -130,7 +141,9 @@ export function plannerSettings(config, profile, evidence) {
   if(!next.directorConditionsMatch)warnings.push('Exact saved director settings/schema versions do not match this calibration. Its displayed time and token cost are comparison references; no measured speedup is assumed.');
   const observed=profile.directorObservation;
   next.directorObservedSecondsPerStorySecond=0;next.directorObservedCostPerTwoHours=0;next.directorObservedSamples=0;next.directorObservedRuns=0;
-  if(observed&&Number.isFinite(observed.secondsPerStorySecond)&&observed.secondsPerStorySecond>0&&Number.isFinite(observed.costPerTwoHours)&&observed.costPerTwoHours>=0&&observed.samples>0){
+  next.directorObservedIdentity=null;
+  if(id&&measured?.id===id&&observed&&Number.isFinite(observed.secondsPerStorySecond)&&observed.secondsPerStorySecond>0&&Number.isFinite(observed.costPerTwoHours)&&observed.costPerTwoHours>=0&&observed.samples>0){
+    next.directorObservedIdentity={profile:id,tier:next.directorTier,slots:next.directorActualSlots};
     next.directorObservedSecondsPerStorySecond=observed.secondsPerStorySecond;
     next.directorObservedCostPerTwoHours=observed.costPerTwoHours;
     next.directorObservedSamples=observed.samples;next.directorObservedRuns=observed.runs;

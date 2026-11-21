@@ -323,6 +323,64 @@ class FullVideoTest(unittest.TestCase):
         self.assertFalse(latest['renderHistory'][-1]['selected'])
         self.assertNotEqual(latest['production']['status'],'COMPLETE')
 
+    def test_manual_static_override_invalidates_chapter_story_and_preview(self):
+        from studio_render import VideoRenderer, effective_motion
+        self.service.produce_story(self.project['id'],{})
+        p=self.service.store.load(self.project['id'])
+        ch=p['chapters'][0]
+        shot=ch['scenes'][0]['shots'][0]
+        self.service.store.asset(p['id'],ch['audio']['path']).write_bytes(b'preview audio')
+        video=p['settings']['video']
+        video['motionMode']='gentle'
+        shot['motion']='static'
+        renderer=VideoRenderer(self.service.store,{})
+        signatures=lambda: (self.service.render_submission_signature(p,ch['id']),
+                            self.service.render_submission_signature(p),
+                            renderer.preview_signature(p,ch,shot['id']))
+        shot['motion']='pan right'
+        automatic=signatures()
+        shot['manual']['motion']=True
+        self.assertEqual(automatic,signatures())
+        shot['manual']['motion']=False
+        shot['motion']='static'
+        automatic=signatures()
+        self.assertEqual(effective_motion(shot,video),'slow zoom in')
+        shot['manual']['motion']=True
+        self.assertEqual(effective_motion(shot,video),'static')
+        for before,after in zip(automatic,signatures()):
+            self.assertNotEqual(before,after)
+
+    def test_shared_render_reference_is_read_once_per_publication_check(self):
+        from unittest.mock import patch
+        self.service.produce_story(self.project['id'], {})
+        p=self.service.store.load(self.project['id'])
+        name='shared-face.png'
+        person=p['characters'][0]
+        person['references']=[{'path':name}]
+        for chapter in p['chapters']:
+            shot=chapter['scenes'][0]['shots'][0]
+            shot['characters']=[{'id':person['id']}]
+        path=self.service.store.asset(p['id'],name)
+        path.write_bytes(b'first portrait')
+        with patch.object(self.service.store,'asset',wraps=self.service.store.asset) as asset:
+            before=self.service.render_submission_signature(p)
+            self.assertEqual(sum(c.args[-1]==name for c in asset.call_args_list),1)
+        path.write_bytes(b'second portrait')
+        self.assertNotEqual(self.service.render_submission_signature(p),before)
+
+    def test_intro_zoom_edit_invalidates_every_render_that_uses_it(self):
+        p=self.service.store.load(self.project['id'])
+        ch=p['chapters'][0]
+        shot={'id':'intro-test','start':0,'end':4,'motion':'slow zoom in','motionSettings':{'zoomAmount':.05}}
+        p['intro'].update(enabled=True,placement='every_chapter',shots=[shot])
+        signatures=lambda: (self.service.render_submission_signature(p,ch['id']),
+                            self.service.render_submission_signature(p),
+                            self.service.intro_submission_signature(p))
+        before=signatures()
+        shot['motionSettings']['zoomAmount']=.30
+        for old,new in zip(before,signatures()):
+            self.assertNotEqual(old,new)
+
     def test_render_publication_signature_ignores_progress_but_detects_asset_replacement(self):
         self.service.produce_story(self.project['id'],{})
         p=self.service.store.load(self.project['id'])

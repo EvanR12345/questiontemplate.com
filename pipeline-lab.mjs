@@ -1,4 +1,4 @@
-import {imageAccountingHTML} from './pipeline-detail-ui.mjs?v=production-components-20261031';
+import {imageAccountingHTML} from './pipeline-detail-ui.mjs?v=pipeline-review-20261121';
 import {latestProfiles} from './pipeline-measurements.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function measuredRows(data,resolution,encodingProfile='cached',executionMode='resident'){

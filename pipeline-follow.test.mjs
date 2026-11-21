@@ -85,3 +85,19 @@ test('planner labels current preference separately from the previous production 
   await api.load();
   assert.match(element('studioProfileSummary').textContent,/next run: Timed.*last recorded run: Dense images/);
 });
+
+test('a missing selected project cannot silently switch the planner to another production',async()=>{
+  const {api,profile,element}=fixture();
+  await api.load();
+  const before=api.snapshot();
+  profile.project='different-project';
+  await api.load();
+  const after=api.snapshot();
+  assert.equal(after.studioSource.project,before.studioSource.project);
+  assert.equal(after.studioSource.following,false);
+  assert.deepEqual(after.config,before.config);
+  assert.match(element('studioProfileStatus').textContent,/selected project is unavailable/i);
+  profile.project=before.studioSource.project;
+  await api.load();
+  assert.equal(api.snapshot().studioSource.following,true);
+});

@@ -15,15 +15,16 @@ export function qualityConfig(config,evidence){
   const calibration=evidence.qcCalibration;
   if(calibration?.version!==1||calibration.timingScope!=='api-call'||!Array.isArray(calibration.cohorts))return next;
   const cohorts=calibration.cohorts.filter(row=>
-    row&&row.status==='COMPLETE'&&row.timingScope==='api-call'&&row.unknownRequests===0
+    row&&typeof row.id==='string'&&row.id.trim()&&row.status==='COMPLETE'&&row.timingScope==='api-call'&&row.unknownRequests===0
     &&row.policy===config.qc&&row.apiSlots===slots&&slots<=Number(config.qcProductionTasks||Infinity)
     &&typeof config.qcCompatibilityHash==='string'&&config.qcCompatibilityHash.length===64
     &&row.qcCompatibilityHash===config.qcCompatibilityHash
     &&row.processingTier===config.directorTier&&row.processingTier===config.qcProcessingTier
-    &&config.resolution==='720p'&&row.checks>0&&row.uniqueImages>0
+    &&config.resolution==='720p'&&Number.isSafeInteger(row.checks)&&Number.isSafeInteger(row.uniqueImages)
+    &&row.uniqueImages>0&&row.uniqueImages<=row.checks
     &&Number.isFinite(row.secondsPerCheck)&&row.secondsPerCheck>0&&row.secondsPerCheck<=3600
     &&Number.isFinite(row.costUSDPerCheck)&&row.costUSDPerCheck>=0&&row.costUSDPerCheck<=1
-    &&Number.isFinite(row.observedAt)&&row.observedAt>0);
+    &&Number.isFinite(row.observedAt)&&row.observedAt>0&&Number.isFinite(new Date(row.observedAt*1000).getTime()));
   const production=cohorts.filter(row=>row.workload==='image-qc-pipeline'
     &&config.policy==='current'&&row.topology?.gpu===config.gpu
     &&row.topology.modelCopies===config.productionModelCopies

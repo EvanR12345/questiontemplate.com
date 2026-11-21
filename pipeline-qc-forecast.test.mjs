@@ -86,6 +86,15 @@ test('incomplete, uncertain or malformed evidence cannot change the existing est
  }
 });
 
+test('invalid dates and impossible review counts do not replace usable historical QC evidence',()=>{
+ const row=calibration.cohorts.find(r=>r.workload==='image-qc-pipeline');
+ for(const invalid of [{observedAt:1e20},{checks:.5},{uniqueImages:row.checks+1},{id:''}]){
+  const qcCalibration={...calibration,cohorts:[{...row,...invalid}]};
+  const c=config(),result=qualityConfig(c,{...evidence,qcCalibration});
+  assert.equal(result.qcBenchmarkId,'');assert.equal(result.qcSeconds,c.qcHistorySeconds);
+ }
+});
+
 test('production-shaped QC takes precedence over the later saturated comparison',()=>{
  const c=config(),prod=calibration.cohorts.find(r=>r.workload==='image-qc-pipeline');
  const micro=calibration.cohorts.find(r=>r.workload==='qc-only'&&r.policy==='practical'&&r.apiSlots===4);

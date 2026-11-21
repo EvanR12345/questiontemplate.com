@@ -52,6 +52,37 @@ class RenderOnlyTest(unittest.TestCase):
             result=subprocess.run([sys.executable,'-c','import sys,json;from studio_data import validate_project;validate_project(json.load(sys.stdin));print("valid")'],
                 input=json.dumps(p),text=True,capture_output=True,cwd=folder,timeout=20)
             self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),'valid')
+    def test_render_worker_can_import_and_check_inputs_from_isolated_bundle(self):
+        renderer = CloudPodRenderer(None, None, {}, lambda *_: None, Path('unused'))
+        with tempfile.TemporaryDirectory() as folder:
+            with zipfile.ZipFile(io.BytesIO(renderer.bundle())) as bundle:
+                bundle.extractall(folder)
+            # -I excludes the checkout and PYTHONPATH. Only the unpacked pod
+            # files are added to the interpreter's normal dependency paths.
+            script = """import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd()))
+import studio_remote_render_worker, studio_gpu_render, studio_render_inputs
+from studio_data import new_project, ProjectStore
+project = new_project()
+store = ProjectStore('scratch')
+folder = store.folder(project['id'])
+folder.mkdir(parents=True, exist_ok=True)
+chapter = project['chapters'][0]
+chapter['audio'] = {'path': 'voice.wav', 'duration': 4}
+source = store.asset(project['id'], 'voice.wav')
+source.write_bytes(b'saved narration')
+before = studio_render_inputs.render_submission_signature(project, store)
+source.write_bytes(b'new narration')
+assert before != studio_render_inputs.render_submission_signature(project, store)
+for name, module in list(sys.modules.items()):
+    if name.startswith('studio_'):
+        assert Path(module.__file__).resolve().parent == Path.cwd(), name
+"""
+            result = subprocess.run([sys.executable, '-I', '-B', '-c', script],
+                                    cwd=folder, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_changed_local_source_is_rejected_before_rental_and_cloud_only_source_is_not_fetched(self):
         p=new_project();p['chapters'][0]['sourceText']='Saved story';p['chapters'][0]['audio']={'path':'voice.wav'}
         record={'sha256':'a'*64,'bytes':3,'key':'private-object'}

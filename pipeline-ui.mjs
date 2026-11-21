@@ -1,20 +1,20 @@
 import {completedProductionEvidence,productionCalibrationSummary} from './pipeline-production-calibration.mjs?v=production-components-20261031';
 import {qualityBlockedProductionEvidence} from './pipeline-production-components.mjs?v=production-components-20261031';
-import {migrateDirectorForecast,directorProfileOptions,directorTimingLabel} from './pipeline-director-calibration.mjs?v=production-components-20261031';
+import {migrateDirectorForecast,directorProfileOptions,directorTimingLabel} from './pipeline-director-calibration.mjs?v=pipeline-review-20261121';
 import {createWorkerRequest} from './pipeline-worker-request.mjs?v=pipeline-admission-pilot-20261011';
 import {indexTasks,dependsOnTask} from './pipeline-task-index.mjs?v=long-graph-20261009';
 import {PREPARATION_GROUP,preparationGroup,compactPreparation,preparationMoves} from './pipeline-preparation-group.mjs?v=group-20261009';
-import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex,startupApplyConfig} from './pipeline-detail-ui.mjs?v=production-components-20261031';
-import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=production-components-20261031';
-import {mountConcurrencyLab} from './pipeline-lab.mjs?v=production-components-20261031';
+import {PRICING_DATE,PRICING_URL} from './pipeline-pricing.mjs?v=pipeline-review-20261121';
+import {mountStartupTradeoffs,mountObservedRuns,mountFunctionIndex,startupApplyConfig} from './pipeline-detail-ui.mjs?v=pipeline-review-20261121';
+import {DEFAULTS,CATALOG,LANES,VERSION,buildPlan,schedule,formatTime,explainMove,importSnapshot} from './pipeline-engine.mjs?v=pipeline-review-20261121';
+import {mountConcurrencyLab} from './pipeline-lab.mjs?v=pipeline-review-20261121';
 import {serverlessHTML} from './pipeline-serverless.mjs';
-import {matchedHTML} from './pipeline-matched.mjs?v=production-components-20261031';
-import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=production-components-20261031';
-import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=production-components-20261031';
+import {matchedHTML} from './pipeline-matched.mjs?v=pipeline-review-20261121';
+import {gpuChoices,selectGPUConfig,executionLabel,generationSpeed,productionModeNote,plannerSourceState} from './pipeline-config.mjs?v=pipeline-review-20261121';
+import {mountGPUExplorer} from './pipeline-gpu-explorer.mjs?v=pipeline-review-20261121';
 import {pairingKey,helperJson} from './helper-connection.mjs?v=connection-20261009';
-import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=zero-retry-20261118';
-import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=production-components-20261031';
+import {plannerSettings,profileSummary} from './studio-planner-profile.mjs?v=pipeline-review-20261121';
+import {realisticPlanningConfig,selectScenarioGPUConfig,reviewPolicyNote} from './pipeline-realistic.mjs?v=pipeline-review-20261121';
 import {denseActive,denseLeaseRetained,imageRentalPercent} from './pipeline-dense.mjs?v=production-components-20261031';
 import {STRATEGIES} from './studio-generation-plan.mjs?v=dense-lease-20261118';
 const strategyLabel=value=>STRATEGIES.find(([id])=>id===value)?.[1]||value;
@@ -32,7 +32,12 @@ async function loadStudioSettings({refresh=false,initial=false}={}){
     const key=pairingKey();if(!key)throw Error('Open Studio and connect the shared helper to load saved settings. Practical checks remain the default scenario.');
     const projects=await helperJson('/studio/projects',key);
     const requested=(initial?new URLSearchParams(location.search).get('project'):null)||$('studioProject').value||studioProject||localStorage.getItem('qt-production-project');
-    studioProject=projects.some(p=>p.id===requested)?requested:projects[0]?.id;
+    if(requested&&!projects.some(p=>p.id===requested)){
+      studioProject=requested;
+      $('studioProject').replaceChildren(new Option('Selected project unavailable',requested,true,true),...projects.map(p=>new Option(p.name,p.id)));
+      throw Error('The selected project is unavailable. Choose a project to follow.');
+    }
+    studioProject=requested||projects[0]?.id;
     if(!studioProject)throw Error('No saved Studio project. Practical checks remain the default scenario.');
     $('studioProject').replaceChildren(...projects.map(p=>new Option(p.name,p.id,p.id===studioProject,p.id===studioProject)));
     const requestedId=studioProject;
@@ -81,9 +86,9 @@ async function loadRenderResearch(){
 let mountGPUPanels=()=>{},loadOptionalPanels=()=>{},optionalPanelsStarted=false;
 let taskLookup=new Map();
 let preparation,preparationCompact=true;
-const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-components-20261031',import.meta.url),{type:'module'}));
-const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-components-20261031',import.meta.url),{type:'module'}));
-const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=production-components-20261031',import.meta.url),{type:'module'}));
+const plannerRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pipeline-review-20261121',import.meta.url),{type:'module'}));
+const comparisonRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pipeline-review-20261121',import.meta.url),{type:'module'}));
+const studioScheduleRequest=createWorkerRequest(()=>new Worker(new URL('./pipeline-worker.mjs?v=pipeline-review-20261121',import.meta.url),{type:'module'}));
 let comparisonKey='',comparisonPendingKey='',comparisonSummary;
 let computeGeneration=0,renderedGeneration=-1,controlTimer;
 let evidence,config={...DEFAULTS},preferences={},plan,result,serial,selected=null,uncertainty=20,history=[],view='schedule',focus='all',scale=1,positions=new Map(),playing=false,playAt=0,playStarted=0,playFrame,saveTimer,toastTimer;
@@ -92,7 +97,16 @@ function checkpoint(manual=true){history.push(snapshot());if(history.length>40)h
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
 function persist(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{try{localStorage.setItem(STORE,JSON.stringify(snapshot()));$('saved').textContent='Saved on this device';}catch{$('saved').textContent='Device storage unavailable — export your plan';}},180);}
 function setControls(){for(const k of keys){if(!$(k))continue;if(booleans.includes(k))$(k).checked=config[k];else $(k).value=config[k];}$('readyChapters').max=config.chapters;$('uncertainty').value=uncertainty;}
-function readControls(){const next={};for(const k of keys){if(!$(k))continue;next[k]=booleans.includes(k)?$(k).checked:typeof DEFAULTS[k]==='number'?Number($(k).value):$(k).value;}return {...config,...next};}
+function readControls(editedKey){
+  const next={...config};
+  for(const k of keys){
+    const input=$(k);
+    if(!input||(k==='apiSlots'&&input.disabled))continue;
+    if(k==='directorCost'&&editedKey!==k&&config.directorCostMode==='measured'&&input.value===plan?.director.costPerTwoHours.toFixed(6))continue;
+    next[k]=booleans.includes(k)?input.checked:typeof DEFAULTS[k]==='number'?Number(input.value):input.value;
+  }
+  return next;
+}
 function getTask(id){return id===PREPARATION_GROUP?preparation:taskLookup.get(id);}
 function renderGenerationSpeed(){
   const speed=generationSpeed(plan,evidence);
@@ -104,6 +118,9 @@ function renderGenerationSpeed(){
 }
 function labelChapter(n){return n===0?'Project / intro':`Chapter ${String(n).padStart(2,'0')}`;}
 function switchView(next){view=next;document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===next)));for(const name of ['schedule','processes','gpus','observed','evidence'])$(name+'View').hidden=name!==next;if(next==='schedule')renderTimeline();if(['gpus','processes','observed'].includes(next))void loadOptionalPanels();if(next==='evidence')void loadDirectorStudy();if(next==='gpus'){void loadRenderResearch();mountGPUPanels();if(result)renderGPUs();}}
+function renderTimingRange(){
+  $('metricRange').textContent=(plan.currentProductionComponentsUsed?'Quality-blocked source · finish unproven · ':plan.director.timingMeasured?'':plan.director.conditionsMatch===false?'Unmeasured saved configuration · ':plan.director.slotsMatch===false?'Unmeasured API-slot timing · ':'Unmeasured tier timing · ')+`${formatTime(result.end*(1-uncertainty/100))}–${formatTime(result.end*(1+uncertainty/100))} assumed sensitivity`;
+}
 async function rebuild(){
   stopPlay();
   const generation=++computeGeneration;plannerRequest.cancel();comparisonRequest.cancel();comparisonPendingKey='';
@@ -139,9 +156,9 @@ async function rebuild(){
     $('repairRounds').nextElementSibling.textContent=retained?'Splits the extra-attempt allowance into assumed rounds on the same paid lease. Required checks and saved retry limits stay unchanged.':'Distributes your extra-attempt allowance across separately billed rentals. It does not change saved retry limits or predict a defect rate.';
     $('scheduleDescription').textContent=`${config.policy==='proposed'?'Proposed':config.policy==='current'?'Installed overlap model':'Sequential baseline'} · ${plan.director.label} · ${config.directorTier} · ${plan.imageCount} images · ${result.tasks.length} operations · ${Object.keys(preferences).length} manual moves`;
     $('metricTime').textContent=formatTime(result.end);
-    $('metricRange').textContent=(plan.currentProductionComponentsUsed?'Quality-blocked source · finish unproven · ':plan.director.timingMeasured?'':plan.director.conditionsMatch===false?'Unmeasured saved configuration · ':plan.director.slotsMatch===false?'Unmeasured API-slot timing · ':'Unmeasured tier timing · ')+`${formatTime(result.end*(1-uncertainty/100))}–${formatTime(result.end*(1+uncertainty/100))} assumed sensitivity`;
+    renderTimingRange();
     const comparable=!plan.currentProductionComponentsUsed&&!plan.productionCalibrationUsed&&!plan.sourceBurstProjectionUsed&&serial.comparisonMatched!==false;
-    const saving=comparable?1-result.end/serial.end:null;$('metricSaved').textContent=comparable?(saving*100).toFixed(0)+'% '+(saving>=0?'less time':'more time'):'Not comparable';
+    const saving=comparable?1-result.end/serial.end:null;$('metricSaved').textContent=comparable?Math.abs(saving*100).toFixed(0)+'% '+(saving>=0?'less time':'more time'):'Not comparable';
     $('metricSerial').textContent=comparable?`${formatTime(serial.end)} fully sequential`:'Sequential reference has a different timing basis; no same-work saving claimed.';
     $('metricCost').textContent=money(result.totalUSD);$('metricCostParts').textContent=`${money(result.gpuUSD)} GPU + ${money(result.directorUSD)} Luna + ${money(result.qcUSD)} QC${plan.productionCalibrationUsed?' + '+money(result.archiveUSD)+' GCS':''} + ${money(result.storageUSD)} storage`;
     $('pricingNote').textContent=plan.gpu.pricing.note;
@@ -252,7 +269,12 @@ async function moveTask(id,target){
   $('moveFeedback').textContent=`${id}: requested ${formatTime(target)}, scheduled ${formatTime(moved.start)}. ${moved.start>target+.1?why+' Dependencies or capacity pushed it later.':'Dependent tasks were re-scheduled; all resource checks pass.'}`;
 }
 function renderInspector(){
-  const task=selected&&getTask(selected);if(!task)return;
+  const task=selected&&getTask(selected);
+  if(!task){
+    $('inspectorLabel').textContent='SELECT A BLOCK';
+    $('taskInspector').innerHTML='<p class="caption">Choose a timeline block or a process from the catalog. Dependencies show why a task waits.</p>';
+    return;
+  }
   if(task.id===PREPARATION_GROUP){renderPreparationInspector(task);return;}
   const meta=CATALOG.find(m=>m.id===task.kind);
   $('inspectorLabel').textContent=task.manual?'MANUAL START':'SCHEDULED';
@@ -376,12 +398,20 @@ async function start(){
     $('loadStudioSettings').onclick=()=>loadStudioSettings({refresh:true});
     $('studioProject').onchange=()=>{studioProject=$('studioProject').value;studioRevision=null;void loadStudioSettings({refresh:true});};
     $('followStudio').onchange=()=>{studioFollowing=$('followStudio').checked;if(studioFollowing)void loadStudioSettings({refresh:true});else studioManual();};
-    setControls();await rebuild();await loadStudioSettings({initial:true});
+    setControls();await rebuild();
     setInterval(()=>{if(studioFollowing&&!document.hidden)void loadStudioSettings();},30000);
     addEventListener('focus',()=>{if(studioFollowing)void loadStudioSettings();});
-    for(const k of [...keys,'uncertainty'])if($(k)){
+    $('uncertainty').onchange=()=>{
+      const input=$('uncertainty'),value=input.valueAsNumber;
+      if(!Number.isFinite(value)||value<0||value>100){input.value=uncertainty;toast('Sensitivity must be 0–100%.');return;}
+      if(value===uncertainty)return;
+      checkpoint(false);uncertainty=value;
+      if(renderedGeneration===computeGeneration)renderTimingRange();
+      persist();
+    };
+    for(const k of keys)if($(k)){
       const apply=()=>{
-      let next=readControls();if(JSON.stringify(next)===JSON.stringify(config)&&Number($('uncertainty').value)===uncertainty)return;
+      let next=readControls(k);if(JSON.stringify(next)===JSON.stringify(config)&&Number($('uncertainty').value)===uncertainty)return;
       if(k==='quotedGPUHourly')next.quotedGPU=next.gpu;
       if(k==='directorCost')next.directorCostMode='manual';
       if(k==='qcCost')next.qcCostManual=true;
@@ -389,9 +419,9 @@ async function start(){
       if(k==='directorProfile'&&next.directorProfile==='historical')next.apiSlots=Math.min(next.apiSlots,3);
       if(['gpu','resolution','encodingProfile','executionMode'].includes(k))next.measurementAttempt='latest';
       if(k==='chapters'){next.readyChapters=Math.min(next.readyChapters,next.chapters);}
-      if(k!=='gpuStartSeconds'&&k!=='uncertainty'&&next.gpuStartSeconds>0){next.gpuStartSeconds=0;toast('Timed GPU startup cleared after settings changed. Recalculate using Spend less on rented waiting.');}
+      if(k!=='gpuStartSeconds'&&next.gpuStartSeconds>0){next.gpuStartSeconds=0;toast('Timed GPU startup cleared after settings changed. Recalculate using Spend less on rented waiting.');}
       // Never silently change the user's check level to satisfy installed overlap.
-      try{if(['gpu','resolution','encodingProfile'].includes(k))next=selectScenarioGPUConfig(next,evidence,next.gpu);const nextPlan=buildPlan(next,evidence);const u=Number($('uncertainty').value);if(!Number.isFinite(u)||u<0||u>100)throw Error('Sensitivity must be 0–100%.');checkpoint();config=next;uncertainty=u;preferences={};selected=null;setControls();rebuild();if(['gpu','resolution','encodingProfile'].includes(k))toast('Measured setup applied: '+executionLabel(nextPlan));}catch(e){toast(e.message);setControls();}
+      try{if(['gpu','resolution','encodingProfile'].includes(k))next=selectScenarioGPUConfig(next,evidence,next.gpu);const nextPlan=buildPlan(next,evidence);checkpoint();config=next;preferences={};selected=null;setControls();rebuild();if(['gpu','resolution','encodingProfile'].includes(k))toast('Measured setup applied: '+executionLabel(nextPlan));}catch(e){toast(e.message);setControls();}
       };
       $(k).addEventListener('change',()=>{clearTimeout(controlTimer);apply();});
       $(k).addEventListener('input',()=>{clearTimeout(controlTimer);controlTimer=setTimeout(apply,350);});
@@ -408,7 +438,6 @@ async function start(){
     $('play').onclick=()=>{if(playing){stopPlay();return;}if(matchMedia('(prefers-reduced-motion: reduce)').matches){toast('Animation disabled by your reduced-motion setting. Task details remain available.');return;}playing=true;playStarted=performance.now();$('play').textContent='Stop simulation';playFrame=requestAnimationFrame(tick);};
     $('export').onclick=()=>{
       const controls=readControls();
-      if(config.directorCostMode==='measured')controls.directorCost=config.directorCost;
       if(renderedGeneration!==computeGeneration||JSON.stringify(controls)!==JSON.stringify(config)||Number($('uncertainty').value)!==uncertainty){toast('Wait for the current settings to finish calculating before exporting.');return;}
       const value={...snapshot(),exportedAt:new Date().toISOString(),evidenceVersion:evidence.version,execution:'planning-only',summary:{elapsedSeconds:result.end,rentalSeconds:result.rentalSeconds,rentalWindows:result.rentalWindows,imageCount:plan.imageCount,attemptCount:plan.attemptCount,gpuUSD:result.gpuUSD,apiUSD:result.apiUSD,archiveUSD:result.archiveUSD||0,productionUSD:result.productionUSD,storageUSD:result.storageUSD,totalUSD:result.totalUSD,pricing:plan.gpu.pricing},capacities:plan.capacities,tasks:result.tasks,calibration:evidence,notes:evidence.notes};
       download(`studio-plan-${config.gpu}-${config.minutes}min.json`,JSON.stringify(value,null,2),'application/json');toast('Exported schedule, task IDs, dependencies, resource limits and evidence.');
@@ -434,6 +463,7 @@ async function start(){
       $('observedRuns').textContent='Recorded timing file unavailable; no trace is substituted.';
     }
     };
+    void loadStudioSettings({initial:true});
   }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('saved').textContent='Planner could not initialize';}
 }
 start();

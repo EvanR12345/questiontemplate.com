@@ -1,9 +1,9 @@
 // A local scheduling model. This module never calls a paid provider or changes Studio projects.
-import {scheduleTasksFast,includedHandoffDependency} from './pipeline-fast-scheduler.mjs?v=production-components-20261031';
+import {scheduleTasksFast,includedHandoffDependency,serializeTasks} from './pipeline-fast-scheduler.mjs?v=pipeline-review-20261121';
 import {latestProfiles} from './pipeline-measurements.mjs';
-import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {directorForecast} from './pipeline-director-calibration.mjs?v=production-components-20261031';
-import {qualityConfig} from './pipeline-qc-forecast.mjs?v=production-components-20261031';
+import {priceGPU,costParts} from './pipeline-pricing.mjs?v=pipeline-review-20261121';
+import {directorForecast} from './pipeline-director-calibration.mjs?v=pipeline-review-20261121';
+import {qualityConfig} from './pipeline-qc-forecast.mjs?v=pipeline-review-20261121';
 import {denseActive,denseLeaseRetained,denseLeasePair,heldQualityIdleSeconds,denseRoundCounts,densePrewarmCredit,densePrewarmMeasurement} from './pipeline-dense.mjs?v=production-components-20261031';
 import {applySourceBurstProjection} from './pipeline-source-burst.mjs?v=production-components-20261031';
 import {applyCurrentProductionCalibration} from './pipeline-production-calibration.mjs?v=production-components-20261031';
@@ -168,7 +168,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   }
   if(!g)throw Error('This GPU has no legacy timing profile. Select a measured resolution.');
   g=priceGPU(g,c);
-  const capacities={api:director.aggregated?director.slots:c.policy==='serial'?1:c.apiSlots, cloud:1, remote:1, network:1, disk:1, cpu:c.cpuOverlap?2:1, audioGPU:1, imagePipe:1};
+  const capacities={api:director.aggregated?director.slots:c.policy==='serial'?1:c.apiSlots, cloud:1, remote:1, network:1, disk:1, cpu:c.cpuOverlap?2:1, audioGPU:1, imagePipe:1, chapterRender:1};
   if(dense)capacities.denseQC=c.productionDenseQCSlots;
   const story=c.minutes*60-(c.intro?c.introSeconds:0);
   const count=Math.ceil(story/60*c.cadence),chapterSec=story/c.chapters;
@@ -271,7 +271,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
     const timeline=add(`c${i}-timeline`,'timeline',i,.8,[...finalSaves,...finalReviews,...(i===0?['intro-voice']:[audio[i]])],{disk:1});
     const videoSeconds=i===0?c.introSeconds:chapterSec;
     const stageProfile=i===0&&renderProfile.backend==='native'?cpuProfile:renderProfile;
-    renders.push(add(`c${i}-render`,'render',i,stageProfile.wallSeconds/stageProfile.videoSeconds*videoSeconds,[timeline],renderProfile.backend==='native'?{cpu:1,audioGPU:1}:{cpu:1},{videoSeconds,
+    renders.push(add(`c${i}-render`,'render',i,stageProfile.wallSeconds/stageProfile.videoSeconds*videoSeconds,[timeline],{cpu:1,chapterRender:1,...(renderProfile.backend==='native'?{audioGPU:1}:{})},{videoSeconds,
       timingRange:{min:stageProfile.minWallSeconds/stageProfile.videoSeconds*videoSeconds,max:stageProfile.maxWallSeconds/stageProfile.videoSeconds*videoSeconds},
       basis:`${i===0&&renderProfile.backend==='native'?'Intro remains on the CPU compatibility path; its fades are not separately calibrated. ':''}${c.videoResolution}/${c.videoFps}fps, ${stageProfile.clips} fresh clips in ${stageProfile.rounds} rounds, one clip worker; reference ${stageProfile.wallSeconds.toFixed(2)}s per ${stageProfile.videoSeconds}s of ${stageProfile.mode==='chapter-export'?'motion and chapter assembly':'motion'}. ${stageProfile.scope} ${stageProfile.hardwareCondition||''} Two-worker speedup is not assumed.`}));
   }
@@ -342,16 +342,7 @@ export function buildPlan(input, evidence, {metadataOnly=false}={}) {
   add('join','join',0,joinDuration,renders,{cpu:.3,disk:1},{basis:measuredJoin?`Measured current assembly: ${measuredJoin.wallSeconds.toFixed(3)}s for ${measuredJoin.videoSeconds}s output. ${measuredJoin.scope} Counted once in Join; other video lengths are extrapolated.`:renderProfile.joinWallSeconds===undefined?'Allowance: 45 seconds per two output hours, scaled by length. Not a measured long-video join; filesystem and chapter count can change it.':`Instrumented full-story AAC128 mux: ${renderProfile.joinWallSeconds.toFixed(3)}s per ${renderProfile.videoSeconds}s output in the paired fresh export. Excluded from chapter Render, counted once here; long-video rate is extrapolated.`});
   add('probe','probe',0,45*lengthScale,['join','stop',...rentalWindows.slice(1).map(w=>w.stop)],{cpu:.2,disk:1},{basis:'Allowance: 45 seconds per two output hours, scaled by length. Cloud upload and platform processing are separate and not timed.'});
   if(c.exhaustive)add('decode','decode',0,cal.exhaustiveDecodeSeconds*lengthScale*(c.videoFps/24)*(c.videoResolution==='1080p'?2.25:1),['probe'],{cpu:1,disk:1},{basis:'Estimate from a historical 720p24 full-decode sample, scaled by output frames and pixels. The selected-format full-decode rate is not measured.'});
-  if(c.policy==='serial') {
-    // Topological order first: renderer nodes also wait for later chapters' saves.
-    const left=[...tasks],done=new Set();let previous=null;
-    while(left.length){
-      const ready=left.filter(t=>t.deps.every(d=>done.has(d))).sort((a,b)=>a.priority-b.priority);
-      if(!ready.length)throw Error('Cycle in serial plan.');
-      const task=ready[0];if(previous&&!task.deps.includes(previous))task.deps.push(previous);
-      done.add(task.id);previous=task.id;left.splice(left.indexOf(task),1);
-    }
-  }
+  if(c.policy==='serial')serializeTasks(tasks);
   const prewarmSeconds=densePrewarmCredit(c,g.boot+(c.warmCache?1:g.download)+3);
   const prewarm=densePrewarmMeasurement(c);
   if(prewarm){

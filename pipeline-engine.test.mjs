@@ -168,6 +168,14 @@ test('output timing follows measured 720p30 rather than the older repeated-asset
  assert.throws(()=>buildPlan({...DEFAULTS,videoFps:120},evidence),/calibrated/);
 });
 
+test('CPU overlap preserves the single chapter render worker',()=>{
+ for(const policy of ['current','proposed']){
+  const plan=buildPlan({...DEFAULTS,policy,videoRenderer:'cpu',cpuOverlap:true},evidence);
+  const renders=schedule(plan).tasks.filter(t=>t.kind==='render');
+  for(let i=1;i<renders.length;i++)assert.ok(renders[i].start>=renders[i-1].end-1e-7);
+ }
+});
+
 test('native rendering uses the measured local GPU path and reserves the voice GPU',()=>{
  const native=buildPlan({...DEFAULTS,videoRenderer:'native'},evidence),cpu=buildPlan({...DEFAULTS,videoRenderer:'cpu'},evidence);
  assert.equal(native.renderProfile.backend,'native');assert.equal(cpu.renderProfile.backend,'cpu');

@@ -44,6 +44,35 @@ test('default forecast includes every-image visual checks and their cost/time',(
  assert.ok(checked.qcCount>0);assert.ok(checked.qcUSD>0);assert.equal(off.qcCount,0);assert.equal(off.qcUSD,0);
  assert.ok(checked.tasks.some(t=>t.kind==='vision'));assert.ok(!off.tasks.some(t=>t.kind==='vision'));
 });
+
+test('following another project restores the original disk and compute pricing assumptions',()=>{
+ const project=profile();project.imageExecution={backend:'comfyui-api',gpuLanes:1,requiredGPU:'NVIDIA GeForce RTX 5090',
+  computeQuote:{hourlyUSD:.69,observedAt:1791874064,workingDiskIncluded:true}};
+ const original={...DEFAULTS,pricingBasis:'quote',quotedGPU:'4090',quotedGPUHourly:.41,containerGB:37};
+ const first=plannerSettings(original,project,evidence).config;
+ const refreshed=plannerSettings(first,project,evidence).config;
+ assert.equal(refreshed.quotedGPUHourly,.69);assert.equal(refreshed.containerGB,0);
+ project.imageExecution.computeQuote.workingDiskIncluded=false;
+ const separateDisk=plannerSettings(refreshed,project,evidence).config;
+ assert.equal(separateDisk.quotedGPUHourly,.69);assert.equal(separateDisk.containerGB,37);
+ delete project.imageExecution.computeQuote;
+ const cleared=plannerSettings(separateDisk,project,evidence).config;
+ for(const key of ['pricingBasis','quotedGPU','quotedGPUHourly','containerGB'])assert.equal(cleared[key],original[key]);
+ const edited=plannerSettings({...refreshed,quotedGPUHourly:.55,containerGB:42},project,evidence).config;
+ assert.equal(edited.quotedGPUHourly,.55);assert.equal(edited.quotedGPU,'5090');assert.equal(edited.containerGB,42);
+});
+
+test('a bundled-disk quote applies only to its quoted card and pricing basis in GPU comparisons',()=>{
+ const p=profile();p.imageExecution={backend:'comfyui-api',gpuLanes:1,requiredGPU:'NVIDIA GeForce RTX 5090',
+  computeQuote:{hourlyUSD:.69,observedAt:1791874064,workingDiskIncluded:true}};
+ const c=plannerSettings({...DEFAULTS,containerGB:37},p,evidence).config;
+ assert.equal(buildPlan(c,evidence).gpu.pricing.containerHourly,0);
+ const separatelyBilled=37*.10/(30*24);
+ for(const patch of [{gpu:'4090'},{pricingBasis:'published'}]){
+  assert.equal(buildPlan({...c,...patch},evidence).gpu.pricing.containerHourly,separatelyBilled);
+ }
+ assert.equal(buildPlan({...c,gpu:'4090',containerGB:12},evidence).gpu.pricing.containerHourly,12*.10/(30*24));
+});
 test('projection copies actual setup without changing targets or source data',()=>{
  const input={...DEFAULTS,retries:9,minutes:1440,chapters:80};const before=structuredClone(profile());
  const result=plannerSettings(input,before,evidence);
@@ -153,4 +182,18 @@ test('matching current history replaces reference director time and cost without
  const c=plannerSettings(DEFAULTS,p,evidence).config,d=directorForecast(c,evidence);
  assert.equal(d.secondsPerStorySecond,.12);assert.equal(d.costPerTwoHours,.08);assert.equal(d.slots,4);assert.equal(d.timingMeasured,true);
  assert.match(d.scope,/matching successful/);
+});
+
+test('saved director receipts follow their original profile, tier and API capacity',()=>{
+ const p=profile();p.directorObservation={secondsPerStorySecond:.12,costPerTwoHours:.08,samples:2,runs:1};
+ const c=plannerSettings(DEFAULTS,p,evidence).config;
+ const restored=JSON.parse(JSON.stringify(c));
+ assert.equal(directorForecast({...restored,minutes:60},evidence).costPerTwoHours,.08);
+ for(const change of [{directorTier:'flex'},{directorProfile:'classic-standard'},
+  {directorActualSlots:0,apiSlots:2},{directorObservedIdentity:undefined}]){
+  const d=directorForecast({...restored,...change},evidence);
+  assert.notEqual(d.label,'Matched current production history');
+  assert.notEqual(d.costPerTwoHours,.08);
+ }
+ assert.throws(()=>directorForecast({...c,policy:'current',directorProfile:'small-groups-hybrid'},evidence),/research prototype/);
 });

@@ -21,7 +21,9 @@ export function directorForecast(config,evidence) {
   if(!Number.isFinite(flexFactor)||flexFactor<1)throw Error('Flex timing factor must be a finite number of at least one.');
   const manual=(config.directorCostMode||'manual')==='manual';
   if(!['manual','measured'].includes(config.directorCostMode||'manual'))throw Error('Choose measured or manual director cost.');
-  if(Number.isFinite(config.directorObservedSecondsPerStorySecond)&&config.directorObservedSecondsPerStorySecond>0&&config.directorObservedSamples>0&&Number.isFinite(config.directorObservedCostPerTwoHours)&&config.directorObservedCostPerTwoHours>=0){
+  const identity=config.directorObservedIdentity;
+  const historyMatches=identity?.profile===id&&identity.tier===tier&&identity.slots===config.directorActualSlots&&identity.slots===config.apiSlots;
+  if(historyMatches&&Number.isFinite(config.directorObservedSecondsPerStorySecond)&&config.directorObservedSecondsPerStorySecond>0&&config.directorObservedSamples>0&&Number.isFinite(config.directorObservedCostPerTwoHours)&&config.directorObservedCostPerTwoHours>=0){
     return {id,label:'Matched current production history',slots:Number(config.directorActualSlots)||config.apiSlots,
       secondsPerStorySecond:config.directorObservedSecondsPerStorySecond,
       costPerTwoHours:manual?config.directorCost:config.directorObservedCostPerTwoHours,

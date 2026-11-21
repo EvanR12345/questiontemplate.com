@@ -9,6 +9,31 @@ class Heap{
  pop(){const a=this.items;if(!a.length)return;const first=a[0],last=a.pop();if(a.length){let i=0;for(;;){let k=i*2+1;if(k>=a.length)break;if(k+1<a.length&&this.compare(a[k+1],a[k])<0)k++;if(this.compare(last,a[k])<=0)break;a[i]=a[k];i=k;}a[i]=last;}return first;}
 }
 const comparePriority=(a,b)=>a.priority-b.priority||a.task.priority-b.task.priority||a.queued-b.queued;
+// Add the serial baseline's predecessor links in priority order. The input
+// index breaks equal-priority ties just as the original stable sort did.
+export function serializeTasks(tasks){
+ const ready=new Heap((a,b)=>tasks[a].priority-tasks[b].priority||a-b);
+ const followers=new Map();
+ const remaining=tasks.map((task,index)=>{
+  for(const dep of task.deps){
+   if(!followers.has(dep))followers.set(dep,[]);
+   followers.get(dep).push(index);
+  }
+  if(!task.deps.length)ready.push(index);
+  return task.deps.length;
+ });
+ let previous=null,scheduled=0;
+ while(ready.size){
+  const task=tasks[ready.pop()];
+  if(previous!==null&&!task.deps.includes(previous))task.deps.push(previous);
+  previous=task.id;
+  scheduled++;
+  for(const next of followers.get(task.id)||[]){
+   if(--remaining[next]===0)ready.push(next);
+  }
+ }
+ if(scheduled!==tasks.length)throw Error('Cycle or missing dependency in serial plan.');
+}
 export const includedHandoffDependency=t=>t.duration===0&&t.kind==='handoff'&&t.dependencyOnly===true&&
  t.resources&&typeof t.resources==='object'&&!Array.isArray(t.resources)&&Object.keys(t.resources).length===0;
 export function validateFastInputs(plan,preferences={}){

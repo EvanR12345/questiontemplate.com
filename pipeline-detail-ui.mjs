@@ -1,4 +1,4 @@
-import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=production-components-20261031';
+import {buildPlan,schedule,formatTime} from './pipeline-engine.mjs?v=pipeline-review-20261121';
 import {denseActive,denseLeaseRetained} from './pipeline-dense.mjs?v=production-components-20261031';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const seconds=n=>Number.isFinite(n)?n.toFixed(3)+'s':'Not measured',money=n=>'$'+n.toFixed(3);
@@ -85,7 +85,7 @@ export function mountStartupTradeoffs(host,config,evidence,onApply){
   host._startupWorker?.terminate();
   host.innerHTML=`<div class="section-head"><h3>Spend less on rented waiting</h3><span>${policyLabel} · same images · same model</span></div><p class="caption" role="status" data-start-progress>Comparing startup timings… Controls remain available.${serialNote}</p>`;
   if(typeof Worker!=='undefined'){
-   const worker=new Worker(new URL('./pipeline-worker.mjs?v=production-components-20261031',import.meta.url),{type:'module'});host._startupWorker=worker;
+   const worker=new Worker(new URL('./pipeline-worker.mjs?v=pipeline-review-20261121',import.meta.url),{type:'module'});host._startupWorker=worker;
    worker.onmessage=({data})=>{
     if(host._startupGeneration!==generation)return;
     if(data.type==='progress')host.querySelector('[data-start-progress]').textContent=data.message+' · controls remain available.';

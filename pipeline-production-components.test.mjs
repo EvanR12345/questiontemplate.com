@@ -5,9 +5,18 @@ import {DEFAULTS,buildPlan,schedule,importSnapshot} from './pipeline-engine.mjs'
 import {qualityBlockedProductionEvidence,currentComponentsEligible,CURRENT_COMPONENTS_ID} from './pipeline-production-components.mjs';
 import {completedProductionEvidence} from './pipeline-production-calibration.mjs';
 import {plannerSettings} from './studio-planner-profile.mjs';
+import {reviewPolicyNote} from './pipeline-realistic.mjs';
 import {sourceBurstSerialComparison} from './pipeline-source-burst.mjs';
 const read=name=>JSON.parse(fs.readFileSync(new URL(name,import.meta.url),'utf8'));
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-6,`${a} != ${b}`);
+test('policy note reports the scheduled blend of chapter, intro and repair review work',()=>{
+ const f=fixture({retries:25}),plan=buildPlan(f.config,f.evidence),result=schedule(plan);
+ const reviews=result.tasks.filter(t=>t.kind==='vision');
+ const seconds=reviews.reduce((n,t)=>n+t.duration,0)/result.qcCount;
+ const note=reviewPolicyNote(plan.config,result,f.evidence);
+ assert.ok(note.includes(seconds.toFixed(2)+'s per review'));
+ assert.doesNotMatch(note,/same initial review-count, time and cost assumptions/);
+});
 function fixture(extra={}){
  const evidence=read('./pipeline-evidence.json');
  for(const [k,file]of [['concurrency','pipeline-concurrency.json'],['directorCalibration','pipeline-director-calibration.json'],['qcCalibration','pipeline-qc-calibration.json'],['productionCalibration','pipeline-production-calibration.json']])evidence[k]=read('./'+file);

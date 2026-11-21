@@ -1,6 +1,6 @@
 """Shared immutable-input guards for local and cloud render publication."""
-import hashlib
-from studio_data import digest, get_chapter, shot_chapter
+from functools import cache
+from studio_data import digest, file_sha256, get_chapter, shot_chapter
 
 
 def visual_spec_signature(project, shot, store, renderer=None, *, reference_digest=None):
@@ -33,7 +33,7 @@ def visual_spec_signature(project, shot, store, renderer=None, *, reference_dige
             if not path.is_file():fingerprint={'missing':True}
             elif callable(getattr(renderer,'asset_identity',None)):
                 fingerprint=renderer.asset_identity(project['id'],name)
-            else:fingerprint=hashlib.sha256(path.read_bytes()).hexdigest()
+            else:fingerprint=file_sha256(path)
         fingerprints.append({'reference':ref,'bytes':fingerprint})
     return digest({'shot':{k:shot.get(k) for k in fields},'settings':settings,
         'source':source,'style':project['settings']['style'],
@@ -42,15 +42,46 @@ def visual_spec_signature(project, shot, store, renderer=None, *, reference_dige
                   for person in people],'referenceAssets':fingerprints})
 
 
+def manual_motion_override(shot, video):
+    # Omit the field for legacy jobs whose automatic motion is unaffected.
+    if video.get('motionMode') == 'gentle' and shot.get('manual', {}).get('motion'):
+        from studio_render import effective_motion
+        automatic = dict(shot, manual={})
+        if effective_motion(shot, video) != effective_motion(automatic, video):
+            return {'manualMotion': True}
+    return {}
+
+
+def intro_render_inputs(intro, asset):
+    fields = {k:intro.get(k) for k in ('enabled','duration','placement','title','subtitle',
+              'showTitle','voiceText','visualPath','audioPath','motion','endOnNarration')}
+    shots = []
+    for shot in intro.get('shots', []):
+        item = {k:shot.get(k) for k in ('start', 'end', 'motion')}
+        item['image'] = asset(shot.get('imagePath'))
+        if shot.get('motionSettings'):
+            item['motionSettings'] = shot['motionSettings']
+        shots.append(item)
+    return dict(fields, visualBytes=asset(intro.get('visualPath')),
+                audioBytes=asset(intro.get('audioPath')), shots=shots)
+
+
 def render_submission_signature(project, store, renderer=None, chapter_id=None):
     """Publication guard; progress/review receipts cannot invalidate a render."""
+    # Each publication check snapshots a file once. A later check reads it again.
+    @cache
     def asset(name):
         if not name:return None
         path=store.asset(project['id'],name)
         if not path.is_file():return {'path':name,'missing':True}
         if callable(getattr(renderer,'asset_identity',None)):
             return renderer.asset_identity(project['id'],name)
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        return file_sha256(path)
+    def reference_digest(project_id, name):
+        identity = asset(name)
+        # The visual spec uses its own existing marker for a missing reference.
+        return identity if isinstance(identity, str) else None
+
     chapters=[get_chapter(project,chapter_id)] if chapter_id else project['chapters']
     inputs=[]
     for ch in chapters:
@@ -60,17 +91,14 @@ def render_submission_signature(project, store, renderer=None, chapter_id=None):
                      'duration':ch.get('audio',{}).get('duration'),
                      'bytes':asset(ch.get('audio',{}).get('path'))},
             'shots':[{'id':s['id'],'image':asset(s.get('imagePath')),
-                'spec':visual_spec_signature(project,s,store,renderer),
+                'spec':visual_spec_signature(project,s,store,renderer,reference_digest=reference_digest),
+                **manual_motion_override(s, project['settings']['video']),
                 **{k:s.get(k) for k in ('start','end','motion','motionSettings','transition')}}
                 for sc in ch.get('scenes',[]) for s in sc['shots']]})
     intro=project['intro']
     intro_input=None
     if intro['enabled'] and (chapter_id is None or intro['placement']=='every_chapter'):
-        intro_input={k:intro.get(k) for k in ('enabled','duration','placement','title','subtitle',
-                     'showTitle','voiceText','visualPath','audioPath','motion','endOnNarration')}
-        intro_input.update(visualBytes=asset(intro.get('visualPath')),audioBytes=asset(intro.get('audioPath')),
-            shots=[{'image':asset(s.get('imagePath')),**{k:s.get(k) for k in ('start','end','motion')}}
-                   for s in intro.get('shots',[])])
+        intro_input = intro_render_inputs(intro, asset)
     from studio_branding import identity as watermark_identity
     from studio_voice_provider import identity as voice_identity
     return digest({'chapters':inputs,'video':project['settings']['video'],'intro':intro_input,

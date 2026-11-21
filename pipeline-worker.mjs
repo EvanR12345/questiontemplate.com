@@ -1,6 +1,6 @@
-import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=production-components-20261031';
-import {buildPlan,schedule} from './pipeline-engine.mjs?v=production-components-20261031';
-import {startupSearch} from './pipeline-detail-ui.mjs?v=production-components-20261031';
+import {compareGPUPlans} from './pipeline-gpu-comparison.mjs?v=pipeline-review-20261121';
+import {buildPlan,schedule} from './pipeline-engine.mjs?v=pipeline-review-20261121';
+import {startupSearch} from './pipeline-detail-ui.mjs?v=pipeline-review-20261121';
 self.onmessage=({data})=>{
  try{
   if(data.type==='plan'){

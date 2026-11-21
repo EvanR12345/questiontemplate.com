@@ -1,4 +1,4 @@
-import {describePlan} from './pipeline-engine.mjs?v=production-components-20261031';
+import {describePlan} from './pipeline-engine.mjs?v=pipeline-review-20261121';
 import {denseActive,denseLeaseRetained} from './pipeline-dense.mjs?v=production-components-20261031';
 
 export function plannerSourceState(project, requestedFollowing, applied) {

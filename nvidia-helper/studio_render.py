@@ -648,11 +648,13 @@ class VideoRenderer:
 
     def preview_signature(self, p, ch, shot_id):
         start, end, selected = self.preview_plan(ch, shot_id, p['settings']['video']['fps'])
+        from studio_render_inputs import manual_motion_override
         from studio_branding import identity
         return digest({'start':start,'end':end,'script':ch['cleanNarrationText'],
             'audio':self.asset_identity(p['id'],ch['audio']['path']),
             'video':p['settings']['video'],'watermark':identity(p,self.store),
             'shots':[{**{key:shot.get(key) for key in ('id','start','end','motion','motionSettings','transition','camera')},
+                      **manual_motion_override(shot, p['settings']['video']),
                       'image':self.asset_identity(p['id'],shot['imagePath'])} for shot in selected]})
 
     def preview(self, p, ch, shot_id, gate):

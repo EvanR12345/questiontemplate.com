@@ -5,8 +5,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {DEFAULTS,buildPlan,schedule,validateSchedule,importSnapshot} from './pipeline-engine.mjs';
 import {costParts} from './pipeline-pricing.mjs?v=pricing-20261009';
-import {scheduleTasksFast} from './pipeline-fast-scheduler.mjs';
+import {scheduleTasksFast,serializeTasks} from './pipeline-fast-scheduler.mjs';
 const evidence=JSON.parse(fs.readFileSync(new URL('./pipeline-evidence.json',import.meta.url),'utf8'));
+
+test('serial baseline uses dependency readiness, priority and stable insertion order for ties',()=>{
+ const tasks=[
+  {id:'last',priority:-1,deps:['a','b']},
+  {id:'a',priority:2,deps:['release']},
+  {id:'b',priority:2,deps:[]},
+  {id:'release',priority:1,deps:[]},
+  {id:'other',priority:3,deps:[]},
+ ];
+ serializeTasks(tasks);
+ assert.deepEqual(tasks.map(t=>t.deps),[['a','b'],['release'],['a'],[],['last']]);
+ assert.throws(()=>serializeTasks([{id:'loop',priority:0,deps:['loop']}]),/Cycle/);
+});
 function fits(task,start,allocations,capacities) {
   let next=start;
   for(const [pool,units] of Object.entries(task.resources)) {

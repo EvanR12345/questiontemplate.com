@@ -34,6 +34,14 @@ def digest(value):
     ).hexdigest()
 
 
+def file_sha256(path):
+    checksum = hashlib.sha256()
+    with path.open('rb') as handle:
+        for block in iter(lambda: handle.read(4 * 1024 * 1024), b''):
+            checksum.update(block)
+    return checksum.hexdigest()
+
+
 def grounded_identity(identity, evidence):
     """A hair adjective is not evidence for skin, build or height.
 
@@ -759,10 +767,7 @@ class ProjectStore:
         """Hash local bytes or use the previously verified immutable cloud hash."""
         path=self.asset_local(id,name)
         if path.is_file():
-            h=hashlib.sha256()
-            with path.open('rb') as handle:
-                for block in iter(lambda:handle.read(4*1024*1024),b''):h.update(block)
-            return h.hexdigest()
+            return file_sha256(path)
         record=self.archive.asset_record(id,name) if self.archive else None
         return record['sha256'] if record else None
 

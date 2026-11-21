@@ -2979,15 +2979,12 @@ class StudioService:
 
     def intro_submission_signature(self, project):
         intro=project['intro']
-        fields={k:intro.get(k) for k in ('enabled','duration','placement','title','subtitle',
-                 'showTitle','voiceText','visualPath','audioPath','motion','endOnNarration')}
+        from studio_render_inputs import intro_render_inputs
         def asset(name):
             if not name:return None
             path=self.store.asset(project['id'],name)
-            return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else {'missing':name}
-        fields.update(visualBytes=asset(intro.get('visualPath')),audioBytes=asset(intro.get('audioPath')),
-            shots=[{'image':asset(s.get('imagePath')),**{k:s.get(k) for k in ('start','end','motion')}}
-                   for s in intro.get('shots',[])])
+            return file_sha256(path) if path.is_file() else {'missing':name}
+        fields = intro_render_inputs(intro, asset)
         from studio_branding import identity as watermark_identity
         return digest({'intro':fields,'video':project['settings']['video'],'watermark':watermark_identity(project,self.store)})
 

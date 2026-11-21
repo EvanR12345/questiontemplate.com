@@ -1,5 +1,5 @@
-import {buildPlan} from './pipeline-engine.mjs?v=production-components-20261031';
-import {selectGPUConfig} from './pipeline-config.mjs?v=production-components-20261031';
+import {buildPlan} from './pipeline-engine.mjs?v=pipeline-review-20261121';
+import {selectGPUConfig} from './pipeline-config.mjs?v=pipeline-review-20261121';
 
 // An unmatched/unconnected saved project must not imply experimental overlap.
 // This is a conservative comparison until Follow applies an actual topology.
@@ -19,9 +19,16 @@ export function selectScenarioGPUConfig(config,evidence,gpu){
 }
 
 export function reviewPolicyNote(config,result,evidence){
-  const common=config.qcBenchmarkId?'Practical and Strict both review every image. This schedule uses the newer matching policy and API-slot measurements; initial review bills vary with tokens.':'Practical and Strict both review every image. They use the same initial review-count, time and cost assumptions here; this is not a measured equality of API bills. '+(config.qcHistoryMatches===false?'Unmatched saved timing is a reference assumption for this policy/slot setup.':'');
+  const checks=result.tasks.filter(t=>t.kind==='vision');
+  const componentRates=checks.some(t=>Number.isFinite(t.productionQCUSD)||t.sourceBurstRepairQC);
+  let common='Practical and Strict both review every image.';
+  if(componentRates)common+=' This schedule uses measured review components for the selected policy.';
+  else if(config.qcBenchmarkId)common+=' This schedule uses matching policy and API-slot measurements.';
+  else if(config.qcHistoryMatches)common+=' This schedule uses matching saved review history.';
+  else common+=' Review time and cost use reference assumptions. Actual bills vary with tokens.';
   if(config.qc==='off')return 'Visual review is Off. Technical file checks remain. '+common;
   if(config.qc==='sampled')return 'Sampled checks review only the configured subset. '+common;
-  const seconds=config.qcSeconds||evidence.calibration.qcSeconds;
-  return `${common} Planned checks: ${result.qcCount}, estimated $${result.qcUSD.toFixed(3)} at ${seconds.toFixed(2)}s per review before overlap. ${config.qcBenchmarkNote||''} ${config.qcCostManual?'Your manual QC price overrides the measured token cost. ':''}Practical repairs confirmed major defects; Strict can also block or repair smaller findings. Extra repairs, rechecks and manual-review waiting are not measured or included beyond the explicit extra-attempt allowance.`;
+  const seconds=result.qcCount?checks.reduce((total,t)=>total+t.duration,0)/result.qcCount:config.qcSeconds||evidence.calibration.qcSeconds;
+  const benchmarkNote=componentRates?'':config.qcBenchmarkNote||'';
+  return `${common} The ${result.qcCount} planned checks cost an estimated $${result.qcUSD.toFixed(3)} and average ${seconds.toFixed(2)}s per review before overlap. ${benchmarkNote} ${config.qcCostManual?'The estimate uses your manual per-check price. ':''}Practical repairs confirmed major defects. Strict can also block smaller findings. The extra-attempt allowance determines how many retries enter this schedule. Manual-review waiting is not measured.`;
 }

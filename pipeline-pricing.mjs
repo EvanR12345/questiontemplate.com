@@ -10,15 +10,21 @@ export const POD_RATES={
 };
 export function priceGPU(gpu,config){
   const historicalHourly=gpu.historicalHourly??gpu.hourly;
-  const diskHourly=config.containerGB*.10/(30*24);
   const quoted=config.pricingBasis==='quote'&&config.quotedGPU===gpu.id&&config.quotedGPUHourly>0;
+  const followed=config.followedComputeQuote;
+  const bundled=followed?.diskIncluded===true&&config.containerGB===0;
+  const quotedBundle=bundled&&quoted&&followed.applied?.quotedGPU===gpu.id&&followed.applied.quotedGPUHourly===config.quotedGPUHourly;
+  const savedDiskGB=followed?.previous?.containerGB;
+  const diskGB=bundled&&!quotedBundle&&Number.isFinite(savedDiskGB)&&savedDiskGB>=0?savedDiskGB:config.containerGB;
+  const diskHourly=diskGB*.10/(30*24);
   const published=POD_RATES[gpu.id];
   if(quoted||config.pricingBasis!=='receipt'&&published!==undefined){
     const computeHourly=quoted?config.quotedGPUHourly:published;
     return {...gpu,historicalHourly,hourly:computeHourly+diskHourly,pricing:{
       basis:quoted?'quote':'published',computeHourly,containerHourly:diskHourly,date:PRICING_DATE,
-      note:quoted?'Your entered compute quote plus configured running container disk. Confirm the quote excludes disk before entering it.':
-        `Public Pod listing checked ${PRICING_DATE}; not a live region/account quote. Running container disk uses ${config.containerGB} GB at $0.10/GB/month, with a 30-day planning month.`,
+      note:quotedBundle?'The saved compute quote includes the running container disk.':
+        quoted?'Your entered compute quote plus configured running container disk. Confirm the quote excludes disk before entering it.':
+        `Public Pod listing checked ${PRICING_DATE}; not a live region/account quote. Running container disk uses ${diskGB} GB at $0.10/GB/month, with a 30-day planning month.`,
     }};
   }
   return {...gpu,historicalHourly,pricing:{basis:'receipt',date:gpu.date,note:
