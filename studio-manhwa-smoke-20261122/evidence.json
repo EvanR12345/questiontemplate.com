@@ -1,0 +1,638 @@
+{
+  "models": {
+    "z-image-turbo": [
+      {
+        "hardware": {
+          "gpu": "NVIDIA A40",
+          "tier": "SECURE",
+          "quoteUSDPerHour": 0.6038888888888888
+        },
+        "provision": {
+          "gpu": "NVIDIA A40",
+          "tier": "SECURE",
+          "dataCenter": null,
+          "providerAcceptedSeconds": 1.218846082687378,
+          "provisionAndSSHSeconds": 30.027320861816406,
+          "sshArrivedAt": 1795361270.6609204
+        },
+        "setup": {},
+        "modelLoad": {},
+        "export": {},
+        "shutdown": "EXITED",
+        "estimatedUSD": 0.008185633397323113,
+        "error": "CalledProcessError",
+        "renderReceipts": []
+      },
+      {
+        "hardware": {
+          "gpu": "NVIDIA A40",
+          "tier": "SECURE",
+          "quoteUSDPerHour": 0.6038888888888888
+        },
+        "provision": {
+          "gpu": "NVIDIA A40",
+          "tier": "SECURE",
+          "dataCenter": null,
+          "providerAcceptedSeconds": 1.4649245738983154,
+          "provisionAndSSHSeconds": 163.71899700164795,
+          "sshArrivedAt": 1795361479.7326045
+        },
+        "setup": {
+          "transferAndDependencyInstallCompletedAt": 1795361507.9498887,
+          "dependencyInstallSeconds": 20.19877004623413
+        },
+        "modelLoad": {
+          "model": {
+            "repo": "Tongyi-MAI/Z-Image-Turbo",
+            "revision": "f332072aa78be7aecdf3ee76d5c247082da564a6",
+            "steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              50,
+              60
+            ],
+            "baseline": 9
+          },
+          "files": {
+            "z-image-turbo": "f332072aa78be7aecdf3ee76d5c247082da564a6"
+          },
+          "identity": "NVIDIA A40, 46068 MiB, 300.00 W",
+          "vramBytes": 47699722240,
+          "placement": "cuda",
+          "generatorDevice": "cuda",
+          "denoiserDeviceAfterLoad": "cuda:0",
+          "packageVersions": {
+            "diffusers": "0.37.1",
+            "transformers": "4.57.6",
+            "accelerate": "1.16.0",
+            "torch": "2.9.1+cu128"
+          },
+          "downloadOrCacheSeconds": 15.817458002013154,
+          "loadSeconds": 15.232147303991951,
+          "modelSettings": {
+            "guidance_scale": 0.0
+          },
+          "referenceInputCount": 0,
+          "smoke": true
+        },
+        "export": {
+          "seconds": 3.3194148540496826,
+          "verifiedPNGs": 4
+        },
+        "shutdown": "EXITED",
+        "estimatedUSD": 0.044888193390619606,
+        "error": null,
+        "renderReceipts": [
+          {
+            "image": "09--awakening--1",
+            "scene": "awakening",
+            "group": "easy",
+            "steps": 9,
+            "seed": 2432647036,
+            "take": 1,
+            "inferenceSeconds": 7.49744073394686,
+            "readySeconds": 7.899120677961037,
+            "rawSHA256": "1434d3ca7cf3846b66cf38ec1a946060dc29a864a8dfdb308f1c820c38a10fd2",
+            "denoiserForwardCalls": 9,
+            "denoisingIterations": 9,
+            "peakCudaAllocatedBytes": 22960476160,
+            "firstGeneration": true
+          },
+          {
+            "image": "09--breakfast-dialogue--1",
+            "scene": "breakfast-dialogue",
+            "group": "lettering",
+            "steps": 9,
+            "seed": 370834556,
+            "take": 1,
+            "inferenceSeconds": 7.804442321998067,
+            "readySeconds": 8.110371060029138,
+            "rawSHA256": "556c8efd64c8c23302a4b0004e4f2291d8900f937cffc09510c76528c3f2cb52",
+            "denoiserForwardCalls": 9,
+            "denoisingIterations": 9,
+            "peakCudaAllocatedBytes": 22961771520,
+            "firstGeneration": false
+          },
+          {
+            "image": "09--plate--1",
+            "scene": "plate",
+            "group": "hard",
+            "steps": 9,
+            "seed": 4269341689,
+            "take": 1,
+            "inferenceSeconds": 7.786808252043556,
+            "readySeconds": 8.110849312040955,
+            "rawSHA256": "3b7ba38bfad360d6a1fcdbdce49aaf272d31c5e3103292b1cb0dd5f533de7c71",
+            "denoiserForwardCalls": 9,
+            "denoisingIterations": 9,
+            "peakCudaAllocatedBytes": 22960829440,
+            "firstGeneration": false
+          },
+          {
+            "image": "09--thirty-reference-inventory--1",
+            "scene": "thirty-reference-inventory",
+            "group": "reference-stress",
+            "steps": 9,
+            "seed": 3840744261,
+            "take": 1,
+            "inferenceSeconds": 7.583753480983432,
+            "readySeconds": 7.863792955002282,
+            "rawSHA256": "7747390aae48fda62440d401b48ac9638984e487fcdb3ed5ca23c9e0cc320bab",
+            "denoiserForwardCalls": 9,
+            "denoisingIterations": 9,
+            "peakCudaAllocatedBytes": 22961771520,
+            "firstGeneration": false
+          }
+        ]
+      }
+    ],
+    "sana-1.6b": [
+      {
+        "hardware": {
+          "gpu": "NVIDIA GeForce RTX 3090",
+          "tier": "COMMUNITY",
+          "quoteUSDPerHour": 0.2338888888888889
+        },
+        "provision": {
+          "gpu": "NVIDIA GeForce RTX 3090",
+          "tier": "COMMUNITY",
+          "dataCenter": null,
+          "providerAcceptedSeconds": 1.0479013919830322,
+          "provisionAndSSHSeconds": 15.252730131149292,
+          "sshArrivedAt": 1795361363.5240183
+        },
+        "setup": {
+          "transferAndDependencyInstallCompletedAt": 1795361381.6280003,
+          "dependencyInstallSeconds": 15.325601577758789
+        },
+        "modelLoad": {
+          "model": {
+            "repo": "Efficient-Large-Model/Sana_1600M_1024px_diffusers",
+            "revision": "ac0da2ff55fbe434795be0dce883042e4d49e2fc",
+            "steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              20,
+              50,
+              60
+            ],
+            "baseline": 20,
+            "variant": "fp16"
+          },
+          "files": {
+            "sana-1.6b": "ac0da2ff55fbe434795be0dce883042e4d49e2fc"
+          },
+          "identity": "NVIDIA GeForce RTX 3090, 24576 MiB, 330.00 W",
+          "vramBytes": 25297092608,
+          "placement": "cuda",
+          "generatorDevice": "cuda",
+          "denoiserDeviceAfterLoad": "cuda:0",
+          "packageVersions": {
+            "diffusers": "0.37.1",
+            "transformers": "4.57.6",
+            "accelerate": "1.16.0",
+            "torch": "2.9.1+cu128"
+          },
+          "downloadOrCacheSeconds": 12.26482405886054,
+          "loadSeconds": 6.600612733978778,
+          "modelSettings": {
+            "guidance_scale": 5.0,
+            "pag_scale": 2.0,
+            "use_resolution_binning": true
+          },
+          "referenceInputCount": 0,
+          "smoke": true
+        },
+        "export": {
+          "seconds": 1.4272444248199463,
+          "verifiedPNGs": 4
+        },
+        "shutdown": "EXITED",
+        "estimatedUSD": 0.005173152103321052,
+        "error": null,
+        "renderReceipts": [
+          {
+            "image": "20--awakening--1",
+            "scene": "awakening",
+            "group": "easy",
+            "steps": 20,
+            "seed": 2977005425,
+            "take": 1,
+            "inferenceSeconds": 5.739386375062168,
+            "readySeconds": 5.905637468677014,
+            "rawSHA256": "06d67210c29c03adb9e7534b8683bdd56ed6dccee31efa9b87ee04ad6dd8b6b8",
+            "denoiserForwardCalls": 20,
+            "denoisingIterations": 20,
+            "peakCudaAllocatedBytes": 10882611200,
+            "firstGeneration": true
+          },
+          {
+            "image": "20--breakfast-dialogue--1",
+            "scene": "breakfast-dialogue",
+            "group": "lettering",
+            "steps": 20,
+            "seed": 3010316591,
+            "take": 1,
+            "inferenceSeconds": 4.3034199848771095,
+            "readySeconds": 4.4381363140419126,
+            "rawSHA256": "941a5e745bfbdc460a6fddb603370c442f09bec7ea8d81118f1228afd142a4d9",
+            "denoiserForwardCalls": 20,
+            "denoisingIterations": 20,
+            "peakCudaAllocatedBytes": 10882611200,
+            "firstGeneration": false
+          },
+          {
+            "image": "20--plate--1",
+            "scene": "plate",
+            "group": "hard",
+            "steps": 20,
+            "seed": 3925001910,
+            "take": 1,
+            "inferenceSeconds": 4.303078449331224,
+            "readySeconds": 4.414254776202142,
+            "rawSHA256": "e7c008fda4bb86014bd0265e68cea0f46bf1b705ad87b7758ace8ba7120a909e",
+            "denoiserForwardCalls": 20,
+            "denoisingIterations": 20,
+            "peakCudaAllocatedBytes": 10882611200,
+            "firstGeneration": false
+          },
+          {
+            "image": "20--thirty-reference-inventory--1",
+            "scene": "thirty-reference-inventory",
+            "group": "reference-stress",
+            "steps": 20,
+            "seed": 3119571142,
+            "take": 1,
+            "inferenceSeconds": 4.309454340022057,
+            "readySeconds": 4.4719438357278705,
+            "rawSHA256": "9b5410810e489ecea6990bbcf476b6ddcd893f448000ebbee7fa6c05cc5c4f7a",
+            "denoiserForwardCalls": 20,
+            "denoisingIterations": 20,
+            "peakCudaAllocatedBytes": 10882611200,
+            "firstGeneration": false
+          }
+        ]
+      },
+      {
+        "hardware": {
+          "gpu": "NVIDIA GeForce RTX 3090",
+          "tier": "COMMUNITY",
+          "quoteUSDPerHour": 0.2338888888888889
+        },
+        "provision": {
+          "gpu": "NVIDIA GeForce RTX 3090",
+          "tier": "COMMUNITY",
+          "dataCenter": null,
+          "providerAcceptedSeconds": 1.175812005996704,
+          "provisionAndSSHSeconds": 94.15013861656189,
+          "sshArrivedAt": 1795361334.5346162
+        },
+        "setup": {},
+        "modelLoad": {},
+        "export": {},
+        "shutdown": "EXITED",
+        "estimatedUSD": 0.006729030749496118,
+        "error": "CalledProcessError",
+        "renderReceipts": []
+      }
+    ],
+    "qwen-image-2512": [
+      {
+        "hardware": {
+          "gpu": "NVIDIA A100 80GB PCIe",
+          "tier": "SECURE",
+          "quoteUSDPerHour": 2.1038888888888887
+        },
+        "provision": {
+          "gpu": "NVIDIA A100 80GB PCIe",
+          "tier": "SECURE",
+          "dataCenter": null,
+          "providerAcceptedSeconds": 1.0644192695617676,
+          "provisionAndSSHSeconds": 40.929813623428345,
+          "sshArrivedAt": 1795361281.646973
+        },
+        "setup": {},
+        "modelLoad": {},
+        "export": {},
+        "shutdown": "EXITED",
+        "estimatedUSD": 0.030708214490501966,
+        "error": "CalledProcessError",
+        "renderReceipts": []
+      },
+      {
+        "hardware": {
+          "gpu": "NVIDIA A100 80GB PCIe",
+          "tier": "SECURE",
+          "quoteUSDPerHour": 2.1038888888888887
+        },
+        "provision": {
+          "gpu": "NVIDIA A100 80GB PCIe",
+          "tier": "SECURE",
+          "dataCenter": null,
+          "providerAcceptedSeconds": 1.1862609386444092,
+          "provisionAndSSHSeconds": 24.3415367603302,
+          "sshArrivedAt": 1795361340.315683
+        },
+        "setup": {
+          "transferAndDependencyInstallCompletedAt": 1795361371.2555695,
+          "dependencyInstallSeconds": 27.895984888076782
+        },
+        "modelLoad": {
+          "model": {
+            "repo": "Qwen/Qwen-Image-2512",
+            "revision": "25468b98e3276ca6700de15c6628e51b7de54a26",
+            "steps": [
+              40,
+              45,
+              50,
+              55,
+              60
+            ],
+            "baseline": 50
+          },
+          "files": {
+            "qwen-image-2512": "25468b98e3276ca6700de15c6628e51b7de54a26"
+          },
+          "identity": "NVIDIA A100 80GB PCIe, 81920 MiB, 300.00 W",
+          "vramBytes": 85094825984,
+          "placement": "cuda",
+          "generatorDevice": "cuda",
+          "denoiserDeviceAfterLoad": "cuda:0",
+          "packageVersions": {
+            "diffusers": "0.37.1",
+            "transformers": "4.57.6",
+            "accelerate": "1.16.0",
+            "torch": "2.9.1+cu128"
+          },
+          "downloadOrCacheSeconds": 194.19272836204618,
+          "loadSeconds": 24.02407048997702,
+          "modelSettings": {
+            "true_cfg_scale": 4.0,
+            "negative_prompt": " "
+          },
+          "referenceInputCount": 0,
+          "smoke": true
+        },
+        "export": {
+          "seconds": 1.6979172229766846,
+          "verifiedPNGs": 4
+        },
+        "shutdown": "EXITED",
+        "estimatedUSD": 0.2722745417664816,
+        "error": null,
+        "renderReceipts": [
+          {
+            "image": "50--awakening--1",
+            "scene": "awakening",
+            "group": "easy",
+            "steps": 50,
+            "seed": 865913005,
+            "take": 1,
+            "inferenceSeconds": 44.99294203898171,
+            "readySeconds": 45.393311476975214,
+            "rawSHA256": "f2b59be95d010e06e171e0bf081a6760d6c2e3aee9d26a6396770a77355c9bc6",
+            "denoiserForwardCalls": 100,
+            "denoisingIterations": 50,
+            "peakCudaAllocatedBytes": 65741027840,
+            "firstGeneration": true
+          },
+          {
+            "image": "50--breakfast-dialogue--1",
+            "scene": "breakfast-dialogue",
+            "group": "lettering",
+            "steps": 50,
+            "seed": 2114961084,
+            "take": 1,
+            "inferenceSeconds": 44.94554329797393,
+            "readySeconds": 45.29885205300525,
+            "rawSHA256": "1175b0496c6cb648b5ee620e08d88d69aebb32a0dbd4c3d01ecd710cbd89a80b",
+            "denoiserForwardCalls": 100,
+            "denoisingIterations": 50,
+            "peakCudaAllocatedBytes": 65741683200,
+            "firstGeneration": false
+          },
+          {
+            "image": "50--plate--1",
+            "scene": "plate",
+            "group": "hard",
+            "steps": 50,
+            "seed": 3346675845,
+            "take": 1,
+            "inferenceSeconds": 44.738460054970346,
+            "readySeconds": 45.06628209998598,
+            "rawSHA256": "1ddc3cce2c217e92477186d2b85f8ce73f08e196713020b3387aaa96bfc42059",
+            "denoiserForwardCalls": 100,
+            "denoisingIterations": 50,
+            "peakCudaAllocatedBytes": 65741683200,
+            "firstGeneration": false
+          },
+          {
+            "image": "50--thirty-reference-inventory--1",
+            "scene": "thirty-reference-inventory",
+            "group": "reference-stress",
+            "steps": 50,
+            "seed": 358800193,
+            "take": 1,
+            "inferenceSeconds": 45.8023527690093,
+            "readySeconds": 46.13287264300743,
+            "rawSHA256": "7144c18624f487b9fcc87c22584bfd09667c28e85b9c28be5a1a735175e1d260",
+            "denoiserForwardCalls": 100,
+            "denoisingIterations": 50,
+            "peakCudaAllocatedBytes": 65742496256,
+            "firstGeneration": false
+          }
+        ]
+      }
+    ],
+    "hidream-i1-full": []
+  },
+  "quality": {
+    "qwen-image-2512/awakening": {
+      "verdict": "Pass",
+      "summary": "Best fit for the sharper Studio look. Clean face, correct wardrobe and a coherent bedroom.",
+      "checks": {
+        "Cast and appearance": "One clean-shaven adult. Violet hair, gold eyes, black-and-gold coat and white gloves.",
+        "Pose and composition": "Looks down while seated on the edge of the bed. Crop is wider than a chest-up portrait.",
+        "Style": "Angular face, crisp dark contours and controlled violet and gold."
+      }
+    },
+    "z-image-turbo/awakening": {
+      "verdict": "Pass",
+      "summary": "Clean and usable. The face and outfit read well, with a simpler anime finish.",
+      "checks": {
+        "Cast and appearance": "One adult with violet hair, gold eyes and correct black-and-gold wardrobe. Both gloves visible.",
+        "Pose and composition": "Bed and curtains are clear. Wider crop than requested. Hand to collar suits the adjustment beat.",
+        "Style": "Cleaner, flatter facial shading and less of the Studio sample's sharp ink."
+      }
+    },
+    "sana-1.6b/awakening": {
+      "verdict": "Fail",
+      "summary": "Reddish eyes, cropped-out gloves and baked-in black borders.",
+      "checks": {
+        "Cast and appearance": "One violet-haired adult and correct coat. Eyes read orange-red. White gloves cannot be verified.",
+        "Layout and style": "Strong outlines, but the top and bottom bars break the full-frame request."
+      }
+    },
+    "z-image-turbo/plate": {
+      "verdict": "Fail",
+      "summary": "Vaan's right hand grips the rim while his left supports the base. Aldric stays upright.",
+      "checks": {
+        "Cast and wardrobe": "Two distinct adults. Vaan and the black-clad butler are distinguishable.",
+        "Ownership and hands": "Aldric's hands are empty. Vaan uses both hands, and the support under the base comes from the left.",
+        "Reaction and composition": "Plate and both faces read well. The butler does not visibly recoil."
+      }
+    },
+    "qwen-image-2512/plate": {
+      "verdict": "Pass",
+      "summary": "Closest to the requested action and style. One plate, readable grip, distinct faces and empty butler hands.",
+      "checks": {
+        "Cast and wardrobe": "Two distinct adults in the intended outfits.",
+        "Ownership and hands": "Vaan's right white glove visibly cups the underside and rim of one level plate. Both of Aldric's hands are clear and empty.",
+        "Reaction and composition": "The spread hands and guarded posture convey the reaction, though the recoil is subtle."
+      }
+    },
+    "sana-1.6b/plate": {
+      "verdict": "Fail",
+      "summary": "A second food plate appears in the foreground. Aldric's hands and recoil are unclear.",
+      "checks": {
+        "Cast and wardrobe": "Two adults with distinct hair colors, but similar facial construction.",
+        "Props and layout": "One plate in Vaan's hand plus a second plate in front. Baked-in black bars and a tighter crop."
+      }
+    },
+    "qwen-image-2512/breakfast-dialogue": {
+      "verdict": "Fail",
+      "summary": "Both lines and tails are correct. Aldric holds the plate in his right hand, while the script specifies his left.",
+      "checks": {
+        "Exact lettering": "2/2. \u201cWhat did you bring?\u201d and \u201cYour breakfast, my lord.\u201d",
+        "Speaker attribution": "Both tails point to the intended person. The balloons are separate and readable.",
+        "Hands and plate": "One plate, clearly held by Aldric. The visible arm from his right shoulder supports it.",
+        "Cast and style": "Two distinct faces and the strongest shading and continuity in this set."
+      }
+    },
+    "z-image-turbo/breakfast-dialogue": {
+      "verdict": "Fail",
+      "summary": "Both lines are exact, but the butler looks like a second Vaan in nearly the same outfit.",
+      "checks": {
+        "Exact lettering": "2/2. \u201cWhat did you bring?\u201d and \u201cYour breakfast, my lord.\u201d",
+        "Speaker attribution": "Separate, readable balloons with tails to the intended screen positions.",
+        "Cast and wardrobe": "Both men have violet hair, golden eyes and similar gold-trimmed black coats. The butler's distinct identity is lost.",
+        "Hands and plate": "One plate is held by the figure at right with the wrong hand."
+      }
+    },
+    "sana-1.6b/breakfast-dialogue": {
+      "verdict": "Fail",
+      "summary": "Garbled lettering, missing second balloon, wrong character holding the plate, and a stray bottom mark.",
+      "checks": {
+        "Exact lettering": "0/2. One garbled balloon and no readable reply.",
+        "Hands and plate": "The figure on the left holds the plate.",
+        "Cast and composition": "Aldric also inherits violet hair. Black borders and a stray bottom-right word are baked into the PNG."
+      }
+    },
+    "sana-1.6b/thirty-reference-inventory": {
+      "verdict": "3/30 visible",
+      "summary": "Repeated glowing panels and a few fixtures replace nearly the whole inventory.",
+      "checks": {
+        "Layout": "No people. Does not form six bays with five individually readable objects per bay.",
+        "Ambiguous": "Arched magical panels are not counted as a separate stained-glass medallion. Purple blossoms do not clearly match the intended glowing flower."
+      },
+      "objectsSeen": [
+        "brass cabinet pull",
+        "desk drawer handle",
+        "sunburst insignia"
+      ]
+    },
+    "qwen-image-2512/thirty-reference-inventory": {
+      "verdict": "23/30 visible",
+      "summary": "Strongest object tally. Six wood-backed bays, but objects do not consistently follow the requested bay order.",
+      "checks": {
+        "Layout": "No people. Six bays are visible. Some pieces are grouped or in different bays.",
+        "Ambiguous": "The red cravat lacks a distinct pin. Hardware, cuff detail, and the rope knot are too ambiguous to add counts."
+      },
+      "objectsSeen": [
+        "open map",
+        "bookshelf volumes",
+        "tufted reading chair",
+        "silver floral pendant",
+        "brass cabinet pull",
+        "framed silhouette",
+        "stained-glass medallion",
+        "patterned rug",
+        "braided curtain tie",
+        "red velvet armchair",
+        "bedside lamp",
+        "velvet pillow",
+        "desk drawer handle",
+        "floating amethyst stone",
+        "ice-blue crystal spire",
+        "rune-carved stone",
+        "glowing woodland flower",
+        "sunburst coat insignia",
+        "metal belt buckle",
+        "blue-glass lantern",
+        "tin wall lantern",
+        "ceramic storage jar",
+        "porcelain cup"
+      ]
+    },
+    "z-image-turbo/thirty-reference-inventory": {
+      "verdict": "21/30 visible",
+      "summary": "Good individual props. The layout is a ten-cell contact sheet instead of six wooden bays.",
+      "checks": {
+        "Layout": "No people. Grid breaks the continuous room composition and expected grouping.",
+        "Ambiguous": "The ribbon, little shelf ornament, extra hardware, and decorative gold scrollwork do not identify additional requested objects with enough confidence."
+      },
+      "objectsSeen": [
+        "open map",
+        "bookshelf volumes",
+        "tufted reading chair",
+        "silver floral pendant",
+        "framed silhouette",
+        "stained-glass medallion",
+        "patterned rug",
+        "red velvet armchair",
+        "bedside lamp",
+        "velvet pillow",
+        "desk drawer handle",
+        "floating amethyst stone",
+        "ice-blue crystal spire",
+        "rune-carved stone",
+        "glowing woodland flower",
+        "sunburst coat insignia",
+        "blue-glass lantern",
+        "tin wall lantern",
+        "rope knot",
+        "ceramic storage jar",
+        "porcelain cup"
+      ]
+    }
+  },
+  "estimatedTotalUSD": 0.36795876589774346
+}
