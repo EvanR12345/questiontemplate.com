@@ -160,170 +160,6 @@
         ]
       }
     ],
-    "sana-1.6b": [
-      {
-        "hardware": {
-          "gpu": "NVIDIA GeForce RTX 3090",
-          "tier": "COMMUNITY",
-          "quoteUSDPerHour": 0.2338888888888889
-        },
-        "provision": {
-          "gpu": "NVIDIA GeForce RTX 3090",
-          "tier": "COMMUNITY",
-          "dataCenter": null,
-          "providerAcceptedSeconds": 1.0479013919830322,
-          "provisionAndSSHSeconds": 15.252730131149292,
-          "sshArrivedAt": 1795361363.5240183
-        },
-        "setup": {
-          "transferAndDependencyInstallCompletedAt": 1795361381.6280003,
-          "dependencyInstallSeconds": 15.325601577758789
-        },
-        "modelLoad": {
-          "model": {
-            "repo": "Efficient-Large-Model/Sana_1600M_1024px_diffusers",
-            "revision": "ac0da2ff55fbe434795be0dce883042e4d49e2fc",
-            "steps": [
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9,
-              10,
-              11,
-              12,
-              13,
-              14,
-              15,
-              16,
-              20,
-              50,
-              60
-            ],
-            "baseline": 20,
-            "variant": "fp16"
-          },
-          "files": {
-            "sana-1.6b": "ac0da2ff55fbe434795be0dce883042e4d49e2fc"
-          },
-          "identity": "NVIDIA GeForce RTX 3090, 24576 MiB, 330.00 W",
-          "vramBytes": 25297092608,
-          "placement": "cuda",
-          "generatorDevice": "cuda",
-          "denoiserDeviceAfterLoad": "cuda:0",
-          "packageVersions": {
-            "diffusers": "0.37.1",
-            "transformers": "4.57.6",
-            "accelerate": "1.16.0",
-            "torch": "2.9.1+cu128"
-          },
-          "downloadOrCacheSeconds": 12.26482405886054,
-          "loadSeconds": 6.600612733978778,
-          "modelSettings": {
-            "guidance_scale": 5.0,
-            "pag_scale": 2.0,
-            "use_resolution_binning": true
-          },
-          "referenceInputCount": 0,
-          "smoke": true
-        },
-        "export": {
-          "seconds": 1.4272444248199463,
-          "verifiedPNGs": 4
-        },
-        "shutdown": "EXITED",
-        "estimatedUSD": 0.005173152103321052,
-        "error": null,
-        "renderReceipts": [
-          {
-            "image": "20--awakening--1",
-            "scene": "awakening",
-            "group": "easy",
-            "steps": 20,
-            "seed": 2977005425,
-            "take": 1,
-            "inferenceSeconds": 5.739386375062168,
-            "readySeconds": 5.905637468677014,
-            "rawSHA256": "06d67210c29c03adb9e7534b8683bdd56ed6dccee31efa9b87ee04ad6dd8b6b8",
-            "denoiserForwardCalls": 20,
-            "denoisingIterations": 20,
-            "peakCudaAllocatedBytes": 10882611200,
-            "firstGeneration": true
-          },
-          {
-            "image": "20--breakfast-dialogue--1",
-            "scene": "breakfast-dialogue",
-            "group": "lettering",
-            "steps": 20,
-            "seed": 3010316591,
-            "take": 1,
-            "inferenceSeconds": 4.3034199848771095,
-            "readySeconds": 4.4381363140419126,
-            "rawSHA256": "941a5e745bfbdc460a6fddb603370c442f09bec7ea8d81118f1228afd142a4d9",
-            "denoiserForwardCalls": 20,
-            "denoisingIterations": 20,
-            "peakCudaAllocatedBytes": 10882611200,
-            "firstGeneration": false
-          },
-          {
-            "image": "20--plate--1",
-            "scene": "plate",
-            "group": "hard",
-            "steps": 20,
-            "seed": 3925001910,
-            "take": 1,
-            "inferenceSeconds": 4.303078449331224,
-            "readySeconds": 4.414254776202142,
-            "rawSHA256": "e7c008fda4bb86014bd0265e68cea0f46bf1b705ad87b7758ace8ba7120a909e",
-            "denoiserForwardCalls": 20,
-            "denoisingIterations": 20,
-            "peakCudaAllocatedBytes": 10882611200,
-            "firstGeneration": false
-          },
-          {
-            "image": "20--thirty-reference-inventory--1",
-            "scene": "thirty-reference-inventory",
-            "group": "reference-stress",
-            "steps": 20,
-            "seed": 3119571142,
-            "take": 1,
-            "inferenceSeconds": 4.309454340022057,
-            "readySeconds": 4.4719438357278705,
-            "rawSHA256": "9b5410810e489ecea6990bbcf476b6ddcd893f448000ebbee7fa6c05cc5c4f7a",
-            "denoiserForwardCalls": 20,
-            "denoisingIterations": 20,
-            "peakCudaAllocatedBytes": 10882611200,
-            "firstGeneration": false
-          }
-        ]
-      },
-      {
-        "hardware": {
-          "gpu": "NVIDIA GeForce RTX 3090",
-          "tier": "COMMUNITY",
-          "quoteUSDPerHour": 0.2338888888888889
-        },
-        "provision": {
-          "gpu": "NVIDIA GeForce RTX 3090",
-          "tier": "COMMUNITY",
-          "dataCenter": null,
-          "providerAcceptedSeconds": 1.175812005996704,
-          "provisionAndSSHSeconds": 94.15013861656189,
-          "sshArrivedAt": 1795361334.5346162
-        },
-        "setup": {},
-        "modelLoad": {},
-        "export": {},
-        "shutdown": "EXITED",
-        "estimatedUSD": 0.006729030749496118,
-        "error": "CalledProcessError",
-        "renderReceipts": []
-      }
-    ],
     "qwen-image-2512": [
       {
         "hardware": {
@@ -493,14 +329,6 @@
         "Style": "Cleaner, flatter facial shading and less of the Studio sample's sharp ink."
       }
     },
-    "sana-1.6b/awakening": {
-      "verdict": "Fail",
-      "summary": "Reddish eyes, cropped-out gloves and baked-in black borders.",
-      "checks": {
-        "Cast and appearance": "One violet-haired adult and correct coat. Eyes read orange-red. White gloves cannot be verified.",
-        "Layout and style": "Strong outlines, but the top and bottom bars break the full-frame request."
-      }
-    },
     "z-image-turbo/plate": {
       "verdict": "Fail",
       "summary": "Vaan's right hand grips the rim while his left supports the base. Aldric stays upright.",
@@ -517,14 +345,6 @@
         "Cast and wardrobe": "Two distinct adults in the intended outfits.",
         "Ownership and hands": "Vaan's right white glove visibly cups the underside and rim of one level plate. Both of Aldric's hands are clear and empty.",
         "Reaction and composition": "The spread hands and guarded posture convey the reaction, though the recoil is subtle."
-      }
-    },
-    "sana-1.6b/plate": {
-      "verdict": "Fail",
-      "summary": "A second food plate appears in the foreground. Aldric's hands and recoil are unclear.",
-      "checks": {
-        "Cast and wardrobe": "Two adults with distinct hair colors, but similar facial construction.",
-        "Props and layout": "One plate in Vaan's hand plus a second plate in front. Baked-in black bars and a tighter crop."
       }
     },
     "qwen-image-2512/breakfast-dialogue": {
@@ -546,28 +366,6 @@
         "Cast and wardrobe": "Both men have violet hair, golden eyes and similar gold-trimmed black coats. The butler's distinct identity is lost.",
         "Hands and plate": "One plate is held by the figure at right with the wrong hand."
       }
-    },
-    "sana-1.6b/breakfast-dialogue": {
-      "verdict": "Fail",
-      "summary": "Garbled lettering, missing second balloon, wrong character holding the plate, and a stray bottom mark.",
-      "checks": {
-        "Exact lettering": "0/2. One garbled balloon and no readable reply.",
-        "Hands and plate": "The figure on the left holds the plate.",
-        "Cast and composition": "Aldric also inherits violet hair. Black borders and a stray bottom-right word are baked into the PNG."
-      }
-    },
-    "sana-1.6b/thirty-reference-inventory": {
-      "verdict": "3/30 visible",
-      "summary": "Repeated glowing panels and a few fixtures replace nearly the whole inventory.",
-      "checks": {
-        "Layout": "No people. Does not form six bays with five individually readable objects per bay.",
-        "Ambiguous": "Arched magical panels are not counted as a separate stained-glass medallion. Purple blossoms do not clearly match the intended glowing flower."
-      },
-      "objectsSeen": [
-        "brass cabinet pull",
-        "desk drawer handle",
-        "sunburst insignia"
-      ]
     },
     "qwen-image-2512/thirty-reference-inventory": {
       "verdict": "23/30 visible",
@@ -634,5 +432,5 @@
       ]
     }
   },
-  "estimatedTotalUSD": 0.36795876589774346
+  "estimatedTotalUSD": 0.35605658304492627
 }
